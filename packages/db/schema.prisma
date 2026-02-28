@@ -1,0 +1,130 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// --- ENUMS ---
+
+enum SubscriptionTier {
+  FREE
+  PRO
+  ENTERPRISE
+}
+
+enum LeadStatus {
+  UNCONNECTED
+  INVITE_PENDING
+  CONNECTED
+  REPLIED
+  BOUNCED
+}
+
+enum CampaignStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  COMPLETED
+}
+
+enum ActionType {
+  PROFILE_VISIT
+  INVITE
+  MESSAGE
+  EMAIL
+  CHECK_REPLY
+}
+
+enum ActionStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
+// --- MODELS ---
+
+model User {
+  id               String           @id @default(uuid())
+  email            String           @unique
+  passwordHash     String?          
+  linkedinCookie   String?          
+  proxyIp          String?          
+  dailyInviteLimit Int              @default(30) 
+  tier             SubscriptionTier @default(FREE)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  // Relations
+  leads        Lead[]
+  campaigns    Campaign[]
+  actionLogs   ActionLog[]
+}
+
+model Lead {
+  id             String     @id @default(uuid())
+  userId         String
+  linkedinUrl    String     
+  firstName      String?
+  lastName       String?
+  jobTitle       String?
+  company        String?
+  email          String?
+  status         LeadStatus @default(UNCONNECTED)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  // Relations
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  campaignLeads  CampaignLead[]
+  actionLogs     ActionLog[]
+
+  @@unique([userId, linkedinUrl]) 
+}
+
+model Campaign {
+  id           String         @id @default(uuid())
+  userId       String
+  name         String
+  status       CampaignStatus @default(DRAFT)
+  workflowJson Json           
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  // Relations
+  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  leads        CampaignLead[]
+}
+
+model CampaignLead {
+  id             String    @id @default(uuid())
+  campaignId     String
+  leadId         String
+  currentStepId  String    
+  nextActionDate DateTime  @default(now()) 
+  isCompleted    Boolean   @default(false)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  // Relations
+  campaign       Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  lead           Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, leadId])
+}
+
+model ActionLog {
+  id           String       @id @default(uuid())
+  userId       String
+  leadId       String
+  actionType   ActionType
+  status       ActionStatus @default(PENDING)
+  errorMessage String?      
+  executedAt   DateTime     @default(now())
+
+  // Relations
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lead         Lead         @relation(fields: [leadId], references: [id], onDelete: Cascade)
+}

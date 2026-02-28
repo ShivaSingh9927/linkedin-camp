@@ -1,0 +1,23 @@
+1. The Logic Flow:
+To keep the system scalable and prevent overlapping executions, your scheduler should follow this strict sequence:
+
+Wake Up: Run every 5 to 10 minutes.
+
+Query: Find rows in the CampaignLead table where:
+
+nextActionDate is less than or equal to NOW().
+
+isCompleted is false.
+
+The parent Campaign has a status of ACTIVE.
+
+Check Safeguards (Advanced): Before queuing, ensure the user hasn't hit their daily execution limit, and ideally check if it's within their configured "working hours" (e.g., don't send messages on Sunday at 2 AM).
+
+Queue & Lock: Push the valid tasks into your Redis queue (using a library like BullMQ) and immediately lock them so the next Cron tick doesn't grab them again before the worker finishes.
+
+2.Crucial Architectural Advancements:
+Since you are building a modern clone, you should implement these two logic upgrades that many older tools fail at:
+
+The "Working Hours" Filter: In the Prisma query, you shouldn't just check nextActionDate <= now(). You should check the user's timezone. If it is outside of 9 AM - 5 PM in the user's local time, the query should ignore those leads until the next morning. If you don't do this, LinkedIn's algorithms will flag the account for highly unnatural bot behavior.
+
+The Deduplication Lock (jobId): Notice the jobId parameter in the BullMQ .add() function. If your queue gets backed up (e.g., 5,000 tasks pending), the Cron job will run again in 5 minutes, see the same leads in the database, and try to queue them again. By passing a unique jobId, Redis automatically rejects duplicates, saving your system from a cascading crash.

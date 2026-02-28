@@ -1,0 +1,12 @@
+Document 3: Core Database Schema (Entity Relationship)
+You will need a relational database to keep track of the intricate relationships between campaigns, leads, and actions.
+
+User: id, email, password_hash, linkedin_cookie, proxy_ip, subscription_tier.
+
+Lead: id, user_id, linkedin_url, first_name, last_name, job_title, company, email, status (connected, pending, replied).
+
+Campaign: id, user_id, name, workflow_json (stores the flowchart logic).
+
+Campaign_Lead: Mapping table linking Leads to specific Campaigns, storing their current_step in the sequence.
+
+Action_Log: id, user_id, lead_id, action_type (invite, message, email), status (success, failed), timestamp.

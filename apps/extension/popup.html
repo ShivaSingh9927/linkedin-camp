@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    body {
+      width: 300px;
+      padding: 20px;
+      font-family: sans-serif;
+    }
+
+    .btn {
+      padding: 10px;
+      width: 100%;
+      cursor: pointer;
+      background: #2563eb;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-weight: bold;
+    }
+
+    .status {
+      margin-bottom: 20px;
+      font-size: 14px;
+    }
+
+    .connected {
+      color: #059669;
+      font-weight: bold;
+    }
+
+    .disconnected {
+      color: #dc2626;
+      font-weight: bold;
+    }
+  </style>
+</head>
+
+<body>
+  <h3>AutoConnect</h3>
+  <div id="status-box" class="status">Checking connection...</div>
+  <button id="sync-btn" class="btn">Sync Session</button>
+  <p style="font-size: 11px; color: #666; margin-top: 15px;">
+    Make sure you are logged into the <a href="http://localhost:3000" target="_blank">Dashboard</a> first.
+  </p>
+  <script src="popup.js"></script>
+</body>
+
+</html>

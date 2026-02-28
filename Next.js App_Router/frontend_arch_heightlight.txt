@@ -1,0 +1,8 @@
+Architectural Highlights for the Frontend
+The (auth) Route Group: Placing folders in parentheses logically groups routes without adding auth to the URL path. This means your login page is simply yourdomain.com/login, but it shares a separate layout from the main dashboard.
+
+The components/campaigns/nodes/ Directory: React Flow allows you to build custom UI for your nodes. By isolating AiPersonalizeNode.tsx, you give the AI a dedicated file to build the specific UI for inputting prompts and selecting fallback messages, without cluttering the main canvas logic.
+
+Client vs. Server Separation: Keep your data fetching in the app/dashboard/.../page.tsx files (Server Components). Pass that data down as props to the interactive components in the components/ folder (Client Components marked with "use client").
+
+The lib/api.ts File: Since we established earlier that you have a separate Express backend (to handle the Chrome Extension and Playwright queue), you won't use Next.js API routes (app/api/) heavily. Instead, this file will contain your fetch wrappers to securely communicate with that Express server, passing the user's JWT token in the headers.

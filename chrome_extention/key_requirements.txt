@@ -1,0 +1,8 @@
+Key Technical Requirements to Note
+When you feed this into your AI to generate the logic files, you need to enforce these specific rules to make sure it works properly:
+
+The cookies permission is mandatory: To grab the li_at token, the background.js file needs to use chrome.cookies.get({ url: "https://www.linkedin.com", name: "li_at" }). The content script cannot do this because the li_at cookie is marked as HttpOnly, meaning standard frontend JavaScript cannot read it.
+
+The host_permissions are critical: You must list both LinkedIn (to read its DOM and cookies) and your backend API URL. If you don't list your backend URL, Chrome's CORS policy will block your extension from sending the scraped leads to your database. (Change "https://your-local-api.com/*" to http://localhost:3000/* while developing).
+
+Message Passing: AI often hallucinates how Manifest V3 handles messaging. Ensure it uses chrome.runtime.sendMessage to send data from content.js to background.js.

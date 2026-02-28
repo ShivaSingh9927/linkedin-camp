@@ -1,0 +1,10 @@
+Key Architectural Decisions in this Schema
+If you want to add advancements to your platform, understanding why this schema is built this way is important:
+
+The workflowJson Field in Campaign: Instead of hardcoding steps in separate database columns, saving the campaign logic as JSON allows you to build a drag-and-drop flowchart builder on your React frontend later. You can make infinite variations of campaigns without changing the database.
+
+The CampaignLead Pivot Table: A lead might be in multiple campaigns over time. This table acts as a "tracker." The most important field here is nextActionDate. Your background worker will constantly query this table for nextActionDate <= now() to know exactly who needs a message sent right now.
+
+Unique Constraints (@@unique): I added constraints so a user can't accidentally import the same LinkedIn URL twice, preventing duplicate messaging which looks spammy and gets accounts flagged.
+
+Cascade Deletes: If a user deletes their account (onDelete: Cascade), it automatically wipes their leads and campaigns, keeping your database clean and compliant with data privacy laws.

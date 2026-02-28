@@ -1,0 +1,146 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// --- ENUMS ---
+// Enums keep your data structured and prevent typos in the AI's generated code.
+
+enum SubscriptionTier {
+  FREE
+  PRO
+  ENTERPRISE
+}
+
+enum LeadStatus {
+  UNCONNECTED
+  INVITE_PENDING
+  CONNECTED
+  REPLIED
+  BOUNCED
+}
+
+enum CampaignStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  COMPLETED
+}
+
+enum ActionType {
+  PROFILE_VISIT
+  INVITE
+  MESSAGE
+  EMAIL
+  CHECK_REPLY
+}
+
+enum ActionStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
+// --- MODELS ---
+
+model User {
+  id               String           @id @default(uuid())
+  email            String           @unique
+  passwordHash     String?          // Nullable if you use OAuth (Google Auth)
+  linkedinCookie   String?          // The stolen li_at cookie
+  proxyIp          String?          // Assigned residential proxy for this user
+  dailyInviteLimit Int              @default(30) // Anti-ban safeguard
+  tier             SubscriptionTier @default(FREE)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  // Relations
+  leads        Lead[]
+  campaigns    Campaign[]
+  actionLogs   ActionLog[]
+}
+
+model Lead {
+  id             String     @id @default(uuid())
+  userId         String
+  linkedinUrl    String     
+  firstName      String?
+  lastName       String?
+  jobTitle       String?
+  company        String?
+  email          String?
+  status         LeadStatus @default(UNCONNECTED)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  // Relations
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  campaignLeads  CampaignLead[]
+  actionLogs     ActionLog[]
+
+  // Ensure a user doesn't import the same LinkedIn profile twice
+  @@unique([userId, linkedinUrl]) 
+}
+
+model Campaign {
+  id           String         @id @default(uuid())
+  userId       String
+  name         String
+  status       CampaignStatus @default(DRAFT)
+  
+  // This is crucial. It stores the flowchart logic (e.g., {"step1": "invite", "step2": "wait_3_days", "step3": "message_1"})
+  workflowJson Json           
+  
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  // Relations
+  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  leads        CampaignLead[]
+}
+
+// This is the "State Machine" table. It tracks exactly where a lead is inside a specific campaign.
+model CampaignLead {
+  id             String    @id @default(uuid())
+  campaignId     String
+  leadId         String
+  
+  // Maps to a step inside the Campaign's workflowJson
+  currentStepId  String    
+  
+  // The exact time the worker should pick this lead up for the next action
+  nextActionDate DateTime  @default(now()) 
+  
+  isCompleted    Boolean   @default(false)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  // Relations
+  campaign       Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  lead           Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  // A lead should only be in a specific campaign once
+  @@unique([campaignId, leadId])
+}
+
+// The audit trail and analytics engine. Every action goes here.
+model ActionLog {
+  id           String       @id @default(uuid())
+  userId       String
+  leadId       String
+  actionType   ActionType
+  status       ActionStatus @default(PENDING)
+  errorMessage String?      // If LinkedIn blocks the action, log it here
+  executedAt   DateTime     @default(now())
+
+  // Relations
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lead         Lead         @relation(fields: [leadId], references: [id], onDelete: Cascade)
+}

@@ -1,0 +1,10 @@
+Document 5: Security & Anti-Ban Protocol
+If you skip this, your users will lose their LinkedIn accounts, and your app will fail.
+
+Rate Limiting: Enforce hard daily limits. Free LinkedIn accounts can only safely send ~20-30 invites a day. Premium can send ~50-80. Your backend must rigidly block actions past this quota.
+
+IP Consistency: Cloud execution must happen from an IP address in the same country/region as the user. If a user logs in from Paris, but your AWS server pings LinkedIn from Ohio, the account gets restricted.
+
+Human Emulation: Do not just hit API endpoints. If using Playwright, emulate mouse movements, random scrolling, and realistic typing speeds.
+
+Header Matching: Ensure User-Agent strings and browser fingerprinting exactly match the user's actual browser.

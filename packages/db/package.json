@@ -1,0 +1,15 @@
+{
+    "name": "@repo/db",
+    "version": "1.0.0",
+    "private": true,
+    "main": "./index.ts",
+    "types": "./index.ts",
+    "devDependencies": {
+        "@prisma/client": "^6.0.1",
+        "prisma": "^6.0.1"
+    },
+    "dependencies": {
+        "@types/bcryptjs": "^3.0.0",
+        "bcryptjs": "^3.0.3"
+    }
+}

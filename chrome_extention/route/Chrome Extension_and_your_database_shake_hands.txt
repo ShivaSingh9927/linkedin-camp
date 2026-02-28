@@ -1,0 +1,15 @@
+1. The Setup & Dependencies
+First, you'll need to install these packages in your backend folder:
+
+Bash
+npm install express cors dotenv @prisma/client zod
+npm install -D nodemon typescript @types/express @types/node
+
+Key Architectural Notes for Your AI Prompt
+When you ask your AI to expand on this, make sure you enforce these rules:
+
+Authentication Middleware: I hardcoded userId into the JSON payload for simplicity, but in production, the extension should pass a Bearer Token (JWT) in the Authorization header. The backend should extract the userId from that token to prevent spoofing.
+
+The skipDuplicates Flag: This is a lifesaver in Prisma. LinkedIn searches often overlap. If a user scrapes page 1, and then scrapes page 2, the same person might appear twice. skipDuplicates: true checks the @@unique([userId, linkedinUrl]) constraint we made in the schema and gracefully ignores duplicates without throwing a 500 error.
+
+CORS (Cross-Origin Resource Sharing): Your main server.ts or app.ts file must have CORS configured to accept requests from the Chrome Extension, otherwise the browser will block the POST requests.

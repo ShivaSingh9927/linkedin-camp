@@ -1,0 +1,14 @@
+Document 1: System Architecture Plan
+A tool like Waalaxy operates on a hybrid model: a Chrome Extension (to act on behalf of the user and steal session cookies) and a Cloud Backend (to manage data, schedules, and workflows).
+
+Client Side 1 (Chrome Extension): Injects code into LinkedIn, scrapes DOM elements, extracts the user's li_at (LinkedIn Auth) cookie, and syncs it to your backend.
+
+Client Side 2 (Web Dashboard): A React/Next.js frontend where users build campaigns, view CRMs, and check analytics.
+
+API Gateway: Routes frontend and extension requests to the appropriate backend services.
+
+Core Backend API: Manages CRUD operations for leads, campaigns, and user accounts.
+
+Worker/Queue Engine (Crucial): This is the heart of the app. It handles the asynchronous, staggered execution of LinkedIn actions (sending invites, checking replies) to prevent users from getting banned.
+
+Proxy Manager: Assigns static or rotating residential IP proxies to users so cloud actions match their geographic location.

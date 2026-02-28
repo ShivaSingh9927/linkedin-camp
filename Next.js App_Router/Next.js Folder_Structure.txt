@@ -1,0 +1,48 @@
+src/
+├── app/                              # The App Router (File-based routing)
+│   ├── (auth)/                       # Route Group: Bypasses the dashboard layout
+│   │   ├── login/page.tsx
+│   │   └── register/page.tsx
+│   ├── dashboard/                    # The main authenticated app
+│   │   ├── layout.tsx                # Dashboard shell (Sidebar, Header, Auth Check)
+│   │   ├── page.tsx                  # Main analytics & overview
+│   │   ├── leads/
+│   │   │   └── page.tsx              # The CRM table view (Filtering, importing)
+│   │   ├── campaigns/
+│   │   │   ├── page.tsx              # List of user's campaigns
+│   │   │   ├── new/page.tsx          # Form to name/setup a new campaign
+│   │   │   └── [id]/                 # Dynamic route for the builder
+│   │   │       └── page.tsx          # The React Flow drag-and-drop interface
+│   │   └── settings/                 # Manage proxy, daily limits, billing
+│   │       └── page.tsx
+│   ├── globals.css                   # Tailwind CSS imports
+│   └── layout.tsx                    # Root layout (Providers, Fonts)
+│
+├── components/                       # Reusable UI elements
+│   ├── ui/                           # (Keep Shadcn UI components isolated here)
+│   ├── layout/                       # Sidebar, TopNav, UserDropdown
+│   ├── leads/                        # LeadTable, ImportModal, StatusBadge
+│   └── campaigns/                    # The complex React Flow components
+│       ├── FlowBuilder.tsx           # The main React Flow canvas
+│       ├── SidebarToolbox.tsx        # Drag-and-drop node palette
+│       └── nodes/                    # Custom Node UI components
+│           ├── TriggerNode.tsx
+│           ├── ActionNode.tsx
+│           ├── ConditionNode.tsx
+│           └── AiPersonalizeNode.tsx # UI for the custom AI integration we discussed
+│
+├── lib/                              # Core utilities and configs
+│   ├── utils.ts                      # Tailwind merge utility (from Shadcn)
+│   ├── api.ts                        # Axios/Fetch client to talk to your Express backend
+│   ├── auth.ts                       # JWT parsing or NextAuth configuration
+│   └── validations/                  # Zod schemas (Shared with backend if using a monorepo)
+│       ├── campaign.schema.ts
+│       └── lead.schema.ts
+│
+├── types/                            # TypeScript interfaces
+│   ├── index.ts
+│   └── react-flow.d.ts               # Custom types for the workflowJson DAG
+│
+└── actions/                          # Next.js Server Actions (Optional but recommended)
+    ├── lead-actions.ts               # Async functions to fetch/mutate leads
+    └── campaign-actions.ts           # Async functions to save the workflowJson

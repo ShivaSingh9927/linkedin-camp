@@ -1,0 +1,14 @@
+Document 2: The Tech Stack (Optimized for AI/Vibecoding)
+To build this fast and efficiently with AI, choose a modern, strongly-typed stack with excellent ecosystem support.
+
+Frontend/Dashboard: Next.js (App Router), TailwindCSS, Shadcn UI.
+
+Backend Framework: Node.js with TypeScript (Express or NestJS) OR Python (FastAPI - great for data parsing).
+
+Database: PostgreSQL (using Prisma or Drizzle ORM for easy AI generation).
+
+Background Jobs / Campaign Engine: Trigger.dev or Inngest. Do not build your own queue from scratch. These tools allow you to write complex, long-running workflow code (e.g., "Wait 3 days, then check if replied") easily.
+
+Headless Browser/Scraping: Playwright or Puppeteer.
+
+Caching & Fast Queues: Redis.

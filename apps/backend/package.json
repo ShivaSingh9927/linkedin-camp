@@ -1,0 +1,38 @@
+{
+    "name": "backend",
+    "version": "1.0.0",
+    "private": true,
+    "main": "dist/server.js",
+    "scripts": {
+        "dev": "ts-node-dev --respawn src/server.ts",
+        "build": "tsc",
+        "start": "node dist/server.js"
+    },
+    "dependencies": {
+        "express": "latest",
+        "cors": "latest",
+        "dotenv": "latest",
+        "@prisma/client": "latest",
+        "@repo/db": "*",
+        "@repo/types": "*",
+        "zod": "latest",
+        "jsonwebtoken": "latest",
+        "bcryptjs": "latest",
+        "bullmq": "latest",
+        "playwright": "latest",
+        "playwright-extra": "latest",
+        "puppeteer-extra-plugin-stealth": "latest",
+        "node-cron": "latest",
+        "ioredis": "latest"
+    },
+    "devDependencies": {
+        "@types/express": "latest",
+        "@types/node": "latest",
+        "@types/cors": "latest",
+        "@types/jsonwebtoken": "latest",
+        "@types/bcryptjs": "latest",
+        "@types/node-cron": "latest",
+        "ts-node-dev": "latest",
+        "typescript": "latest"
+    }
+}

@@ -1,0 +1,17 @@
+# dependencies
+node_modules
+.pnpm-store
+
+# next.js
+.next/
+out/
+
+# build
+dist/
+build/
+
+# misc
+*.log
+.env
+.env.local
+.DS_Store

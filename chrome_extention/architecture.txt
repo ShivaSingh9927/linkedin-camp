@@ -1,0 +1,14 @@
+1. The Chrome Extension Architecture
+Your extension will be composed of three distinct moving parts that communicate with each other via Chrome's message-passing API.
+
+The Popup (popup.html / popup.js): * This is the mini UI that opens when a user clicks the extension icon.
+
+Role: Authenticate the user with your SaaS backend (via a JWT token saved in Chrome storage) and display a button like "Import Leads from this Search."
+
+The Content Script (content.js): * This is JavaScript that is forcibly injected directly into the DOM of linkedin.com.
+
+Role: It reads the HTML of the page. When the user is on a LinkedIn Search page, this script scrapes the names, job titles, and profile URLs of the people on that page. It then sends this data to the Background Service Worker.
+
+The Background Service Worker (background.js): * This is the invisible brain running in the background.
+
+Role: It has special permissions to read the browser's cookie jar. It extracts the li_at cookie and makes the actual HTTP POST requests to your backend database to save the leads and the cookie securely.

@@ -1,0 +1,1 @@
+# Project Specific Rules\n\n- **Virtual Environment**: All installations and running of code (Node.js/Python) MUST be done within the `.venv` virtual environment.\n- **Activation**: Always run `source .venv/bin/activate` before executing commands.

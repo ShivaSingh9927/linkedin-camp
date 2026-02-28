@@ -1,0 +1,42 @@
+{
+    "manifest_version": 3,
+    "name": "AutoConnect - LinkedIn Outreach",
+    "version": "1.0.0",
+    "description": "Sync LinkedIn sessions and import leads directly to your CRM.",
+    "action": {
+        "default_popup": "popup.html"
+    },
+    "permissions": [
+        "cookies",
+        "storage",
+        "tabs"
+    ],
+    "host_permissions": [
+        "*://*.linkedin.com/*",
+        "http://localhost:3000/*",
+        "http://localhost:3001/*"
+    ],
+    "background": {
+        "service_worker": "background.js"
+    },
+    "content_scripts": [
+        {
+            "matches": [
+                "*://*.linkedin.com/*"
+            ],
+            "js": [
+                "content.js"
+            ],
+            "run_at": "document_idle"
+        },
+        {
+            "matches": [
+                "http://localhost:3000/*"
+            ],
+            "js": [
+                "dashboard-sync.js"
+            ],
+            "run_at": "document_idle"
+        }
+    ]
+}

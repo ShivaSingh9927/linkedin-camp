@@ -1,0 +1,26 @@
+Document 6: API Endpoint Specification (Example Outline)
+Here are the core REST endpoints you'll need to generate:
+
+Auth:
+
+POST /api/v1/auth/register
+
+POST /api/v1/auth/extension-sync (Receives cookies)
+
+Leads:
+
+POST /api/v1/leads/import (From CSV or Extension scraper)
+
+GET /api/v1/leads (With pagination and filtering)
+
+Campaigns:
+
+POST /api/v1/campaigns (Create new workflow)
+
+POST /api/v1/campaigns/{id}/start
+
+POST /api/v1/campaigns/{id}/pause
+
+Analytics:
+
+GET /api/v1/analytics/dashboard-stats

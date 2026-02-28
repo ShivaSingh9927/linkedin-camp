@@ -1,0 +1,22 @@
+1. The workflow.json Data Structure
+Since you specifically mentioned wanting to add advancements to the standard Waalaxy formula, I've included an AI_PERSONALIZE node type. Instead of just sending static template variables like {{firstName}}, this allows you to hook the workflow into an AI marketing agent pipeline that researches the lead's company and generates a highly contextualized message before sending.
+
+2. How the Backend Worker Reads This
+When your backend queue picks up a lead, it needs to know what step it is currently on. Here is how the logic flows:
+
+State Tracking: The CampaignLead table in your database has a currentStepId column. Let's say it's currently "node_5" (the Invite step).
+
+Execution: The Playwright worker executes the invite.
+
+Pathfinding: Once successful, the worker looks at the edges array. It finds the edge where source is "node_5". It sees the target is "node_6".
+
+Database Update: The worker updates the CampaignLead table:
+
+currentStepId becomes "node_6".
+
+Because node 6 is a CONDITION checking for acceptance with a wait time, it calculates the nextActionDate and saves it. The lead now goes dormant until that date hits.
+
+3. Frontend Implementation Tip (React Flow)
+When you prompt your AI to build the frontend dashboard for this, tell it to use React Flow (@xyflow/react).
+
+React Flow natively uses a very similar nodes and edges state structure. You can map your backend JSON almost exactly 1:1 to the React Flow state, which makes saving and loading user campaigns incredibly straightforward. You just stringify the state and drop it into Prisma.

@@ -1,0 +1,28 @@
+Document 4: Core Backend Microservices & Logic
+To replicate Waalaxy, your backend must be split into logical domains.
+
+1. The Sync & Auth Service
+Receives the LinkedIn session cookies (li_at and JSESSIONID) from the Chrome Extension.
+
+Validates the cookie. If it expires, it alerts the frontend to prompt the user to log back into LinkedIn.
+
+2. The Campaign State Machine (The Brain)
+Executes the logic tree built by the user.
+
+Example flow: Send Invite -> Wait 1 Day -> Check Connection Status -> If Connected, Send Message 1 -> Wait 3 Days -> Send Message 2.
+
+Requires a Cron job or Queue system to wake up daily, check which leads are due for the next step, and push those tasks to the Worker Service.
+
+3. The LinkedIn Execution Worker
+Picks up a task (e.g., "Send invite to Lead X for User Y").
+
+Routes the request through User Y's assigned Proxy.
+
+Uses Playwright or reverse-engineered LinkedIn undocumented APIs to execute the action.
+
+Implements Smart Delays: Randomized delays between actions (e.g., wait 45-120 seconds between profile visits) to mimic human behavior.
+
+4. The Analytics Service
+Aggregates data from the Action_Log table.
+
+Calculates acceptance rates, reply rates, and bounce rates.

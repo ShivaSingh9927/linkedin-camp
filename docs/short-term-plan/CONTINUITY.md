@@ -1,0 +1,21 @@
+# Continuity Ledger - Waalaxy Replication
+
+- **Goal**: Replicate Waalaxy (LinkedIn Automation Tool) with modern technical advancements.
+    - Success Criteria: Functional Chrome Extension for scraping/auth, Next.js Dashboard for campaign management, and a robust Backend with anti-bot execution.
+- **Constraints/Assumptions**:
+    - Hybrid model: Extension + Cloud Backend.
+    - Anti-bot is critical: Playwright + Stealth + Residential Proxies + Human Emulation.
+    - Scalability: Use Redis/BullMQ for task queuing.
+- **Key Decisions**:
+    - Tech Stack: Next.js (App Router), Express (Backend), Prisma (ORM), BullMQ (Queueing), Playwright (Execution).
+    - Database: PostgreSQL.
+    - UI: Shadcn UI + React Flow for campaign builder.
+- **State**:
+  - Done: Documentation research, Planning, Environment setup (.venv, npm install).
+  - Now: Initializing backend skeleton and shared types.
+  - Next: Implementing JWT auth and Extension sync.
+- **Open Questions**:
+    - Should we use a monorepo (e.g., Turborepo) or separate repositories for Frontend, Backend, and Extension? (UNCONFIRMED)
+    - Specific Proxy provider to integrate? (UNCONFIRMED)
+- **Working Set**:
+    - `/nuvodata/User_data/shiva/linkedin-camp/` (Source docs)
