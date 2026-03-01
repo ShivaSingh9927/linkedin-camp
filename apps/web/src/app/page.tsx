@@ -9,13 +9,21 @@ import {
   Clock,
   ArrowUpRight,
   Loader2,
-  Activity
+  Activity,
+  Rocket,
+  ArrowRight,
 } from "lucide-react";
 import api from '@/lib/api';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { PREBUILT_TEMPLATES } from '@/lib/prebuilt-templates';
+import { CampaignNameModal } from '@/components/CampaignNameModal';
 
 export default function DashboardPage() {
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [pendingTemplate, setPendingTemplate] = useState<typeof PREBUILT_TEMPLATES[0] | null>(null);
+  const router = useRouter();
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -30,10 +38,36 @@ export default function DashboardPage() {
     };
 
     fetchStats();
-    // Refresh every 30 seconds
     const interval = setInterval(fetchStats, 30000);
     return () => clearInterval(interval);
   }, []);
+
+  const handleUseTemplate = (template: typeof PREBUILT_TEMPLATES[0]) => {
+    setPendingTemplate(template);
+  };
+
+  const handleConfirmCreate = async (name: string) => {
+    if (!pendingTemplate) return;
+    const template = pendingTemplate;
+    setPendingTemplate(null);
+    try {
+      const workflowJson = {
+        nodes: template.nodes.map(n => ({
+          id: n.id,
+          type: n.data?.type || 'TRIGGER',
+          subType: n.data?.subType || 'START',
+          data: n.data || {},
+          position: n.position,
+        })),
+        edges: template.edges,
+      };
+      const res = await api.post('/campaigns', { name, workflowJson });
+      router.push(`/campaigns/${res.data.id}/builder`);
+    } catch (err) {
+      console.error('Failed to create campaign from template:', err);
+      alert('Error creating campaign. Make sure the backend is running.');
+    }
+  };
 
   if (loading) return (
     <div className="flex h-full items-center justify-center">
@@ -48,10 +82,13 @@ export default function DashboardPage() {
     { name: 'Weekly Growth', value: '+12%', icon: TrendingUp, color: 'text-amber-600', bg: 'bg-amber-50' },
   ];
 
+  // Show top 3 templates for Quick Start
+  const quickStartTemplates = PREBUILT_TEMPLATES.slice(0, 3);
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       <div>
-        <h1 className="text-3xl font-black text-slate-900 uppercase tracking-tight">Main Command</h1>
+        <h1 className="text-3xl font-black text-slate-900 uppercase tracking-tight">Hello, Shiva</h1>
         <p className="text-slate-500 font-medium">Your outreach engine performance at a glance.</p>
       </div>
 
@@ -71,6 +108,52 @@ export default function DashboardPage() {
             </div>
           </div>
         ))}
+      </div>
+
+      {/* Quick Start Templates */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-3">
+            <Rocket className="w-6 h-6 text-indigo-600" />
+            <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight">Quick Start</h2>
+          </div>
+          <Link
+            href="/campaigns/templates-gallery"
+            className="text-sm font-bold text-indigo-600 hover:text-indigo-700 flex items-center space-x-1 transition-colors"
+          >
+            <span>View all templates</span>
+            <ArrowRight className="w-4 h-4" />
+          </Link>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {quickStartTemplates.map((tpl) => (
+            <div
+              key={tpl.id}
+              className="bg-white rounded-3xl border shadow-sm hover:shadow-lg transition-all overflow-hidden group cursor-pointer"
+              onClick={() => handleUseTemplate(tpl)}
+            >
+              <div className={`h-2 bg-gradient-to-r ${tpl.color}`} />
+              <div className="p-6 space-y-3">
+                <div className="flex items-center space-x-3">
+                  <span className="text-2xl">{tpl.icon}</span>
+                  <div>
+                    <p className="font-black text-slate-800 uppercase tracking-tight text-sm">{tpl.name}</p>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{tpl.category}</p>
+                  </div>
+                </div>
+                <p className="text-sm text-slate-500 leading-relaxed">{tpl.description}</p>
+                <div className="flex items-center space-x-2 text-xs text-slate-400">
+                  <span className="bg-slate-50 px-2 py-1 rounded-full font-bold">{tpl.nodes.length - 1} steps</span>
+                  <span className="bg-slate-50 px-2 py-1 rounded-full font-bold">{tpl.nodes.filter(n => n.data.subType === 'WAIT').length} delays</span>
+                </div>
+                <button className="w-full mt-2 py-2.5 bg-indigo-50 text-indigo-700 rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-indigo-600 hover:text-white transition-all">
+                  Use This Template
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -131,6 +214,14 @@ export default function DashboardPage() {
           <Send className="absolute -bottom-10 -right-10 w-48 h-48 opacity-5 text-white transform group-hover:scale-110 transition-transform duration-700" />
         </div>
       </div>
+
+      {/* Campaign Name Modal */}
+      <CampaignNameModal
+        isOpen={!!pendingTemplate}
+        defaultName={pendingTemplate?.name || 'New Campaign'}
+        onConfirm={handleConfirmCreate}
+        onCancel={() => setPendingTemplate(null)}
+      />
     </div>
   );
 }

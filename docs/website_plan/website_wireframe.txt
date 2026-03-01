@@ -1,0 +1,25 @@
+flowchart LR
+  %% Pages (nodes)
+  Home["Home"]
+  Prospects["Prospects"]
+  CampaignsList["Campaigns List"]
+  MessageTemplates["Message Templates"]
+  Queue["Queue"]
+  Inbox["Inbox"]
+  Team["Team"]
+  Settings["Settings"]
+  Pricing["Pricing"]
+  Home --> Prospects
+  Home --> CampaignsList
+  Home --> Inbox
+  Home --> Team
+  Home --> Settings
+  Home --> Pricing
+
+  %% Section edges
+  CampaignsList --> MessageTemplates
+  CampaignsList --> Queue
+
+  %% Cross-links
+  Prospects --> CampaignsList
+  Settings --> Pricing

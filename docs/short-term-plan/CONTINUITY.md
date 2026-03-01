@@ -1,21 +1,42 @@
-# Continuity Ledger - Waalaxy Replication
+# Continuity Ledger
 
-- **Goal**: Replicate Waalaxy (LinkedIn Automation Tool) with modern technical advancements.
-    - Success Criteria: Functional Chrome Extension for scraping/auth, Next.js Dashboard for campaign management, and a robust Backend with anti-bot execution.
-- **Constraints/Assumptions**:
-    - Hybrid model: Extension + Cloud Backend.
-    - Anti-bot is critical: Playwright + Stealth + Residential Proxies + Human Emulation.
-    - Scalability: Use Redis/BullMQ for task queuing.
-- **Key Decisions**:
-    - Tech Stack: Next.js (App Router), Express (Backend), Prisma (ORM), BullMQ (Queueing), Playwright (Execution).
-    - Database: PostgreSQL.
-    - UI: Shadcn UI + React Flow for campaign builder.
-- **State**:
-  - Done: Documentation research, Planning, Environment setup (.venv, npm install).
-  - Now: Initializing backend skeleton and shared types.
-  - Next: Implementing JWT auth and Extension sync.
-- **Open Questions**:
-    - Should we use a monorepo (e.g., Turborepo) or separate repositories for Frontend, Backend, and Extension? (UNCONFIRMED)
-    - Specific Proxy provider to integrate? (UNCONFIRMED)
-- **Working Set**:
-    - `/nuvodata/User_data/shiva/linkedin-camp/` (Source docs)
+- Goal: Build LinkedIn campaign automation platform with polished UI, pre-built templates, enhanced leads management, and full E2E testing
+- Constraints/Assumptions:
+  - Backend uses Express + Prisma + PostgreSQL
+  - Frontend uses Next.js 16 + TailwindCSS + ReactFlow
+  - Python env: `.venv` (source .venv/bin/activate)
+  - Env file: `/nuvodata/User_data/shiva/linkedin-camp/.env`
+  - Prisma schema at `packages/db/schema.prisma` (mirror at `prisma_schema/schema.prisma`)
+- Key decisions:
+  - 6 pre-built campaign templates (LinkedIn Classic, LinkedIn+Note, AI Outreach, Email Drip, Multi-Channel, Warm-up)
+  - Templates stored as static TS data in `apps/web/src/lib/prebuilt-templates.ts`
+  - Leads schema extended with `country`, `gender`, `tags[]` fields
+  - E2E test is a CLI script using fetch (not Playwright)
+  - User can name campaigns from template (prompt with default name)
+- State:
+  - Done:
+    - Prisma migration: added country, gender, tags to Lead model
+    - Created 6 pre-built templates data file
+    - Home page: added Quick Start section (top 3 templates)
+    - Campaigns sidebar: added "Prebuilt Templates" nav item
+    - Created /campaigns/templates-gallery page (all 6 templates with previews)
+    - Enhanced /leads page: filter pills (Status, Gender, Tags, Email, Country), 10 columns
+    - Updated lead controller: demo data now includes 5 leads with country/gender/tags/email
+    - CSV import now maps Country, Gender, Tags columns
+    - Created E2E walkthrough test script (10-step CLI test)
+    - Build passes: all 15 routes compile successfully
+  - Now: Ready for testing
+  - Next:
+    - Start backend + frontend and test in browser
+    - Run E2E walkthrough test
+    - Fix any issues found during testing
+- Open questions: None
+- Working set:
+  - `apps/web/src/lib/prebuilt-templates.ts` (NEW)
+  - `apps/web/src/app/page.tsx` (MODIFIED - Quick Start)
+  - `apps/web/src/app/campaigns/templates-gallery/page.tsx` (NEW)
+  - `apps/web/src/components/Sidebar.tsx` (MODIFIED - Prebuilt Templates nav)
+  - `apps/web/src/app/leads/page.tsx` (REWRITTEN - filters + columns)
+  - `apps/backend/src/controllers/lead.controller.ts` (MODIFIED - new fields)
+  - `packages/db/schema.prisma` (MODIFIED - country, gender, tags)
+  - `apps/backend/src/scripts/e2e-walkthrough.ts` (NEW - E2E test)

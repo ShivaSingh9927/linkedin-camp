@@ -4,6 +4,7 @@ import { chromium } from 'playwright-extra';
 const stealthPlugin = require('puppeteer-extra-plugin-stealth');
 import { prisma } from '../server';
 import { ActionType, WorkflowJson } from '@repo/types';
+import { generateIcebreaker } from '../services/ai.service';
 
 chromium.use(stealthPlugin());
 
@@ -11,6 +12,16 @@ const redisConnection = new Redis(process.env.REDIS_URL || 'redis://localhost:63
 
 const randomDelay = (min = 2000, max = 5000) =>
     new Promise(resolve => setTimeout(resolve, Math.floor(Math.random() * (max - min + 1) + min)));
+
+const injectVariables = (template: string, lead: any, icebreaker?: string | null) => {
+    if (!template) return '';
+    return template
+        .replace(/{firstName}/g, lead?.firstName || '')
+        .replace(/{lastName}/g, lead?.lastName || '')
+        .replace(/{company}/g, lead?.company || '')
+        .replace(/{jobTitle}/g, lead?.jobTitle || '')
+        .replace(/{icebreaker}/g, icebreaker || '');
+};
 
 export const initWorker = () => {
     const worker = new Worker('linkedin-actions', async (job: Job) => {
@@ -23,14 +34,32 @@ export const initWorker = () => {
         const currentNode = workflow.nodes.find(n => n.id === currentStepId);
         if (!currentNode) return;
 
-        // 2. Execute the action if it's an ACTION node
-        if (currentNode.type === 'ACTION') {
-            const user = await prisma.user.findUnique({ where: { id: userId } });
-            const lead = await prisma.lead.findUnique({ where: { id: leadId } });
+        // 2. Execute the action
+        const user = await prisma.user.findUnique({ where: { id: userId } });
+        const lead = await prisma.lead.findUnique({ where: { id: leadId } });
+        const campaignLead = await prisma.campaignLead.findUnique({ where: { id: campaignLeadId } });
+
+        if (currentNode.subType === 'AI_PERSONALIZE') {
+            console.log(`[AI] Generating personalization for ${lead?.firstName}`);
+            const icebreaker = await generateIcebreaker(lead);
+            await prisma.campaignLead.update({
+                where: { id: campaignLeadId },
+                data: { personalization: icebreaker }
+            });
+            console.log(`[AI] Personalization saved: "${icebreaker}"`);
+
+            // Move to next step immediately after AI generation
+            await prisma.actionLog.create({
+                data: { userId, leadId, actionType: 'AI_PERSONALIZE' as ActionType, status: 'SUCCESS' }
+            });
+        } else if (currentNode.type === 'ACTION') {
+            // Prepare localized message if applicable
+            const message = injectVariables(currentNode.data?.message || '', lead, campaignLead?.personalization);
 
             // MOCK MODE: If no cookies, we just log and succeed for testing
             if (!user?.linkedinCookie || process.env.MOCK_PLAYWRIGHT === 'true') {
                 console.log(`[MOCK MODE] Executing ${currentNode.subType} for ${lead?.firstName} ${lead?.lastName}`);
+                if (message) console.log(`[MOCK MODE] Message Content: "${message}"`);
                 await randomDelay(500, 1000);
                 await prisma.actionLog.create({
                     data: { userId, leadId, actionType: currentNode.subType as ActionType, status: 'SUCCESS' }
@@ -80,8 +109,8 @@ export const initWorker = () => {
                                 await addNoteButton.click();
                                 await randomDelay(1000, 2000);
 
-                                if (currentNode.data?.message) {
-                                    await page.locator('#custom-message').fill(currentNode.data.message);
+                                if (message) {
+                                    await page.locator('#custom-message').fill(message);
                                     await randomDelay(1000, 2000);
                                 }
                             }
@@ -106,7 +135,7 @@ export const initWorker = () => {
                             await randomDelay(2000, 3000);
 
                             const textBox = page.locator('.msg-form__contenteditable');
-                            await textBox.fill(currentNode.data?.message || 'Hi!');
+                            await textBox.fill(message || 'Hi!');
                             await randomDelay(1000, 2000);
 
                             await page.keyboard.press('Control+Enter');

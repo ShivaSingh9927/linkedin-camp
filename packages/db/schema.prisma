@@ -36,6 +36,7 @@ enum ActionType {
   MESSAGE
   EMAIL
   CHECK_REPLY
+  AI_PERSONALIZE
 }
 
 enum ActionStatus {
@@ -72,6 +73,9 @@ model Lead {
   jobTitle       String?
   company        String?
   email          String?
+  country        String?
+  gender         String?
+  tags           String[]   @default([])
   status         LeadStatus @default(UNCONNECTED)
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
@@ -105,6 +109,7 @@ model CampaignLead {
   currentStepId  String    
   nextActionDate DateTime  @default(now()) 
   isCompleted    Boolean   @default(false)
+  personalization String?   
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 

@@ -28,6 +28,10 @@ app.use('/api/v1/leads', leadRoutes);
 app.use('/api/v1/campaigns', campaignRoutes);
 app.use('/api/v1/stats', statsRoutes);
 
+app.get('/', (req, res) => {
+    res.json({ message: 'LinkedIn Campaign Engine API is running', version: '1.0.0' });
+});
+
 // Initialize Campaign Engine
 initScheduler();
 initWorker();

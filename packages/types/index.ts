@@ -19,6 +19,7 @@ export enum ActionType {
     MESSAGE = 'MESSAGE',
     EMAIL = 'EMAIL',
     CHECK_REPLY = 'CHECK_REPLY',
+    AI_PERSONALIZE = 'AI_PERSONALIZE',
 }
 
 export interface WorkflowNode {

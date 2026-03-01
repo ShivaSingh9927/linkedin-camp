@@ -1,6 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -11,7 +8,6 @@ datasource db {
 }
 
 // --- ENUMS ---
-// Enums keep your data structured and prevent typos in the AI's generated code.
 
 enum SubscriptionTier {
   FREE
@@ -40,6 +36,7 @@ enum ActionType {
   MESSAGE
   EMAIL
   CHECK_REPLY
+  AI_PERSONALIZE
 }
 
 enum ActionStatus {
@@ -53,10 +50,10 @@ enum ActionStatus {
 model User {
   id               String           @id @default(uuid())
   email            String           @unique
-  passwordHash     String?          // Nullable if you use OAuth (Google Auth)
-  linkedinCookie   String?          // The stolen li_at cookie
-  proxyIp          String?          // Assigned residential proxy for this user
-  dailyInviteLimit Int              @default(30) // Anti-ban safeguard
+  passwordHash     String?          
+  linkedinCookie   String?          
+  proxyIp          String?          
+  dailyInviteLimit Int              @default(30) 
   tier             SubscriptionTier @default(FREE)
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
@@ -76,6 +73,9 @@ model Lead {
   jobTitle       String?
   company        String?
   email          String?
+  country        String?
+  gender         String?
+  tags           String[]   @default([])
   status         LeadStatus @default(UNCONNECTED)
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
@@ -85,7 +85,6 @@ model Lead {
   campaignLeads  CampaignLead[]
   actionLogs     ActionLog[]
 
-  // Ensure a user doesn't import the same LinkedIn profile twice
   @@unique([userId, linkedinUrl]) 
 }
 
@@ -94,10 +93,7 @@ model Campaign {
   userId       String
   name         String
   status       CampaignStatus @default(DRAFT)
-  
-  // This is crucial. It stores the flowchart logic (e.g., {"step1": "invite", "step2": "wait_3_days", "step3": "message_1"})
   workflowJson Json           
-  
   createdAt    DateTime       @default(now())
   updatedAt    DateTime       @updatedAt
 
@@ -106,19 +102,14 @@ model Campaign {
   leads        CampaignLead[]
 }
 
-// This is the "State Machine" table. It tracks exactly where a lead is inside a specific campaign.
 model CampaignLead {
   id             String    @id @default(uuid())
   campaignId     String
   leadId         String
-  
-  // Maps to a step inside the Campaign's workflowJson
   currentStepId  String    
-  
-  // The exact time the worker should pick this lead up for the next action
   nextActionDate DateTime  @default(now()) 
-  
   isCompleted    Boolean   @default(false)
+  personalization String?   
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
@@ -126,18 +117,16 @@ model CampaignLead {
   campaign       Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   lead           Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
 
-  // A lead should only be in a specific campaign once
   @@unique([campaignId, leadId])
 }
 
-// The audit trail and analytics engine. Every action goes here.
 model ActionLog {
   id           String       @id @default(uuid())
   userId       String
   leadId       String
   actionType   ActionType
   status       ActionStatus @default(PENDING)
-  errorMessage String?      // If LinkedIn blocks the action, log it here
+  errorMessage String?      
   executedAt   DateTime     @default(now())
 
   // Relations

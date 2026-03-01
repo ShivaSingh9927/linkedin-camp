@@ -7,6 +7,7 @@ import {
     startCampaign,
     pauseCampaign,
     deleteCampaign,
+    getCampaignStatus,
 } from '../controllers/campaign.controller';
 import { authMiddleware } from '../middleware/auth';
 
@@ -21,5 +22,7 @@ router.put('/:id', updateCampaign);
 router.delete('/:id', deleteCampaign);
 router.post('/:id/start', startCampaign);
 router.post('/:id/pause', pauseCampaign);
+// New endpoint to fetch detailed campaign status
+router.get('/:id/status', getCampaignStatus);
 
 export default router;

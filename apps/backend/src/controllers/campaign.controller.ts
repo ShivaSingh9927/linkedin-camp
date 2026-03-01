@@ -141,3 +141,60 @@ export const deleteCampaign = async (req: any, res: Response) => {
         res.status(500).json({ error: 'Failed to delete campaign' });
     }
 };
+
+// New endpoint: detailed campaign status
+export const getCampaignStatus = async (req: any, res: Response) => {
+    const { id } = req.params;
+    const userId = req.user.id;
+    try {
+        const campaign = await prisma.campaign.findUnique({
+            where: { id, userId },
+        });
+        if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+
+        // Fetch all campaign leads for this campaign
+        const campaignLeads = await prisma.campaignLead.findMany({
+            where: { campaignId: id },
+            include: { lead: true },
+        });
+
+        // For each lead, fetch recent action logs (last 5) by leadId
+        const leadsWithLogs = await Promise.all(
+            campaignLeads.map(async (cl) => {
+                const logs = await prisma.actionLog.findMany({
+                    where: { leadId: cl.leadId, userId },
+                    orderBy: { executedAt: 'desc' },
+                    take: 5,
+                });
+                return {
+                    campaignLeadId: cl.id,
+                    lead: {
+                        id: cl.lead.id,
+                        firstName: cl.lead.firstName,
+                        lastName: cl.lead.lastName,
+                        linkedinUrl: cl.lead.linkedinUrl,
+                    },
+                    currentStepId: cl.currentStepId,
+                    nextActionDate: cl.nextActionDate,
+                    isCompleted: cl.isCompleted,
+                    personalization: cl.personalization,
+                    recentLogs: logs.map((log) => ({
+                        actionType: log.actionType,
+                        status: log.status,
+                        errorMessage: log.errorMessage,
+                        executedAt: log.executedAt,
+                    })),
+                };
+            })
+        );
+
+        res.json({
+            campaign: { id: campaign.id, name: campaign.name, status: campaign.status },
+            leads: leadsWithLogs,
+        });
+    } catch (error) {
+        console.error('Campaign status error:', error);
+        res.status(500).json({ error: 'Failed to fetch campaign status' });
+    }
+};
+
