@@ -49,7 +49,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             if (cookie) {
                 chrome.storage.local.get(['token'], async (result) => {
                     if (result.token) {
-                        const URLS = ['http://localhost:3001', 'http://127.0.0.1:3001'];
+                        const URLS = [
+                            'https://linkedin-camp-production.up.railway.app',
+                            'http://localhost:3001',
+                            'http://127.0.0.1:3001'
+                        ];
                         let lastErr = null;
 
                         for (const base of URLS) {
@@ -83,7 +87,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'IMPORT_LEADS') {
         chrome.storage.local.get(['token'], async (result) => {
             if (result.token) {
-                const URLS = ['http://localhost:3001', 'http://127.0.0.1:3001'];
+                const URLS = [
+                    'https://linkedin-camp-production.up.railway.app',
+                    'http://localhost:3001',
+                    'http://127.0.0.1:3001'
+                ];
                 let lastErr = null;
 
                 for (const base of URLS) {
