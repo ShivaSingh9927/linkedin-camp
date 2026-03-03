@@ -50,13 +50,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 chrome.storage.local.get(['token'], async (result) => {
                     if (result.token) {
                         const URLS = [
-                            'https://linkedin-camp-production.up.railway.app',
                             'http://localhost:3001',
-                            'http://127.0.0.1:3001'
+                            'http://127.0.0.1:3001',
+                            'https://linkedin-camp-production.up.railway.app'
                         ];
                         let lastErr = null;
 
                         for (const base of URLS) {
+                            console.log(`AutoConnect: Trying backend at ${base}`);
                             const resp = await offscreenFetch(`${base}/api/v1/auth/extension-sync`, {
                                 method: 'POST',
                                 headers: {
@@ -88,13 +89,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         chrome.storage.local.get(['token'], async (result) => {
             if (result.token) {
                 const URLS = [
-                    'https://linkedin-camp-production.up.railway.app',
                     'http://localhost:3001',
-                    'http://127.0.0.1:3001'
+                    'http://127.0.0.1:3001',
+                    'https://linkedin-camp-production.up.railway.app'
                 ];
                 let lastErr = null;
 
                 for (const base of URLS) {
+                    console.log(`AutoConnect: Trying backend for import at ${base}`);
                     const resp = await offscreenFetch(`${base}/api/v1/leads/import`, {
                         method: 'POST',
                         headers: {
