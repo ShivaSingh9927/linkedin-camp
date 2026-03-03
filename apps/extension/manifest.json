@@ -9,12 +9,15 @@
     "permissions": [
         "cookies",
         "storage",
-        "tabs"
+        "tabs",
+        "offscreen"
     ],
     "host_permissions": [
         "*://*.linkedin.com/*",
         "http://localhost:3000/*",
-        "http://localhost:3001/*"
+        "http://localhost:3001/*",
+        "http://127.0.0.1:3001/*",
+        "http://127.0.0.1:3000/*"
     ],
     "background": {
         "service_worker": "background.js"
@@ -37,6 +40,16 @@
                 "dashboard-sync.js"
             ],
             "run_at": "document_idle"
+        }
+    ],
+    "web_accessible_resources": [
+        {
+            "resources": [
+                "inject.js"
+            ],
+            "matches": [
+                "*://*.linkedin.com/*"
+            ]
         }
     ]
 }
