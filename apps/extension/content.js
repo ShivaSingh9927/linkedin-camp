@@ -1,537 +1,503 @@
-console.log('AutoConnect Extension Loaded');
+// content.js — LinkedIn content script (isolated world)
+// Receives leads from inject.js (MAIN world) via postMessage
+// Handles DOM scanning + popup communication + auto-pagination
+console.log('AutoConnect: content.js loaded on', window.location.href);
 
-// --- Inject Voyager API Man-In-The-Middle Script ---
-const scriptWrapper = document.createElement('script');
-scriptWrapper.src = chrome.runtime.getURL('inject.js');
-scriptWrapper.onload = function () {
-    this.remove(); // Clean up so LinkedIn doesn't notice the script tag
-};
-(document.head || document.documentElement).appendChild(scriptWrapper);
+// --- Lead Storage (Map for dedup by URL) ---
+const collectedLeads = new Map();
 
-// Store the leads we intercept from the network
-window.voyagerLeads = [];
+// --- Receive data from inject.js (MAIN world) ---
 window.addEventListener('message', (event) => {
-    // Make sure we only accept messages sent by our inject.js
-    if (event.source !== window || !event.data || event.data.type !== 'AUTOCONNECT_VOYAGER_DATA') {
-        return;
-    }
-    const incomingLeads = event.data.leads || [];
-    // Merge new leads with existing leads secretly
-    const existingUrls = window.voyagerLeads.map(l => l.linkedinUrl);
-    incomingLeads.forEach(lead => {
-        if (!existingUrls.includes(lead.linkedinUrl)) {
-            window.voyagerLeads.push(lead);
+    if (event.source !== window || !event.data || event.data.type !== 'AUTOCONNECT_VOYAGER_DATA') return;
+    const incoming = event.data.leads || [];
+    let added = 0;
+    incoming.forEach(lead => {
+        if (lead.linkedinUrl && !collectedLeads.has(lead.linkedinUrl)) {
+            collectedLeads.set(lead.linkedinUrl, lead);
+            added++;
         }
     });
+    if (added > 0) {
+        console.log('AutoConnect: Received', added, 'from inject.js (total:', collectedLeads.size + ')');
+    }
 });
 
-// --- Helper Functions ---
-const sleep = (ms) => new Promise(res => setTimeout(res, ms));
+// --- DOM Scraping ---
+// LinkedIn's new UI uses data-view-name="people-search-result" for each card.
+// Named profiles have <a href="/in/..."> inside; LinkedIn Members don't.
 
-const scrollToBottom = async () => {
-    const distance = 100;
-    const delay = 50;
-    while (document.scrollingElement.scrollTop + window.innerHeight < document.scrollingElement.scrollHeight) {
-        window.scrollBy(0, distance);
-        await sleep(delay);
-    }
-    // Wait for any lazy loads
-    await sleep(1000);
-};
+// Simple gender detection from first name
+const FEMALE_NAMES = new Set(['aarti', 'aisha', 'akshita', 'amrita', 'anamika', 'ananya', 'ankita', 'anushka', 'aparna', 'archana', 'asha', 'bhavna', 'chitra', 'deepa', 'deepika', 'disha', 'divya', 'ekta', 'gargi', 'gayatri', 'harini', 'isha', 'ishani', 'ishita', 'jaya', 'jyoti', 'kajal', 'kavita', 'kavya', 'kiran', 'kriti', 'kritika', 'lakshmi', 'lata', 'madhuri', 'manisha', 'meena', 'megha', 'monika', 'namita', 'nandini', 'neha', 'nidhi', 'nimisha', 'nisha', 'nishta', 'pallavi', 'pooja', 'prachi', 'pragya', 'prarthana', 'pratibha', 'preeti', 'priya', 'priyanka', 'raafia', 'rachna', 'radha', 'rajni', 'rekha', 'renuka', 'rina', 'ritu', 'riya', 'rohini', 'rupal', 'sadhana', 'sakshi', 'sangeeta', 'sanjana', 'sapna', 'sarika', 'seema', 'shikha', 'shivani', 'shreya', 'simran', 'sneha', 'sonali', 'sonam', 'sonia', 'sridevi', 'srishti', 'sudha', 'suman', 'sunita', 'swati', 'tanvi', 'tara', 'tina', 'trisha', 'uma', 'usha', 'varsha', 'vidya', 'vineeta', 'vrinda', 'yamini', 'yashika', 'khushbu', 'khushi']);
+const MALE_NAMES = new Set(['aarav', 'abhay', 'abhishek', 'aditya', 'ajay', 'ajit', 'akash', 'akshay', 'amit', 'amrit', 'anil', 'ankit', 'ankur', 'anuj', 'arun', 'aryan', 'ashish', 'ashok', 'atul', 'bharat', 'bhushan', 'chandan', 'chirag', 'deepak', 'devesh', 'dhruv', 'dinesh', 'dipak', 'ekansh', 'gaurav', 'girish', 'gopal', 'govind', 'hari', 'harish', 'hemant', 'himanshu', 'hitesh', 'jagdish', 'jai', 'jayesh', 'jitendra', 'kamal', 'kapil', 'karan', 'kartik', 'keshav', 'kishore', 'krishna', 'kunal', 'lalit', 'lokesh', 'mahesh', 'manoj', 'mayank', 'mohit', 'mukesh', 'naman', 'naresh', 'naveen', 'nikhil', 'nilesh', 'nitin', 'pankaj', 'parag', 'parth', 'piyush', 'pradeep', 'prakash', 'pranav', 'prashant', 'pratik', 'praveen', 'prem', 'rahul', 'raj', 'rajat', 'rajesh', 'rajiv', 'rakesh', 'ram', 'raman', 'ramesh', 'ranjit', 'ravi', 'rishabh', 'rohit', 'sachin', 'sahil', 'sajjan', 'sameer', 'sandeep', 'sanjay', 'saurabh', 'shantanu', 'shashank', 'shiv', 'shivam', 'shreyas', 'siddharth', 'sudeep', 'sumeet', 'sumit', 'sunil', 'suraj', 'suresh', 'sushil', 'tarun', 'tushar', 'utkarsh', 'varun', 'vijay', 'vikash', 'vikram', 'vinay', 'vinod', 'vipin', 'virender', 'vishal', 'vivek', 'yogesh']);
 
-const scrapeLeads = () => {
-    // 1. FIRST PRIORITY: API interception
-    if (window.voyagerLeads && window.voyagerLeads.length > 0) {
-        return [...window.voyagerLeads];
-    }
+function detectGender(firstName) {
+    const name = (firstName || '').toLowerCase().trim();
+    if (FEMALE_NAMES.has(name)) return 'female';
+    if (MALE_NAMES.has(name)) return 'male';
+    return '';
+}
 
-    // 2. FALLBACK: Brute-force DOM scraping
-    const leads = [];
-    const urlMap = new Map();
+function scanDOM() {
+    let added = 0;
+    const currentPage = getCurrentPageNumber();
 
-    // Grab all links that point to a profile
-    const allProfileLinks = Array.from(document.querySelectorAll('a'))
-        .filter(a => a.href && a.href.includes('/in/') && !a.href.includes('/in/ACoA') && a.textContent.trim().length > 0);
+    // ============================================================
+    // PRIMARY STRATEGY: Use data-view-name="people-search-result"
+    // ============================================================
+    const searchResultCards = document.querySelectorAll('[data-view-name="people-search-result"]');
+    let memberIdx = 0;
 
-    allProfileLinks.forEach(linkEl => {
-        const linkedinUrl = linkEl.href.split('?')[0];
+    searchResultCards.forEach((card, cardIndex) => {
+        try {
+            // Find the profile link (named profiles have <a href="/in/...">)
+            const titleLink = card.querySelector('[data-view-name="search-result-lockup-title"]');
+            const profileLink = card.querySelector('a[href*="/in/"]');
 
-        // Skip if we already parsed this exact person
-        if (urlMap.has(linkedinUrl)) return;
-        urlMap.set(linkedinUrl, true);
+            let linkedinUrl = '';
+            let rawName = '';
 
-        // Get Name
-        let rawName = linkEl.textContent;
-        const cleanName = rawName
-            .replace(/View.*?profile/ig, '')
-            .split('\n')[0]
-            .replace(/•.*/, '')
-            .replace(/(1st|2nd|3rd\+?)/g, '')
-            .trim();
+            if (profileLink && profileLink.href.includes('/in/')) {
+                // Named profile — extract URL and name
+                linkedinUrl = profileLink.href.split('?')[0].replace(/\/$/, '');
+                if (collectedLeads.has(linkedinUrl)) return;
 
-        // Build Job Title & Company by looking up the DOM tree to any container
-        const card = linkEl.closest('li, div[data-chameleon-result-urn], .entity-result, .search-entity, .reusable-search__result-container');
-        let jobTitle = '';
-        let company = '';
+                // Best name source: the search-result-lockup-title element
+                if (titleLink) {
+                    rawName = titleLink.textContent.trim();
+                } else {
+                    // Fallback: use the first text in the profile link
+                    const nameEl = profileLink.querySelector('p');
+                    rawName = nameEl ? nameEl.textContent.trim() : '';
+                }
+            } else {
+                // LinkedIn Member — no /in/ link
+                const cardText = card.innerText || '';
+                if (!cardText.includes('LinkedIn Member')) return;
 
-        if (card) {
-            const primarySubtitle = card.querySelector('.entity-result__primary-subtitle, .linked-area');
-            const secondarySubtitle = card.querySelector('.entity-result__secondary-subtitle');
-
-            jobTitle = primarySubtitle ? primarySubtitle.textContent.trim().split('\n')[0] : '';
-
-            if (secondarySubtitle) {
-                company = secondarySubtitle.textContent.trim().replace(/^at\s+/i, '');
-            } else if (jobTitle.includes(' at ')) {
-                company = jobTitle.split(' at ')[1].trim();
+                // Generate a stable key for dedup, but keep the URL empty
+                const stableId = `linkedin-member-p${currentPage}-m${memberIdx}`;
+                memberIdx++;
+                if (collectedLeads.has(stableId)) return;
+                linkedinUrl = stableId; // Internal key only, NOT a real URL
+                rawName = 'LinkedIn Member';
             }
-        }
 
-        if (linkedinUrl && cleanName && cleanName !== 'LinkedIn') {
-            const names = cleanName.split(' ');
-            const firstName = names[0] || '';
-            const lastName = names.slice(1).join(' ') || '';
+            // Clean the name (remove degree indicators, bullets, extra whitespace)
+            rawName = rawName
+                .replace(/View.*?profile/ig, '')
+                .replace(/(1st|2nd|3rd\+?)/g, '')
+                .replace(/[•·]/g, '')
+                .replace(/\s+/g, ' ')
+                .trim();
 
-            leads.push({ firstName, lastName, jobTitle, company, linkedinUrl });
-            console.log("Scraped fallback lead:", cleanName, linkedinUrl);
+            if (!rawName || rawName.length < 2) return;
+
+            // Parse first/last name
+            let firstName, lastName;
+            if (rawName === 'LinkedIn Member') {
+                firstName = 'LinkedIn';
+                lastName = 'Member';
+            } else {
+                const nameWords = rawName.split(' ');
+                firstName = nameWords[0] || '';
+                lastName = nameWords.slice(1).join(' ') || '';
+            }
+
+            // ---- Extract structured data from card DOM ----
+            // LinkedIn's card structure has specific divs for different data:
+            //   1. Name (in <p> with class containing _31e492f1)
+            //   2. Headline/Job Title (first <div> after name containing a <p>)
+            //   3. Location (second <div> after name, has class _3f5ca314)
+            //   4. "Current:", "Skills:", etc. lines (in <div class="ea4a229b"> sections)
+
+            let jobTitle = '';
+            let company = '';
+            let location = '';
+
+            // Strategy 1: Parse using the structured sections
+            // Headline is the first <p> sibling after the name paragraph
+            const allParagraphs = card.querySelectorAll('p');
+            const textLines = [];
+            allParagraphs.forEach(p => {
+                const text = p.textContent.trim();
+                if (text.length > 2) textLines.push(text);
+            });
+
+            // Get text from card for line-by-line analysis
+            const allText = card.innerText || '';
+            const lines = allText.split('\n')
+                .map(l => l.trim())
+                .filter(l => l.length > 0);
+
+            for (const line of lines) {
+                // Skip the name itself, buttons, degree indicators
+                if (line === rawName || line === 'LinkedIn Member') continue;
+                if (/^(Connect|Follow|Message|Send|Pending|More|Dismiss)$/i.test(line)) continue;
+                if (/^\d+(st|nd|rd|th)$/i.test(line)) continue;
+                if (/^• \d+(st|nd|rd|th)/i.test(line)) continue;
+                if (line.length < 3) continue;
+
+                // "Current: Role at Company"
+                if (/^Current:/i.test(line)) {
+                    const after = line.replace(/^Current:\s*/i, '').trim();
+                    if (after.includes(' at ')) {
+                        const parts = after.split(' at ');
+                        if (!jobTitle) jobTitle = parts[0].trim();
+                        company = parts.slice(1).join(' at ').trim();
+                    } else if (!jobTitle) {
+                        jobTitle = after;
+                    }
+                    continue;
+                }
+
+                // Skip metadata
+                if (/^(Past|Education|Skills|Certifications|Summary):/i.test(line)) continue;
+                if (/followers$/i.test(line)) continue;
+                if (/^Visit my/i.test(line)) continue;
+                if (/mutual connection/i.test(line)) continue;
+
+                // Location detection (be more specific to avoid catching company names)
+                if (!location && (
+                    line.match(/,\s*(India|United States|UK|USA|Canada|Australia|Germany|France|Singapore|Dubai|Netherlands|Pakistan|China|Japan|Brazil|Mexico|Spain|Italy|Indonesia|Philippines|Malaysia|Bangladesh|Nepal|Sri Lanka|Thailand|Vietnam|South Korea|Russia|Turkey|Saudi Arabia|UAE|Ireland|Sweden|Norway|Denmark|Finland|Switzerland|Belgium|Austria|Czech Republic|Poland|Romania|Ukraine|Argentina|Chile|Colombia|Peru|Egypt|Nigeria|Kenya|South Africa|Ghana|Ethiopia|Tanzania)\s*$/i) ||
+                    line.match(/^(Mumbai|New Delhi|Delhi|Bangalore|Bengaluru|Hyderabad|Chennai|Kolkata|Pune|Noida|Gurugram|Gurgaon|Faridabad|Agra|Nashik|Lucknow|Jaipur|Ahmedabad|Indore|Bhopal|Chandigarh|Coimbatore|Kochi|Thiruvananthapuram|Visakhapatnam|Nagpur|Patna|Ranchi|Dehradun|New York|London|San Francisco|Bay Area|Los Angeles|Seattle|Chicago|Toronto|Vancouver|Sydney|Melbourne|Singapore|Dubai|Berlin|Munich|Paris|Amsterdam|Lahore|Canton|Mandya)\b/i)
+                )) {
+                    location = line;
+                    continue;
+                }
+
+                // First meaningful text line is the headline/job title
+                if (!jobTitle && line !== rawName && line.length > 5 &&
+                    !/^(Connect|Follow|Message|mutual|connection|Promoted)/i.test(line)) {
+                    jobTitle = line;
+                }
+            }
+
+            // Extract country from location
+            let country = '';
+            if (location) {
+                const locParts = location.split(',').map(p => p.trim());
+                if (locParts.length > 0) {
+                    country = locParts[locParts.length - 1];
+                }
+            }
+
+            // Detect gender from first name
+            const gender = rawName === 'LinkedIn Member' ? '' : detectGender(firstName);
+
+            // For LinkedIn Members, use the internal key for dedup but store empty URL
+            const isLinkedInMember = rawName === 'LinkedIn Member';
+            const storeUrl = isLinkedInMember ? '' : linkedinUrl;
+
+            collectedLeads.set(linkedinUrl, {
+                firstName, lastName, jobTitle,
+                company: company,
+                location: location,
+                country: country,
+                gender: gender,
+                linkedinUrl: storeUrl
+            });
+            added++;
+        } catch (e) {
+            console.warn('AutoConnect: Error parsing card', e);
         }
     });
 
-    return leads;
-};
-
-// --- UI Injection ---
-let isSidebarOpen = false;
-
-const injectUI = () => {
-    if (document.getElementById('autoconnect-root')) return;
-
-    // 1. Create the Root Container
-    const root = document.createElement('div');
-    root.id = 'autoconnect-root';
-    document.body.appendChild(root);
-
-    // 2. Attach Shadow DOM (to prevent LinkedIn's CSS from breaking our design)
-    const shadow = root.attachShadow({ mode: 'open' });
-
-    // 3. Inject CSS
-    const style = document.createElement('style');
-    style.textContent = `
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-
-        :host {
-            --primary: #4f46e5;
-            --primary-hover: #4338ca;
-            --text-main: #1e293b;
-            --text-muted: #64748b;
-            --border: #e2e8f0;
-            font-family: 'Inter', -apple-system, sans-serif;
-            z-index: 2147483647; /* Max z-index */
-            position: fixed;
-        }
-
-        /* --- Toggle Button --- */
-        #ac-toggle {
-            position: fixed;
-            top: 50%;
-            right: 0;
-            transform: translateY(-50%);
-            background: var(--primary);
-            color: white;
-            border: none;
-            padding: 12px 10px;
-            border-radius: 8px 0 0 8px;
-            cursor: pointer;
-            box-shadow: -2px 0 10px rgba(0,0,0,0.1);
-            transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 2147483647;
-        }
-        #ac-toggle:hover {
-            background: var(--primary-hover);
-            padding-right: 15px;
-        }
-        #ac-toggle.hidden {
-            right: -50px;
-        }
-
-        /* --- Sidebar Drawer --- */
-        #ac-sidebar {
-            position: fixed;
-            top: 0;
-            right: -400px;
-            width: 380px;
-            height: 100vh;
-            background: white;
-            box-shadow: -5px 0 25px rgba(0,0,0,0.1);
-            transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            z-index: 2147483647;
-            display: flex;
-            flex-direction: column;
-        }
-        #ac-sidebar.open {
-            right: 0;
-        }
-
-        /* --- Header --- */
-        .header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 16px 24px;
-            border-bottom: 1px solid var(--border);
-        }
-        .header-left {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        .logo {
-            width: 24px;
-            height: 24px;
-            background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
-            border-radius: 6px;
-            color: white;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: 800;
-            font-size: 14px;
-        }
-        .brand {
-            font-weight: 700;
-            color: var(--primary);
-            font-size: 16px;
-            letter-spacing: -0.5px;
-        }
-        .header-actions {
-            display: flex;
-            gap: 12px;
-            color: var(--text-muted);
-        }
-        .icon-btn {
-            background: transparent;
-            border: none;
-            cursor: pointer;
-            color: inherit;
-            padding: 4px;
-            border-radius: 4px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: background 0.2s;
-        }
-        .icon-btn:hover {
-            background: #f1f5f9;
-            color: var(--text-main);
-        }
-
-        /* --- Content Area --- */
-        .content {
-            padding: 32px 24px;
-            flex-grow: 1;
-        }
-        h2 {
-            margin: 0 0 24px 0;
-            font-size: 22px;
-            font-weight: 600;
-            color: var(--text-main);
-            line-height: 1.3;
-        }
-
-        /* --- Status States --- */
-        .status-area {
-            display: flex;
-            flex-direction: column;
-            gap: 16px;
-        }
-        .success-box {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            padding: 12px 16px;
-            background: #f0fdf4;
-            border-radius: 8px;
-            color: #16a34a;
-            font-weight: 500;
-            font-size: 14px;
-            border: 1px solid #bbf7d0;
-        }
-
-        .error-box {
-            display: flex;
-            align-items: flex-start;
-            gap: 12px;
-            padding: 12px 16px;
-            background: #fef2f2;
-            border-radius: 8px;
-            color: #dc2626;
-            font-weight: 500;
-            font-size: 14px;
-            border: 1px solid #fecaca;
-            overflow-wrap: break-word;
-            word-break: break-word;
-        }
-
-        /* --- Inputs --- */
-        .form-group {
-            margin-bottom: 20px;
-        }
-        .form-group label {
-            display: block;
-            margin-bottom: 8px;
-            font-size: 14px;
-            font-weight: 600;
-            color: var(--text-main);
-        }
-        .form-group input {
-            width: 100%;
-            padding: 12px;
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            font-size: 14px;
-            font-family: inherit;
-            box-sizing: border-box;
-        }
-        .form-group input:focus {
-            outline: none;
-            border-color: var(--primary);
-            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
-        }
-        .warning-text {
-            color: #d97706;
-            font-size: 13px;
-            text-align: center;
-            margin-top: 12px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 6px;
-        }
-
-        .primary-btn {
-            width: 100%;
-            padding: 14px 8px; /* Slightly less side padding to prevent overflow */
-            background: #2563eb;
-            color: white;
-            border: none;
-            border-radius: 8px;
-            font-size: 14px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: background 0.2s;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            white-space: nowrap; /* Forces text to stay on one line safely */
-            box-sizing: border-box; /* Ensures padding respects 100% width */
-        }
-        .primary-btn:hover {
-            background: #1d4ed8;
-        }
-        .primary-btn:disabled {
-            background: #94a3b8;
-            cursor: not-allowed;
-        }
-
-        .secondary-link {
-            display: block;
-            text-align: center;
-            color: #2563eb;
-            text-decoration: none;
-            font-size: 14px;
-            font-weight: 600;
-            margin-top: 16px;
-        }
-        .secondary-link:hover {
-            text-decoration: underline;
-        }
-
-        /* Spinner */
-        .spinner {
-            width: 16px;
-            height: 16px;
-            border: 2px solid rgba(255,255,255,0.3);
-            border-radius: 50%;
-            border-top-color: #fff;
-            animation: spin 1s ease-in-out infinite;
-            flex-shrink: 0; /* Prevents spinner from squishing */
-        }
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-    `;
-    shadow.appendChild(style);
-
-    // 4. Build the DOM
-    const toggleBtn = document.createElement('button');
-    toggleBtn.id = 'ac-toggle';
-    toggleBtn.innerHTML = `
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-    `;
-
-    const sidebar = document.createElement('div');
-    sidebar.id = 'ac-sidebar';
-    sidebar.innerHTML = `
-        <div class="header">
-            <div class="header-left">
-                <div class="logo">A</div>
-                <div class="brand">AUTOCONNECT</div>
-            </div>
-            <div class="header-actions">
-                <a href="https://linkedin-camp-web.vercel.app/inbox" target="_blank" class="icon-btn" title="Dashboard">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
-                </a>
-                <button id="ac-close" class="icon-btn" title="Close">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                </button>
-            </div>
-        <div class="content">
-            <h2>Import prospects from this search</h2>
-            <div id="ac-form-area" class="form-group">
-                <label for="ac-list-name">List Name / Tag (Optional)</label>
-                <input type="text" id="ac-list-name" placeholder="e.g. 'CEOs in New York'">
-            </div>
-            <div class="status-area" id="ac-status-area">
-                <button id="ac-start-btn" class="primary-btn">Start a new import</button>
-                <a href="https://linkedin-camp-web.vercel.app/leads" target="_blank" class="secondary-link">View imported prospects &rarr;</a>
-            </div>
-        </div>
-    `;
-
-    shadow.appendChild(toggleBtn);
-    shadow.appendChild(sidebar);
-
-    // 5. Interaction Logic
-    const closeBtn = shadow.getElementById('ac-close');
-    const startBtn = shadow.getElementById('ac-start-btn');
-    const statusArea = shadow.getElementById('ac-status-area');
-
-    const toggleSidebar = () => {
-        isSidebarOpen = !isSidebarOpen;
-        if (isSidebarOpen) {
-            sidebar.classList.add('open');
-            toggleBtn.classList.add('hidden');
-        } else {
-            sidebar.classList.remove('open');
-            toggleBtn.classList.remove('hidden');
-            // reset state on close
-            resetStatusArea();
-        }
-    };
-
-    const resetStatusArea = () => {
-        statusArea.innerHTML = `
-            <button id="ac-start-btn" class="primary-btn">Start a new import</button>
-            <a href="https://linkedin-camp-web.vercel.app/leads" target="_blank" class="secondary-link">View imported prospects &rarr;</a>
-        `;
-        // Re-attach listener 
-        shadow.getElementById('ac-start-btn').addEventListener('click', handleImport);
-    };
-
-    let isImporting = false;
-
-    const handleImport = async () => {
-        if (isImporting) return; // Prevention for double-clicks / parallel runs in same sidebar
-
-        if (!navigator.onLine) {
-            alert("No internet connection. Please check your network.");
-            return;
-        }
-
-        isImporting = true;
-
-        const listNameInput = shadow.getElementById('ac-list-name');
-        const listName = listNameInput ? listNameInput.value.trim() : '';
-
-        const btn = shadow.getElementById('ac-start-btn');
-        btn.innerHTML = `<div class="spinner"></div> Scrolling & Scraping...`;
-        btn.disabled = true;
-
-        const warningMsg = document.createElement('div');
-        warningMsg.className = 'warning-text';
-        warningMsg.innerHTML = `⚠️ Do not close or refresh this tab while importing`;
-        statusArea.appendChild(warningMsg);
-
+    // ============================================================
+    // FALLBACK STRATEGY: Legacy selectors (for older LinkedIn UI)
+    // ============================================================
+    document.querySelectorAll('a[href*="/in/"]').forEach(a => {
         try {
-            await scrollToBottom();
-            const rawLeads = scrapeLeads();
+            const href = a.href;
+            if (!href || href.includes('/in/ACoA')) return;
+            const linkedinUrl = href.split('?')[0].replace(/\/$/, '');
+            if (collectedLeads.has(linkedinUrl)) return;
 
-            // Attach Tags
-            const leads = rawLeads.map(lead => ({
-                ...lead,
-                tags: listName ? [listName] : []
-            }));
+            const nameSpan = a.querySelector('span[aria-hidden="true"]');
+            const rawText = (nameSpan ? nameSpan.textContent : a.textContent || '').trim();
 
-            if (leads.length > 0) {
-                btn.innerHTML = `<div class="spinner"></div> Importing ${leads.length} leads...`;
+            if (!rawText || rawText.length < 2 || rawText.length > 100) return;
+            if (rawText.includes('View') && rawText.includes('profile')) return;
+            if (rawText.includes('Search') || rawText.includes('Home') || rawText.includes('Messaging')) return;
+            if (rawText.includes('followers')) return;
 
-                chrome.runtime.sendMessage({ type: 'IMPORT_LEADS', leads }, (response) => {
-                    isImporting = false;
-                    if (response && response.success) {
-                        statusArea.innerHTML = `
-                            <div class="success-box">
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
-                                ${leads.length} imported prospects
-                            </div>
-                            <button id="ac-start-btn" class="primary-btn" style="margin-top: 8px;">Start another import</button>
-                            <a href="https://linkedin-camp-web.vercel.app/leads" target="_blank" class="secondary-link">View imported prospects &rarr;</a>
-                        `;
-                        if (listNameInput) listNameInput.value = '';
-                        shadow.getElementById('ac-start-btn').addEventListener('click', handleImport);
-                    } else {
-                        console.error("AutoConnect import error:", response ? response.error : 'No response');
-                        statusArea.innerHTML = `
-                            <div class="error-box">
-                                <svg style="min-width: 20px; flex-shrink: 0; margin-top: 2px;" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-                                <div style="flex: 1; min-width: 0;">
-                                    <strong>Import failed.</strong>
-                                    <span style="font-size: 13px; margin-top: 4px; display: block; overflow-wrap: break-word;">${response && response.error ? response.error : 'Unknown error.'}</span>
-                                </div>
-                            </div>
-                            <button id="ac-start-btn" class="primary-btn" style="margin-top: 8px;">Try Again</button>
-                            <a href="https://linkedin-camp-web.vercel.app/leads" target="_blank" class="secondary-link">Go to Dashboard &rarr;</a>
-                        `;
-                        shadow.getElementById('ac-start-btn').addEventListener('click', handleImport);
-                    }
-                });
-            } else {
-                isImporting = false;
-                alert('No leads found on this page.');
-                resetStatusArea();
+            const parts = rawText.split(/[•·]/).map(p => p.trim());
+            let rawName = parts[0]
+                .replace(/(1st|2nd|3rd\+?)/g, '')
+                .replace(/\s+/g, ' ')
+                .trim();
+            if (!rawName || rawName.length < 2) return;
+
+            let card = a;
+            for (let i = 0; i < 10; i++) {
+                if (!card.parentElement) break;
+                card = card.parentElement;
+                if (card.tagName === 'LI' && card.offsetWidth > 400) break;
+                if (card.getAttribute('data-view-name') === 'people-search-result') break;
+                if (card.offsetWidth > 600) break;
             }
-        } catch (error) {
-            isImporting = false;
-            console.error("Scraping error:", error);
-            statusArea.innerHTML = `
-                <div class="error-box">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-                    Error scraping page. Please refresh and try again.
-                </div>
-                <button id="ac-start-btn" class="primary-btn" style="margin-top: 8px;">Try Again</button>
-            `;
-            shadow.getElementById('ac-start-btn').addEventListener('click', handleImport);
-        }
-    };
 
-    // Attach base listeners
-    toggleBtn.addEventListener('click', toggleSidebar);
-    closeBtn.addEventListener('click', toggleSidebar);
-    startBtn.addEventListener('click', handleImport);
-};
+            const cardText = card.innerText || '';
+            const lines = cardText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
 
-// Only inject on relevant pages
-const checkPage = () => {
-    const isSearchPage = window.location.href.includes('/search/') || window.location.href.includes('/sales/search/');
-    if (isSearchPage) {
-        injectUI();
+            let jobTitle = '';
+            let company = '';
+            let location = '';
+
+            for (const line of lines) {
+                if (line === rawName) continue;
+                if (/^(Connect|Follow|Message|Send|Pending|More|Dismiss)$/i.test(line)) continue;
+                if (/^\d+(st|nd|rd|th)$/i.test(line)) continue;
+                if (line.length < 3) continue;
+
+                if (/^Current:/i.test(line)) {
+                    const after = line.replace(/^Current:\s*/i, '').trim();
+                    if (after.includes(' at ')) {
+                        const atParts = after.split(' at ');
+                        if (!jobTitle) jobTitle = atParts[0].trim();
+                        company = atParts.slice(1).join(' at ').trim();
+                    } else if (!jobTitle) {
+                        jobTitle = after;
+                    }
+                    continue;
+                }
+                if (/^(Past|Education|Skills|Certifications|Summary):/i.test(line)) continue;
+                if (/followers$/i.test(line)) continue;
+
+                if (!location && (
+                    line.match(/,\s*(India|United States|UK|USA|Canada|Australia|Germany|France|Singapore|Dubai|Netherlands|Pakistan)\s*$/i) ||
+                    line.match(/^(Mumbai|Delhi|Bangalore|Bengaluru|Hyderabad|Chennai|Kolkata|Pune|Noida|Gurugram|Gurgaon|New York|London|San Francisco|Bay Area)\b/i)
+                )) {
+                    location = line;
+                    continue;
+                }
+
+                if (!jobTitle && line !== rawName && line.length > 5 &&
+                    !/^(Connect|Follow|Message|mutual|connection)/i.test(line)) {
+                    jobTitle = line;
+                }
+            }
+
+            let firstName, lastName;
+            const nameWords = rawName.split(' ');
+            firstName = nameWords[0] || '';
+            lastName = nameWords.slice(1).join(' ') || '';
+
+            let country = '';
+            if (location) {
+                const locParts = location.split(',').map(p => p.trim());
+                country = locParts[locParts.length - 1];
+            }
+
+            const gender = detectGender(firstName);
+
+            collectedLeads.set(linkedinUrl, {
+                firstName, lastName, jobTitle,
+                company: company,
+                location: location,
+                country: country,
+                gender: gender,
+                linkedinUrl
+            });
+            added++;
+        } catch (e) { /* skip individual errors */ }
+    });
+
+    if (added > 0) {
+        console.log('AutoConnect: DOM scan +' + added + ' (total: ' + collectedLeads.size + ')');
     }
-};
+}
 
-const observer = new MutationObserver(checkPage);
-observer.observe(document.body, { childList: true, subtree: true });
-checkPage();
+// --- Auto-pagination helpers ---
+// LinkedIn's new UI uses data-testid attributes for pagination buttons
+function getNextPageButton() {
+    // New LinkedIn UI
+    const btn = document.querySelector('[data-testid="pagination-controls-next-button-visible"]') ||
+        // Fallback: old LinkedIn UI
+        document.querySelector('button[aria-label="Next"]') ||
+        document.querySelector('.artdeco-pagination__button--next') ||
+        document.querySelector('[aria-label="Next"]');
+    if (btn && !btn.disabled) return btn;
+    return null;
+}
 
+function getCurrentPageNumber() {
+    // Try to extract from URL first (most reliable)
+    const urlParams = new URLSearchParams(window.location.search);
+    const pageParam = urlParams.get('page');
+    if (pageParam) return parseInt(pageParam) || 1;
+
+    // Fallback: check pagination UI
+    const active = document.querySelector('.artdeco-pagination__indicator--number.active button') ||
+        document.querySelector('[aria-current="true"]');
+    return active ? parseInt(active.textContent.trim()) : 1;
+}
+
+async function scrollToLoadAll() {
+    // Scroll incrementally to trigger lazy loading of all results
+    const totalHeight = document.body.scrollHeight;
+    const steps = 5;
+    for (let i = 0; i <= steps; i++) {
+        window.scrollTo(0, (totalHeight / steps) * i);
+        await new Promise(r => setTimeout(r, 600));
+    }
+    // Scroll back to top
+    window.scrollTo(0, 0);
+    await new Promise(r => setTimeout(r, 500));
+}
+
+async function goToNextPage() {
+    const btn = getNextPageButton();
+    if (!btn) return false;
+
+    btn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    await new Promise(r => setTimeout(r, 500));
+    btn.click();
+
+    // Wait for navigation and new content to load
+    await new Promise(r => setTimeout(r, 4000));
+
+    // Scroll through the page to trigger lazy loading
+    await scrollToLoadAll();
+
+    // Wait for any API responses to arrive
+    await new Promise(r => setTimeout(r, 2000));
+
+    return true;
+}
+
+// --- Periodic scanning ---
+let initialScanDone = false;
+
+function startScanning() {
+    // Initial full-page scroll to trigger lazy loading
+    scrollToLoadAll().then(() => {
+        scanDOM();
+        initialScanDone = true;
+        console.log('AutoConnect: Initial scan complete. Found', collectedLeads.size, 'leads');
+    });
+
+    // Re-scan periodically
+    setInterval(scanDOM, 3000);
+
+    // Also scan on DOM mutations
+    if (document.body) {
+        let scanTimer = null;
+        const obs = new MutationObserver(() => {
+            if (scanTimer) clearTimeout(scanTimer);
+            scanTimer = setTimeout(scanDOM, 800);
+        });
+        obs.observe(document.body, { childList: true, subtree: true });
+    }
+}
+
+// Wait for body to exist (we load at document_start)
+if (document.body) {
+    setTimeout(startScanning, 2000);
+} else {
+    const bodyObs = new MutationObserver((_, observer) => {
+        if (document.body) {
+            observer.disconnect();
+            setTimeout(startScanning, 2000);
+        }
+    });
+    bodyObs.observe(document.documentElement, { childList: true });
+}
+
+// --- Build next page URL ---
+function getNextPageUrl() {
+    const url = new URL(window.location.href);
+    const currentPage = parseInt(url.searchParams.get('page')) || 1;
+    url.searchParams.set('page', (currentPage + 1).toString());
+    return url.toString();
+}
+
+// --- Message Listener for Popup / Side Panel ---
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.type === 'POPUP_SCRAPE_REQUEST') {
+        // DO NOT scroll here — startScanning() already handles scrolling.
+        // Concurrent scrolls cause LinkedIn to re-render and lose all data.
+        (async () => {
+            try {
+                // Wait for the initial scan to complete (max 12s)
+                let waited = 0;
+                while (!initialScanDone && waited < 12000) {
+                    await new Promise(r => setTimeout(r, 500));
+                    waited += 500;
+                }
+
+                // Do a few extra scans to catch anything new
+                scanDOM();
+                await new Promise(r => setTimeout(r, 500));
+                scanDOM();
+
+                // If still 0 leads and initialScan never ran, try scrolling as last resort
+                if (collectedLeads.size === 0 && !initialScanDone) {
+                    console.log('AutoConnect: Initial scan never ran, scrolling manually...');
+                    await scrollToLoadAll();
+                    scanDOM();
+                    await new Promise(r => setTimeout(r, 1000));
+                    scanDOM();
+                }
+
+                const leads = Array.from(collectedLeads.values());
+                const hasNext = !!getNextPageButton();
+                const currentPage = getCurrentPageNumber();
+                const nextPageUrl = hasNext ? getNextPageUrl() : null;
+
+                console.log('AutoConnect: Sending', leads.length, 'leads | page:', currentPage, '| hasNext:', hasNext);
+                sendResponse({
+                    success: true,
+                    leads: leads,
+                    hasNextPage: hasNext,
+                    currentPage: currentPage,
+                    nextPageUrl: nextPageUrl
+                });
+            } catch (e) {
+                console.error('AutoConnect: Scrape error:', e);
+                sendResponse({ success: false, error: e.message });
+            }
+        })();
+        return true; // async
+    }
+
+    if (message.type === 'POPUP_NEXT_PAGE') {
+        (async () => {
+            try {
+                const success = await goToNextPage();
+                if (success) {
+                    // Scroll and scan
+                    await scrollToLoadAll();
+                    scanDOM();
+                    await new Promise(r => setTimeout(r, 1500));
+                    scanDOM();
+                    await new Promise(r => setTimeout(r, 1500));
+                    scanDOM();
+
+                    const leads = Array.from(collectedLeads.values());
+                    const hasNext = !!getNextPageButton();
+                    const currentPage = getCurrentPageNumber();
+                    const nextPageUrl = hasNext ? getNextPageUrl() : null;
+
+                    sendResponse({
+                        success: true,
+                        leads: leads,
+                        hasNextPage: hasNext,
+                        currentPage: currentPage,
+                        nextPageUrl: nextPageUrl
+                    });
+                } else {
+                    sendResponse({ success: false, error: 'No next page available' });
+                }
+            } catch (e) {
+                console.error('AutoConnect: Next page error:', e);
+                sendResponse({ success: false, error: e.message });
+            }
+        })();
+        return true;
+    }
+
+    if (message.type === 'POPUP_GET_COUNT') {
+        sendResponse({ count: collectedLeads.size });
+        return false;
+    }
+});

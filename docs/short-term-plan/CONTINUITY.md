@@ -1,42 +1,60 @@
-# Continuity Ledger
+# Continuity Ledger — AutoConnect Extension
 
-- Goal: Build LinkedIn campaign automation platform with polished UI, pre-built templates, enhanced leads management, and full E2E testing
+- Goal: Build LinkedIn lead extraction Chrome extension with side panel UI, auto-pagination, pause/resume, and auto-export to backend CRM
+- Success Criteria: User can extract all leads from LinkedIn search (including LinkedIn Members), control the extraction, and auto-export to the backend
+
 - Constraints/Assumptions:
-  - Backend uses Express + Prisma + PostgreSQL
-  - Frontend uses Next.js 16 + TailwindCSS + ReactFlow
-  - Python env: `.venv` (source .venv/bin/activate)
-  - Env file: `/nuvodata/User_data/shiva/linkedin-camp/.env`
-  - Prisma schema at `packages/db/schema.prisma` (mirror at `prisma_schema/schema.prisma`)
+  - LinkedIn uses RSC with hashed CSS classes — must use data-* attributes
+  - Chrome Side Panel API requires `sidePanel` permission in Manifest V3
+  - Popup stays as default click action; side panel opens via button in popup
+  - Content script continues running in LinkedIn tab even when user switches tabs
+
 - Key decisions:
-  - 6 pre-built campaign templates (LinkedIn Classic, LinkedIn+Note, AI Outreach, Email Drip, Multi-Channel, Warm-up)
-  - Templates stored as static TS data in `apps/web/src/lib/prebuilt-templates.ts`
-  - Leads schema extended with `country`, `gender`, `tags[]` fields
-  - E2E test is a CLI script using fetch (not Playwright)
-  - User can name campaigns from template (prompt with default name)
+  - Side panel (dark theme) is the primary extraction UI — stays open while browsing
+  - Popup kept for quick auth sync + as entry point to open side panel
+  - State persisted to chrome.storage to survive panel close/reopen
+  - List name REQUIRED before extraction starts
+  - Auto-export on by default (sends to backend after scraping completes)
+  - Max pages configurable (default 10)
+
 - State:
   - Done:
-    - Prisma migration: added country, gender, tags to Lead model
-    - Created 6 pre-built templates data file
-    - Home page: added Quick Start section (top 3 templates)
-    - Campaigns sidebar: added "Prebuilt Templates" nav item
-    - Created /campaigns/templates-gallery page (all 6 templates with previews)
-    - Enhanced /leads page: filter pills (Status, Gender, Tags, Email, Country), 10 columns
-    - Updated lead controller: demo data now includes 5 leads with country/gender/tags/email
-    - CSV import now maps Country, Gender, Tags columns
-    - Created E2E walkthrough test script (10-step CLI test)
-    - Build passes: all 15 routes compile successfully
-  - Now: Ready for testing
+    - Fixed DOM scraping with new LinkedIn data-view-name selectors
+    - Fixed inject.js double-load guard
+    - Fixed LinkedIn Member dedup with deterministic IDs
+    - Fixed pagination with data-testid selectors
+    - Created sidepanel.html with dark premium design
+    - Created sidepanel.js with full extraction state machine (start/pause/resume/stop/export)
+    - Updated manifest.json with sidePanel permission + side_panel config
+    - Updated popup.html with "Open Extraction Panel" button
+    - Updated popup.js with side panel opener handler
+    - Updated background.js with side panel setup
+    - Fixed multi-page extraction in side panel (direct URL navigation)
+    - Fixed CSP violation from inline onclick handlers
+    - **Fixed**: LinkedIn Member URLs — now stored as empty string instead of fake URLs
+    - **Fixed**: Company vs Location confusion — company only from "Current:" line, location separate
+    - **Added**: Location field extracted separately with country parsed out
+    - **Added**: Gender detection from first name (Indian + common Western names)
+    - **Updated**: Lead card UI shows company, location, gender icons
+    - **Fixed**: addNewLeads deduplication for LinkedIn Members (composite key fallback)
+  - Now:
+    - User testing data quality fixes
   - Next:
-    - Start backend + frontend and test in browser
-    - Run E2E walkthrough test
-    - Fix any issues found during testing
-- Open questions: None
+    - Edge case: detect LinkedIn CAPTCHA/challenge pages
+    - Edge case: handle LinkedIn login expiry
+    - Edge case: retry logic for failed exports
+    - Edge case: CSV export option
+
+- Open questions:
+  - Does the backend /api/v1/leads/import endpoint accept the new fields (location, country, gender)?
+  - Should there be a CSV download option in addition to backend export?
+
 - Working set:
-  - `apps/web/src/lib/prebuilt-templates.ts` (NEW)
-  - `apps/web/src/app/page.tsx` (MODIFIED - Quick Start)
-  - `apps/web/src/app/campaigns/templates-gallery/page.tsx` (NEW)
-  - `apps/web/src/components/Sidebar.tsx` (MODIFIED - Prebuilt Templates nav)
-  - `apps/web/src/app/leads/page.tsx` (REWRITTEN - filters + columns)
-  - `apps/backend/src/controllers/lead.controller.ts` (MODIFIED - new fields)
-  - `packages/db/schema.prisma` (MODIFIED - country, gender, tags)
-  - `apps/backend/src/scripts/e2e-walkthrough.ts` (NEW - E2E test)
+  - apps/extension/content.js (UPDATED — scanDOM rewrite with gender, location, company fixes)
+  - apps/extension/sidepanel.js (UPDATED — lead card display, addNewLeads dedup fix)
+  - apps/extension/sidepanel.html (stable)
+  - apps/extension/manifest.json (stable)
+  - apps/extension/popup.html (stable)
+  - apps/extension/popup.js (stable)
+  - apps/extension/background.js (stable)
+  - apps/extension/inject.js (stable)

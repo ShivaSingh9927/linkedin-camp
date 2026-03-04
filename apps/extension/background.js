@@ -1,6 +1,14 @@
 // background.js — Service worker that relays requests through offscreen document
+// Also manages side panel behavior
 
-// Ensure offscreen document exists
+// ─── Side Panel Setup ───────────────────────────────────────
+// Enable the side panel to appear when the user right-clicks the extension icon
+// The popup is still the default click action
+chrome.sidePanel.setOptions({
+    enabled: true
+}).catch(() => { /* sidePanel API might not be available in older Chrome */ });
+
+// ─── Offscreen Document ─────────────────────────────────────
 let creatingOffscreen;
 async function ensureOffscreen() {
     const existingContexts = await chrome.runtime.getContexts({
@@ -37,6 +45,14 @@ async function offscreenFetch(url, options) {
     });
 }
 
+// ─── Backend URLs ───────────────────────────────────────────
+const BACKEND_URLS = [
+    'http://localhost:3001',
+    'http://127.0.0.1:3001',
+    'https://linkedin-camp-production.up.railway.app'
+];
+
+// ─── Message Handler ────────────────────────────────────────
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'SAVE_TOKEN') {
         chrome.storage.local.set({ token: message.token });
@@ -49,14 +65,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             if (cookie) {
                 chrome.storage.local.get(['token'], async (result) => {
                     if (result.token) {
-                        const URLS = [
-                            'http://localhost:3001',
-                            'http://127.0.0.1:3001',
-                            'https://linkedin-camp-production.up.railway.app'
-                        ];
                         let lastErr = null;
 
-                        for (const base of URLS) {
+                        for (const base of BACKEND_URLS) {
                             console.log(`AutoConnect: Trying backend at ${base}`);
                             const resp = await offscreenFetch(`${base}/api/v1/auth/extension-sync`, {
                                 method: 'POST',
@@ -88,14 +99,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'IMPORT_LEADS') {
         chrome.storage.local.get(['token'], async (result) => {
             if (result.token) {
-                const URLS = [
-                    'http://localhost:3001',
-                    'http://127.0.0.1:3001',
-                    'https://linkedin-camp-production.up.railway.app'
-                ];
                 let lastErr = null;
 
-                for (const base of URLS) {
+                for (const base of BACKEND_URLS) {
                     console.log(`AutoConnect: Trying backend for import at ${base}`);
                     const resp = await offscreenFetch(`${base}/api/v1/leads/import`, {
                         method: 'POST',
@@ -118,6 +124,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             }
         });
         return true;
+    }
+
+    // Open side panel from popup
+    if (message.type === 'OPEN_SIDE_PANEL') {
+        chrome.sidePanel.open({ windowId: message.windowId }).catch(e => {
+            console.warn('AutoConnect: Could not open side panel:', e);
+        });
+        return;
     }
 
     // Ignore messages meant for offscreen.js

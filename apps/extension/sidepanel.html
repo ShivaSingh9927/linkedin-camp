@@ -1,0 +1,846 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+        :root {
+            --bg: #0f1117;
+            --bg-card: #1a1d27;
+            --bg-card-hover: #22263a;
+            --bg-input: #161822;
+            --border: #2a2e3d;
+            --border-focus: #6366f1;
+            --text: #e2e8f0;
+            --text-dim: #8891a5;
+            --text-muted: #5c6478;
+            --accent: #6366f1;
+            --accent-glow: rgba(99, 102, 241, 0.15);
+            --accent-gradient: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+            --green: #10b981;
+            --green-bg: rgba(16, 185, 129, 0.1);
+            --green-border: rgba(16, 185, 129, 0.25);
+            --red: #ef4444;
+            --red-bg: rgba(239, 68, 68, 0.1);
+            --red-border: rgba(239, 68, 68, 0.25);
+            --amber: #f59e0b;
+            --amber-bg: rgba(245, 158, 11, 0.1);
+            --amber-border: rgba(245, 158, 11, 0.25);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 5px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--text-muted);
+        }
+
+        /* ─── Header ─── */
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 16px;
+            border-bottom: 1px solid var(--border);
+            background: var(--bg);
+            flex-shrink: 0;
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .logo {
+            width: 30px;
+            height: 30px;
+            background: var(--accent-gradient);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 800;
+            font-size: 14px;
+            box-shadow: 0 2px 8px rgba(99, 102, 241, 0.25);
+        }
+
+        .brand {
+            font-weight: 800;
+            font-size: 15px;
+            letter-spacing: -0.5px;
+        }
+
+        .brand span {
+            color: var(--accent);
+        }
+
+        .auth-badge {
+            padding: 3px 10px;
+            border-radius: 20px;
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .auth-badge.connected {
+            background: var(--green-bg);
+            color: var(--green);
+            border: 1px solid var(--green-border);
+        }
+
+        .auth-badge.disconnected {
+            background: var(--red-bg);
+            color: var(--red);
+            border: 1px solid var(--red-border);
+        }
+
+        .auth-badge:hover {
+            opacity: 0.8;
+        }
+
+        /* ─── Setup Section ─── */
+        .setup-section {
+            padding: 16px;
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+
+        .form-group {
+            margin-bottom: 12px;
+        }
+
+        .form-group:last-child {
+            margin-bottom: 0;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-size: 13px;
+            font-family: inherit;
+            color: var(--text);
+            background: var(--bg-input);
+            transition: all 0.2s;
+        }
+
+        .form-group input::placeholder {
+            color: var(--text-muted);
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: var(--border-focus);
+            box-shadow: 0 0 0 3px var(--accent-glow);
+        }
+
+        .form-group input:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* ─── Controls ─── */
+        .controls {
+            display: flex;
+            gap: 8px;
+            padding: 0 16px 12px;
+            flex-shrink: 0;
+        }
+
+        .btn {
+            flex: 1;
+            padding: 10px 12px;
+            border: none;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            font-family: inherit;
+        }
+
+        .btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+
+        .btn-start {
+            background: var(--accent-gradient);
+            color: white;
+        }
+
+        .btn-start:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+        }
+
+        .btn-pause {
+            background: var(--amber-bg);
+            color: var(--amber);
+            border: 1px solid var(--amber-border);
+        }
+
+        .btn-pause:hover:not(:disabled) {
+            background: rgba(245, 158, 11, 0.2);
+        }
+
+        .btn-resume {
+            background: var(--green-bg);
+            color: var(--green);
+            border: 1px solid var(--green-border);
+        }
+
+        .btn-resume:hover:not(:disabled) {
+            background: rgba(16, 185, 129, 0.2);
+        }
+
+        .btn-stop {
+            background: var(--red-bg);
+            color: var(--red);
+            border: 1px solid var(--red-border);
+            flex: 0 0 auto;
+            width: 38px;
+        }
+
+        .btn-stop:hover:not(:disabled) {
+            background: rgba(239, 68, 68, 0.2);
+        }
+
+        .btn-export {
+            background: var(--bg-card);
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+
+        .btn-export:hover:not(:disabled) {
+            background: var(--bg-card-hover);
+            border-color: var(--accent);
+        }
+
+        /* ─── Stats Bar ─── */
+        .stats-bar {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 8px;
+            padding: 0 16px 12px;
+            flex-shrink: 0;
+        }
+
+        .stat-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 10px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 20px;
+            font-weight: 800;
+            color: var(--accent);
+            line-height: 1;
+        }
+
+        .stat-value.green {
+            color: var(--green);
+        }
+
+        .stat-value.amber {
+            color: var(--amber);
+        }
+
+        .stat-label {
+            font-size: 9px;
+            font-weight: 700;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-top: 4px;
+        }
+
+        /* ─── Progress Bar ─── */
+        .progress-section {
+            padding: 0 16px 12px;
+            flex-shrink: 0;
+        }
+
+        .progress-bar-bg {
+            width: 100%;
+            height: 4px;
+            background: var(--bg-card);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .progress-bar-fill {
+            height: 100%;
+            background: var(--accent-gradient);
+            border-radius: 4px;
+            transition: width 0.5s ease;
+            width: 0%;
+        }
+
+        .progress-text {
+            display: flex;
+            justify-content: space-between;
+            font-size: 10px;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        /* ─── Status Banner ─── */
+        .status-banner {
+            padding: 8px 16px;
+            font-size: 12px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+
+        .status-banner.idle {
+            background: var(--bg-card);
+            color: var(--text-dim);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .status-banner.running {
+            background: rgba(99, 102, 241, 0.1);
+            color: var(--accent);
+            border-bottom: 1px solid rgba(99, 102, 241, 0.2);
+        }
+
+        .status-banner.paused {
+            background: var(--amber-bg);
+            color: var(--amber);
+            border-bottom: 1px solid var(--amber-border);
+        }
+
+        .status-banner.complete {
+            background: var(--green-bg);
+            color: var(--green);
+            border-bottom: 1px solid var(--green-border);
+        }
+
+        .status-banner.error {
+            background: var(--red-bg);
+            color: var(--red);
+            border-bottom: 1px solid var(--red-border);
+        }
+
+        .pulse-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: currentColor;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.3;
+            }
+        }
+
+        .spinner-small {
+            width: 12px;
+            height: 12px;
+            border: 2px solid currentColor;
+            border-radius: 50%;
+            border-top-color: transparent;
+            animation: spin 0.8s linear infinite;
+            flex-shrink: 0;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* ─── Lead List ─── */
+        .leads-section {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px 16px;
+        }
+
+        .leads-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 6px 0;
+            margin-bottom: 6px;
+            position: sticky;
+            top: 0;
+            background: var(--bg);
+            z-index: 2;
+        }
+
+        .leads-header-title {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .leads-count-badge {
+            font-size: 10px;
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 10px;
+            background: var(--accent-glow);
+            color: var(--accent);
+        }
+
+        .lead-card {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            margin-bottom: 6px;
+            transition: all 0.15s;
+            background: var(--bg-card);
+        }
+
+        .lead-card:hover {
+            border-color: var(--accent);
+            background: var(--bg-card-hover);
+        }
+
+        .lead-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: var(--accent-gradient);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: 800;
+            color: white;
+            flex-shrink: 0;
+        }
+
+        .lead-avatar.member {
+            background: linear-gradient(135deg, #374151, #4b5563);
+        }
+
+        .lead-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .lead-name {
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--text);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .lead-title {
+            font-size: 11px;
+            color: var(--text-dim);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            margin-top: 1px;
+        }
+
+        .lead-url {
+            font-size: 10px;
+            color: var(--text-muted);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            margin-top: 2px;
+        }
+
+        .lead-company {
+            font-size: 10px;
+            color: var(--accent);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            margin-top: 2px;
+        }
+
+        .lead-location {
+            font-size: 10px;
+            color: var(--text-dim);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            margin-top: 1px;
+        }
+
+        .gender-icon {
+            font-size: 11px;
+            margin-left: 2px;
+            opacity: 0.7;
+        }
+
+        .lead-card-new {
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(-10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        /* Empty state */
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+        }
+
+        .empty-state .icon {
+            font-size: 40px;
+            margin-bottom: 12px;
+            opacity: 0.6;
+        }
+
+        .empty-state p {
+            font-size: 13px;
+            color: var(--text-dim);
+            line-height: 1.6;
+        }
+
+        .empty-state .hint {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 8px;
+        }
+
+        /* Not on search page */
+        .not-search-msg {
+            text-align: center;
+            padding: 40px 20px;
+        }
+
+        .not-search-msg .icon {
+            font-size: 40px;
+            margin-bottom: 12px;
+        }
+
+        .not-search-msg p {
+            font-size: 13px;
+            color: var(--text-dim);
+            line-height: 1.6;
+        }
+
+        .not-search-msg a {
+            color: var(--accent);
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        .not-search-msg a:hover {
+            text-decoration: underline;
+        }
+
+        /* ─── Footer ─── */
+        .footer {
+            padding: 10px 16px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+            background: var(--bg);
+        }
+
+        .footer a {
+            font-size: 11px;
+            color: var(--accent);
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        .footer a:hover {
+            text-decoration: underline;
+        }
+
+        .footer-right {
+            font-size: 10px;
+            color: var(--text-muted);
+        }
+
+        /* ─── Toggle ─── */
+        .toggle-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 16px;
+            flex-shrink: 0;
+        }
+
+        .toggle-label {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-dim);
+        }
+
+        .toggle-switch {
+            position: relative;
+            width: 36px;
+            height: 20px;
+            cursor: pointer;
+        }
+
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .toggle-slider {
+            position: absolute;
+            inset: 0;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            transition: all 0.2s;
+        }
+
+        .toggle-slider::before {
+            content: '';
+            position: absolute;
+            width: 14px;
+            height: 14px;
+            left: 2px;
+            bottom: 2px;
+            background: var(--text-muted);
+            border-radius: 50%;
+            transition: all 0.2s;
+        }
+
+        .toggle-switch input:checked+.toggle-slider {
+            background: var(--accent-glow);
+            border-color: var(--accent);
+        }
+
+        .toggle-switch input:checked+.toggle-slider::before {
+            transform: translateX(16px);
+            background: var(--accent);
+        }
+
+        /* ─── Settings rows ─── */
+        .settings-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 6px 16px;
+            flex-shrink: 0;
+        }
+
+        .settings-row label {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-dim);
+        }
+
+        .settings-row input[type="number"] {
+            width: 60px;
+            padding: 4px 8px;
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text);
+            font-size: 12px;
+            font-family: inherit;
+            text-align: center;
+        }
+
+        .settings-row input[type="number"]:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .divider {
+            height: 1px;
+            background: var(--border);
+            margin: 4px 16px;
+            flex-shrink: 0;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Header -->
+    <div class="header">
+        <div class="header-left">
+            <div class="logo">A</div>
+            <div class="brand">AutoConnect<span>.</span></div>
+        </div>
+        <span id="auth-badge" class="auth-badge disconnected" title="Click to sync session">Disconnected</span>
+    </div>
+
+    <!-- Setup -->
+    <div class="setup-section">
+        <div class="form-group">
+            <label for="list-name">List Name</label>
+            <input type="text" id="list-name" placeholder="e.g. 'AI Engineers in Bangalore'" required>
+        </div>
+    </div>
+
+    <!-- Controls -->
+    <!-- Controls (rebuilt dynamically by sidepanel.js) -->
+    <div class="controls" id="controls">
+        <!-- Buttons are created by updateControlButtons() with addEventListener -->
+    </div>
+
+    <!-- Settings -->
+    <div class="settings-row">
+        <label>Max pages</label>
+        <input type="number" id="max-pages" value="10" min="1" max="100">
+    </div>
+    <div class="toggle-row">
+        <span class="toggle-label">Auto-export when done</span>
+        <label class="toggle-switch">
+            <input type="checkbox" id="auto-export" checked>
+            <span class="toggle-slider"></span>
+        </label>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Status Banner -->
+    <div class="status-banner idle" id="status-banner">
+        <span>Ready to extract</span>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats-bar">
+        <div class="stat-card">
+            <div class="stat-value" id="stat-leads">0</div>
+            <div class="stat-label">Leads</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value amber" id="stat-page">0</div>
+            <div class="stat-label">Page</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value green" id="stat-exported">—</div>
+            <div class="stat-label">Exported</div>
+        </div>
+    </div>
+
+    <!-- Progress -->
+    <div class="progress-section" id="progress-section" style="display: none;">
+        <div class="progress-bar-bg">
+            <div class="progress-bar-fill" id="progress-fill"></div>
+        </div>
+        <div class="progress-text">
+            <span id="progress-status">Page 1 of 10</span>
+            <span id="progress-percent">0%</span>
+        </div>
+    </div>
+
+    <!-- Lead List -->
+    <div class="leads-section" id="leads-section">
+        <div class="leads-header">
+            <span class="leads-header-title">Extracted Leads</span>
+            <span class="leads-count-badge" id="leads-badge">0</span>
+        </div>
+
+        <div id="leads-list">
+            <div class="empty-state" id="empty-state">
+                <div class="icon">📋</div>
+                <p>No leads extracted yet</p>
+                <p class="hint">Enter a list name and click Start Extraction</p>
+            </div>
+        </div>
+
+        <!-- Not on search page -->
+        <div id="not-search-section" style="display: none;">
+            <div class="not-search-msg">
+                <div class="icon">🔍</div>
+                <p>Navigate to a <strong>LinkedIn search page</strong> to start extracting prospects.</p>
+                <p style="margin-top: 8px;">
+                    <a href="https://www.linkedin.com/search/results/people/" target="_blank">Open LinkedIn Search →</a>
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+        <a href="https://linkedin-camp-web.vercel.app/leads" target="_blank">📊 Dashboard</a>
+        <span class="footer-right" id="footer-version">v1.1.0</span>
+    </div>
+
+    <script src="sidepanel.js"></script>
+</body>
+
+</html>
