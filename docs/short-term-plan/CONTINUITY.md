@@ -1,60 +1,45 @@
-# Continuity Ledger — AutoConnect Extension
+# Continuity Ledger — LinkedIn Campaign Tool
 
-- Goal: Build LinkedIn lead extraction Chrome extension with side panel UI, auto-pagination, pause/resume, and auto-export to backend CRM
-- Success Criteria: User can extract all leads from LinkedIn search (including LinkedIn Members), control the extraction, and auto-export to the backend
+- Goal: Build full LinkedIn prospecting + messaging platform with Chrome extension, web dashboard, and inbox
+- Success Criteria: Users can extract leads, run campaigns, manage inbox conversations, and use message templates
 
 - Constraints/Assumptions:
   - LinkedIn uses RSC with hashed CSS classes — must use data-* attributes
   - Chrome Side Panel API requires `sidePanel` permission in Manifest V3
-  - Popup stays as default click action; side panel opens via button in popup
-  - Content script continues running in LinkedIn tab even when user switches tabs
+  - No LinkedIn official API — all message data comes from extension scraping or campaign logs
 
 - Key decisions:
-  - Side panel (dark theme) is the primary extraction UI — stays open while browsing
-  - Popup kept for quick auth sync + as entry point to open side panel
-  - State persisted to chrome.storage to survive panel close/reopen
-  - List name REQUIRED before extraction starts
-  - Auto-export on by default (sends to backend after scraping completes)
-  - Max pages configurable (default 10)
+  - Side panel (dark theme) is the primary extraction UI
+  - Inbox Phase 1 = campaign message logs + manual notes (no LinkedIn sync yet)
+  - Message templates are shared between Inbox and Campaign workflows
+  - Notifications use real database model (not mock data)
 
 - State:
   - Done:
-    - Fixed DOM scraping with new LinkedIn data-view-name selectors
-    - Fixed inject.js double-load guard
-    - Fixed LinkedIn Member dedup with deterministic IDs
-    - Fixed pagination with data-testid selectors
-    - Created sidepanel.html with dark premium design
-    - Created sidepanel.js with full extraction state machine (start/pause/resume/stop/export)
-    - Updated manifest.json with sidePanel permission + side_panel config
-    - Updated popup.html with "Open Extraction Panel" button
-    - Updated popup.js with side panel opener handler
-    - Updated background.js with side panel setup
-    - Fixed multi-page extraction in side panel (direct URL navigation)
-    - Fixed CSP violation from inline onclick handlers
-    - **Fixed**: LinkedIn Member URLs — now stored as empty string instead of fake URLs
-    - **Fixed**: Company vs Location confusion — company only from "Current:" line, location separate
-    - **Added**: Location field extracted separately with country parsed out
-    - **Added**: Gender detection from first name (Indian + common Western names)
-    - **Updated**: Lead card UI shows company, location, gender icons
-    - **Fixed**: addNewLeads deduplication for LinkedIn Members (composite key fallback)
+    - Chrome extension with full LinkedIn lead extraction
+    - Prospects page with tag-based list sidebar, fixed filters, individual filter removal
+    - Campaign builder with drag-and-drop workflow
+    - **Inbox Phase 1**: 3-panel messaging UI (conversations, thread, lead details)
+    - **Message Templates**: CRUD with auto-variable detection ({{firstName}}, {{company}}, etc.)
+    - **Backend**: New Message, MessageTemplate, Notification Prisma models
+    - **Backend**: Full inbox API (conversations, messages, templates, notifications)
+    - **Database**: Schema migrated with new tables
   - Now:
-    - User testing data quality fixes
+    - Testing Inbox UI + backend integration
   - Next:
-    - Edge case: detect LinkedIn CAPTCHA/challenge pages
-    - Edge case: handle LinkedIn login expiry
-    - Edge case: retry logic for failed exports
-    - Edge case: CSV export option
+    - Hook notification bell to real API (replace mock data in TopBar)
+    - Phase 2 Inbox: Extension captures LinkedIn messages (reply sync)
+    - Use templates in campaign workflow nodes
+    - Team page implementation
 
 - Open questions:
-  - Does the backend /api/v1/leads/import endpoint accept the new fields (location, country, gender)?
-  - Should there be a CSV download option in addition to backend export?
+  - When to start Phase 2 inbox (LinkedIn message sync)?
+  - Should templates be shared across team members?
 
 - Working set:
-  - apps/extension/content.js (UPDATED — scanDOM rewrite with gender, location, company fixes)
-  - apps/extension/sidepanel.js (UPDATED — lead card display, addNewLeads dedup fix)
-  - apps/extension/sidepanel.html (stable)
-  - apps/extension/manifest.json (stable)
-  - apps/extension/popup.html (stable)
-  - apps/extension/popup.js (stable)
-  - apps/extension/background.js (stable)
-  - apps/extension/inject.js (stable)
+  - packages/db/schema.prisma (UPDATED — Message, MessageTemplate, Notification models)
+  - apps/backend/src/controllers/inbox.controller.ts (NEW)
+  - apps/backend/src/routes/inbox.routes.ts (NEW)
+  - apps/backend/src/server.ts (UPDATED — inbox routes registered)
+  - apps/web/src/app/inbox/page.tsx (REWRITTEN — 3-panel inbox UI)
+  - apps/web/src/components/SidebarWrapper.tsx (UPDATED — no padding for /inbox)

@@ -21,7 +21,7 @@ export function SidebarWrapper({ children }: { children: React.ReactNode }) {
                     <TopBar />
                 </div>
                 {/* Main Content */}
-                <main className={`flex-1 overflow-y-auto bg-background ${pathname === '/leads' ? '' : 'p-8'}`}>
+                <main className={`flex-1 overflow-y-auto bg-background ${pathname === '/leads' || pathname === '/inbox' ? '' : 'p-8'}`}>
                     {children}
                 </main>
             </div>

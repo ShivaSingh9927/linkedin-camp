@@ -59,9 +59,12 @@ model User {
   updatedAt        DateTime         @updatedAt
 
   // Relations
-  leads        Lead[]
-  campaigns    Campaign[]
-  actionLogs   ActionLog[]
+  leads            Lead[]
+  campaigns        Campaign[]
+  actionLogs       ActionLog[]
+  messages         Message[]
+  messageTemplates MessageTemplate[]
+  notifications    Notification[]
 }
 
 model Lead {
@@ -84,6 +87,7 @@ model Lead {
   user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   campaignLeads  CampaignLead[]
   actionLogs     ActionLog[]
+  messages       Message[]
 
   @@unique([userId, linkedinUrl]) 
 }
@@ -132,4 +136,63 @@ model ActionLog {
   // Relations
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   lead         Lead         @relation(fields: [leadId], references: [id], onDelete: Cascade)
+}
+
+// --- INBOX ---
+
+enum MessageDirection {
+  SENT
+  RECEIVED
+}
+
+model Message {
+  id          String           @id @default(uuid())
+  userId      String
+  leadId      String
+  direction   MessageDirection
+  content     String
+  source      String?          // "CAMPAIGN", "MANUAL", "LINKEDIN_SYNC"
+  campaignId  String?          // which campaign triggered this message (if any)
+  templateId  String?          // which template was used (if any)
+  sentAt      DateTime         @default(now())
+  createdAt   DateTime         @default(now())
+
+  // Relations
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lead        Lead             @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([userId, leadId])
+  @@index([userId, sentAt])
+}
+
+model MessageTemplate {
+  id          String   @id @default(uuid())
+  userId      String
+  name        String
+  content     String
+  variables   String[] @default([]) // e.g. ["firstName", "company", "jobTitle"]
+  category    String?  // "invite", "follow_up", "intro", etc.
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, name])
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  type      String   // "new_reply", "campaign_complete", "campaign_error", "reminder"
+  title     String
+  body      String
+  meta      Json?    // { leadId, campaignId, etc. }
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  // Relations
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, read])
 }
