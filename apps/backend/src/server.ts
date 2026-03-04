@@ -7,6 +7,7 @@ import authRoutes from './routes/auth.routes';
 import leadRoutes from './routes/lead.routes';
 import campaignRoutes from './routes/campaign.routes';
 import inboxRoutes from './routes/inbox.routes';
+import teamRoutes from './routes/team.routes';
 import statsRoutes from './routes/stats.routes';
 import { initScheduler } from './cron/scheduler';
 import { initWorker } from './workers/linkedin.worker';
@@ -52,6 +53,7 @@ app.use('/api/v1/leads', leadRoutes);
 app.use('/api/v1/campaigns', campaignRoutes);
 app.use('/api/v1/stats', statsRoutes);
 app.use('/api/v1/inbox', inboxRoutes);
+app.use('/api/v1/team', teamRoutes);
 
 app.get('/', (req, res) => {
     res.json({ message: 'LinkedIn Campaign Engine API is running', version: '1.0.0' });

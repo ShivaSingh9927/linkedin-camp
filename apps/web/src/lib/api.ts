@@ -10,6 +10,10 @@ api.interceptors.request.use((config) => {
         if (token) {
             config.headers.Authorization = `Bearer ${token}`;
         }
+        const operatingUserId = localStorage.getItem('operatingUserId');
+        if (operatingUserId) {
+            config.headers['x-operating-user-id'] = operatingUserId;
+        }
     }
     return config;
 });

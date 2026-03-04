@@ -3,12 +3,35 @@ import { prisma } from '../server';
 import { parse } from 'csv-parse';
 import fs from 'fs';
 
-const upsertLead = async (userId: string, lead: any) => {
+// Helper to get team user ids
+const getTeamUserIds = async (userId: string) => {
+    const member = await prisma.teamMember.findFirst({
+        where: { userId },
+        include: { team: { include: { members: true } } }
+    });
+    return member ? member.team.members.map((m: { userId: string }) => m.userId) : [];
+};
+
+const upsertLead = async (userId: string, lead: any, teamUserIds: string[] = []) => {
     const nameParts = (lead.name || `${lead.firstName || ''} ${lead.lastName || ''}`).trim().split(' ');
     const firstName = lead.firstName || nameParts[0] || 'Unknown';
     const lastName = lead.lastName || nameParts.slice(1).join(' ') || '';
 
-    return prisma.lead.upsert({
+    // Anti-duplication check across team
+    if (teamUserIds.length > 1 && lead.linkedinUrl) {
+        const existingTeammateLead = await prisma.lead.findFirst({
+            where: {
+                linkedinUrl: lead.linkedinUrl,
+                userId: { in: teamUserIds, not: userId }
+            }
+        });
+
+        if (existingTeammateLead) {
+            return { isDuplicate: true, lead: null };
+        }
+    }
+
+    const savedLead = await prisma.lead.upsert({
         where: {
             userId_linkedinUrl: {
                 userId,
@@ -38,6 +61,8 @@ const upsertLead = async (userId: string, lead: any) => {
             tags: lead.tags || [],
         },
     });
+
+    return { isDuplicate: false, lead: savedLead };
 };
 
 export const importLeads = async (req: any, res: Response) => {
@@ -49,14 +74,21 @@ export const importLeads = async (req: any, res: Response) => {
     }
 
     try {
+        const teamUserIds = await getTeamUserIds(userId);
+
+        // Process leads sequentially or in batches if large, Promise.all is okay for small batches
         const importResults = await Promise.all(
-            leads.map((lead: any) => upsertLead(userId, lead))
+            leads.map((lead: any) => upsertLead(userId, lead, teamUserIds))
         );
+
+        const successful = importResults.filter(r => !r.isDuplicate);
+        const duplicates = importResults.filter(r => r.isDuplicate).length;
 
         res.json({
             success: true,
-            count: importResults.length,
-            message: `${importResults.length} leads imported successfully`,
+            count: successful.length,
+            duplicatesSkipped: duplicates,
+            message: `${successful.length} leads imported successfully${duplicates > 0 ? ` (${duplicates} skipped as team duplicates)` : ''}`,
         });
     } catch (error) {
         console.error('Import error:', error);
@@ -101,16 +133,21 @@ export const uploadCsvLeads = async (req: any, res: Response) => {
             }
         }
 
+        const teamUserIds = await getTeamUserIds(userId);
         const importResults = await Promise.all(
-            leads.map(lead => upsertLead(userId, lead))
+            leads.map(lead => upsertLead(userId, lead, teamUserIds))
         );
+
+        const successful = importResults.filter(r => !r.isDuplicate);
+        const duplicates = importResults.filter(r => r.isDuplicate).length;
 
         fs.unlinkSync(file.path);
 
         res.json({
             success: true,
-            count: importResults.length,
-            message: `${importResults.length} leads imported from CSV successfully`,
+            count: successful.length,
+            duplicatesSkipped: duplicates,
+            message: `${successful.length} leads imported from CSV successfully${duplicates > 0 ? ` (${duplicates} skipped as team duplicates)` : ''}`,
         });
     } catch (error) {
         console.error('CSV Import error:', error);
@@ -130,7 +167,8 @@ export const generateDemoLeads = async (req: any, res: Response) => {
     ];
 
     try {
-        await Promise.all(demoLeads.map(lead => upsertLead(userId, lead)));
+        const teamUserIds = await getTeamUserIds(userId);
+        await Promise.all(demoLeads.map(lead => upsertLead(userId, lead, teamUserIds)));
         res.json({ success: true, message: 'Demo leads generated' });
     } catch (error) {
         res.status(500).json({ error: 'Failed to generate demo leads' });

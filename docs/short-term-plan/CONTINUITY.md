@@ -24,13 +24,12 @@
     - **Backend**: New Message, MessageTemplate, Notification Prisma models
     - **Backend**: Full inbox API (conversations, messages, templates, notifications)
     - **Database**: Schema migrated with new tables
+    - **Team Feature Phase 1**: Schema updated, backend API created, and premium dashboard UI built.
+    - **Team Feature Phase 2**: Built Join Workspace UI, Anti-Duplication Protection, Crew Stats on Dashboard, and Account Switcher for Admins.
   - Now:
-    - Testing Inbox UI + backend integration
+    - Designing next steps for the project
   - Next:
-    - Hook notification bell to real API (replace mock data in TopBar)
-    - Phase 2 Inbox: Extension captures LinkedIn messages (reply sync)
-    - Use templates in campaign workflow nodes
-    - Team page implementation
+    - Review overarching agency requirements.
 
 - Open questions:
   - When to start Phase 2 inbox (LinkedIn message sync)?

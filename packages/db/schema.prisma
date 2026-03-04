@@ -65,7 +65,58 @@ model User {
   messages         Message[]
   messageTemplates MessageTemplate[]
   notifications    Notification[]
+  teamMembers      TeamMember[]
 }
+
+// --- TEAM & COLLABORATION ---
+
+enum TeamRole {
+  ADMIN
+  MEMBER
+}
+
+model Team {
+  id        String       @id @default(uuid())
+  name      String
+  ownerId   String       // User ID of the creator
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  // Relations
+  members   TeamMember[]
+  invites   TeamInvite[]
+}
+
+model TeamMember {
+  id        String   @id @default(uuid())
+  teamId    String
+  userId    String
+  role      TeamRole @default(MEMBER)
+  joinedAt  DateTime @default(now())
+
+  // Relations
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+}
+
+model TeamInvite {
+  id        String   @id @default(uuid())
+  teamId    String
+  email     String
+  role      TeamRole @default(MEMBER)
+  token     String   @unique
+  status    String   @default("PENDING") // PENDING, ACCEPTED, EXPIRED
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  // Relations
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, email])
+}
+
 
 model Lead {
   id             String     @id @default(uuid())

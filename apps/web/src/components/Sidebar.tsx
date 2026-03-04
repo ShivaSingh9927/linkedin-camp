@@ -37,7 +37,7 @@ const mainMenuItems = [
         ],
     },
     { icon: MessageSquare, label: 'Inbox', href: '/inbox' },
-    { icon: UsersRound, label: 'Team', href: '/team' },
+    { icon: UsersRound, label: 'Crew', href: '/team' },
 ];
 
 const bottomMenuItems = [

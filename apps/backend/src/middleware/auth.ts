@@ -28,6 +28,34 @@ export const authMiddleware = async (req: AuthRequest, res: Response, next: Next
         }
 
         req.user = decoded;
+
+        // ACCOUNT SWITCHER / GHOSTING LOGIC
+        const operatingUserId = req.headers['x-operating-user-id'] as string;
+        if (operatingUserId && operatingUserId !== decoded.id) {
+            // Verify if decoded.id is an ADMIN of a team that operatingUserId is a MEMBER of
+            const adminCheck = await prisma.teamMember.findFirst({
+                where: {
+                    userId: decoded.id,
+                    role: 'ADMIN',
+                    team: {
+                        members: {
+                            some: { userId: operatingUserId }
+                        }
+                    }
+                }
+            });
+
+            if (adminCheck) {
+                // The requester is an admin for this user. Allow ghosting.
+                const targetUser = await prisma.user.findUnique({ where: { id: operatingUserId } });
+                if (targetUser) {
+                    req.user = { id: targetUser.id, email: targetUser.email };
+                    // Optionally attach a flag indicating ghost mode, though not strictly required
+                    (req as any).isGhosting = true;
+                }
+            }
+        }
+
         next();
     } catch (error) {
         return res.status(401).json({ error: 'Invalid token' });
