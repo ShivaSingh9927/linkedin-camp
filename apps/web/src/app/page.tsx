@@ -12,7 +12,21 @@ import {
   Activity,
   Rocket,
   ArrowRight,
+  MessageSquare,
+  UserCheck,
+  Zap,
 } from "lucide-react";
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  AreaChart,
+  Area,
+} from 'recharts';
 import api from '@/lib/api';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -22,6 +36,7 @@ import { CampaignNameModal } from '@/components/CampaignNameModal';
 export default function DashboardPage() {
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [pendingTemplate, setPendingTemplate] = useState<typeof PREBUILT_TEMPLATES[0] | null>(null);
   const router = useRouter();
 
@@ -41,6 +56,22 @@ export default function DashboardPage() {
     const interval = setInterval(fetchStats, 30000);
     return () => clearInterval(interval);
   }, []);
+
+  const handleSync = async () => {
+    setIsSyncing(true);
+    try {
+      await api.post('/inbox/sync');
+      // Refetch stats after a delay
+      setTimeout(async () => {
+        const res = await api.get('/stats');
+        setStats(res.data);
+        setIsSyncing(false);
+      }, 5000);
+    } catch (err) {
+      console.error('Sync failed:', err);
+      setIsSyncing(false);
+    }
+  };
 
   const handleUseTemplate = (template: typeof PREBUILT_TEMPLATES[0]) => {
     setPendingTemplate(template);
@@ -65,157 +96,235 @@ export default function DashboardPage() {
       router.push(`/campaigns/${res.data.id}/builder`);
     } catch (err) {
       console.error('Failed to create campaign from template:', err);
-      alert('Error creating campaign. Make sure the backend is running.');
     }
   };
 
   if (loading) return (
     <div className="flex h-full items-center justify-center">
-      <Loader2 className="w-10 h-10 text-primary animate-spin" />
+      <Loader2 className="w-10 h-10 text-indigo-600 animate-spin" />
     </div>
   );
 
-  const statCards = [
+  const mainStats = [
     { name: 'Total Leads', value: stats?.totalLeads || 0, icon: Users, color: 'text-blue-600', bg: 'bg-blue-50' },
-    { name: 'Active Campaigns', value: stats?.activeCampaigns || 0, icon: Send, color: 'text-indigo-600', bg: 'bg-indigo-50' },
-    { name: 'Successful Actions', value: stats?.successfulActions || 0, icon: CheckCircle2, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-    { name: 'Weekly Growth', value: '+12%', icon: TrendingUp, color: 'text-amber-600', bg: 'bg-amber-50' },
+    { name: 'Active Campaigns', value: stats?.activeCampaigns || 0, icon: Rocket, color: 'text-indigo-600', bg: 'bg-indigo-50' },
+    { name: 'Invites Sent', value: stats?.invitesSent || 0, icon: Send, color: 'text-amber-600', bg: 'bg-amber-50' },
+    { name: 'Connections', value: stats?.connectedLeads || 0, icon: UserCheck, color: 'text-emerald-600', bg: 'bg-emerald-50' },
   ];
 
-  // Show top 3 templates for Quick Start
-  const quickStartTemplates = PREBUILT_TEMPLATES.slice(0, 3);
+  const secondaryStats = [
+    { name: 'Messages Sent', value: stats?.messagesSent || 0, icon: MessageSquare, color: 'text-violet-600' },
+    { name: 'Total Actions', value: stats?.successfulActions || 0, icon: Zap, color: 'text-rose-600' },
+  ];
+
+  const chartData = stats?.chartData?.map((d: any) => ({
+    name: new Date(d.date).toLocaleDateString(undefined, { weekday: 'short' }),
+    actions: d.count
+  })) || [];
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
-      <div>
-        <h1 className="text-3xl font-black text-slate-900 uppercase tracking-tight">Hello, Shiva</h1>
-        <p className="text-slate-500 font-medium">Your outreach engine performance at a glance.</p>
+    <div className="space-y-8 p-4 md:p-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+        <div>
+          <h1 className="text-4xl font-black text-slate-900 tracking-tight leading-none uppercase italic">Dashboard</h1>
+          <p className="text-slate-500 font-bold mt-2 flex items-center gap-2">
+            <Activity className="w-4 h-4 text-emerald-500" />
+            Engine is syncing at {new Date().toLocaleTimeString()}
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={handleSync}
+            disabled={isSyncing}
+            className="px-6 py-3 bg-white border-2 border-slate-200 rounded-2xl font-black uppercase text-xs tracking-widest hover:border-indigo-600 transition-all flex items-center gap-2 whitespace-nowrap"
+          >
+            {isSyncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Activity className="w-4 h-4" />}
+            {isSyncing ? 'Syncing...' : 'Sync Inbox'}
+          </button>
+          <Link href="/leads/import" className="px-6 py-3 bg-white border-2 border-slate-200 rounded-2xl font-black uppercase text-xs tracking-widest hover:border-indigo-600 transition-all">
+            Import Leads
+          </Link>
+          <button onClick={() => setPendingTemplate(PREBUILT_TEMPLATES[0])} className="px-6 py-3 bg-indigo-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-lg shadow-indigo-200 hover:scale-105 active:scale-95 transition-all">
+            Launch Rapid Setup
+          </button>
+        </div>
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {statCards.map((stat) => (
-          <div key={stat.name} className="bg-white p-6 rounded-3xl border shadow-sm hover:shadow-md transition-all group overflow-hidden relative">
-            <div className={`p-3 rounded-2xl ${stat.bg} ${stat.color} w-fit mb-4 group-hover:scale-110 transition-transform`}>
+      {/* Primary Stats */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        {mainStats.map((stat) => (
+          <div key={stat.name} className="group bg-white p-6 rounded-[2rem] border-2 border-slate-100 shadow-sm hover:shadow-xl hover:border-indigo-100 transition-all duration-300 relative overflow-hidden">
+            <div className={`p-4 rounded-2xl ${stat.bg} ${stat.color} w-fit mb-4 group-hover:scale-110 transition-transform duration-500`}>
               <stat.icon className="w-6 h-6" />
             </div>
-            <div className="space-y-1">
-              <p className="text-sm font-bold text-slate-400 uppercase tracking-wider">{stat.name}</p>
-              <p className="text-3xl font-black text-slate-900">{stat.value}</p>
+            <div className="space-y-1 relative z-10">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">{stat.name}</p>
+              <p className="text-3xl font-black text-slate-900 tabular-nums">{stat.value}</p>
             </div>
-            <div className="absolute top-4 right-4 text-slate-200">
-              <ArrowUpRight className="w-8 h-8 opacity-20" />
-            </div>
+            <ArrowUpRight className="absolute -bottom-2 -right-2 w-16 h-16 text-slate-50 group-hover:text-indigo-50 transition-colors duration-500" />
           </div>
         ))}
       </div>
 
-      {/* Quick Start Templates */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <Rocket className="w-6 h-6 text-indigo-600" />
-            <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight">Quick Start</h2>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Performance Chart */}
+        <div className="lg:col-span-2 bg-white p-8 rounded-[2.5rem] border-2 border-slate-100 shadow-sm">
+          <div className="flex items-center justify-between mb-8">
+            <div className="flex items-center space-x-3">
+              <div className="w-2 h-8 bg-indigo-600 rounded-full" />
+              <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight">Outreach Pulse (7d)</h3>
+            </div>
+            <div className="bg-slate-50 px-4 py-2 rounded-xl text-xs font-bold text-slate-500 flex items-center gap-2">
+              <div className="w-2 h-2 bg-indigo-500 rounded-full animate-pulse" />
+              Real-time
+            </div>
           </div>
-          <Link
-            href="/campaigns/templates-gallery"
-            className="text-sm font-bold text-indigo-600 hover:text-indigo-700 flex items-center space-x-1 transition-colors"
-          >
-            <span>View all templates</span>
-            <ArrowRight className="w-4 h-4" />
-          </Link>
+          <div className="h-[300px] w-full mt-4">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={chartData}>
+                <defs>
+                  <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.1} />
+                    <stop offset="95%" stopColor="#4f46e5" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis
+                  dataKey="name"
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fontSize: 10, fontWeight: 900, fill: '#94a3b8' }}
+                  dy={10}
+                />
+                <YAxis hide />
+                <Tooltip
+                  contentStyle={{
+                    borderRadius: '20px',
+                    border: 'none',
+                    boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)',
+                    fontSize: '12px',
+                    fontWeight: 900,
+                    textTransform: 'uppercase'
+                  }}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="actions"
+                  stroke="#4f46e5"
+                  strokeWidth={3}
+                  fillOpacity={1}
+                  fill="url(#colorValue)"
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {quickStartTemplates.map((tpl) => (
-            <div
-              key={tpl.id}
-              className="bg-white rounded-3xl border shadow-sm hover:shadow-lg transition-all overflow-hidden group cursor-pointer"
-              onClick={() => handleUseTemplate(tpl)}
-            >
-              <div className={`h-2 bg-gradient-to-r ${tpl.color}`} />
-              <div className="p-6 space-y-3">
-                <div className="flex items-center space-x-3">
-                  <span className="text-2xl">{tpl.icon}</span>
-                  <div>
-                    <p className="font-black text-slate-800 uppercase tracking-tight text-sm">{tpl.name}</p>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{tpl.category}</p>
+        {/* Campaign Leaderboard */}
+        <div className="bg-slate-900 text-white p-8 rounded-[2.5rem] shadow-2xl relative overflow-hidden">
+          <div className="relative z-10 h-full flex flex-col">
+            <div className="flex items-center justify-between mb-8">
+              <h3 className="text-lg font-black uppercase tracking-tighter italic">Top Campaigns</h3>
+              <TrendingUp className="w-5 h-5 text-indigo-400" />
+            </div>
+            <div className="space-y-6 flex-1">
+              {stats?.campaignPerformance?.slice(0, 4).map((c: any) => (
+                <div key={c.id} className="space-y-2">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="font-bold truncate max-w-[150px] uppercase tracking-wider">{c.name}</span>
+                    <span className="font-black text-indigo-400 tabular-nums">{c.actions} actions</span>
+                  </div>
+                  <div className="h-2 w-full bg-white/10 rounded-full overflow-hidden">
+                    <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${Math.min(100, (c.actions / (stats.successfulActions || 1)) * 300)}%` }} />
                   </div>
                 </div>
-                <p className="text-sm text-slate-500 leading-relaxed">{tpl.description}</p>
-                <div className="flex items-center space-x-2 text-xs text-slate-400">
-                  <span className="bg-slate-50 px-2 py-1 rounded-full font-bold">{tpl.nodes.length - 1} steps</span>
-                  <span className="bg-slate-50 px-2 py-1 rounded-full font-bold">{tpl.nodes.filter(n => n.data.subType === 'WAIT').length} delays</span>
-                </div>
-                <button className="w-full mt-2 py-2.5 bg-indigo-50 text-indigo-700 rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-indigo-600 hover:text-white transition-all">
-                  Use This Template
-                </button>
-              </div>
+              ))}
+              {(!stats?.campaignPerformance || stats?.campaignPerformance.length === 0) && (
+                <div className="text-slate-500 uppercase text-[10px] font-black tracking-widest text-center mt-20">No campaigns launched</div>
+              )}
             </div>
-          ))}
+
+            <Link href="/campaigns" className="mt-8 group flex items-center justify-between bg-white text-slate-900 p-5 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-indigo-600 hover:text-white transition-all">
+              Manage Campaigns
+              <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+            </Link>
+          </div>
+          <Zap className="absolute -top-10 -left-10 w-40 h-40 opacity-5 text-white transform -rotate-45" />
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Recent Activity */}
-        <div className="lg:col-span-2 bg-white rounded-3xl border shadow-sm overflow-hidden flex flex-col">
-          <div className="p-6 border-b flex justify-between items-center">
-            <div className="flex items-center space-x-2">
-              <Activity className="w-5 h-5 text-indigo-600" />
-              <h3 className="font-black text-slate-800 uppercase tracking-widest text-sm">Recent Engine Activity</h3>
-            </div>
-            <button className="text-xs font-bold text-indigo-600 hover:text-indigo-700 transition-colors uppercase tracking-widest">Live Updates</button>
-          </div>
-          <div className="p-0 flex-1">
-            {stats?.recentLogs?.length === 0 ? (
-              <div className="p-10 text-center text-slate-400 italic font-medium">No activity reported yet. Start a campaign to see logs.</div>
-            ) : (
-              <div className="divide-y">
-                {stats?.recentLogs?.map((log: any) => (
-                  <div key={log.id} className="p-6 flex items-center justify-between hover:bg-slate-50/50 transition-colors">
-                    <div className="flex items-center space-x-4">
-                      <div className="bg-emerald-100 text-emerald-700 p-2 rounded-xl">
-                        <CheckCircle2 className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <p className="font-black text-slate-800 text-sm uppercase tracking-tight">
-                          {log.actionType.replace('_', ' ')}: <span className="text-indigo-600">{log.lead?.firstName} {log.lead?.lastName}</span>
-                        </p>
-                        <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mt-0.5">
-                          {new Date(log.executedAt).toLocaleTimeString()}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="bg-emerald-50 text-emerald-600 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest">
-                      Completed
-                    </div>
-                  </div>
-                ))}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 pb-12">
+        {/* Live Activity Log */}
+        <div className="lg:col-span-2 bg-white rounded-[2.5rem] border-2 border-slate-100 shadow-sm overflow-hidden">
+          <div className="p-8 border-b-2 border-slate-50 flex justify-between items-center">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center">
+                <Activity className="w-5 h-5" />
               </div>
+              <div>
+                <h3 className="font-black text-slate-900 uppercase tracking-widest text-sm">Engine Heartbeat</h3>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Latest successful operations</p>
+              </div>
+            </div>
+          </div>
+          <div className="divide-y-2 divide-slate-50 max-h-[400px] overflow-y-auto">
+            {stats?.recentLogs?.map((log: any) => (
+              <div key={log.id} className="p-6 flex items-center justify-between hover:bg-slate-50/50 transition-colors group">
+                <div className="flex items-center space-x-4">
+                  <div className="bg-slate-50 text-slate-400 p-3 rounded-2xl group-hover:bg-indigo-50 group-hover:text-indigo-600 transition-colors">
+                    {log.actionType === 'INVITE' ? <Send className="w-4 h-4" /> : <MessageSquare className="w-4 h-4" />}
+                  </div>
+                  <div>
+                    <p className="font-black text-slate-800 text-sm uppercase tracking-tight">
+                      {log.actionType}: <span className="text-indigo-600">{log.lead?.firstName} {log.lead?.lastName}</span>
+                    </p>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">
+                      {new Date(log.executedAt).toLocaleTimeString()} • COMPLETED
+                    </p>
+                  </div>
+                </div>
+                <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                  <Link href={`/leads/${log.leadId}`} className="p-2 border border-slate-200 rounded-xl text-slate-400 hover:text-indigo-600 hover:border-indigo-600 transition-all">
+                    <ArrowUpRight className="w-4 h-4" />
+                  </Link>
+                </div>
+              </div>
+            ))}
+            {stats?.recentLogs?.length === 0 && (
+              <div className="p-12 text-center text-slate-300 uppercase text-xs font-black tracking-[0.2em]">Awaiting first actions...</div>
             )}
           </div>
         </div>
 
-        {/* Quick Info */}
-        <div className="bg-gradient-to-br from-indigo-900 to-slate-900 text-white p-8 rounded-3xl shadow-xl space-y-8 relative overflow-hidden group">
-          <div className="relative z-10">
-            <h3 className="text-xl font-black uppercase tracking-tighter mb-4 italic">Next Step Guidance</h3>
-            <p className="text-indigo-200/80 leading-relaxed font-medium">Use the <span className="text-white font-bold underline">LinkedIn Extension</span> to import more leads or tweak your workflow in the builder to add longer delays for safer outreach.</p>
-          </div>
-          <div className="space-y-4 relative z-10">
-            <div className="flex items-center space-x-3 bg-white/10 p-4 rounded-2xl backdrop-blur-md border border-white/10">
-              <Clock className="w-6 h-6 text-indigo-300" />
+        {/* Stats breakdown */}
+        <div className="space-y-6">
+          {secondaryStats.map(s => (
+            <div key={s.name} className="bg-white p-8 rounded-3xl border-2 border-slate-100 shadow-sm flex items-center justify-between group hover:border-rose-100 transition-all">
               <div>
-                <p className="text-[10px] font-black text-indigo-200 uppercase tracking-widest">Auto-Pulse Active</p>
-                <p className="text-sm font-bold">Engine checking for tasks...</p>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{s.name}</p>
+                <p className="text-2xl font-black text-slate-900 tabular-nums">{s.value}</p>
+              </div>
+              <div className={`p-4 rounded-2xl bg-slate-50 ${s.color} group-hover:scale-110 transition-transform`}>
+                <s.icon className="w-6 h-6" />
               </div>
             </div>
+          ))}
+
+          <div className="bg-indigo-600 p-8 rounded-[2rem] text-white shadow-xl shadow-indigo-200 group relative overflow-hidden">
+            <div className="relative z-10">
+              <h4 className="text-sm font-black uppercase tracking-widest mb-2 opacity-80 italic">Pro Tip</h4>
+              <p className="text-xs font-bold leading-relaxed">
+                Accounts with <span className="underline underline-offset-4 decoration-2">AI Personalization</span> enabled see 40% higher connection rates.
+              </p>
+              <Link href="/settings" className="mt-4 flex items-center text-[10px] font-black uppercase tracking-[0.2em] group-hover:gap-4 gap-2 transition-all">
+                Configure AI <ArrowRight className="w-3 h-3" />
+              </Link>
+            </div>
+            <TrendingUp className="absolute -bottom-6 -right-6 w-32 h-32 opacity-10" />
           </div>
-          <Send className="absolute -bottom-10 -right-10 w-48 h-48 opacity-5 text-white transform group-hover:scale-110 transition-transform duration-700" />
         </div>
       </div>
 
-      {/* Campaign Name Modal */}
       <CampaignNameModal
         isOpen={!!pendingTemplate}
         defaultName={pendingTemplate?.name || 'New Campaign'}

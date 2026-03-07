@@ -68,3 +68,23 @@ export const syncExtension = async (req: any, res: Response) => {
         res.status(500).json({ error: 'Failed to sync cookie' });
     }
 };
+
+export const getCloudStatus = async (req: any, res: Response) => {
+    const userId = req.user.id;
+    try {
+        const user = await prisma.user.findUnique({ where: { id: userId } });
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        const now = new Date();
+        const lastAction = user.lastCloudActionAt ? user.lastCloudActionAt.getTime() : 0;
+        const isRecentlyActive = (now.getTime() - lastAction) < (5 * 60 * 1000); // 5 minutes
+
+        const hasCloudWorkersRunning = user.cloudWorkerActive || isRecentlyActive;
+
+        res.json({ success: true, hasCloudWorkersRunning, lastCloudActionAt: user.lastCloudActionAt });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to fetch cloud status' });
+    }
+};

@@ -10,12 +10,15 @@ import {
     deleteTemplate,
     getNotifications,
     markNotificationsRead,
+    syncInboxManual,
 } from '../controllers/inbox.controller';
 import { authMiddleware } from '../middleware/auth';
 
 const router = Router();
 
 router.use(authMiddleware);
+
+router.post('/sync', syncInboxManual);
 
 // Conversations
 router.get('/conversations', getConversations);

@@ -26,6 +26,11 @@ interface TeamMember {
     stats?: {
         activeCampaigns: number;
         totalLeads: number;
+        invitesToday?: number;
+        messagesToday?: number;
+        totalReplies?: number;
+        hasProxy?: boolean;
+        dailyInviteLimit?: number;
     };
 }
 
@@ -171,6 +176,10 @@ export default function TeamPage() {
     const team = teamData.team!;
     const myRole = teamData.role;
 
+    const totalInvitesToday = team.members.reduce((acc, m) => acc + (m.stats?.invitesToday || 0), 0);
+    const totalDailyLimit = team.members.reduce((acc, m) => acc + (m.stats?.dailyInviteLimit || 30), 0);
+    const totalReplies = team.members.reduce((acc, m) => acc + (m.stats?.totalReplies || 0), 0);
+
     return (
         <div className="max-w-7xl mx-auto space-y-10 p-8 pt-12 animate-in fade-in duration-500">
             {/* Header */}
@@ -200,19 +209,20 @@ export default function TeamPage() {
             </div>
 
             {/* Quick Stats */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                 {[
                     { label: 'Total Members', value: team.members?.length || 0, icon: Users, color: 'text-blue-600', bg: 'bg-blue-50' },
-                    { label: 'Active Invites', value: team.invites?.length || 0, icon: ExternalLink, color: 'text-amber-600', bg: 'bg-amber-50' },
+                    { label: 'Network Invites', value: `${totalInvitesToday} / ${totalDailyLimit}`, icon: ExternalLink, color: 'text-indigo-600', bg: 'bg-indigo-50' },
+                    { label: 'Total Leads Won', value: totalReplies, icon: Crown, color: 'text-amber-600', bg: 'bg-amber-50' },
                     { label: 'Cloud Status', value: 'Protected', icon: Shield, color: 'text-emerald-600', bg: 'bg-emerald-50' },
                 ].map((stat) => (
-                    <div key={stat.label} className="bg-white p-7 rounded-[35px] border-2 border-slate-50 shadow-sm flex items-center space-x-5 hover:border-slate-200 transition-colors">
+                    <div key={stat.label} className="bg-white p-6 rounded-[35px] border-2 border-slate-50 shadow-sm flex items-center space-x-4 hover:border-slate-200 transition-colors">
                         <div className={`p-4 rounded-2xl ${stat.bg} ${stat.color} shadow-inner`}>
-                            <stat.icon className="w-7 h-7" />
+                            <stat.icon className="w-6 h-6" />
                         </div>
                         <div>
-                            <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest">{stat.label}</p>
-                            <p className="text-3xl font-black text-slate-900">{stat.value}</p>
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{stat.label}</p>
+                            <p className="text-2xl font-black text-slate-900 tracking-tight">{stat.value}</p>
                         </div>
                     </div>
                 ))}
@@ -312,7 +322,8 @@ export default function TeamPage() {
                                 <tr className="bg-slate-50/70 text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] border-b">
                                     <th className="px-10 py-6">Operator</th>
                                     <th className="px-10 py-6">Authority</th>
-                                    <th className="px-10 py-6 text-center">Performance</th>
+                                    <th className="px-10 py-6 text-center">Network Setup</th>
+                                    <th className="px-10 py-6 text-center">Cloud Limits (Today)</th>
                                     <th className="px-10 py-6 text-right">Activity</th>
                                 </tr>
                             </thead>
@@ -347,15 +358,33 @@ export default function TeamPage() {
                                             )}
                                         </td>
                                         <td className="px-10 py-7 text-center">
-                                            <div className="flex items-center justify-center space-x-4">
+                                            {m.stats?.hasProxy ? (
+                                                <div className="inline-flex items-center text-emerald-600 space-x-2">
+                                                    <Shield className="w-4 h-4" />
+                                                    <span className="text-[11px] font-black uppercase tracking-widest">Dedicated IP</span>
+                                                </div>
+                                            ) : (
+                                                <div className="inline-flex items-center text-slate-400 space-x-2 opacity-50">
+                                                    <Shield className="w-4 h-4" />
+                                                    <span className="text-[11px] font-black uppercase tracking-widest">Shared IP</span>
+                                                </div>
+                                            )}
+                                        </td>
+                                        <td className="px-10 py-7 text-center">
+                                            <div className="flex items-center justify-center space-x-6">
                                                 <div className="text-center">
-                                                    <p className="text-xl font-black text-slate-900">{m.stats?.activeCampaigns || 0}</p>
-                                                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Active Cmp.</p>
+                                                    <p className="text-xl font-black text-slate-900">{m.stats?.invitesToday || 0} <span className="text-xs text-slate-400">/ {m.stats?.dailyInviteLimit || 30}</span></p>
+                                                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Invites</p>
                                                 </div>
                                                 <div className="w-px h-8 bg-slate-100"></div>
                                                 <div className="text-center">
-                                                    <p className="text-xl font-black text-slate-900">{m.stats?.totalLeads || 0}</p>
-                                                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Leads Extracted</p>
+                                                    <p className="text-xl font-black text-slate-900">{m.stats?.messagesToday || 0}</p>
+                                                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Messages</p>
+                                                </div>
+                                                <div className="w-px h-8 bg-slate-100"></div>
+                                                <div className="text-center">
+                                                    <p className="text-xl font-black text-emerald-600">{m.stats?.totalReplies || 0}</p>
+                                                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Total Replies</p>
                                                 </div>
                                             </div>
                                         </td>
@@ -397,6 +426,9 @@ export default function TeamPage() {
                                             <div className="inline-flex items-center bg-white text-slate-400 px-4 py-2 rounded-2xl border border-slate-100 space-x-2 italic">
                                                 <span className="text-[11px] font-black uppercase tracking-widest">{i.role} (PENDING)</span>
                                             </div>
+                                        </td>
+                                        <td className="px-10 py-7 text-center">
+                                            <span className="text-[10px] text-slate-300 italic font-medium tracking-tight">Offline</span>
                                         </td>
                                         <td className="px-10 py-7 text-center">
                                             <span className="text-[10px] text-slate-300 italic font-medium tracking-tight">Data unavailable</span>

@@ -43,11 +43,34 @@ export const getMyTeam = async (req: any, res: Response) => {
             const totalLeads = await prisma.lead.count({
                 where: { userId: m.userId }
             });
+
+            // Limit Tracking & Admin Console Stats
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+
+            const invitesToday = await prisma.actionLog.count({
+                where: { userId: m.userId, actionType: 'INVITE', status: 'SUCCESS', executedAt: { gte: today } }
+            });
+            const messagesToday = await prisma.actionLog.count({
+                where: { userId: m.userId, actionType: 'MESSAGE', status: 'SUCCESS', executedAt: { gte: today } }
+            });
+            const totalReplies = await prisma.lead.count({
+                where: { userId: m.userId, status: 'REPLIED' }
+            });
+
+            // Proxy check
+            const userRecord = await prisma.user.findUnique({ where: { id: m.userId }, select: { proxyIp: true, dailyInviteLimit: true } });
+
             return {
                 ...m,
                 stats: {
                     activeCampaigns,
                     totalLeads,
+                    invitesToday,
+                    messagesToday,
+                    totalReplies,
+                    hasProxy: !!userRecord?.proxyIp,
+                    dailyInviteLimit: userRecord?.dailyInviteLimit || 30
                 }
             };
         }));

@@ -5,10 +5,18 @@ const stealthPlugin = require('puppeteer-extra-plugin-stealth');
 import { prisma } from '../server';
 import { ActionType, WorkflowJson } from '@repo/types';
 import { generateIcebreaker } from '../services/ai.service';
+import { canWorkNow, applyJitter, getRandomUserAgent } from '../services/safety.service';
+import { triggerWebhook } from '../services/webhook.service';
 
 chromium.use(stealthPlugin());
 
-const redisConnection = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', { maxRetriesPerRequest: null });
+let redisConnection: any;
+try {
+    redisConnection = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', { maxRetriesPerRequest: null });
+    redisConnection.on('error', (err: any) => console.log('Redis Worker Error:', err.message));
+} catch (e) {
+    console.error('Failed to init Redis:', e);
+}
 
 const randomDelay = (min = 2000, max = 5000) =>
     new Promise(resolve => setTimeout(resolve, Math.floor(Math.random() * (max - min + 1) + min)));
@@ -23,37 +31,91 @@ const injectVariables = (template: string, lead: any, icebreaker?: string | null
         .replace(/{icebreaker}/g, icebreaker || '');
 };
 
-export const initWorker = () => {
-    const worker = new Worker('linkedin-actions', async (job: Job) => {
-        const { campaignLeadId, userId, leadId, currentStepId, workflowJson } = job.data as any;
-        const workflow = workflowJson as WorkflowJson;
+export const processWorkflowStep = async (data: any) => {
+    const { campaignLeadId, userId, leadId, campaignId, currentStepId, workflowJson } = data;
+    const workflow = workflowJson as WorkflowJson;
 
-        console.log(`Executing step ${currentStepId} for lead ${leadId}`);
+    console.log(`Executing step ${currentStepId} for lead ${leadId}`);
 
-        // 1. Find the current node in the workflow
-        const currentNode = workflow.nodes.find(n => n.id === currentStepId);
-        if (!currentNode) return;
+    // --- SAFETY ENGINE: WORKING HOURS CHECK ---
+    const workStatus = await canWorkNow(userId);
+    if (!workStatus.allowed) {
+        console.log(`[SAFETY] Outside working hours for user ${userId}. Rescheduling to ${workStatus.nextStartTime?.toISOString()}`);
+        await prisma.campaignLead.update({
+            where: { id: campaignLeadId },
+            data: { nextActionDate: workStatus.nextStartTime }
+        });
+        return;
+    }
 
+    // 1. Find the current node in the workflow
+    const currentNode = workflow.nodes.find(n => n.id === currentStepId);
+    if (!currentNode) return;
+
+    try {
         // 2. Execute the action
-        const user = await prisma.user.findUnique({ where: { id: userId } });
+        const user = await prisma.user.findUnique({
+            where: { id: userId },
+            include: { proxy: true }
+        });
         const lead = await prisma.lead.findUnique({ where: { id: leadId } });
         const campaignLead = await prisma.campaignLead.findUnique({ where: { id: campaignLeadId } });
 
-        if (currentNode.subType === 'AI_PERSONALIZE') {
+        // Daily Rate Limiting for INVITE
+        if (currentNode.subType === 'INVITE') {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const inviteCount = await prisma.actionLog.count({
+                where: {
+                    userId,
+                    actionType: 'INVITE',
+                    status: 'SUCCESS',
+                    executedAt: { gte: today }
+                }
+            });
+            const limit = user?.dailyInviteLimit || 30;
+            if (inviteCount >= limit) {
+                console.log(`[RATE LIMIT] User ${userId} reached daily invite limit of ${limit}. Rescheduling.`);
+                const tomorrow = new Date();
+                tomorrow.setDate(tomorrow.getDate() + 1);
+                tomorrow.setHours(9, 0, 0, 0);
+                const rescheduledDate = applyJitter(tomorrow, 10, 120); // Add jitter to start of next day
+                await prisma.campaignLead.update({
+                    where: { id: campaignLeadId },
+                    data: { nextActionDate: rescheduledDate }
+                });
+                return;
+            }
+        }
+
+        if (currentNode.type === 'DELAY' || currentNode.type === 'CONDITION') {
+            // These don't have execution side-effects, they just get evaluated in the "Find Next Step" block.
+            console.log(`[FLOW NODE] Processing ${currentNode.type} node`);
+        } else if (currentNode.subType === 'TAG_LEAD') {
+            const tag = currentNode.data?.tag;
+            if (tag) {
+                const currentTags = lead?.tags || [];
+                if (!currentTags.includes(tag)) {
+                    await prisma.lead.update({
+                        where: { id: leadId },
+                        data: { tags: [...currentTags, tag] }
+                    });
+                }
+                await prisma.actionLog.create({
+                    data: { userId, leadId, campaignId, actionType: 'PROFILE_VISIT' as ActionType, status: 'SUCCESS' } // Hack until custom ActionType is added
+                });
+            }
+        } else if (currentNode.subType === 'AI_PERSONALIZE') {
             console.log(`[AI] Generating personalization for ${lead?.firstName}`);
             const icebreaker = await generateIcebreaker(lead);
             await prisma.campaignLead.update({
                 where: { id: campaignLeadId },
                 data: { personalization: icebreaker }
             });
-            console.log(`[AI] Personalization saved: "${icebreaker}"`);
-
-            // Move to next step immediately after AI generation
             await prisma.actionLog.create({
-                data: { userId, leadId, actionType: 'AI_PERSONALIZE' as ActionType, status: 'SUCCESS' }
+                data: { userId, leadId, campaignId, actionType: 'PROFILE_VISIT' as ActionType, status: 'SUCCESS' }
             });
-        } else if (currentNode.type === 'ACTION') {
-            // Prepare localized message if applicable
+        } else {
             const message = injectVariables(currentNode.data?.message || '', lead, campaignLead?.personalization);
 
             // MOCK MODE: If no cookies, we just log and succeed for testing
@@ -62,114 +124,196 @@ export const initWorker = () => {
                 if (message) console.log(`[MOCK MODE] Message Content: "${message}"`);
                 await randomDelay(500, 1000);
                 await prisma.actionLog.create({
-                    data: { userId, leadId, actionType: currentNode.subType as ActionType, status: 'SUCCESS' }
+                    data: { userId, leadId, campaignId, actionType: currentNode.subType as ActionType, status: 'SUCCESS' }
                 });
+
+                // Mock lead status updates
+                if (currentNode.subType === 'INVITE') {
+                    await prisma.lead.update({ where: { id: leadId }, data: { status: 'INVITE_PENDING' } });
+                } else if (currentNode.subType === 'MESSAGE' && lead?.status === 'UNCONNECTED') {
+                    await prisma.lead.update({ where: { id: leadId }, data: { status: 'CONNECTED' } });
+                }
+
             } else {
                 if (!lead?.linkedinUrl) throw new Error('Missing lead data');
 
-                const browser = await chromium.launch({ headless: true });
-                const context = await browser.newContext({
-                    viewport: { width: 1280, height: 720 },
-                    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                // Signal to Extension: Cloud Worker is starting for this user
+                await prisma.user.update({
+                    where: { id: userId },
+                    data: { cloudWorkerActive: true, lastCloudActionAt: new Date() }
                 });
 
-                await context.addCookies([{
-                    name: 'li_at',
-                    value: user.linkedinCookie,
-                    domain: '.linkedin.com',
-                    path: '/',
-                    httpOnly: true,
-                    secure: true
-                }]);
-
-                const page = await context.newPage();
-
+                let browser;
                 try {
-                    if (currentNode.subType === 'PROFILE_VISIT') {
-                        await page.goto(lead.linkedinUrl, { waitUntil: 'networkidle' });
-                        await randomDelay(3000, 6000);
-                        await page.evaluate(() => window.scrollBy(0, 500));
+                    const launchOptions: any = {
+                        headless: true,
+                        args: ['--no-sandbox', '--disable-setuid-sandbox']
+                    };
 
-                        await prisma.actionLog.create({
-                            data: { userId, leadId, actionType: 'PROFILE_VISIT', status: 'SUCCESS' }
-                        });
-                    } else if (currentNode.subType === 'INVITE') {
-                        await page.goto(lead.linkedinUrl, { waitUntil: 'networkidle' });
-                        await randomDelay(3000, 6000);
+                    // @ts-ignore Let's ignore this until TS catches up with Prisma output
+                    if (user.proxy) {
+                        launchOptions.proxy = {
+                            server: `http://${(user as any).proxy.proxyHost}:${(user as any).proxy.proxyPort}`,
+                            username: (user as any).proxy.proxyUsername || undefined,
+                            password: (user as any).proxy.proxyPassword || undefined
+                        };
+                    }
 
-                        // Look for connect button
-                        const connectButton = page.getByRole('button', { name: 'Connect', exact: true }).first();
-                        if (await connectButton.isVisible()) {
-                            await connectButton.click();
-                            await randomDelay(1000, 3000);
+                    browser = await chromium.launch(launchOptions);
+                    const context = await browser.newContext({
+                        userAgent: getRandomUserAgent()
+                    });
 
-                            // Check for "Add a note"
-                            const addNoteButton = page.getByRole('button', { name: 'Add a note', exact: true });
-                            if (await addNoteButton.isVisible()) {
-                                await addNoteButton.click();
-                                await randomDelay(1000, 2000);
-
-                                if (message) {
-                                    await page.locator('#custom-message').fill(message);
-                                    await randomDelay(1000, 2000);
-                                }
-                            }
-
-                            const sendButton = page.getByRole('button', { name: 'Send', exact: true });
-                            await sendButton.click();
-                            await randomDelay(2000, 4000);
-
-                            await prisma.actionLog.create({
-                                data: { userId, leadId, actionType: 'INVITE', status: 'SUCCESS' }
-                            });
+                    // 1. Proxy Bandwidth & Server RAM Optimizer
+                    await context.route('**/*', (route) => {
+                        const type = route.request().resourceType();
+                        if (['image', 'media', 'font', 'stylesheet'].includes(type) || route.request().url().includes('google-analytics')) {
+                            route.abort();
                         } else {
-                            throw new Error('Connect button not visible');
+                            route.continue();
+                        }
+                    });
+
+                    let cookies;
+                    try {
+                        cookies = JSON.parse(user.linkedinCookie as string);
+                    } catch (e) {
+                        // Fallback for old single-string cookie format
+                        cookies = [{
+                            name: 'li_at',
+                            value: user.linkedinCookie,
+                            domain: '.linkedin.com',
+                            path: '/',
+                            secure: true,
+                            httpOnly: true,
+                            sameSite: 'None'
+                        }];
+                    }
+
+                    // Playwright expects an array of cookie objects
+                    await context.addCookies(Array.isArray(cookies) ? cookies : [cookies]);
+
+                    const page = await context.newPage();
+                    await page.goto(lead.linkedinUrl);
+
+                    if (currentNode.subType === 'INVITE') {
+                        // 1. Check if already invited or connected
+                        const isConnected = await page.isVisible('button:has-text("Message")');
+                        if (isConnected) {
+                            console.log('Already connected');
+                        } else {
+                            // 2. Click Connect
+                            const connectBtn = await page.locator('button:has-text("Connect")').first();
+                            if (await connectBtn.isVisible()) {
+                                await connectBtn.click();
+                                await randomDelay();
+                                // Handle "Add a note"
+                                if (message) {
+                                    await page.click('button:has-text("Add a note")');
+                                    await randomDelay(500, 1500);
+                                    // Simulated human stroke jitter
+                                    await page.type('textarea[name="message"]', message, { delay: Math.floor(Math.random() * 50) + 30 });
+                                }
+
+                                // 3. Simulate human scroll to look like we are actually reading
+                                await page.mouse.wheel(0, Math.floor(Math.random() * 500) + 300);
+                                await randomDelay(1000, 2500);
+
+                                await page.click('button:has-text("Send")');
+
+                                // 4. LinkedIn Ban, Limit & CAPTCHA Detection
+                                await randomDelay(1500, 3000);
+                                const modals = await page.$$('.artdeco-modal');
+                                for (const modal of modals) {
+                                    const text = await modal.innerText();
+                                    const lower = text.toLowerCase();
+                                    if (lower.includes('limit') || lower.includes('restricted') || lower.includes('email') || lower.includes('captcha') || lower.includes('security')) {
+                                        throw new Error(`LINKEDIN_LIMIT_REACHED|${text.substring(0, 100)}`);
+                                    }
+                                }
+
+                                await prisma.actionLog.create({
+                                    data: { userId, leadId, campaignId, actionType: 'INVITE', status: 'SUCCESS' }
+                                });
+                                await prisma.lead.update({ where: { id: leadId }, data: { status: 'INVITE_PENDING' } });
+                            } else {
+                                throw new Error('Connect button not visible');
+                            }
                         }
                     } else if (currentNode.subType === 'MESSAGE') {
-                        await page.goto(lead.linkedinUrl, { waitUntil: 'networkidle' });
-                        await randomDelay(2000, 4000);
+                        await page.click('button:has-text("Message")');
+                        await randomDelay(500, 1500);
+                        await page.type('div[role="textbox"]', message, { delay: Math.floor(Math.random() * 50) + 30 });
 
-                        const messageButton = page.getByRole('button', { name: 'Message', exact: true }).first();
-                        if (await messageButton.isVisible()) {
-                            await messageButton.click();
-                            await randomDelay(2000, 3000);
+                        await page.mouse.wheel(0, Math.floor(Math.random() * 300) + 100);
+                        await randomDelay(1000, 2000);
 
-                            const textBox = page.locator('.msg-form__contenteditable');
-                            await textBox.fill(message || 'Hi!');
-                            await randomDelay(1000, 2000);
+                        await page.keyboard.press('Enter');
 
-                            await page.keyboard.press('Control+Enter');
-                            await randomDelay(2000, 4000);
-
-                            await prisma.actionLog.create({
-                                data: { userId, leadId, actionType: 'MESSAGE', status: 'SUCCESS' }
-                            });
-                        } else {
-                            throw new Error('Message button not found');
+                        await randomDelay(1500, 3000);
+                        const modals = await page.$$('.artdeco-modal');
+                        for (const modal of modals) {
+                            const text = await modal.innerText();
+                            const lower = text.toLowerCase();
+                            if (lower.includes('limit') || lower.includes('restricted') || lower.includes('security')) {
+                                throw new Error(`LINKEDIN_LIMIT_REACHED|${text.substring(0, 100)}`);
+                            }
                         }
+
+                        await prisma.actionLog.create({
+                            data: { userId, leadId, campaignId, actionType: 'MESSAGE', status: 'SUCCESS' }
+                        });
                     }
-                } catch (error: any) {
-                    await prisma.actionLog.create({
-                        data: { userId, leadId, actionType: currentNode.subType as ActionType, status: 'FAILED', errorMessage: error.message }
-                    });
-                    throw error;
+
                 } finally {
-                    await browser.close();
+                    if (browser) await browser.close();
+
+                    // Signal to Extension: Cloud Worker has finished
+                    await prisma.user.update({
+                        where: { id: userId },
+                        data: { cloudWorkerActive: false, lastCloudActionAt: new Date() }
+                    });
                 }
             }
         }
 
         // 3. Find next step
-        const nextEdge = workflow.edges.find(e => e.source === currentStepId);
+        let nextEdge = workflow.edges.find(e => e.source === currentStepId);
+
+        if (currentNode.type === 'CONDITION') {
+            const isConnected = lead?.status === 'CONNECTED';
+            const isReplied = lead?.status === 'REPLIED';
+            let conditionMet = false;
+
+            if (currentNode.subType === 'IF_CONNECTED') conditionMet = isConnected;
+            if (currentNode.subType === 'IF_REPLIED') conditionMet = isReplied;
+
+            const conditionEdges = workflow.edges.filter(e => e.source === currentStepId);
+            if (conditionEdges.length > 0) {
+                // Find matching branch (handle usually target yes/no or true/false)
+                const sourceHandle = conditionMet ? 'yes' : 'no';
+                const matchEdge = conditionEdges.find(e => e.sourceHandle === sourceHandle || e.sourceHandle === String(conditionMet));
+                nextEdge = matchEdge || conditionEdges[0];
+            } else {
+                nextEdge = undefined;
+            }
+        }
 
         if (nextEdge) {
-            const nextNode = workflow.nodes.find(n => n.id === nextEdge.target);
+            const nextNode = workflow.nodes.find(n => n.id === nextEdge!.target);
             let nextActionDate = new Date();
 
             // Handle DELAY node specifically
             if (nextNode?.type === 'DELAY') {
-                const waitHours = 24; // Default wait or parse from node data
+                let waitHours = 24; // Default wait
+                if (nextNode.data?.hours) {
+                    waitHours = parseFloat(nextNode.data.hours);
+                } else if (nextNode.data?.days) {
+                    waitHours = parseFloat(nextNode.data.days) * 24;
+                }
+
                 nextActionDate = new Date(Date.now() + (waitHours * 60 * 60 * 1000));
+                nextActionDate = applyJitter(nextActionDate, 30, 240); // Add 30-240 minutes of jitter
                 console.log(`Setting delay for ${waitHours}h until ${nextActionDate.toISOString()}`);
             }
 
@@ -185,10 +329,93 @@ export const initWorker = () => {
                 where: { id: campaignLeadId },
                 data: { isCompleted: true }
             });
+
+            if (lead) {
+                // Trigger integration webhook
+                await triggerWebhook(userId, 'campaign.completed', {
+                    leadId: lead.id,
+                    campaignId,
+                    firstName: lead.firstName,
+                    lastName: lead.lastName,
+                    email: lead.email,
+                    linkedinUrl: lead.linkedinUrl
+                });
+            }
+
+            // Check Campaign Completion completion
+            if (campaignId) {
+                const pendingLeads = await prisma.campaignLead.count({
+                    where: { campaignId, isCompleted: false }
+                });
+
+                if (pendingLeads === 0) {
+                    const campaign = await prisma.campaign.update({
+                        where: { id: campaignId },
+                        data: { status: 'COMPLETED' }
+                    });
+                    await prisma.notification.create({
+                        data: {
+                            userId,
+                            title: 'Campaign Completed',
+                            body: `All leads have completed the campaign: ${campaign.name}`,
+                            type: 'campaign_complete',
+                            read: false
+                        }
+                    });
+                }
+            }
         }
 
+    } catch (error: any) {
+        console.error(`Worker error at step ${currentStepId}:`, error.message);
+
+        // Catch explicitly thrown Linkedin Limit exceptions
+        if (error.message.includes('LINKEDIN_LIMIT_REACHED')) {
+            const reasonData = error.message.split('|')[1] || 'You have reached a LinkedIn limit or restriction.';
+
+            // Mark action as failed
+            await prisma.actionLog.create({
+                data: {
+                    userId: data.userId,
+                    leadId: data.leadId,
+                    campaignId: data.campaignId,
+                    actionType: 'INVITE', // fallback if generic
+                    status: 'FAILED',
+                    errorMessage: 'LinkedIn Action Blocked or Limited.'
+                }
+            });
+
+            // Pause the user's campaign specifically or mark lead incomplete
+            await prisma.campaignLead.update({
+                where: { id: data.campaignLeadId },
+                data: { isCompleted: true } // Evict them from the queue so we don't spam 10,000 requests into a brick wall
+            });
+
+            // Send notification to Frontend
+            await prisma.notification.create({
+                data: {
+                    userId: data.userId,
+                    type: 'campaign_error',
+                    title: 'LinkedIn Limit Reached',
+                    body: `LinkedIn actively blocked an action. Reason: ${reasonData}`,
+                    meta: { campaignId: data.campaignId, leadId: data.leadId } as any
+                }
+            });
+        }
+
+        throw error;
+    }
+};
+
+export const initWorker = () => {
+    if (!redisConnection) {
+        console.warn('Worker skipped initialization due to no Redis connection.');
+        return;
+    }
+    const worker = new Worker('linkedin-actions', async (job: Job) => {
+        await processWorkflowStep(job.data);
     }, { connection: redisConnection as any });
 
-    worker.on('completed', job => console.log(`Job ${job.id} completed`));
-    worker.on('failed', (job, err) => console.error(`Job ${job?.id} failed: ${err.message}`));
+    worker.on('completed', (job) => console.log(`Job ${job.id} completed`));
+    worker.on('failed', (job, err) => console.error(`Job ${job?.id} failed:`, err.message));
 };

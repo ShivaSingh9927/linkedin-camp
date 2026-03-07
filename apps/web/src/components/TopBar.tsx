@@ -13,13 +13,25 @@ import {
     Target,
     X,
     Users,
-    ChevronDown
+    ChevronDown,
+    Info,
+    ShieldAlert
 } from 'lucide-react';
 
 import api from '@/lib/api';
 
 // Notification types mapping
 const NOTIF_CONFIG: Record<string, any> = {
+    INFO: {
+        icon: Info,
+        iconColor: 'text-sky-500',
+        iconBg: 'bg-sky-50',
+    },
+    THROTTLED_WARNING: {
+        icon: ShieldAlert,
+        iconColor: 'text-amber-500',
+        iconBg: 'bg-amber-50',
+    },
     new_reply: {
         icon: MessageSquare,
         iconColor: 'text-blue-500',
@@ -142,7 +154,7 @@ export function TopBar() {
 
     const markAsRead = async (id?: string) => {
         try {
-            await api.post('/inbox/notifications/read', { notificationIds: id ? [id] : undefined });
+            await api.post('/inbox/notifications/read', { ids: id ? [id] : undefined });
             // Optimistic update
             setNotifications(prev => prev.map(n =>
                 (!id || n.id === id) ? { ...n, read: true } : n

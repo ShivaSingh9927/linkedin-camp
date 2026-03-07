@@ -1,5 +1,6 @@
 import { Response } from 'express';
 import { prisma } from '../server';
+import { syncInbox } from '../workers/inbox.worker';
 
 // ─── CONVERSATIONS (grouped messages by lead) ───
 
@@ -286,5 +287,27 @@ export const markNotificationsRead = async (req: any, res: Response) => {
     } catch (error) {
         console.error('Failed to mark notifications read:', error);
         res.status(500).json({ error: 'Failed to update notifications' });
+    }
+};
+
+export const syncInboxManual = async (req: any, res: Response) => {
+    const userId = req.user.id;
+    try {
+        const user = await prisma.user.findUnique({ where: { id: userId } });
+        if (!user) return res.status(404).json({ error: 'User not found' });
+
+        const now = new Date();
+        const lastAction = user.lastCloudActionAt ? user.lastCloudActionAt.getTime() : 0;
+        const isRecentlyActive = (now.getTime() - lastAction) < (5 * 60 * 1000); // 5 minutes
+
+        if (user.cloudWorkerActive || isRecentlyActive) {
+            return res.status(409).json({ error: 'Cloud worker is currently active with another task (Campaign/Sync). Please try again in a few minutes.' });
+        }
+
+        // Run in background
+        syncInbox(userId).catch(err => console.error('Manual sync failed:', err));
+        res.json({ message: 'Sync started in background' });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to start sync' });
     }
 };

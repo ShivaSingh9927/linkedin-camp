@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import IntegrationsSettings from '@/components/IntegrationsSettings';
 import {
     User,
     Linkedin,
@@ -37,8 +38,8 @@ export default function SettingsPage() {
                         key={item.key}
                         onClick={() => setActiveSection(item.key)}
                         className={`w-full flex items-center space-x-3 px-4 py-3 rounded-2xl text-sm transition-all ${activeSection === item.key
-                                ? 'bg-white shadow-sm text-slate-800 font-bold'
-                                : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'
+                            ? 'bg-white shadow-sm text-slate-800 font-bold'
+                            : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'
                             }`}
                     >
                         <item.icon className="w-5 h-5" />
@@ -179,7 +180,11 @@ export default function SettingsPage() {
                     </div>
                 )}
 
-                {activeSection !== 'account' && activeSection !== 'linkedin' && (
+                {activeSection === 'integrations' && (
+                    <IntegrationsSettings />
+                )}
+
+                {activeSection !== 'account' && activeSection !== 'linkedin' && activeSection !== 'integrations' && (
                     <div className="bg-white rounded-3xl border shadow-sm p-8 text-center">
                         <p className="text-slate-500 font-bold">
                             {settingsNav.find(s => s.key === activeSection)?.label} settings

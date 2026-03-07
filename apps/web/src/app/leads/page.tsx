@@ -170,10 +170,18 @@ export default function LeadsPage() {
 
     const assignToCampaign = async (campaignId: string) => {
         try {
-            await api.post(`/campaigns/${campaignId}/start`, {
+            const response = await api.post(`/campaigns/${campaignId}/start`, {
                 leadIds: Array.from(selectedLeads)
             });
-            alert(`Success! ${selectedLeads.size} leads assigned to campaign.`);
+
+            const meta = response.data?.meta;
+            let message = `Success! ${meta?.startedCount ?? selectedLeads.size} leads assigned to campaign.`;
+
+            if (meta && meta.skippedCount > 0) {
+                message += `\n\nNotification: ${meta.skippedCount} leads were skipped securely because they are already active in another campaign!`;
+            }
+
+            alert(message);
             setSelectedLeads(new Set());
             setShowAssignModal(false);
         } catch (error) {

@@ -9,8 +9,12 @@ import campaignRoutes from './routes/campaign.routes';
 import inboxRoutes from './routes/inbox.routes';
 import teamRoutes from './routes/team.routes';
 import statsRoutes from './routes/stats.routes';
+import adminRoutes from './routes/admin.routes';
+import notificationRoutes from './routes/notification.routes';
+import integrationRoutes from './routes/integration.routes';
 import { initScheduler } from './cron/scheduler';
 import { initWorker } from './workers/linkedin.worker';
+import { downgradeExpiredTrials } from './services/trial.service';
 
 
 const app = express();
@@ -54,6 +58,9 @@ app.use('/api/v1/campaigns', campaignRoutes);
 app.use('/api/v1/stats', statsRoutes);
 app.use('/api/v1/inbox', inboxRoutes);
 app.use('/api/v1/team', teamRoutes);
+app.use('/api/v1/admin', adminRoutes);
+app.use('/api/v1/notifications', notificationRoutes);
+app.use('/api/v1/integrations', integrationRoutes);
 
 app.get('/', (req, res) => {
     res.json({ message: 'LinkedIn Campaign Engine API is running', version: '1.0.0' });
@@ -62,6 +69,13 @@ app.get('/', (req, res) => {
 // Initialize Campaign Engine
 initScheduler();
 initWorker();
+
+// Start Background Services
+console.log('Starting internal background services...');
+downgradeExpiredTrials().catch(e => console.error("Error running immediate trial downgrade:", e));
+setInterval(() => {
+    downgradeExpiredTrials().catch(e => console.error("Error in trial downgrade cron:", e));
+}, 60 * 60 * 1000); // 1 hour
 
 app.get('/health', (req, res) => {
     res.json({ status: 'ok', message: 'Waalaxy Replication Backend is running' });

@@ -12,7 +12,8 @@
         "tabs",
         "offscreen",
         "scripting",
-        "sidePanel"
+        "sidePanel",
+        "alarms"
     ],
     "side_panel": {
         "default_path": "sidepanel.html"

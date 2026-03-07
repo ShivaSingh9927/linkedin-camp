@@ -31,8 +31,10 @@ import {
     Webhook,
     FlaskConical,
     ChevronDown,
+    FileText,
 } from 'lucide-react';
 import '@xyflow/react/dist/style.css';
+import api from '@/lib/api';
 
 interface CampaignBuilderProps {
     nodes: Node[];
@@ -102,6 +104,19 @@ export function CampaignBuilder({
 }: CampaignBuilderProps) {
     const [selectedNodeId, setSelectedNodeId] = React.useState<string | null>(null);
     const [expandedCat, setExpandedCat] = useState<string | null>('LinkedIn');
+    const [templates, setTemplates] = useState<any[]>([]);
+
+    React.useEffect(() => {
+        const fetchTemplates = async () => {
+            try {
+                const res = await api.get('/inbox/templates');
+                setTemplates(res.data || []);
+            } catch (err) {
+                console.error('Failed to fetch templates:', err);
+            }
+        };
+        fetchTemplates();
+    }, []);
 
     const onConnect = useCallback(
         (params: Connection) => setEdges((eds) => addEdge(params, eds)),
@@ -245,9 +260,32 @@ export function CampaignBuilder({
                     </div>
 
                     <div className="p-6 space-y-6 flex-1 overflow-auto text-sm">
+                        {templates.length > 0 && (
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center space-x-2">
+                                    <FileText className="w-3 h-3" />
+                                    <span>Load Template</span>
+                                </label>
+                                <select
+                                    onChange={(e) => {
+                                        const tpl = templates.find(t => t.id === e.target.value);
+                                        if (tpl) updateNodeData(selectedNode!.id, { message: tpl.content });
+                                        e.target.value = ""; // Reset selector
+                                    }}
+                                    className="w-full p-2.5 border-2 border-slate-100 rounded-xl focus:border-indigo-600 focus:ring-0 transition-all text-xs font-bold text-slate-600 shadow-sm"
+                                    defaultValue=""
+                                >
+                                    <option value="" disabled>Select a saved template...</option>
+                                    {templates.map(t => (
+                                        <option key={t.id} value={t.id}>{t.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        )}
+
                         <div className="space-y-2">
                             <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
-                                {selectedSubType === 'EMAIL' ? 'Email Body' : 'Message Template'}
+                                {selectedSubType === 'EMAIL' ? 'Email Body' : 'Message Text'}
                             </label>
                             <textarea
                                 value={String((selectedNode?.data as any)?.message || '')}

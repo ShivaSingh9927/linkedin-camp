@@ -176,12 +176,14 @@ async function handleImport() {
                 if (listNameInput) listNameInput.value = '';
                 document.getElementById('start-btn').addEventListener('click', handleImport);
             } else {
+                const errorMsg = response?.message || response?.error || 'Unknown error';
+                const errorTitle = response?.error === 'CLOUD_ACTIVE' ? 'Cloud Worker Active' : 'Import failed.';
                 statusArea.innerHTML = `
                     <div class="error-box">
                         <span>❌</span>
                         <div>
-                            <strong>Import failed.</strong><br>
-                            <span style="font-size: 12px;">${response?.error || 'Unknown error'}</span>
+                            <strong>${errorTitle}</strong><br>
+                            <span style="font-size: 12px;">${errorMsg}</span>
                         </div>
                     </div>
                     <button id="start-btn" class="primary-btn">Try Again</button>

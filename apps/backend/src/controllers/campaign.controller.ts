@@ -91,23 +91,53 @@ export const startCampaign = async (req: any, res: Response) => {
         const workflow = campaign.workflowJson as any;
         const startNode = workflow.nodes?.find((n: any) => n.type === 'TRIGGER' || n.type === 'input') || workflow.nodes?.[0];
 
+        let skippedCount = 0;
+        let startedCount = 0;
+
         if (startNode && leadIds && leadIds.length > 0) {
+            // 🚨 Anti-Spam Failsafe: Prevent leads from being active in multiple campaigns simultaneously
+            const activeLeadsInOtherCampaigns = await prisma.campaignLead.findMany({
+                where: {
+                    leadId: { in: leadIds },
+                    isCompleted: false, // They are actively being worked on!
+                    campaignId: { not: id } // Anywhere but this specific campaign
+                },
+                select: { leadId: true }
+            });
+
+            const activeLeadIds = new Set(activeLeadsInOtherCampaigns.map(cl => cl.leadId));
+
+            // Filter out leads that are already active somewhere else
+            const safeLeadIdsToStart = leadIds.filter((leadId: string) => !activeLeadIds.has(leadId));
+
+            skippedCount = activeLeadIds.size;
+            startedCount = safeLeadIdsToStart.length;
+
+            if (skippedCount > 0) {
+                console.log(`[SPAM PROTECT] User ${userId} tried to add ${skippedCount} leads to Campaign ${id} that were already active elsewhere. Skipped them securely.`);
+            }
+
             // Find the immediate next node after trigger
             const firstEdge = workflow.edges?.find((e: any) => e.source === startNode.id);
             const firstStepId = firstEdge ? firstEdge.target : startNode.id;
 
-            await prisma.campaignLead.createMany({
-                data: leadIds.map((leadId: string) => ({
-                    campaignId: id,
-                    leadId,
-                    currentStepId: firstStepId,
-                    nextActionDate: new Date(),
-                })),
-                skipDuplicates: true,
-            });
+            if (safeLeadIdsToStart.length > 0) {
+                await prisma.campaignLead.createMany({
+                    data: safeLeadIdsToStart.map((leadId: string) => ({
+                        campaignId: id,
+                        leadId,
+                        currentStepId: firstStepId,
+                        nextActionDate: new Date(),
+                    })),
+                    skipDuplicates: true,
+                });
+            }
         }
 
-        res.json(updatedCampaign);
+        res.json({
+            ...updatedCampaign,
+            meta: { startedCount, skippedCount }
+        });
     } catch (error) {
         console.error('Start campaign error:', error);
         res.status(500).json({ error: 'Failed to start campaign' });

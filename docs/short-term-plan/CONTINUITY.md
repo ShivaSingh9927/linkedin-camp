@@ -19,16 +19,21 @@
     - Chrome extension with full LinkedIn lead extraction
     - Prospects page with tag-based list sidebar, fixed filters, individual filter removal
     - Campaign builder with drag-and-drop workflow
-    - **Inbox Phase 1**: 3-panel messaging UI (conversations, thread, lead details)
-    - **Message Templates**: CRUD with auto-variable detection ({{firstName}}, {{company}}, etc.)
-    - **Backend**: New Message, MessageTemplate, Notification Prisma models
-    - **Backend**: Full inbox API (conversations, messages, templates, notifications)
-    - **Database**: Schema migrated with new tables
-    - **Team Feature Phase 1**: Schema updated, backend API created, and premium dashboard UI built.
-    - **Team Feature Phase 2**: Built Join Workspace UI, Anti-Duplication Protection, Crew Stats on Dashboard, and Account Switcher for Admins.
+    - Inbox Phase 1: 3-panel messaging UI (conversations, thread, lead details)
+    - Message Templates: CRUD with auto-variable detection ({{firstName}}, {{company}}, etc.)
+    - Team Feature Phase 1: Schema updated, backend API created, and premium dashboard UI built.
+    - Team Feature Phase 2: Built Join Workspace UI, Anti-Duplication Protection, Crew Stats on Dashboard, and Account Switcher for Admins.
+    - Cloud Execution & Safety Engine: Implemented working hours, randomized jitter delays, and stealth headless browsing patterns. 
+    - Session Sync: Implemented Waalaxy-style Chrome extension real-time cookie synchronization.
+    - Cloud Kill Switch: Added DB state locks (`cloudWorkerActive`, `lastCloudActionAt`). Stopped the extension from scraping simultaneously when headlees browser campaigns are actively sending messages.
+    - Proxy Backend Logic Prepared: Added logic to inject proxy strings directly into the playwright context (mimicking the Waalaxy static IP assignment strategy behind the scenes).
+    - Smart Reply Detection: Halted active campaigns for prospects automatically when user receives a message from them in Inbox.
+    - Auto-Withdraw Invites: Scheduled daily cron to withdraw pending connection requests older than 30 days.
+
   - Now:
-    - Designing next steps for the project
+    - Running End-to-end tests across all implemented cloud features.
   - Next:
+    - End-to-end testing across 24h real-world cycle.
     - Review overarching agency requirements.
 
 - Open questions:
@@ -36,9 +41,8 @@
   - Should templates be shared across team members?
 
 - Working set:
-  - packages/db/schema.prisma (UPDATED — Message, MessageTemplate, Notification models)
-  - apps/backend/src/controllers/inbox.controller.ts (NEW)
-  - apps/backend/src/routes/inbox.routes.ts (NEW)
-  - apps/backend/src/server.ts (UPDATED — inbox routes registered)
-  - apps/web/src/app/inbox/page.tsx (REWRITTEN — 3-panel inbox UI)
-  - apps/web/src/components/SidebarWrapper.tsx (UPDATED — no padding for /inbox)
+  - packages/db/schema.prisma
+  - apps/backend/src/workers/inbox.worker.ts
+  - apps/backend/src/workers/withdraw.worker.ts
+  - apps/backend/src/cron/scheduler.ts
+  - apps/backend/src/workers/linkedin.worker.ts

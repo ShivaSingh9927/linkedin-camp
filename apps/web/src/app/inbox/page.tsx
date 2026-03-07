@@ -25,6 +25,7 @@ import {
     Filter,
     Mail,
     User as UserIcon,
+    Activity,
 } from 'lucide-react';
 import Link from 'next/link';
 import api from '@/lib/api';
@@ -84,6 +85,7 @@ export default function InboxPage() {
     const [filter, setFilter] = useState<InboxFilter>('all');
     const [replyText, setReplyText] = useState('');
     const [sending, setSending] = useState(false);
+    const [isSyncing, setIsSyncing] = useState(false);
 
     // Template Modal
     const [showTemplateModal, setShowTemplateModal] = useState(false);
@@ -135,6 +137,21 @@ export default function InboxPage() {
             console.error('Failed to fetch messages:', error);
         } finally {
             setMessagesLoading(false);
+        }
+    };
+
+    const handleSync = async () => {
+        setIsSyncing(true);
+        try {
+            await api.post('/inbox/sync');
+            // Wait for sync to finish (approx) or just refresh after a bit
+            setTimeout(async () => {
+                await fetchConversations();
+                setIsSyncing(false);
+            }, 6000);
+        } catch (error) {
+            console.error('Sync failed:', error);
+            setIsSyncing(false);
         }
     };
 
@@ -263,17 +280,30 @@ export default function InboxPage() {
                 <div className="p-4 border-b space-y-3">
                     <div className="flex items-center justify-between">
                         <h2 className="text-lg font-black text-slate-800 uppercase tracking-tight">Inbox</h2>
-                        <button
-                            onClick={() => {
-                                setShowTemplateModal(true);
-                                setEditingTemplate(null);
-                                setTemplateForm({ name: '', content: '', category: '' });
-                            }}
-                            className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all"
-                            title="Manage Templates"
-                        >
-                            <FileText className="w-4 h-4" />
-                        </button>
+                        <div className="flex items-center space-x-1">
+                            <button
+                                onClick={handleSync}
+                                disabled={isSyncing}
+                                className={cn(
+                                    "p-2 rounded-xl transition-all",
+                                    isSyncing ? "text-indigo-600 bg-indigo-50" : "text-slate-400 hover:text-indigo-600 hover:bg-indigo-50"
+                                )}
+                                title="Sync with LinkedIn"
+                            >
+                                {isSyncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Activity className="w-4 h-4" />}
+                            </button>
+                            <button
+                                onClick={() => {
+                                    setShowTemplateModal(true);
+                                    setEditingTemplate(null);
+                                    setTemplateForm({ name: '', content: '', category: '' });
+                                }}
+                                className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all"
+                                title="Manage Templates"
+                            >
+                                <FileText className="w-4 h-4" />
+                            </button>
+                        </div>
                     </div>
 
                     {/* Search */}
