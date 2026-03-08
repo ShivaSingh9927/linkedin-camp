@@ -1,0 +1,12 @@
+node_modules
+.next
+.turbo
+dist
+.env
+.DS_Store
+.venv
+apps/*/node_modules
+apps/*/.next
+apps/*/dist
+packages/*/node_modules
+packages/*/dist
