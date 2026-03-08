@@ -3,14 +3,6 @@ FROM mcr.microsoft.com/playwright:v1.41.0-jammy
 # Set the working directory
 WORKDIR /app
 
-# Install Node.js
-RUN apt-get update && apt-get install -y curl
-RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-RUN apt-get install -y nodejs
-
-# Enable Corepack (for npm, pnpm, yarn)
-RUN npm i -g corepack@latest && corepack enable
-
 # Copy package management files first
 COPY package.json package-lock.json* ./
 
