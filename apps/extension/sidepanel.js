@@ -67,7 +67,7 @@ async function findDashboardTab() {
         }
         try {
             const tabHost = new URL(tab.url).hostname;
-            if (tabHost.startsWith('linkedin-camp-web') && tabHost.endsWith('.vercel.app')) return tab;
+            if (tabHost.includes('linkedin-camp') && tabHost.endsWith('.vercel.app')) return tab;
         } catch (e) { }
     }
     return null;
@@ -128,6 +128,13 @@ async function syncSession() {
 
 // ─── Find LinkedIn Tab ──────────────────────────────────────
 async function findLinkedInSearchTab() {
+    // 1. Prefer the active tab in the current window
+    const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (activeTab && activeTab.url && (activeTab.url.includes('linkedin.com/search/') || activeTab.url.includes('linkedin.com/sales/search/'))) {
+        return activeTab;
+    }
+
+    // 2. Fallback to any matching tab
     const allTabs = await chrome.tabs.query({});
     for (const tab of allTabs) {
         if (tab.url && (tab.url.includes('linkedin.com/search/') || tab.url.includes('linkedin.com/sales/search/'))) {
