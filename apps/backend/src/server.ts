@@ -20,6 +20,13 @@ import { downgradeExpiredTrials } from './services/trial.service';
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// --- 1. PRE-FLIGHT / HEALTH (Must be fast) ---
+app.get('/health', (req, res) => {
+    res.json({ status: 'ok', message: 'Backend is alive' });
+});
+
+app.get('/ping', (req, res) => res.send('pong'));
+
 app.use((req, res, next) => {
     const origin = req.headers.origin;
 
@@ -66,23 +73,26 @@ app.get('/', (req, res) => {
     res.json({ message: 'LinkedIn Campaign Engine API is running', version: '1.0.0' });
 });
 
-// Initialize Campaign Engine
-initScheduler();
-initWorker();
+// --- 2. START SERVER IMMEDIATELY ---
+app.listen(Number(PORT), '0.0.0.0', () => {
+    console.log(`🚀 Server listening on port ${PORT}`);
 
-// Start Background Services
-console.log('Starting internal background services...');
-downgradeExpiredTrials().catch(e => console.error("Error running immediate trial downgrade:", e));
-setInterval(() => {
-    downgradeExpiredTrials().catch(e => console.error("Error in trial downgrade cron:", e));
-}, 60 * 60 * 1000); // 1 hour
+    // --- 3. ASYNC BACKGROUND INIT (Does not block port binding) ---
+    console.log('Initializing background services...');
 
-app.get('/health', (req, res) => {
-    res.json({ status: 'ok', message: 'Waalaxy Replication Backend is running' });
-});
+    try {
+        initScheduler();
+        initWorker();
+        console.log('✅ Campaign Engine Initialized');
+    } catch (e) {
+        console.error('❌ Failed to init Campaign Engine:', e);
+    }
 
-app.listen(PORT as number, '0.0.0.0', () => {
-    console.log(`Server is running on port ${PORT} (0.0.0.0)`);
+    downgradeExpiredTrials().catch(e => console.error("Error running immediate trial downgrade:", e));
+
+    setInterval(() => {
+        downgradeExpiredTrials().catch(e => console.error("Error in trial downgrade cron:", e));
+    }, 60 * 60 * 1000); // 1 hour
 });
 
 export { app, prisma };
