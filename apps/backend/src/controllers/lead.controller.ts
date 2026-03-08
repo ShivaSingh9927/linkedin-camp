@@ -12,61 +12,105 @@ const getTeamUserIds = async (userId: string) => {
     return member ? member.team.members.map((m: { userId: string }) => m.userId) : [];
 };
 
-const upsertLead = async (userId: string, lead: any, teamUserIds: string[] = []) => {
-    const nameParts = (lead.name || `${lead.firstName || ''} ${lead.lastName || ''}`).trim().split(' ');
-    const firstName = lead.firstName || nameParts[0] || 'Unknown';
-    const lastName = lead.lastName || nameParts.slice(1).join(' ') || '';
+const bulkImportLeads = async (userId: string, incomingLeads: any[], teamUserIds: string[]) => {
+    // 1. Array Deduplication
+    const uniqueLeadsMap = new Map();
+    for (const lead of incomingLeads) {
+        if (lead.linkedinUrl) {
+            uniqueLeadsMap.set(lead.linkedinUrl, lead);
+        }
+    }
+    const uniqueLeads = Array.from(uniqueLeadsMap.values());
+    const leadUrls = uniqueLeads.map(l => l.linkedinUrl);
 
-    // Anti-duplication check across team
-    if (teamUserIds.length > 1 && lead.linkedinUrl) {
-        const existingTeammateLead = await prisma.lead.findFirst({
-            where: {
+    if (leadUrls.length === 0) return { successful: [], duplicatesSkipped: 0 };
+
+    // 2. Fetch existing leads
+    const existingTeamLeads = await prisma.lead.findMany({
+        where: {
+            linkedinUrl: { in: leadUrls },
+            userId: { in: teamUserIds }
+        },
+        select: { id: true, userId: true, linkedinUrl: true }
+    });
+
+    const existingTeamLeadUrls = new Set(existingTeamLeads.map((l: any) => l.linkedinUrl));
+    const userExistingLeadsMap = new Map<string, any>(
+        existingTeamLeads.filter((l: any) => l.userId === userId).map((l: any) => [l.linkedinUrl, l])
+    );
+
+    const leadsToCreate = [];
+    const leadsToUpdate: any[] = [];
+    let duplicatesSkipped = 0;
+
+    for (const lead of uniqueLeads) {
+        const nameParts = (lead.name || `${lead.firstName || ''} ${lead.lastName || ''}`).trim().split(' ');
+        const firstName = lead.firstName || nameParts[0] || 'Unknown';
+        const lastName = lead.lastName || nameParts.slice(1).join(' ') || '';
+        const jobTitle = lead.jobTitle || lead.title;
+
+        // Anti-duplication check across team
+        if (teamUserIds.length > 1 && existingTeamLeadUrls.has(lead.linkedinUrl) && !userExistingLeadsMap.has(lead.linkedinUrl)) {
+            duplicatesSkipped++;
+            continue;
+        }
+
+        if (userExistingLeadsMap.has(lead.linkedinUrl)) {
+            const existingId = userExistingLeadsMap.get(lead.linkedinUrl)!.id;
+            leadsToUpdate.push(prisma.lead.update({
+                where: { id: existingId },
+                data: {
+                    firstName,
+                    lastName,
+                    jobTitle,
+                    company: lead.company,
+                    email: lead.email,
+                    country: lead.country,
+                    gender: lead.gender,
+                    tags: lead.tags?.length ? lead.tags : undefined,
+                }
+            }));
+        } else {
+            leadsToCreate.push({
+                userId,
                 linkedinUrl: lead.linkedinUrl,
-                userId: { in: teamUserIds, not: userId }
-            }
-        });
-
-        if (existingTeammateLead) {
-            return { isDuplicate: true, lead: null };
+                firstName,
+                lastName,
+                jobTitle,
+                company: lead.company,
+                email: lead.email,
+                country: lead.country,
+                gender: lead.gender,
+                tags: lead.tags || [],
+            });
         }
     }
 
-    const savedLead = await prisma.lead.upsert({
-        where: {
-            userId_linkedinUrl: {
-                userId,
-                linkedinUrl: lead.linkedinUrl,
-            },
-        },
-        update: {
-            firstName,
-            lastName,
-            jobTitle: lead.jobTitle || lead.title,
-            company: lead.company,
-            email: lead.email,
-            country: lead.country,
-            gender: lead.gender,
-            tags: lead.tags || [],
-        },
-        create: {
-            userId,
-            linkedinUrl: lead.linkedinUrl,
-            firstName,
-            lastName,
-            jobTitle: lead.jobTitle || lead.title,
-            company: lead.company,
-            email: lead.email,
-            country: lead.country,
-            gender: lead.gender,
-            tags: lead.tags || [],
-        },
+    if (leadsToCreate.length > 0) {
+        await prisma.lead.createMany({
+            data: leadsToCreate,
+            skipDuplicates: true
+        });
+    }
+
+    if (leadsToUpdate.length > 0) {
+        const batchSize = 50;
+        for (let i = 0; i < leadsToUpdate.length; i += batchSize) {
+            await Promise.all(leadsToUpdate.slice(i, i + batchSize));
+        }
+    }
+
+    // Return the processed leads 
+    const allProcessedUrls = [...leadsToCreate.map(l => l.linkedinUrl), ...Array.from(userExistingLeadsMap.keys())];
+    const successful = await prisma.lead.findMany({
+        where: { userId, linkedinUrl: { in: allProcessedUrls } }
     });
 
-    return { isDuplicate: false, lead: savedLead };
+    return { successful, duplicatesSkipped };
 };
 
 export const importLeads = async (req: any, res: Response) => {
-    const { leads } = req.body;
+    const { leads, campaignId } = req.body;
     const userId = req.user.id;
 
     if (!leads || !Array.isArray(leads)) {
@@ -75,20 +119,66 @@ export const importLeads = async (req: any, res: Response) => {
 
     try {
         const teamUserIds = await getTeamUserIds(userId);
+        const { successful, duplicatesSkipped: duplicates } = await bulkImportLeads(userId, leads, teamUserIds);
 
-        // Process leads sequentially or in batches if large, Promise.all is okay for small batches
-        const importResults = await Promise.all(
-            leads.map((lead: any) => upsertLead(userId, lead, teamUserIds))
-        );
+        let injectedCount = 0;
+        let activeSkippedCount = 0;
 
-        const successful = importResults.filter(r => !r.isDuplicate);
-        const duplicates = importResults.filter(r => r.isDuplicate).length;
+        // If a campaignId was provided, inject the safe leads into the campaign
+        if (campaignId && successful.length > 0) {
+            const leadIds = successful.map((l: any) => l.id);
+
+            // Deduplication Engine: Strict check for currently active campaigns
+            const activeLeadsInCampaigns = await prisma.campaignLead.findMany({
+                where: {
+                    leadId: { in: leadIds },
+                    isCompleted: false
+                },
+                select: { leadId: true }
+            });
+
+            const activeLeadIds = new Set(activeLeadsInCampaigns.map((cl: any) => cl.leadId));
+            const safeLeadIdsToStart = leadIds.filter((id: any) => !activeLeadIds.has(id));
+
+            activeSkippedCount = activeLeadIds.size;
+            injectedCount = safeLeadIdsToStart.length;
+
+            if (safeLeadIdsToStart.length > 0) {
+                const campaign = await prisma.campaign.findUnique({ where: { id: campaignId, userId } });
+                if (campaign) {
+                    const workflow = campaign.workflowJson as any;
+                    const startNode = workflow.nodes?.find((n: any) => n.type === 'TRIGGER' || n.type === 'input') || workflow.nodes?.[0];
+                    const firstEdge = workflow.edges?.find((e: any) => e.source === startNode?.id);
+                    const firstStepId = firstEdge ? firstEdge.target : startNode?.id;
+
+                    await prisma.campaignLead.createMany({
+                        data: safeLeadIdsToStart.map((leadId: any) => ({
+                            campaignId,
+                            leadId,
+                            currentStepId: firstStepId,
+                            nextActionDate: new Date(),
+                        })),
+                        skipDuplicates: true,
+                    });
+
+                    // Ensure campaign is active
+                    if (campaign.status === 'DRAFT') {
+                        await prisma.campaign.update({
+                            where: { id: campaignId },
+                            data: { status: 'ACTIVE' }
+                        });
+                    }
+                }
+            }
+        }
 
         res.json({
             success: true,
-            count: successful.length,
+            importedTotal: successful.length,
             duplicatesSkipped: duplicates,
-            message: `${successful.length} leads imported successfully${duplicates > 0 ? ` (${duplicates} skipped as team duplicates)` : ''}`,
+            campaignInjected: injectedCount,
+            activeCollisionSkipped: activeSkippedCount,
+            message: `${successful.length} leads imported successfully. ${activeSkippedCount > 0 ? `(${activeSkippedCount} leads skipped because they are already active in a campaign).` : ''}`,
         });
     } catch (error) {
         console.error('Import error:', error);
@@ -134,20 +224,66 @@ export const uploadCsvLeads = async (req: any, res: Response) => {
         }
 
         const teamUserIds = await getTeamUserIds(userId);
-        const importResults = await Promise.all(
-            leads.map(lead => upsertLead(userId, lead, teamUserIds))
-        );
+        const { successful, duplicatesSkipped: duplicates } = await bulkImportLeads(userId, leads, teamUserIds);
 
-        const successful = importResults.filter(r => !r.isDuplicate);
-        const duplicates = importResults.filter(r => r.isDuplicate).length;
+        let injectedCount = 0;
+        let activeSkippedCount = 0;
+        const { campaignId } = req.body || {};
+
+        if (campaignId && successful.length > 0) {
+            const leadIds = successful.map((l: any) => l.id);
+
+            const activeLeadsInCampaigns = await prisma.campaignLead.findMany({
+                where: {
+                    leadId: { in: leadIds },
+                    isCompleted: false
+                },
+                select: { leadId: true }
+            });
+
+            const activeLeadIds = new Set(activeLeadsInCampaigns.map((cl: any) => cl.leadId));
+            const safeLeadIdsToStart = leadIds.filter((id: any) => !activeLeadIds.has(id));
+
+            activeSkippedCount = activeLeadIds.size;
+            injectedCount = safeLeadIdsToStart.length;
+
+            if (safeLeadIdsToStart.length > 0) {
+                const campaign = await prisma.campaign.findUnique({ where: { id: campaignId, userId } });
+                if (campaign) {
+                    const workflow = campaign.workflowJson as any;
+                    const startNode = workflow.nodes?.find((n: any) => n.type === 'TRIGGER' || n.type === 'input') || workflow.nodes?.[0];
+                    const firstEdge = workflow.edges?.find((e: any) => e.source === startNode?.id);
+                    const firstStepId = firstEdge ? firstEdge.target : startNode?.id;
+
+                    await prisma.campaignLead.createMany({
+                        data: safeLeadIdsToStart.map((leadId: any) => ({
+                            campaignId,
+                            leadId,
+                            currentStepId: firstStepId,
+                            nextActionDate: new Date(),
+                        })),
+                        skipDuplicates: true,
+                    });
+
+                    if (campaign.status === 'DRAFT') {
+                        await prisma.campaign.update({
+                            where: { id: campaignId },
+                            data: { status: 'ACTIVE' }
+                        });
+                    }
+                }
+            }
+        }
 
         fs.unlinkSync(file.path);
 
         res.json({
             success: true,
-            count: successful.length,
+            importedTotal: successful.length,
             duplicatesSkipped: duplicates,
-            message: `${successful.length} leads imported from CSV successfully${duplicates > 0 ? ` (${duplicates} skipped as team duplicates)` : ''}`,
+            campaignInjected: injectedCount,
+            activeCollisionSkipped: activeSkippedCount,
+            message: `${successful.length} leads imported from CSV successfully. ${activeSkippedCount > 0 ? `(${activeSkippedCount} skipped from campaign injection because already active).` : ''}`,
         });
     } catch (error) {
         console.error('CSV Import error:', error);
@@ -168,7 +304,7 @@ export const generateDemoLeads = async (req: any, res: Response) => {
 
     try {
         const teamUserIds = await getTeamUserIds(userId);
-        await Promise.all(demoLeads.map(lead => upsertLead(userId, lead, teamUserIds)));
+        await bulkImportLeads(userId, demoLeads, teamUserIds);
         res.json({ success: true, message: 'Demo leads generated' });
     } catch (error) {
         res.status(500).json({ error: 'Failed to generate demo leads' });

@@ -1,15 +1,18 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
 import { Loader2, Trash2, Shield, Globe } from "lucide-react";
-import { toast } from "sonner";
-import { Input } from "@/components/ui/input";
-import { API_BASE_URL } from "@/lib/constants";
+
+// Assuming toast might not exist either, I'll mock it if it doesn't, or let it fail if sonner is missing. Wait, package.json doesn't list sonner either! Let's check.
+// I'll just use simple alerts for now to ensure compilation, or window.alert.
+// Better yet, implement a simple toast wrapper:
+const toast = {
+    success: (msg: string) => alert(msg),
+    error: (msg: string) => alert(msg),
+    warning: (msg: string) => alert(msg)
+};
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3002';
 
 type Proxy = {
     id: string;
@@ -95,7 +98,7 @@ export default function AdminProxiesPage() {
             if (data.success) {
                 toast.success(`Successfully added ${data.added} proxies!`);
                 setProxyInput("");
-                fetchProxies(); // Refresh the list
+                fetchProxies();
 
                 if (data.errors && data.errors.length > 0) {
                     toast.warning(`${data.errors.length} proxies failed to import. Check console.`);
@@ -112,42 +115,43 @@ export default function AdminProxiesPage() {
     };
 
     return (
-        <div className="container mx-auto py-10 max-w-6xl space-y-8">
-            <div className="flex justify-between items-center">
+        <div className="container mx-auto py-10 max-w-6xl space-y-8 px-4">
+            <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
                 <div>
-                    <h1 className="text-3xl font-bold tracking-tight">Proxy Fleet Configuration</h1>
-                    <p className="text-muted-foreground mt-2">
+                    <h1 className="text-3xl font-bold tracking-tight text-slate-900">Proxy Fleet Configuration</h1>
+                    <p className="text-slate-500 mt-2">
                         Manage your Static ISP endpoints for cloud LinkedIn automation.
                         Waalaxy strategy active: max 5 users per IP.
                     </p>
                 </div>
                 <div className="flex gap-4">
-                    <Badge variant="outline" className="text-sm px-4 py-1 flex items-center gap-2">
+                    <span className="text-sm px-4 py-2 border rounded-full flex items-center gap-2 font-medium bg-white">
                         <Shield className="w-4 h-4 text-green-500" />
                         Private IPs
-                    </Badge>
+                    </span>
                 </div>
             </div>
 
             <div className="grid md:grid-cols-3 gap-6">
-                <Card className="md:col-span-1 border-primary/20">
-                    <CardHeader>
-                        <CardTitle>Add New Proxies</CardTitle>
-                        <CardDescription>Paste your Oxylabs or Webshare list here. Supports IP:PORT or host:port:user:pass.</CardDescription>
-                    </CardHeader>
-                    <CardContent>
+                <div className="md:col-span-1 border rounded-2xl shadow-sm bg-white overflow-hidden">
+                    <div className="p-6 border-b bg-slate-50">
+                        <h3 className="font-semibold text-lg">Add New Proxies</h3>
+                        <p className="text-sm text-slate-500">Paste your Oxylabs or Webshare list here. Supports IP:PORT or host:port:user:pass.</p>
+                    </div>
+                    <div className="p-6">
                         <form onSubmit={handleSubmit} className="space-y-4">
                             <div className="space-y-2">
                                 <label className="text-sm font-medium flex items-center gap-2">
                                     <Globe className="w-4 h-4 text-blue-500" /> Country Scope
                                 </label>
-                                <Input
+                                <input
+                                    className="flex h-10 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     value={countryInput}
                                     onChange={(e) => setCountryInput(e.target.value.toUpperCase())}
                                     placeholder="e.g., IN, US, GB"
                                     maxLength={2}
                                 />
-                                <p className="text-xs text-muted-foreground mt-1">This tags the ISP pool for targeted user assignment.</p>
+                                <p className="text-xs text-slate-500 mt-1">This tags the ISP pool for targeted user assignment.</p>
                             </div>
 
                             <div className="space-y-2">
@@ -155,114 +159,120 @@ export default function AdminProxiesPage() {
                                     <Shield className="w-4 h-4 text-purple-500" /> Proxy Tier Status
                                 </label>
                                 <select
-                                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
+                                    className="flex h-10 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     value={tierInput}
                                     onChange={(e) => setTierInput(e.target.value)}
                                 >
                                     <option value="ECONOMY">Economy (15 Users / IP) - For Core/Free</option>
                                     <option value="PREMIUM">Premium (5 Users / IP) - For Plus/Expert</option>
                                 </select>
-                                <p className="text-xs text-muted-foreground">Premium proxies are highly restrictive to prevent bans for top clients.</p>
+                                <p className="text-xs text-slate-500">Premium proxies are highly restrictive to prevent bans for top clients.</p>
                             </div>
 
                             <div className="space-y-2">
                                 <label className="text-sm font-medium">Proxy List</label>
-                                <Textarea
-                                    className="font-mono text-xs min-h-[250px]"
+                                <textarea
+                                    className="flex w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono min-h-[250px] resize-y"
                                     placeholder="disp.oxylabs.io:8001:user-shiva:secretpass&#10;disp.oxylabs.io:8002:user-shiva:secretpass"
                                     value={proxyInput}
                                     onChange={(e) => setProxyInput(e.target.value)}
                                 />
                             </div>
 
-                            <Button type="submit" className="w-full" disabled={isSubmitting}>
-                                {isSubmitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                            <button
+                                type="submit"
+                                className="w-full flex justify-center items-center h-10 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50 transition-colors"
+                                disabled={isSubmitting}
+                            >
+                                {isSubmitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                                 {isSubmitting ? "Importing..." : "Add Proxies to Database"}
-                            </Button>
+                            </button>
                         </form>
-                    </CardContent>
-                </Card>
+                    </div>
+                </div>
 
-                <Card className="md:col-span-2">
-                    <CardHeader>
-                        <CardTitle>Active Fleet Allocation</CardTitle>
-                        <CardDescription>Monitor your IPs and limit utilization in real-time.</CardDescription>
-                    </CardHeader>
-                    <CardContent>
+                <div className="md:col-span-2 border rounded-2xl shadow-sm bg-white overflow-hidden">
+                    <div className="p-6 border-b bg-slate-50">
+                        <h3 className="font-semibold text-lg">Active Fleet Allocation</h3>
+                        <p className="text-sm text-slate-500">Monitor your IPs and limit utilization in real-time.</p>
+                    </div>
+                    <div className="p-0">
                         {isLoading ? (
-                            <div className="flex justify-center py-10">
-                                <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+                            <div className="flex justify-center p-12">
+                                <Loader2 className="w-8 h-8 animate-spin text-slate-300" />
                             </div>
                         ) : proxies.length === 0 ? (
-                            <div className="text-center py-12 border-2 border-dashed rounded-lg">
-                                <Shield className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3" />
-                                <h3 className="text-lg font-medium">No Proxies Available</h3>
-                                <p className="text-sm text-muted-foreground mt-1">Add your first Oxylabs endpoints to begin secure automation.</p>
+                            <div className="text-center p-12 m-6 border-2 border-dashed rounded-xl border-slate-200">
+                                <Shield className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+                                <h3 className="text-lg font-medium text-slate-700">No Proxies Available</h3>
+                                <p className="text-sm text-slate-500 mt-1">Add your first Oxylabs endpoints to begin secure automation.</p>
                             </div>
                         ) : (
-                            <div className="border rounded-md">
-                                <Table>
-                                    <TableHeader>
-                                        <TableRow>
-                                            <TableHead>Host:Port</TableHead>
-                                            <TableHead>Region & Tier</TableHead>
-                                            <TableHead>Health</TableHead>
-                                            <TableHead>Utilization</TableHead>
-                                            <TableHead className="text-right">Actions</TableHead>
-                                        </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm text-left">
+                                    <thead className="text-xs text-slate-500 uppercase bg-slate-50 border-b">
+                                        <tr>
+                                            <th className="px-6 py-4 font-semibold">Host:Port</th>
+                                            <th className="px-6 py-4 font-semibold">Region & Tier</th>
+                                            <th className="px-6 py-4 font-semibold">Health</th>
+                                            <th className="px-6 py-4 font-semibold">Utilization</th>
+                                            <th className="px-6 py-4 font-semibold text-right">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
                                         {proxies.map(proxy => (
-                                            <TableRow key={proxy.id}>
-                                                <TableCell className="font-mono text-xs">{proxy.proxyIp}</TableCell>
-                                                <TableCell>
-                                                    <div className="flex flex-col gap-1">
-                                                        <span>{proxy.proxyCountry || 'Global'}</span>
-                                                        <Badge variant="outline" className={`w-fit text-[10px] ${proxy.tierClass === 'PREMIUM' ? 'border-purple-500 text-purple-600' : 'border-blue-500 text-blue-600'}`}>
+                                            <tr key={proxy.id} className="hover:bg-slate-50/50 transition-colors">
+                                                <td className="px-6 py-4 font-mono text-xs text-slate-600">{proxy.proxyIp}</td>
+                                                <td className="px-6 py-4">
+                                                    <div className="flex flex-col items-start gap-1.5">
+                                                        <span className="font-medium">{proxy.proxyCountry || 'Global'}</span>
+                                                        <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold border ${proxy.tierClass === 'PREMIUM' ? 'border-purple-200 bg-purple-50 text-purple-700' : 'border-blue-200 bg-blue-50 text-blue-700'}`}>
                                                             {proxy.tierClass}
-                                                        </Badge>
+                                                        </span>
                                                     </div>
-                                                </TableCell>
-                                                <TableCell>
+                                                </td>
+                                                <td className="px-6 py-4">
                                                     {proxy.banned ? (
-                                                        <Badge variant="destructive">Banned by LinkedIn</Badge>
+                                                        <span className="px-2.5 py-1 bg-red-100 text-red-700 border border-red-200 rounded-full text-xs font-semibold">
+                                                            Banned
+                                                        </span>
                                                     ) : (
-                                                        <Badge variant="secondary" className="bg-green-100 text-green-800 hover:bg-green-100">Healthy</Badge>
+                                                        <span className="px-2.5 py-1 bg-green-100 text-green-700 border border-green-200 rounded-full text-xs font-semibold">
+                                                            Healthy
+                                                        </span>
                                                     )}
-                                                </TableCell>
-                                                <TableCell>
-                                                    <div className="flex items-center gap-2">
-                                                        <div className="flex flex-col gap-1 w-full max-w-[100px]">
-                                                            <div className="flex justify-between text-xs">
-                                                                <span>{proxy._count.assignedUsers} / {proxy.maxUsers || 5}</span>
-                                                                <span className="text-muted-foreground text-[10px]">Users</span>
-                                                            </div>
-                                                            <div className="w-full bg-secondary h-1.5 rounded-full overflow-hidden">
-                                                                <div
-                                                                    className={`h-full ${proxy._count.assignedUsers >= (proxy.maxUsers || 5) ? 'bg-orange-500' : 'bg-primary'}`}
-                                                                    style={{ width: `${Math.min(100, (proxy._count.assignedUsers / (proxy.maxUsers || 5)) * 100)}%` }}
-                                                                />
-                                                            </div>
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <div className="flex flex-col gap-1 w-full max-w-[120px]">
+                                                        <div className="flex justify-between text-xs font-medium">
+                                                            <span className="text-slate-700">{proxy._count.assignedUsers} / {proxy.maxUsers || 5}</span>
+                                                            <span className="text-slate-400 text-[10px] uppercase">Users</span>
+                                                        </div>
+                                                        <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                                                            <div
+                                                                className={`h-full ${proxy._count.assignedUsers >= (proxy.maxUsers || 5) ? 'bg-orange-500' : 'bg-blue-500'}`}
+                                                                style={{ width: `${Math.min(100, (proxy._count.assignedUsers / (proxy.maxUsers || 5)) * 100)}%` }}
+                                                            />
                                                         </div>
                                                     </div>
-                                                </TableCell>
-                                                <TableCell className="text-right">
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="icon"
+                                                </td>
+                                                <td className="px-6 py-4 text-right">
+                                                    <button
+                                                        className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                                                         onClick={() => handleDelete(proxy.id)}
+                                                        title="Delete proxy"
                                                     >
-                                                        <Trash2 className="w-4 h-4 text-destructive/80" />
-                                                    </Button>
-                                                </TableCell>
-                                            </TableRow>
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                </td>
+                                            </tr>
                                         ))}
-                                    </TableBody>
-                                </Table>
+                                    </tbody>
+                                </table>
                             </div>
                         )}
-                    </CardContent>
-                </Card>
+                    </div>
+                </div>
             </div>
         </div>
     );

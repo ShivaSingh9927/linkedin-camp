@@ -58,7 +58,7 @@ export const processWorkflowStep = async (data: any) => {
             where: { id: userId },
             include: { proxy: true }
         });
-        const lead = await prisma.lead.findUnique({ where: { id: leadId } });
+        let lead: any = await prisma.lead.findUnique({ where: { id: leadId } });
         const campaignLead = await prisma.campaignLead.findUnique({ where: { id: campaignLeadId } });
 
         // Daily Rate Limiting for INVITE
@@ -88,9 +88,15 @@ export const processWorkflowStep = async (data: any) => {
             }
         }
 
-        if (currentNode.type === 'DELAY' || currentNode.type === 'CONDITION') {
-            // These don't have execution side-effects, they just get evaluated in the "Find Next Step" block.
-            console.log(`[FLOW NODE] Processing ${currentNode.type} node`);
+        const isConnectedKnown = lead?.status === 'CONNECTED' || lead?.status === 'REPLIED';
+
+        if (
+            currentNode.type === 'DELAY' ||
+            (currentNode.type === 'CONDITION' && currentNode.subType === 'IF_REPLIED') ||
+            (currentNode.type === 'CONDITION' && currentNode.subType === 'IF_CONNECTED' && isConnectedKnown)
+        ) {
+            // These nodes don't require a live headless browser, they just evaluate instantly.
+            console.log(`[FLOW NODE] Processing ${currentNode.type} node instantly using local state.`);
         } else if (currentNode.subType === 'TAG_LEAD') {
             const tag = currentNode.data?.tag;
             if (tag) {
@@ -263,6 +269,19 @@ export const processWorkflowStep = async (data: any) => {
                         await prisma.actionLog.create({
                             data: { userId, leadId, campaignId, actionType: 'MESSAGE', status: 'SUCCESS' }
                         });
+                    } else if (currentNode.type === 'CONDITION' && currentNode.subType === 'IF_CONNECTED') {
+                        // Live check of connection status if unknown
+                        if (lead?.status === 'INVITE_PENDING' || lead?.status === 'UNCONNECTED') {
+                            const isConnected = await page.isVisible('button:has-text("Message")');
+                            if (isConnected) {
+                                console.log('[CONDITION] Live verification: User IS connected! Updating DB.');
+                                await prisma.lead.update({ where: { id: leadId }, data: { status: 'CONNECTED' } });
+                                // lead object ref update for the next block
+                                lead = { ...lead, status: 'CONNECTED' };
+                            } else {
+                                console.log('[CONDITION] Live verification: User is NOT connected.');
+                            }
+                        }
                     }
 
                 } finally {
@@ -281,7 +300,8 @@ export const processWorkflowStep = async (data: any) => {
         let nextEdge = workflow.edges.find(e => e.source === currentStepId);
 
         if (currentNode.type === 'CONDITION') {
-            const isConnected = lead?.status === 'CONNECTED';
+            // A REPLIED user is inherently connected.
+            const isConnected = lead?.status === 'CONNECTED' || lead?.status === 'REPLIED';
             const isReplied = lead?.status === 'REPLIED';
             let conditionMet = false;
 
@@ -369,11 +389,12 @@ export const processWorkflowStep = async (data: any) => {
     } catch (error: any) {
         console.error(`Worker error at step ${currentStepId}:`, error.message);
 
-        // Catch explicitly thrown Linkedin Limit exceptions
-        if (error.message.includes('LINKEDIN_LIMIT_REACHED')) {
+        const errorMessage = error.message.toLowerCase();
+
+        // 1. Campaign-Level Hard Stops (Limits & Restrictions)
+        if (errorMessage.includes('linkedin_limit_reached') || errorMessage.includes('limit') || errorMessage.includes('restricted') || errorMessage.includes('security')) {
             const reasonData = error.message.split('|')[1] || 'You have reached a LinkedIn limit or restriction.';
 
-            // Mark action as failed
             await prisma.actionLog.create({
                 data: {
                     userId: data.userId,
@@ -381,26 +402,75 @@ export const processWorkflowStep = async (data: any) => {
                     campaignId: data.campaignId,
                     actionType: 'INVITE', // fallback if generic
                     status: 'FAILED',
-                    errorMessage: 'LinkedIn Action Blocked or Limited.'
+                    errorMessage: 'LinkedIn Action Blocked or Limited: ' + reasonData
                 }
             });
 
-            // Pause the user's campaign specifically or mark lead incomplete
-            await prisma.campaignLead.update({
-                where: { id: data.campaignLeadId },
-                data: { isCompleted: true } // Evict them from the queue so we don't spam 10,000 requests into a brick wall
+            // Pause the entire campaign to prevent further damage
+            await prisma.campaign.update({
+                where: { id: data.campaignId },
+                data: { status: 'PAUSED' }
             });
 
-            // Send notification to Frontend
+            // Send critical notification to Frontend
             await prisma.notification.create({
                 data: {
                     userId: data.userId,
                     type: 'campaign_error',
-                    title: 'LinkedIn Limit Reached',
-                    body: `LinkedIn actively blocked an action. Reason: ${reasonData}`,
+                    title: 'Campaign Paused: LinkedIn Limit Reached',
+                    body: `LinkedIn actively blocked an action. Your campaign has been automatically paused to protect your account. Reason: ${reasonData}`,
                     meta: { campaignId: data.campaignId, leadId: data.leadId } as any
                 }
             });
+            throw error; // Let BullMQ retry/fail naturally
+        }
+
+        // 2. Auth Errors
+        if (errorMessage.includes('auth') || errorMessage.includes('cookie') || errorMessage.includes('login')) {
+            await prisma.campaign.update({
+                where: { id: data.campaignId },
+                data: { status: 'PAUSED' }
+            });
+
+            await prisma.notification.create({
+                data: {
+                    userId: data.userId,
+                    type: 'campaign_error',
+                    title: 'Campaign Paused: Authentication Error',
+                    body: `We could not authenticate your LinkedIn session. Please update your cookie. Campaign paused.`,
+                    meta: { campaignId: data.campaignId } as any
+                }
+            });
+            throw error;
+        }
+
+        // 3. Lead-Specific Soft Bounces (e.g. invalid URL, missing connect button, deleted profile)
+        if (errorMessage.includes('not visible') || errorMessage.includes('missing') || errorMessage.includes('failed to find') || errorMessage.includes('target closed')) {
+            console.log(`[BOUNCE] Lead ${data.leadId} failed. Ejecting from campaign.`);
+
+            await prisma.actionLog.create({
+                data: {
+                    userId: data.userId,
+                    leadId: data.leadId,
+                    campaignId: data.campaignId,
+                    actionType: 'PROFILE_VISIT', // fallback
+                    status: 'FAILED',
+                    errorMessage: 'Individual bounce: ' + error.message.substring(0, 100)
+                }
+            });
+
+            await prisma.campaignLead.update({
+                where: { id: data.campaignLeadId },
+                data: { isCompleted: true }
+            });
+
+            await prisma.lead.update({
+                where: { id: data.leadId },
+                data: { status: 'BOUNCED' }
+            });
+
+            // Mark as 'completed' in BullMQ sense so it doesn't retry infinitely for a broken profile.
+            return;
         }
 
         throw error;

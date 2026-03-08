@@ -35,6 +35,15 @@ import {
 } from 'lucide-react';
 import '@xyflow/react/dist/style.css';
 import api from '@/lib/api';
+import { ActionNode, ConditionNode, DelayNode, TriggerNode } from './WorkflowNodes';
+
+const nodeTypes = {
+    ACTION: ActionNode,
+    CONDITION: ConditionNode,
+    DELAY: DelayNode,
+    TRIGGER: TriggerNode,
+    input: TriggerNode // Overwrite default XYFlow type for existing
+};
 
 interface CampaignBuilderProps {
     nodes: Node[];
@@ -157,11 +166,13 @@ export function CampaignBuilder({
         const newNode: Node = {
             id,
             position: { x: 250, y: nodes.length * 100 + 50 },
+            type: nodeType, // THIS MAPS TO OUR CUTOM nodeTypes
             data: {
                 label,
                 type: nodeType,
                 subType,
                 message: hasMessage ? '' : undefined,
+                days: type === 'DELAY' ? 1 : undefined,
             },
         };
         setNodes((nds) => [...nds, newNode]);
@@ -174,7 +185,10 @@ export function CampaignBuilder({
     }, [setNodes, setEdges]);
 
     const selectedSubType = (selectedNode?.data as any)?.subType;
-    const showSettingsPanel = selectedNode && ['MESSAGE', 'INVITE', 'EMAIL'].includes(selectedSubType);
+    const showSettingsPanel = selectedNode && (
+        ['MESSAGE', 'INVITE', 'EMAIL'].includes(selectedSubType) ||
+        selectedNode.type === 'DELAY'
+    );
 
     return (
         <div className="h-full w-full border rounded-2xl bg-[#f8fafc] relative overflow-hidden shadow-inner group flex">
@@ -233,6 +247,7 @@ export function CampaignBuilder({
                 <ReactFlow
                     nodes={nodes}
                     edges={edges}
+                    nodeTypes={nodeTypes}
                     onNodesChange={onNodesChange}
                     onEdgesChange={onEdgesChange}
                     onConnect={onConnect}
@@ -310,6 +325,22 @@ export function CampaignBuilder({
                             </div>
                         </div>
                     </div>
+
+                    {selectedNode.type === 'DELAY' && (
+                        <div className="p-6 border-t bg-slate-50 space-y-4">
+                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Delay Settings</label>
+                            <div className="flex flex-col space-y-2">
+                                <span className="text-xs font-bold text-slate-700">Days to wait</span>
+                                <input
+                                    type="number"
+                                    min="1"
+                                    value={String((selectedNode?.data as any)?.days || 1)}
+                                    onChange={(e) => updateNodeData(selectedNode!.id, { days: parseInt(e.target.value) || 1 })}
+                                    className="w-full p-2 border-2 border-slate-200 rounded-xl focus:border-indigo-600 focus:ring-0 transition-all font-bold"
+                                />
+                            </div>
+                        </div>
+                    )}
 
                     <div className="p-4 border-t bg-slate-50">
                         <p className="text-[10px] text-slate-400 font-bold text-center uppercase tracking-widest">Auto-saved to builder state</p>

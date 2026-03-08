@@ -27,56 +27,74 @@ export const initScheduler = () => {
     console.log('Running campaign scheduler heartbeat...');
 
     try {
-      const pendingTasks = await prisma.campaignLead.findMany({
-        where: {
-          nextActionDate: { lte: new Date() },
-          isCompleted: false,
-          campaign: { status: 'ACTIVE' },
-        },
-        include: {
-          campaign: true,
-          lead: true,
-        },
-        take: 100, // Small batch for safety
+      // Fetch users who are actively running campaigns
+      const activeUsers = await prisma.user.findMany({
+        where: { campaigns: { some: { status: 'ACTIVE' } } },
+        select: { id: true, linkedinCookie: true }
       });
 
-      for (const task of pendingTasks) {
-        let jobPriority = 5; // Default low priority for Invites / visits
+      let totalPushed = 0;
 
-        // Parse workflow to determine if this step is a MESSAGE
-        try {
-            const parsedWorkflow = typeof task.campaign.workflowJson === 'string' 
-                ? JSON.parse(task.campaign.workflowJson) 
-                : task.campaign.workflowJson;
-                
+      // Round Robin: Process up to 5 pending leads per user per cycle
+      // This prevents a single user with 1000 tasks from blocking other users.
+      for (const user of activeUsers) {
+        if (!user.linkedinCookie) continue; // Skip users without auth
+
+        const userPendingTasks = await prisma.campaignLead.findMany({
+          where: {
+            campaign: { userId: user.id, status: 'ACTIVE' },
+            nextActionDate: { lte: new Date() },
+            isCompleted: false,
+          },
+          include: {
+            campaign: true,
+            lead: true,
+          },
+          take: 5, // Process max 5 tasks per user per 5 mins to ensure fairness
+        });
+
+        for (const task of userPendingTasks) {
+          let jobPriority = 5; // Default low priority for Invites / visits
+
+          // Parse workflow to determine if this step is a MESSAGE
+          try {
+            const parsedWorkflow = typeof task.campaign.workflowJson === 'string'
+              ? JSON.parse(task.campaign.workflowJson)
+              : task.campaign.workflowJson;
+
             const currentNode = parsedWorkflow?.nodes?.find((n: any) => n.id === task.currentStepId);
             if (currentNode && currentNode.subType === 'MESSAGE') {
-                jobPriority = 2; // Campaign messages get Priority 2
+              jobPriority = 2; // Campaign messages get Priority 2
             }
-        } catch (e) {
+          } catch (e) {
             console.error('Failed to parse workflow for priority detection', e);
-        }
-
-        await actionQueue.add(
-          'execute-workflow-step',
-          {
-            campaignLeadId: task.id,
-            userId: task.campaign.userId,
-            leadId: task.leadId,
-            campaignId: task.campaignId,
-            currentStepId: task.currentStepId,
-            workflowJson: task.campaign.workflowJson,
-          },
-          {
-            jobId: `task_${task.id}_step_${task.currentStepId}`,
-            removeOnComplete: true,
-            priority: jobPriority
           }
-        );
+
+          // Generate a unique deduplication id so we don't double queue the same step
+          const jobId = `task_${task.id}_step_${task.currentStepId}`;
+
+          await actionQueue.add(
+            'execute-workflow-step',
+            {
+              campaignLeadId: task.id,
+              userId: task.campaign.userId,
+              leadId: task.leadId,
+              campaignId: task.campaignId,
+              currentStepId: task.currentStepId,
+              workflowJson: task.campaign.workflowJson,
+            },
+            {
+              jobId,
+              removeOnComplete: true,
+              priority: jobPriority,
+            }
+          );
+          totalPushed++;
+        }
       }
 
-      if (pendingTasks.length > 0) {
-        console.log(`Pushed ${pendingTasks.length} tasks to the execution queue.`);
+      if (totalPushed > 0) {
+        console.log(`Pushed ${totalPushed} tasks to the execution queue across ${activeUsers.length} active users.`);
       }
     } catch (error) {
       console.error('Scheduler heartbeat failed:', error);

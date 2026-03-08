@@ -59,15 +59,16 @@ export default function CampaignBuilderPage({ params }: { params: Promise<{ id: 
         return {
             nodes: nodes.map(n => ({
                 id: n.id,
-                type: n.data?.type || 'TRIGGER',
+                type: n.data?.type || n.type || 'TRIGGER',
                 subType: n.data?.subType || 'START',
-                data: n.data?.data || {},
+                data: { ...n.data },
                 position: n.position
             })),
             edges: edges.map(e => ({
                 id: e.id,
                 source: e.source,
-                target: e.target
+                target: e.target,
+                sourceHandle: e.sourceHandle || null
             }))
         };
     };
