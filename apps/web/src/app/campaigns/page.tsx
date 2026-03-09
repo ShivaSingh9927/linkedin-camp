@@ -308,11 +308,30 @@ export default function CampaignsPage() {
                             </tr>
                         ) : filteredCampaigns.map((campaign) => (
                             <tr key={campaign.id} className="hover:bg-slate-50/50 transition-colors group">
-                                <td className="px-6 py-5">
-                                    <Link href={`/campaigns/${campaign.id}/builder`} className="font-black text-slate-900 hover:text-indigo-600 transition-colors uppercase tracking-tight">
-                                        {campaign.name}
-                                    </Link>
-                                    <p className="text-[10px] text-slate-400 font-bold tracking-widest uppercase mt-1">ID: {campaign.id.slice(0, 8)}...</p>
+                                <td className="px-6 py-5 relative">
+                                    <div className="flex flex-col">
+                                        <Link href={`/campaigns/${campaign.id}/builder`} className="font-black text-slate-900 hover:text-indigo-600 transition-colors uppercase tracking-tight">
+                                            {campaign.name}
+                                        </Link>
+                                        <div className="flex items-center space-x-2 mt-1">
+                                            <p className="text-[10px] text-slate-400 font-bold tracking-widest uppercase italic">ID: {campaign.id.slice(0, 8)}</p>
+                                            {campaign.stats && (
+                                                <div className="flex items-center space-x-1">
+                                                    <span className="text-slate-300">•</span>
+                                                    <span className="text-[10px] text-indigo-500 font-black tracking-tighter uppercase">{campaign.stats.progress}% DONE</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                    {/* Progress line at bottom of cell */}
+                                    {campaign.stats && (
+                                        <div className="absolute bottom-0 left-0 right-0 h-1 bg-slate-100/50">
+                                            <div
+                                                className="h-full bg-emerald-500 transition-all duration-1000"
+                                                style={{ width: `${campaign.stats.progress}%` }}
+                                            />
+                                        </div>
+                                    )}
                                 </td>
                                 <td className="px-6 py-5">
                                     <div className="flex items-center space-x-2">

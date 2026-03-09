@@ -1,18 +1,23 @@
 import React from 'react';
 import { Handle, Position } from '@xyflow/react';
-import { Clock, GitBranch, Zap, Layers } from 'lucide-react';
+import { Clock, GitBranch, Zap, Layers, Loader2 } from 'lucide-react';
 
 export const ActionNode = ({ data }: any) => {
+    const isActive = data.isActive;
     return (
-        <div className="bg-white border-2 border-slate-200 rounded-xl shadow-sm overflow-hidden min-w-[200px]">
+        <div className={`bg-white border-2 rounded-xl shadow-sm overflow-hidden min-w-[200px] transition-all duration-500 ${isActive ? 'border-emerald-500 shadow-lg shadow-emerald-100 scale-105 ring-4 ring-emerald-50' : 'border-slate-200'}`}>
             <Handle type="target" position={Position.Top} className="w-3 h-3 bg-slate-400" />
-            <div className="flex items-center space-x-3 p-3 bg-blue-50 border-b border-blue-100">
-                <div className="p-1.5 bg-blue-100 rounded-lg text-blue-600">
-                    <Layers className="w-4 h-4" />
-                </div>
-                <div>
-                    <div className="text-xs font-bold text-slate-700">{data.label}</div>
-                    <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Action • {data.subType}</div>
+            <div className={`flex items-center justify-between p-3 border-b ${isActive ? 'bg-emerald-50 border-emerald-100' : 'bg-blue-50 border-blue-100'}`}>
+                <div className="flex items-center space-x-3">
+                    <div className={`p-1.5 rounded-lg ${isActive ? 'bg-emerald-100 text-emerald-600' : 'bg-blue-100 text-blue-600'}`}>
+                        {isActive ? <Loader2 className="w-4 h-4 animate-spin" /> : <Layers className="w-4 h-4" />}
+                    </div>
+                    <div>
+                        <div className="text-xs font-bold text-slate-700">{data.label}</div>
+                        <div className={`text-[10px] uppercase font-bold tracking-wider ${isActive ? 'text-emerald-500' : 'text-slate-400'}`}>
+                            {isActive ? 'Currently Processing' : `Action • ${data.subType}`}
+                        </div>
+                    </div>
                 </div>
             </div>
             {data.message && (
@@ -26,11 +31,12 @@ export const ActionNode = ({ data }: any) => {
 };
 
 export const ConditionNode = ({ data }: any) => {
+    const isActive = data.isActive;
     return (
-        <div className="bg-white border-2 border-slate-200 rounded-xl shadow-sm overflow-hidden min-w-[200px]">
+        <div className={`bg-white border-2 rounded-xl shadow-sm overflow-hidden min-w-[200px] transition-all duration-500 ${isActive ? 'border-amber-500 shadow-lg shadow-amber-100 scale-105 ring-4 ring-amber-50' : 'border-slate-200'}`}>
             <Handle type="target" position={Position.Top} className="w-3 h-3 bg-slate-400" />
-            <div className="flex items-center space-x-3 p-3 bg-amber-50 border-b border-amber-100">
-                <div className="p-1.5 bg-amber-100 rounded-lg text-amber-600">
+            <div className={`flex items-center space-x-3 p-3 border-b ${isActive ? 'bg-amber-100 border-amber-200' : 'bg-amber-50 border-amber-100'}`}>
+                <div className={`p-1.5 rounded-lg ${isActive ? 'bg-amber-200 text-amber-700' : 'bg-amber-100 text-amber-600'}`}>
                     <GitBranch className="w-4 h-4" />
                 </div>
                 <div>
@@ -43,7 +49,6 @@ export const ConditionNode = ({ data }: any) => {
                 <div className="text-emerald-500">Yes</div>
             </div>
 
-            {/* NO Branch */}
             <Handle
                 type="source"
                 position={Position.Bottom}
@@ -51,7 +56,6 @@ export const ConditionNode = ({ data }: any) => {
                 style={{ left: '20%', background: '#ef4444', width: '12px', height: '12px' }}
             />
 
-            {/* YES Branch */}
             <Handle
                 type="source"
                 position={Position.Bottom}
@@ -63,11 +67,12 @@ export const ConditionNode = ({ data }: any) => {
 };
 
 export const DelayNode = ({ data }: any) => {
+    const isActive = data.isActive;
     return (
-        <div className="bg-white border-2 border-slate-200 rounded-xl shadow-sm overflow-hidden min-w-[200px]">
+        <div className={`bg-white border-2 rounded-xl shadow-sm overflow-hidden min-w-[200px] transition-all duration-500 ${isActive ? 'border-sky-500 shadow-lg shadow-sky-100 scale-105 ring-4 ring-sky-50' : 'border-slate-200'}`}>
             <Handle type="target" position={Position.Top} className="w-3 h-3 bg-slate-400" />
-            <div className="flex items-center space-x-3 p-3 bg-slate-50 border-b border-slate-100">
-                <div className="p-1.5 bg-slate-200 rounded-lg text-slate-600">
+            <div className={`flex items-center space-x-3 p-3 border-b ${isActive ? 'bg-sky-50 border-sky-100' : 'bg-slate-50 border-slate-100'}`}>
+                <div className={`p-1.5 rounded-lg ${isActive ? 'bg-sky-100 text-sky-600' : 'bg-slate-200 text-slate-600'}`}>
                     <Clock className="w-4 h-4" />
                 </div>
                 <div>
