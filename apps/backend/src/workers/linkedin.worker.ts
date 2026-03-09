@@ -204,28 +204,45 @@ export const processWorkflowStep = async (data: any) => {
 
                     if (currentNode.subType === 'INVITE') {
                         // 1. Check if already invited or connected
-                        const isConnected = await page.isVisible('button:has-text("Message")');
+                        const isConnected = await page.isVisible('button:has-text("Message"), button[aria-label^="Message"]');
                         if (isConnected) {
-                            console.log('Already connected');
+                            console.log('[Worker] Already connected with lead ', leadId);
                         } else {
                             // 2. Click Connect
-                            const connectBtn = await page.locator('button:has-text("Connect")').first();
+                            let connectBtn = page.locator('button:has-text("Connect"), button[aria-label^="Invite"]').first();
+
+                            if (!(await connectBtn.isVisible())) {
+                                console.log('[Worker] Connect button not directly visible. Checking More menu...');
+                                const moreBtn = page.locator('button:has-text("More"), button[aria-label="More actions"]').first();
+                                if (await moreBtn.isVisible()) {
+                                    await moreBtn.click();
+                                    await randomDelay(1000, 2000);
+                                    connectBtn = page.locator('button:has-text("Connect"), button[aria-label^="Invite"]').last();
+                                }
+                            }
+
                             if (await connectBtn.isVisible()) {
                                 await connectBtn.click();
                                 await randomDelay();
                                 // Handle "Add a note"
                                 if (message) {
-                                    await page.click('button:has-text("Add a note")');
-                                    await randomDelay(500, 1500);
-                                    // Simulated human stroke jitter
-                                    await page.type('textarea[name="message"]', message, { delay: Math.floor(Math.random() * 50) + 30 });
+                                    const addNoteBtn = page.locator('button:has-text("Add a note"), button[aria-label="Add a note"]').first();
+                                    if (await addNoteBtn.isVisible()) {
+                                        await addNoteBtn.click();
+                                        await randomDelay(500, 1500);
+                                        await page.type('textarea[name="message"]', message, { delay: Math.floor(Math.random() * 50) + 30 });
+                                    }
                                 }
 
-                                // 3. Simulate human scroll to look like we are actually reading
                                 await page.mouse.wheel(0, Math.floor(Math.random() * 500) + 300);
                                 await randomDelay(1000, 2500);
 
-                                await page.click('button:has-text("Send")');
+                                const sendBtn = page.locator('button:has-text("Send"), button[aria-label="Send now"]').first();
+                                if (await sendBtn.isVisible()) {
+                                    await sendBtn.click();
+                                } else {
+                                    await page.keyboard.press('Enter');
+                                }
 
                                 // 4. LinkedIn Ban, Limit & CAPTCHA Detection
                                 await randomDelay(1500, 3000);
@@ -243,23 +260,28 @@ export const processWorkflowStep = async (data: any) => {
                                 });
                                 await prisma.lead.update({ where: { id: leadId }, data: { status: 'INVITE_PENDING' } });
                             } else {
-                                throw new Error('Connect button not visible');
+                                throw new Error('Connect button not visible even after checking More menu.');
                             }
                         }
                     } else if (currentNode.subType === 'MESSAGE') {
                         console.log(`[Worker] Attempting to send message to lead ${leadId}`);
 
+                        // Ensure page is ready
+                        await page.waitForLoadState('networkidle');
+                        await page.mouse.wheel(0, 300); // Trigger lazy loads
+                        await randomDelay(1000, 2000);
+
                         // 1. Try to find Message button directly, or check "More" dropdown
-                        let messageBtn = page.locator('button:has-text("Message")').first();
+                        let messageBtn = page.locator('button:has-text("Message"), button[aria-label^="Message"]').first();
 
                         if (!(await messageBtn.isVisible())) {
                             console.log(`[Worker] Message button not immediately visible. Checking 'More' menu...`);
-                            const moreBtn = page.locator('button:has-text("More")').first();
+                            const moreBtn = page.locator('button:has-text("More"), button[aria-label="More actions"]').first();
                             if (await moreBtn.isVisible()) {
                                 await moreBtn.click();
                                 await randomDelay(1000, 2000);
                                 // Re-locate after menu opens
-                                messageBtn = page.locator('button:has-text("Message")').last();
+                                messageBtn = page.locator('button:has-text("Message"), button[aria-label^="Message"]').last();
                             }
                         }
 
@@ -287,7 +309,7 @@ export const processWorkflowStep = async (data: any) => {
                             }
                         } else {
                             // 2. CHECK FOR PENDING (Waiting for acceptance)
-                            const pendingBtn = page.locator('button:has-text("Pending")').first();
+                            const pendingBtn = page.locator('button:has-text("Pending"), button:has-text("Withdraw")').first();
                             if (await pendingBtn.isVisible()) {
                                 console.log(`[Worker] Lead ${leadId} invitation is still PENDING. Rescheduling message for 24 hours.`);
                                 const tomorrow = new Date();
@@ -301,21 +323,25 @@ export const processWorkflowStep = async (data: any) => {
 
                             // 3. FALLBACK: Check if we are even connected
                             console.log(`[Worker] Still no Message/Pending button for ${leadId}. Checking for 'Connect' button...`);
-                            const connectBtn = page.locator('button:has-text("Connect")').first();
+                            let connectBtn = page.locator('button:has-text("Connect"), button[aria-label^="Invite"]').first();
 
                             if (await connectBtn.isVisible()) {
                                 console.log(`[Worker] Not connected to ${leadId}. Redirecting to INVITE flow logic.`);
-                                // We'll let the user know via logs and actually try to connect if they have an invite message
                                 await connectBtn.click();
                                 await randomDelay(1000, 2000);
                                 if (message) {
-                                    const addNoteBtn = page.locator('button:has-text("Add a note")').first();
+                                    const addNoteBtn = page.locator('button:has-text("Add a note"), button[aria-label="Add a note"]').first();
                                     if (await addNoteBtn.isVisible()) {
                                         await addNoteBtn.click();
                                         await page.type('textarea[name="message"]', message, { delay: 50 });
                                     }
                                 }
-                                await page.click('button:has-text("Send")');
+                                const sendBtn = page.locator('button:has-text("Send"), button[aria-label="Send now"]').first();
+                                if (await sendBtn.isVisible()) {
+                                    await sendBtn.click();
+                                } else {
+                                    await page.keyboard.press('Enter');
+                                }
 
                                 await prisma.actionLog.create({
                                     data: { userId, leadId, campaignId, actionType: 'INVITE' as ActionType, status: 'SUCCESS', errorMessage: 'Auto-fallback to Invite because not connected.' }
@@ -332,6 +358,9 @@ export const processWorkflowStep = async (data: any) => {
                                 });
                                 return;
                             } else {
+                                // Last resort: list button texts to logs
+                                const buttons = await page.$$eval('button', (btns: any) => btns.map((b: any) => b.innerText || b.getAttribute('aria-label')).filter(Boolean));
+                                console.log('[Worker] Failed to find action buttons. Found buttons:', buttons.slice(0, 10));
                                 throw new Error('Message button and Connect button not visible. Profile might be restricted or layout changed.');
                             }
                         }
