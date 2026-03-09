@@ -75,7 +75,7 @@ app.get('/', (req, res) => {
 
 // --- 2. START SERVER IMMEDIATELY ---
 app.listen(Number(PORT), '0.0.0.0', () => {
-    console.log(`🚀 Server listening on port ${PORT}`);
+    console.log(`🚀 Server listening on port ${PORT} [${new Date().toISOString()}]`);
 
     // --- 3. ASYNC BACKGROUND INIT (Does not block port binding) ---
     console.log('Initializing background services...');
