@@ -107,7 +107,7 @@ export const startCampaign = async (req: any, res: Response) => {
                 select: { leadId: true }
             });
 
-            const activeLeadIds = new Set(activeLeadsInOtherCampaigns.map(cl => cl.leadId));
+            const activeLeadIds = new Set(activeLeadsInOtherCampaigns.map((cl: any) => cl.leadId));
             const safeLeadIdsToStart = leadIds.filter((leadId: string) => !activeLeadIds.has(leadId));
 
             skippedCount = activeLeadIds.size;
@@ -211,7 +211,7 @@ export const getCampaignStatus = async (req: any, res: Response) => {
 
         // For each lead, fetch recent action logs (last 5) by leadId
         const leadsWithLogs = await Promise.all(
-            campaignLeads.map(async (cl) => {
+            campaignLeads.map(async (cl: any) => {
                 const logs = await prisma.actionLog.findMany({
                     where: { leadId: cl.leadId, userId },
                     orderBy: { executedAt: 'desc' },
@@ -229,7 +229,7 @@ export const getCampaignStatus = async (req: any, res: Response) => {
                     nextActionDate: cl.nextActionDate,
                     isCompleted: cl.isCompleted,
                     personalization: cl.personalization,
-                    recentLogs: logs.map((log) => ({
+                    recentLogs: logs.map((log: any) => ({
                         actionType: log.actionType,
                         status: log.status,
                         errorMessage: log.errorMessage,
