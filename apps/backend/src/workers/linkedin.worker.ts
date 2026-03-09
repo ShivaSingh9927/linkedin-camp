@@ -249,8 +249,20 @@ export const processWorkflowStep = async (data: any) => {
                     } else if (currentNode.subType === 'MESSAGE') {
                         console.log(`[Worker] Attempting to send message to lead ${leadId}`);
 
-                        // Check if Message button exists (means we are connected)
-                        const messageBtn = page.locator('button:has-text("Message")').first();
+                        // 1. Try to find Message button directly, or check "More" dropdown
+                        let messageBtn = page.locator('button:has-text("Message")').first();
+
+                        if (!(await messageBtn.isVisible())) {
+                            console.log(`[Worker] Message button not immediately visible. Checking 'More' menu...`);
+                            const moreBtn = page.locator('button:has-text("More")').first();
+                            if (await moreBtn.isVisible()) {
+                                await moreBtn.click();
+                                await randomDelay(1000, 2000);
+                                // Re-locate after menu opens
+                                messageBtn = page.locator('button:has-text("Message")').last();
+                            }
+                        }
+
                         if (await messageBtn.isVisible()) {
                             await messageBtn.click();
                             await randomDelay(1000, 2000);
@@ -258,11 +270,10 @@ export const processWorkflowStep = async (data: any) => {
                             const textBox = page.locator('div[role="textbox"]').first();
                             if (await textBox.isVisible()) {
                                 await textBox.click(); // Focus
-                                await textBox.fill(''); // Clear if anything there
+                                await textBox.fill(''); // Clear
                                 await textBox.pressSequentially(message, { delay: Math.floor(Math.random() * 50) + 30 });
                                 await randomDelay(1000, 2000);
 
-                                // Try to click the Send button first, then fallback to Enter
                                 const sendBtn = page.locator('button.msg-form__send-button').first();
                                 if (await sendBtn.isVisible() && !(await sendBtn.isDisabled())) {
                                     await sendBtn.click();
@@ -275,8 +286,54 @@ export const processWorkflowStep = async (data: any) => {
                                 throw new Error('Message textbox not found after clicking Message button');
                             }
                         } else {
-                            console.log(`[Worker] Message button not visible for lead ${leadId}. Maybe not connected?`);
-                            throw new Error('Message button not visible. Are you connected to this lead?');
+                            // 2. CHECK FOR PENDING (Waiting for acceptance)
+                            const pendingBtn = page.locator('button:has-text("Pending")').first();
+                            if (await pendingBtn.isVisible()) {
+                                console.log(`[Worker] Lead ${leadId} invitation is still PENDING. Rescheduling message for 24 hours.`);
+                                const tomorrow = new Date();
+                                tomorrow.setHours(tomorrow.getHours() + 24);
+                                await prisma.campaignLead.update({
+                                    where: { id: campaignLeadId },
+                                    data: { nextActionDate: applyJitter(tomorrow, 60, 240) }
+                                });
+                                return;
+                            }
+
+                            // 3. FALLBACK: Check if we are even connected
+                            console.log(`[Worker] Still no Message/Pending button for ${leadId}. Checking for 'Connect' button...`);
+                            const connectBtn = page.locator('button:has-text("Connect")').first();
+
+                            if (await connectBtn.isVisible()) {
+                                console.log(`[Worker] Not connected to ${leadId}. Redirecting to INVITE flow logic.`);
+                                // We'll let the user know via logs and actually try to connect if they have an invite message
+                                await connectBtn.click();
+                                await randomDelay(1000, 2000);
+                                if (message) {
+                                    const addNoteBtn = page.locator('button:has-text("Add a note")').first();
+                                    if (await addNoteBtn.isVisible()) {
+                                        await addNoteBtn.click();
+                                        await page.type('textarea[name="message"]', message, { delay: 50 });
+                                    }
+                                }
+                                await page.click('button:has-text("Send")');
+
+                                await prisma.actionLog.create({
+                                    data: { userId, leadId, campaignId, actionType: 'INVITE' as ActionType, status: 'SUCCESS', errorMessage: 'Auto-fallback to Invite because not connected.' }
+                                });
+                                await prisma.lead.update({ where: { id: leadId }, data: { status: 'INVITE_PENDING' } });
+                                console.log(`[Worker] Sent fallback Connection Request to ${leadId}`);
+
+                                // Reschedule the current MESSAGE step for 24h later to check if connection was accepted
+                                const tomorrow = new Date();
+                                tomorrow.setHours(tomorrow.getHours() + 24);
+                                await prisma.campaignLead.update({
+                                    where: { id: campaignLeadId },
+                                    data: { nextActionDate: applyJitter(tomorrow, 60, 240) }
+                                });
+                                return;
+                            } else {
+                                throw new Error('Message button and Connect button not visible. Profile might be restricted or layout changed.');
+                            }
                         }
 
                         await randomDelay(2000, 4000);
