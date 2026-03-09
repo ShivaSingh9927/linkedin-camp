@@ -151,6 +151,7 @@ export const importLeads = async (req: any, res: Response) => {
                     const firstEdge = workflow.edges?.find((e: any) => e.source === startNode?.id);
                     const firstStepId = firstEdge ? firstEdge.target : startNode?.id;
 
+                    console.log(`[Import] Attempting to inject ${safeLeadIdsToStart.length} leads into campaign ${campaignId}`);
                     await prisma.campaignLead.createMany({
                         data: safeLeadIdsToStart.map((leadId: any) => ({
                             campaignId,
@@ -160,6 +161,7 @@ export const importLeads = async (req: any, res: Response) => {
                         })),
                         skipDuplicates: true,
                     });
+                    console.log(`[Import] Successfully injected leads into campaign ${campaignId}`);
 
                     // Ensure campaign is active
                     if (campaign.status === 'DRAFT') {
@@ -255,6 +257,7 @@ export const uploadCsvLeads = async (req: any, res: Response) => {
                     const firstEdge = workflow.edges?.find((e: any) => e.source === startNode?.id);
                     const firstStepId = firstEdge ? firstEdge.target : startNode?.id;
 
+                    console.log(`[CSV] Attempting to inject ${safeLeadIdsToStart.length} leads into campaign ${campaignId}`);
                     await prisma.campaignLead.createMany({
                         data: safeLeadIdsToStart.map((leadId: any) => ({
                             campaignId,
@@ -264,6 +267,7 @@ export const uploadCsvLeads = async (req: any, res: Response) => {
                         })),
                         skipDuplicates: true,
                     });
+                    console.log(`[CSV] Successfully injected leads into campaign ${campaignId}`);
 
                     if (campaign.status === 'DRAFT') {
                         await prisma.campaign.update({
