@@ -18,6 +18,7 @@ export default function CampaignBuilderPage({ params }: { params: Promise<{ id: 
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [status, setStatus] = useState<string>('DRAFT');
+    const [activeStepIds, setActiveStepIds] = useState<string[]>([]);
 
     // Lead Selection Modal state
     const [isLaunchModalOpen, setIsLaunchModalOpen] = useState(false);
@@ -27,7 +28,20 @@ export default function CampaignBuilderPage({ params }: { params: Promise<{ id: 
 
     useEffect(() => {
         fetchCampaign();
+        fetchStatus();
+        const interval = setInterval(fetchStatus, 30000); // Poll every 30s
+        return () => clearInterval(interval);
     }, [id]);
+
+    const fetchStatus = async () => {
+        if (id === 'new') return;
+        try {
+            const res = await api.get(`/campaigns/${id}/status`);
+            setActiveStepIds(res.data.campaign.stats.activeStepIds || []);
+        } catch (error) {
+            console.error('Failed to fetch status:', error);
+        }
+    };
 
     const fetchCampaign = async () => {
         if (id === 'new') {
@@ -207,6 +221,7 @@ export default function CampaignBuilderPage({ params }: { params: Promise<{ id: 
                     onEdgesChange={onEdgesChange}
                     setNodes={setNodes}
                     setEdges={setEdges}
+                    activeStepIds={activeStepIds}
                 />
             </div>
 

@@ -2,7 +2,7 @@ import { Router } from 'express';
 import {
     createCampaign,
     getCampaigns,
-    getCampaignById,
+    getCampaign,
     updateCampaign,
     startCampaign,
     pauseCampaign,
@@ -17,7 +17,7 @@ router.use(authMiddleware);
 
 router.post('/', createCampaign);
 router.get('/', getCampaigns);
-router.get('/:id', getCampaignById);
+router.get('/:id', getCampaign);
 router.put('/:id', updateCampaign);
 router.delete('/:id', deleteCampaign);
 router.post('/:id/start', startCampaign);

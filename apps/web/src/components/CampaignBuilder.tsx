@@ -24,11 +24,10 @@ import {
     Sparkles,
     ThumbsUp,
     UserPlus,
-    Award,
     Eye,
     MailCheck,
     Tag,
-    Webhook,
+    Award,
     FlaskConical,
     ChevronDown,
     FileText,
@@ -42,7 +41,7 @@ const nodeTypes = {
     CONDITION: ConditionNode,
     DELAY: DelayNode,
     TRIGGER: TriggerNode,
-    input: TriggerNode // Overwrite default XYFlow type for existing
+    input: TriggerNode
 };
 
 interface CampaignBuilderProps {
@@ -52,9 +51,9 @@ interface CampaignBuilderProps {
     onEdgesChange: OnEdgesChange;
     setNodes: (nodes: Node[] | ((nds: Node[]) => Node[])) => void;
     setEdges: (edges: Edge[] | ((eds: Edge[]) => Edge[])) => void;
+    activeStepIds?: string[];
 }
 
-// Action categories
 const ACTION_CATEGORIES = [
     {
         name: 'LinkedIn',
@@ -109,11 +108,21 @@ export function CampaignBuilder({
     onNodesChange,
     onEdgesChange,
     setNodes,
-    setEdges
+    setEdges,
+    activeStepIds = []
 }: CampaignBuilderProps) {
     const [selectedNodeId, setSelectedNodeId] = React.useState<string | null>(null);
     const [expandedCat, setExpandedCat] = useState<string | null>('LinkedIn');
     const [templates, setTemplates] = useState<any[]>([]);
+
+    // Map nodes to include active status
+    const processedNodes = nodes.map(n => ({
+        ...n,
+        data: {
+            ...n.data,
+            isActive: activeStepIds.includes(n.id)
+        }
+    }));
 
     React.useEffect(() => {
         const fetchTemplates = async () => {
@@ -166,7 +175,7 @@ export function CampaignBuilder({
         const newNode: Node = {
             id,
             position: { x: 250, y: nodes.length * 100 + 50 },
-            type: nodeType, // THIS MAPS TO OUR CUTOM nodeTypes
+            type: nodeType,
             data: {
                 label,
                 type: nodeType,
@@ -193,7 +202,6 @@ export function CampaignBuilder({
     return (
         <div className="h-full w-full border rounded-2xl bg-[#f8fafc] relative overflow-hidden shadow-inner group flex">
             <div className="flex-1 relative">
-                {/* Toolbar — categorized accordion */}
                 <div className="absolute top-4 left-4 z-10 w-56 bg-white/95 backdrop-blur-md rounded-2xl border shadow-lg overflow-hidden max-h-[calc(100%-2rem)] overflow-y-auto">
                     <div className="p-3 border-b bg-slate-50/80">
                         <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Workflow Actions</p>
@@ -230,8 +238,6 @@ export function CampaignBuilder({
                             </div>
                         );
                     })}
-
-                    {/* Delete */}
                     <div className="p-2 border-t">
                         <button
                             onClick={deleteSelected}
@@ -245,7 +251,7 @@ export function CampaignBuilder({
                 </div>
 
                 <ReactFlow
-                    nodes={nodes}
+                    nodes={processedNodes}
                     edges={edges}
                     nodeTypes={nodeTypes}
                     onNodesChange={onNodesChange}
@@ -260,13 +266,8 @@ export function CampaignBuilder({
                     <MiniMap className="bg-white border rounded-2xl overflow-hidden shadow-xl" zoomable pannable />
                     <Background gap={24} size={1} color="#cbd5e1" />
                 </ReactFlow>
-
-                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 px-4 py-2 bg-slate-900/10 backdrop-blur rounded-full text-[10px] font-bold text-slate-500 uppercase tracking-widest pointer-events-none">
-                    Tip: Select a node and press <kbd className="bg-white px-1 rounded border shadow-sm">Backspace</kbd> to delete
-                </div>
             </div>
 
-            {/* Settings Panel */}
             {showSettingsPanel && (
                 <div className="w-80 border-l bg-white animate-in slide-in-from-right duration-300 shadow-2xl z-20 flex flex-col">
                     <div className="p-6 border-b">
@@ -285,7 +286,7 @@ export function CampaignBuilder({
                                     onChange={(e) => {
                                         const tpl = templates.find(t => t.id === e.target.value);
                                         if (tpl) updateNodeData(selectedNode!.id, { message: tpl.content });
-                                        e.target.value = ""; // Reset selector
+                                        e.target.value = "";
                                     }}
                                     className="w-full p-2.5 border-2 border-slate-100 rounded-xl focus:border-indigo-600 focus:ring-0 transition-all text-xs font-bold text-slate-600 shadow-sm"
                                     defaultValue=""
@@ -341,10 +342,6 @@ export function CampaignBuilder({
                             </div>
                         </div>
                     )}
-
-                    <div className="p-4 border-t bg-slate-50">
-                        <p className="text-[10px] text-slate-400 font-bold text-center uppercase tracking-widest">Auto-saved to builder state</p>
-                    </div>
                 </div>
             )}
         </div>

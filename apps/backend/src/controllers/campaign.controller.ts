@@ -8,9 +8,9 @@ export const createCampaign = async (req: any, res: Response) => {
     try {
         const campaign = await prisma.campaign.create({
             data: {
-                userId,
                 name,
-                workflowJson,
+                workflowJson: workflowJson || {},
+                userId,
                 status: 'DRAFT',
             },
         });
@@ -20,9 +20,60 @@ export const createCampaign = async (req: any, res: Response) => {
     }
 };
 
+export const getCampaigns = async (req: any, res: Response) => {
+    const userId = req.user.id;
+    try {
+        const campaigns = await prisma.campaign.findMany({
+            where: { userId },
+            include: {
+                _count: {
+                    select: { leads: true }
+                }
+            },
+            orderBy: { updatedAt: 'desc' },
+        });
+
+        // Add progress stats to each campaign for the list view
+        const campaignsWithStats = await Promise.all(campaigns.map(async (c) => {
+            const completedCount = await prisma.campaignLead.count({
+                where: { campaignId: c.id, isCompleted: true }
+            });
+            const totalCount = await prisma.campaignLead.count({
+                where: { campaignId: c.id }
+            });
+            return {
+                ...c,
+                stats: {
+                    totalLeads: totalCount,
+                    completedLeads: completedCount,
+                    progress: totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0
+                }
+            };
+        }));
+
+        res.json(campaignsWithStats);
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to fetch campaigns' });
+    }
+};
+
+export const getCampaign = async (req: any, res: Response) => {
+    const { id } = req.params;
+    const userId = req.user.id;
+    try {
+        const campaign = await prisma.campaign.findUnique({
+            where: { id, userId },
+        });
+        if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+        res.json(campaign);
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to fetch campaign' });
+    }
+};
+
 export const updateCampaign = async (req: any, res: Response) => {
     const { id } = req.params;
-    const { name, workflowJson } = req.body;
+    const { name, workflowJson, status } = req.body;
     const userId = req.user.id;
 
     try {
@@ -30,7 +81,8 @@ export const updateCampaign = async (req: any, res: Response) => {
             where: { id, userId },
             data: {
                 name,
-                workflowJson
+                workflowJson,
+                status,
             },
         });
         res.json(campaign);
@@ -39,41 +91,10 @@ export const updateCampaign = async (req: any, res: Response) => {
     }
 };
 
-export const getCampaigns = async (req: any, res: Response) => {
-    const userId = req.user.id;
-
-    try {
-        const campaigns = await prisma.campaign.findMany({
-            where: { userId },
-            orderBy: { createdAt: 'desc' },
-        });
-        res.json(campaigns);
-    } catch (error) {
-        res.status(500).json({ error: 'Failed to fetch campaigns' });
-    }
-};
-
-export const getCampaignById = async (req: any, res: Response) => {
-    const { id } = req.params;
-    const userId = req.user.id;
-
-    try {
-        const campaign = await prisma.campaign.findUnique({
-            where: { id, userId },
-        });
-        if (!campaign) {
-            return res.status(404).json({ error: 'Campaign not found' });
-        }
-        res.json(campaign);
-    } catch (error) {
-        res.status(500).json({ error: 'Failed to fetch campaign' });
-    }
-};
-
 export const startCampaign = async (req: any, res: Response) => {
     const { id } = req.params;
+    const { leadIds } = req.body || {};
     const userId = req.user.id;
-    const { leadIds = [] } = req.body || {};
 
     try {
         const campaign = await prisma.campaign.findUnique({
@@ -87,7 +108,6 @@ export const startCampaign = async (req: any, res: Response) => {
             data: { status: 'ACTIVE' },
         });
 
-        // Identify the start node from WorkflowJson
         const workflow = campaign.workflowJson as any;
         const startNode = workflow.nodes?.find((n: any) => n.type === 'TRIGGER' || n.type === 'input') || workflow.nodes?.[0];
 
@@ -101,7 +121,6 @@ export const startCampaign = async (req: any, res: Response) => {
         if (startNode && leadsToEnroll.length > 0) {
             console.log(`[Campaign] Starting Campaign ${id} for User ${userId}. Attempting to enroll ${leadsToEnroll.length} leads.`);
 
-            // 1. Anti-Spam Failsafe: Prevent leads from being active in multiple campaigns simultaneously
             const activeLeadsInOtherCampaigns = await prisma.campaignLead.findMany({
                 where: {
                     leadId: { in: leadsToEnroll },
@@ -121,7 +140,6 @@ export const startCampaign = async (req: any, res: Response) => {
                 console.log(`[SPAM PROTECT] User ${userId} tried to add ${skippedCount} leads to Campaign ${id} that were already active elsewhere.`);
             }
 
-            // Find the immediate next node after trigger
             const firstEdge = workflow.edges?.find((e: any) => e.source === startNode.id);
             const firstStepId = firstEdge ? firstEdge.target : startNode.id;
 
@@ -152,7 +170,10 @@ export const startCampaign = async (req: any, res: Response) => {
 
         res.json({
             ...updatedCampaign,
-            meta: { startedCount, skippedCount }
+            meta: {
+                startedCount,
+                skippedCount
+            }
         });
     } catch (error) {
         console.error('Start campaign error:', error);
@@ -188,7 +209,6 @@ export const deleteCampaign = async (req: any, res: Response) => {
     }
 };
 
-// New endpoint: detailed campaign status
 export const getCampaignStatus = async (req: any, res: Response) => {
     const { id } = req.params;
     const userId = req.user.id;
@@ -198,13 +218,27 @@ export const getCampaignStatus = async (req: any, res: Response) => {
         });
         if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
 
-        // Fetch all campaign leads for this campaign
         const campaignLeads = await prisma.campaignLead.findMany({
             where: { campaignId: id },
             include: { lead: true },
         });
 
-        // For each lead, fetch recent action logs (last 5) by leadId
+        const totalLeads = campaignLeads.length;
+        const completedLeads = campaignLeads.filter(cl => cl.isCompleted).length;
+        const progress = totalLeads > 0 ? Math.round((completedLeads / totalLeads) * 100) : 0;
+
+        const stepCounts: Record<string, number> = {};
+        campaignLeads.forEach(cl => {
+            if (cl.currentStepId && !cl.isCompleted) {
+                stepCounts[cl.currentStepId] = (stepCounts[cl.currentStepId] || 0) + 1;
+            }
+        });
+
+        const activeStepIds = Object.entries(stepCounts)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 5)
+            .map(([stepId]) => stepId);
+
         const leadsWithLogs = await Promise.all(
             campaignLeads.map(async (cl) => {
                 const logs = await prisma.actionLog.findMany({
@@ -235,7 +269,17 @@ export const getCampaignStatus = async (req: any, res: Response) => {
         );
 
         res.json({
-            campaign: { id: campaign.id, name: campaign.name, status: campaign.status },
+            campaign: {
+                id: campaign.id,
+                name: campaign.name,
+                status: campaign.status,
+                stats: {
+                    totalLeads,
+                    completedLeads,
+                    progress,
+                    activeStepIds
+                }
+            },
             leads: leadsWithLogs,
         });
     } catch (error) {
@@ -243,4 +287,3 @@ export const getCampaignStatus = async (req: any, res: Response) => {
         res.status(500).json({ error: 'Failed to fetch campaign status' });
     }
 };
-
