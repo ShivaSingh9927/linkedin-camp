@@ -73,7 +73,7 @@ export const getCampaignById = async (req: any, res: Response) => {
 export const startCampaign = async (req: any, res: Response) => {
     const { id } = req.params;
     const userId = req.user.id;
-    const { leadIds } = req.body;
+    const { leadIds = [] } = req.body || {};
 
     try {
         const campaign = await prisma.campaign.findUnique({
