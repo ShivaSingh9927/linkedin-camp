@@ -113,19 +113,23 @@ export const startCampaign = async (req: any, res: Response) => {
             skippedCount = activeLeadIds.size;
             startedCount = safeLeadIdsToStart.length;
 
+            console.log(`[Campaign] Enrollment Stats: ${startedCount} safe, ${skippedCount} skipped (already active).`);
+
             if (skippedCount > 0) {
-                console.log(`[SPAM PROTECT] User ${userId} tried to add ${skippedCount} leads to Campaign ${id} that were already active elsewhere.`);
+                console.log(`[SPAM PROTECT] User ${userId} tried to add ${skippedCount} leads to Campaign ${id} that were already active elsewhere. Lead IDs: ${Array.from(activeLeadIds).join(', ')}`);
             }
 
             // Find the immediate next node after trigger
             const firstEdge = workflow.edges?.find((e: any) => e.source === startNode.id);
             const firstStepId = firstEdge ? firstEdge.target : startNode.id;
 
+            console.log(`[Campaign] Workflow start detected. Start Node: ${startNode.id}, First Action Step: ${firstStepId}`);
+
             if (safeLeadIdsToStart.length > 0) {
                 console.log(`[Campaign] Resetting/Enrolling ${safeLeadIdsToStart.length} leads in campaign ${id}`);
 
                 for (const leadId of safeLeadIdsToStart) {
-                    await prisma.campaignLead.upsert({
+                    const result = await prisma.campaignLead.upsert({
                         where: {
                             campaignId_leadId: { campaignId: id, leadId }
                         },
@@ -142,8 +146,13 @@ export const startCampaign = async (req: any, res: Response) => {
                             isCompleted: false,
                         }
                     });
+                    console.log(`[Campaign] Enrolled lead ${leadId} to campaign ${id}. CL record ID: ${result.id}`);
                 }
+            } else {
+                console.warn(`[Campaign] No safe leads to start. Check if they are already in the CampaignLead table as 'isCompleted: false'.`);
             }
+        } else {
+            console.warn(`[Campaign] Skipping enrollment logic. startNode present: ${!!startNode}, leadIds length: ${leadIds?.length || 0}`);
         }
 
         res.json({
@@ -239,4 +248,3 @@ export const getCampaignStatus = async (req: any, res: Response) => {
         res.status(500).json({ error: 'Failed to fetch campaign status' });
     }
 };
-
