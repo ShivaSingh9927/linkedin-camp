@@ -94,13 +94,17 @@ export const startCampaign = async (req: any, res: Response) => {
         let skippedCount = 0;
         let startedCount = 0;
 
-        if (startNode && leadIds && Array.isArray(leadIds) && leadIds.length > 0) {
-            console.log(`[Campaign] Starting Campaign ${id} for User ${userId}. Attempting to enroll ${leadIds.length} leads.`);
+        const leadsToEnroll = (leadIds && Array.isArray(leadIds) && leadIds.length > 0)
+            ? leadIds
+            : (await prisma.campaignLead.findMany({ where: { campaignId: id } })).map(cl => cl.leadId);
+
+        if (startNode && leadsToEnroll.length > 0) {
+            console.log(`[Campaign] Starting Campaign ${id} for User ${userId}. Attempting to enroll ${leadsToEnroll.length} leads.`);
 
             // 1. Anti-Spam Failsafe: Prevent leads from being active in multiple campaigns simultaneously
             const activeLeadsInOtherCampaigns = await prisma.campaignLead.findMany({
                 where: {
-                    leadId: { in: leadIds },
+                    leadId: { in: leadsToEnroll },
                     isCompleted: false,
                     campaignId: { not: id }
                 },
@@ -108,7 +112,7 @@ export const startCampaign = async (req: any, res: Response) => {
             });
 
             const activeLeadIds = new Set(activeLeadsInOtherCampaigns.map(cl => cl.leadId));
-            const safeLeadIdsToStart = leadIds.filter((leadId: string) => !activeLeadIds.has(leadId));
+            const safeLeadIdsToStart = leadsToEnroll.filter((leadId: string) => !activeLeadIds.has(leadId));
 
             skippedCount = activeLeadIds.size;
             startedCount = safeLeadIdsToStart.length;
