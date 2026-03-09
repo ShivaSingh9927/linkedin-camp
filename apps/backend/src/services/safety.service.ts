@@ -9,10 +9,10 @@ export const canWorkNow = async (userId: string): Promise<{ allowed: boolean; ne
 
     // Default config if not on User model yet
     const config = {
-        days: [1, 2, 3, 4, 5], // Mon-Fri
-        startHour: 9,
-        endHour: 23,
-        timezone: 'UTC', // Default to UTC, should be user's local timezone
+        days: [0, 1, 2, 3, 4, 5, 6], // All days
+        startHour: 0,
+        endHour: 24,
+        timezone: 'UTC',
     };
 
     const now = new Date();

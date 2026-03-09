@@ -247,16 +247,39 @@ export const processWorkflowStep = async (data: any) => {
                             }
                         }
                     } else if (currentNode.subType === 'MESSAGE') {
-                        await page.click('button:has-text("Message")');
-                        await randomDelay(500, 1500);
-                        await page.type('div[role="textbox"]', message, { delay: Math.floor(Math.random() * 50) + 30 });
+                        console.log(`[Worker] Attempting to send message to lead ${leadId}`);
 
-                        await page.mouse.wheel(0, Math.floor(Math.random() * 300) + 100);
-                        await randomDelay(1000, 2000);
+                        // Check if Message button exists (means we are connected)
+                        const messageBtn = page.locator('button:has-text("Message")').first();
+                        if (await messageBtn.isVisible()) {
+                            await messageBtn.click();
+                            await randomDelay(1000, 2000);
 
-                        await page.keyboard.press('Enter');
+                            const textBox = page.locator('div[role="textbox"]').first();
+                            if (await textBox.isVisible()) {
+                                await textBox.click(); // Focus
+                                await textBox.fill(''); // Clear if anything there
+                                await textBox.pressSequentially(message, { delay: Math.floor(Math.random() * 50) + 30 });
+                                await randomDelay(1000, 2000);
 
-                        await randomDelay(1500, 3000);
+                                // Try to click the Send button first, then fallback to Enter
+                                const sendBtn = page.locator('button.msg-form__send-button').first();
+                                if (await sendBtn.isVisible() && !(await sendBtn.isDisabled())) {
+                                    await sendBtn.click();
+                                } else {
+                                    await page.keyboard.press('Enter');
+                                }
+
+                                console.log(`[Worker] Message typed and send command executed for lead ${leadId}`);
+                            } else {
+                                throw new Error('Message textbox not found after clicking Message button');
+                            }
+                        } else {
+                            console.log(`[Worker] Message button not visible for lead ${leadId}. Maybe not connected?`);
+                            throw new Error('Message button not visible. Are you connected to this lead?');
+                        }
+
+                        await randomDelay(2000, 4000);
                         const modals = await page.$$('.artdeco-modal');
                         for (const modal of modals) {
                             const text = await modal.innerText();
@@ -269,6 +292,7 @@ export const processWorkflowStep = async (data: any) => {
                         await prisma.actionLog.create({
                             data: { userId, leadId, campaignId, actionType: 'MESSAGE', status: 'SUCCESS' }
                         });
+                        console.log(`[Worker] Successfully logged MESSAGE for lead ${leadId}`);
                     } else if (currentNode.type === 'CONDITION' && currentNode.subType === 'IF_CONNECTED') {
                         // Live check of connection status if unknown
                         if (lead?.status === 'INVITE_PENDING' || lead?.status === 'UNCONNECTED') {

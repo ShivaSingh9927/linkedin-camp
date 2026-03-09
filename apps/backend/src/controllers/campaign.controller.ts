@@ -94,27 +94,27 @@ export const startCampaign = async (req: any, res: Response) => {
         let skippedCount = 0;
         let startedCount = 0;
 
-        if (startNode && leadIds && leadIds.length > 0) {
-            // 🚨 Anti-Spam Failsafe: Prevent leads from being active in multiple campaigns simultaneously
+        if (startNode && leadIds && Array.isArray(leadIds) && leadIds.length > 0) {
+            console.log(`[Campaign] Starting Campaign ${id} for User ${userId}. Attempting to enroll ${leadIds.length} leads.`);
+
+            // 1. Anti-Spam Failsafe: Prevent leads from being active in multiple campaigns simultaneously
             const activeLeadsInOtherCampaigns = await prisma.campaignLead.findMany({
                 where: {
                     leadId: { in: leadIds },
-                    isCompleted: false, // They are actively being worked on!
-                    campaignId: { not: id } // Anywhere but this specific campaign
+                    isCompleted: false,
+                    campaignId: { not: id }
                 },
                 select: { leadId: true }
             });
 
             const activeLeadIds = new Set(activeLeadsInOtherCampaigns.map(cl => cl.leadId));
-
-            // Filter out leads that are already active somewhere else
             const safeLeadIdsToStart = leadIds.filter((leadId: string) => !activeLeadIds.has(leadId));
 
             skippedCount = activeLeadIds.size;
             startedCount = safeLeadIdsToStart.length;
 
             if (skippedCount > 0) {
-                console.log(`[SPAM PROTECT] User ${userId} tried to add ${skippedCount} leads to Campaign ${id} that were already active elsewhere. Skipped them securely.`);
+                console.log(`[SPAM PROTECT] User ${userId} tried to add ${skippedCount} leads to Campaign ${id} that were already active elsewhere.`);
             }
 
             // Find the immediate next node after trigger
@@ -122,15 +122,27 @@ export const startCampaign = async (req: any, res: Response) => {
             const firstStepId = firstEdge ? firstEdge.target : startNode.id;
 
             if (safeLeadIdsToStart.length > 0) {
-                await prisma.campaignLead.createMany({
-                    data: safeLeadIdsToStart.map((leadId: string) => ({
-                        campaignId: id,
-                        leadId,
-                        currentStepId: firstStepId,
-                        nextActionDate: new Date(),
-                    })),
-                    skipDuplicates: true,
-                });
+                console.log(`[Campaign] Resetting/Enrolling ${safeLeadIdsToStart.length} leads in campaign ${id}`);
+
+                for (const leadId of safeLeadIdsToStart) {
+                    await prisma.campaignLead.upsert({
+                        where: {
+                            campaignId_leadId: { campaignId: id, leadId }
+                        },
+                        update: {
+                            currentStepId: firstStepId,
+                            nextActionDate: new Date(),
+                            isCompleted: false,
+                        },
+                        create: {
+                            campaignId: id,
+                            leadId,
+                            currentStepId: firstStepId,
+                            nextActionDate: new Date(),
+                            isCompleted: false,
+                        }
+                    });
+                }
             }
         }
 

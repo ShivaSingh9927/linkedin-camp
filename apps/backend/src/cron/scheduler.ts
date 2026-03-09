@@ -37,8 +37,12 @@ export const initScheduler = () => {
 
       // Round Robin: Process up to 5 pending leads per user per cycle
       // This prevents a single user with 1000 tasks from blocking other users.
+      console.log(`[Scheduler] Found ${activeUsers.length} users with ACTIVE campaigns.`);
       for (const user of activeUsers) {
-        if (!user.linkedinCookie) continue; // Skip users without auth
+        if (!user.linkedinCookie) {
+          console.log(`[Scheduler] User ${user.id} has no LinkedIn cookie. Skipping.`);
+          continue; // Skip users without auth
+        }
 
         const userPendingTasks = await prisma.campaignLead.findMany({
           where: {
@@ -52,6 +56,8 @@ export const initScheduler = () => {
           },
           take: 5, // Process max 5 tasks per user per 5 mins to ensure fairness
         });
+
+        console.log(`[Scheduler] User ${user.id}: Found ${userPendingTasks.length} pending tasks.`);
 
         for (const task of userPendingTasks) {
           let jobPriority = 5; // Default low priority for Invites / visits

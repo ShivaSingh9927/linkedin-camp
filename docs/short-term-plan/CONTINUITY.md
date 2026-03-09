@@ -29,16 +29,21 @@
     - Proxy Backend Logic Prepared: Added logic to inject proxy strings directly into the playwright context (mimicking the Waalaxy static IP assignment strategy behind the scenes).
     - Smart Reply Detection: Halted active campaigns for prospects automatically when user receives a message from them in Inbox.
     - Auto-Withdraw Invites: Scheduled daily cron to withdraw pending connection requests older than 30 days.
+    - **Campaign Debugging**:
+      - Fixed Safety Engine working hours (opened to 24/7 for testing).
+      - Added verbose scheduler logging for task visibility.
+      - Improved LinkedIn worker reliability (better selectors, focus handling, and click/enter fallbacks).
+      - Fixed "Launch" logic bug where re-adding leads didn't reset their state (upsert vs createMany).
 
   - Now:
-    - Running End-to-end tests across all implemented cloud features.
+    - Verifying campaign message delivery in production environment (Railway/Redis).
   - Next:
-    - End-to-end testing across 24h real-world cycle.
-    - Review overarching agency requirements.
+    - Monitor Railway logs for `[Scheduler]` and `[Worker]` outputs.
+    - Scale to real-world multi-user test.
 
 - Open questions:
-  - When to start Phase 2 inbox (LinkedIn message sync)?
-  - Should templates be shared across team members?
+    - Is the `REDIS_URL` correctly configured on Railway?
+    - Are the LinkedIn cookies being synced correctly from the extension?
 
 - Working set:
   - packages/db/schema.prisma
