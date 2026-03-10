@@ -28,4 +28,4 @@ cmds = [
 ]
 
 [start]
-cmd = "npm run start --workspace=apps/backend"
+cmd = "npx prisma db push --schema=packages/db/schema.prisma --accept-data-loss && npm run start --workspace=apps/backend"
