@@ -7,20 +7,18 @@ import { prisma } from '../server';
 export const canWorkNow = async (userId: string): Promise<{ allowed: boolean; nextStartTime?: Date }> => {
     const user = await prisma.user.findUnique({ where: { id: userId } });
 
-    // Default config if not on User model yet
-    const config = {
-        days: [0, 1, 2, 3, 4, 5, 6], // All days
-        startHour: 0,
-        endHour: 24,
-        timezone: 'UTC',
-    };
+    // Waalaxy Strategy: Advanced Wait States (Respect custom business hours)
+    const workingDays = user?.workingDays || [1, 2, 3, 4, 5]; // Default Mon-Fri
+    const hours = (user?.workingHours as any) || { start: 9, end: 18 };
+    const startHour = hours.start;
+    const endHour = hours.end;
 
     const now = new Date();
     const day = now.getUTCDay();
     const hour = now.getUTCHours();
 
-    const isAllowedDay = config.days.includes(day);
-    const isAllowedHour = hour >= config.startHour && hour < config.endHour;
+    const isAllowedDay = workingDays.includes(day);
+    const isAllowedHour = hour >= startHour && hour < endHour;
 
     if (isAllowedDay && isAllowedHour) {
         return { allowed: true };
@@ -32,18 +30,18 @@ export const canWorkNow = async (userId: string): Promise<{ allowed: boolean; ne
     nextStart.setUTCSeconds(0);
     nextStart.setUTCMilliseconds(0);
 
-    if (!isAllowedDay || hour >= config.endHour) {
+    if (!isAllowedDay || hour >= endHour) {
         // Move to tomorrow morning
         nextStart.setUTCDate(nextStart.getUTCDate() + 1);
-        nextStart.setUTCHours(config.startHour);
+        nextStart.setUTCHours(startHour);
 
-        // If tomorrow is weekend, skip to Monday
-        while (!config.days.includes(nextStart.getUTCDay())) {
+        // If tomorrow is not a working day, skip until the next one
+        while (!workingDays.includes(nextStart.getUTCDay())) {
             nextStart.setUTCDate(nextStart.getUTCDate() + 1);
         }
-    } else if (hour < config.startHour) {
+    } else if (hour < startHour) {
         // Today, but later
-        nextStart.setUTCHours(config.startHour);
+        nextStart.setUTCHours(startHour);
     }
 
     return { allowed: false, nextStartTime: nextStart };
