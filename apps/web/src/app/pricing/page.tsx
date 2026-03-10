@@ -55,7 +55,7 @@ export default function PricingPage() {
             {/* Header */}
             <div className="text-center">
                 <h1 className="text-3xl font-black text-slate-800">
-                    Join Waalaxy – best prices in the galaxy 😎
+                    Join LEADMATE – best prices in the galaxy 😎
                 </h1>
             </div>
 
