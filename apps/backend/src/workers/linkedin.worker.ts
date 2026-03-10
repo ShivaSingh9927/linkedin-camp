@@ -54,14 +54,49 @@ export const processWorkflowStep = async (data: any) => {
 
     try {
         // 2. Execute the action
+        let lead: any = await prisma.lead.findUnique({ where: { id: leadId } });
+        const campaignLead = await prisma.campaignLead.findUnique({ where: { id: campaignLeadId } });
+
+        if (!lead || !campaignLead || campaignLead.isCompleted) return;
+
+        // Waalaxy Strategy: Exit on Reply
+        if (lead.status === 'REPLIED') {
+            console.log(`[Worker] Lead ${leadId} has REPLIED. Stopping campaign for them.`);
+            await prisma.campaignLead.update({
+                where: { id: campaignLeadId },
+                data: { isCompleted: true }
+            });
+            return;
+        }
+
+        // Waalaxy Strategy: Duplicate Shield
+        // Avoid processing the same lead in multiple active campaigns at the same time.
+        const otherActiveLead = await prisma.campaignLead.findFirst({
+            where: {
+                leadId,
+                isCompleted: false,
+                NOT: { id: campaignLeadId },
+                campaign: { userId }
+            }
+        });
+
+        if (otherActiveLead) {
+            console.log(`[SHIELD] Lead ${leadId} is already active in another campaign. Postponing.`);
+            const tomorrow = new Date();
+            tomorrow.setHours(tomorrow.getHours() + 24);
+            await prisma.campaignLead.update({
+                where: { id: campaignLeadId },
+                data: { nextActionDate: applyJitter(tomorrow, 60, 240) }
+            });
+            return;
+        }
+
         const user = await prisma.user.findUnique({
             where: { id: userId },
             include: { proxy: true }
         });
-        let lead: any = await prisma.lead.findUnique({ where: { id: leadId } });
-        const campaignLead = await prisma.campaignLead.findUnique({ where: { id: campaignLeadId } });
 
-        // Daily Rate Limiting for INVITE
+        // Daily Rate Limiting for INVITE (Warmup Engine)
         if (currentNode.subType === 'INVITE') {
             const today = new Date();
             today.setHours(0, 0, 0, 0);
@@ -73,13 +108,27 @@ export const processWorkflowStep = async (data: any) => {
                     executedAt: { gte: today }
                 }
             });
-            const limit = user?.dailyInviteLimit || 30;
-            if (inviteCount >= limit) {
-                console.log(`[RATE LIMIT] User ${userId} reached daily invite limit of ${limit}. Rescheduling.`);
+
+            const currentLimit = user?.dailyInviteLimit || 10;
+            const targetLimit = user?.maxInviteLimit || 80;
+
+            if (inviteCount >= currentLimit) {
+                console.log(`[RATE LIMIT] User ${userId} reached current limit of ${currentLimit}.`);
+
+                // Waalaxy Strategy: Warmup Engine
+                if (user?.warmupEnabled && currentLimit < targetLimit) {
+                    const newLimit = currentLimit + 1;
+                    console.log(`[WARMUP] Incrementing daily limit for user ${userId} to ${newLimit}.`);
+                    await prisma.user.update({
+                        where: { id: userId },
+                        data: { dailyInviteLimit: newLimit }
+                    });
+                }
+
                 const tomorrow = new Date();
                 tomorrow.setDate(tomorrow.getDate() + 1);
                 tomorrow.setHours(9, 0, 0, 0);
-                const rescheduledDate = applyJitter(tomorrow, 10, 120); // Add jitter to start of next day
+                const rescheduledDate = applyJitter(tomorrow, 10, 120);
                 await prisma.campaignLead.update({
                     where: { id: campaignLeadId },
                     data: { nextActionDate: rescheduledDate }
@@ -202,37 +251,107 @@ export const processWorkflowStep = async (data: any) => {
                     const page = await context.newPage();
                     await page.goto(lead.linkedinUrl);
 
+                    const getRobustButton = async (page: any, selectors: string[]) => {
+                        for (const selector of selectors) {
+                            const locator = page.locator(selector).first();
+                            if (await locator.isVisible()) {
+                                console.log(`[Worker] Found button using selector: ${selector}`);
+                                return locator;
+                            }
+                        }
+                        return null;
+                    };
+
+                    const MESSAGE_SELECTORS = [
+                        '[data-view-name="profile-primary-message"]',
+                        'button:has(svg[data-test-icon="send-privately-small"])',
+                        'a[href*="/messaging/thread/"]',
+                        'button:has-text("Message")',
+                        'button[aria-label^="Message"]'
+                    ];
+
+                    const CONNECT_SELECTORS = [
+                        'button:has(svg[data-test-icon="connect-small"])',
+                        'button:has(svg[data-test-icon="connect-medium"])',
+                        'button:has(svg[data-test-icon="connect"])',
+                        'button:has-text("Connect")',
+                        'button[aria-label^="Invite"]',
+                        'button[aria-label^="Connect"]'
+                    ];
+
+                    const MORE_BTN_SELECTORS = [
+                        'button:has(svg[data-test-icon="more-v2-small"])',
+                        'button[aria-label="More actions"]',
+                        'button:has-text("More")'
+                    ];
+
+                    const PENDING_SELECTORS = [
+                        'button:has(svg[data-test-icon="clock-small"])',
+                        'button:has(svg[data-test-icon="clock-medium"])',
+                        'button:has-text("Pending")',
+                        'button:has-text("Withdraw")'
+                    ];
+
                     if (currentNode.subType === 'INVITE') {
                         // 1. Check if already invited or connected
-                        const isConnected = await page.isVisible('button:has-text("Message")');
+                        const isConnected = await getRobustButton(page, MESSAGE_SELECTORS);
                         if (isConnected) {
-                            console.log('Already connected');
+                            console.log('[Worker] Already connected with lead ', leadId);
                         } else {
                             // 2. Click Connect
-                            const connectBtn = await page.locator('button:has-text("Connect")').first();
-                            if (await connectBtn.isVisible()) {
+                            let connectBtn = await getRobustButton(page, CONNECT_SELECTORS);
+
+                            if (!connectBtn) {
+                                console.log('[Worker] Connect button not directly visible. Checking More menu...');
+                                const moreBtn = await getRobustButton(page, MORE_BTN_SELECTORS);
+                                if (moreBtn) {
+                                    await moreBtn.click();
+                                    await randomDelay(1000, 2000);
+                                    connectBtn = await getRobustButton(page, CONNECT_SELECTORS);
+                                }
+                            }
+
+                            if (connectBtn) {
                                 await connectBtn.click();
                                 await randomDelay();
-                                // Handle "Add a note"
-                                if (message) {
-                                    await page.click('button:has-text("Add a note")');
-                                    await randomDelay(500, 1500);
-                                    // Simulated human stroke jitter
-                                    await page.type('textarea[name="message"]', message, { delay: Math.floor(Math.random() * 50) + 30 });
+                                // Waalaxy Strategy: Note Restriction Fallback
+                                // If restricted, we skip the note entirely to ensure the invite goes through.
+                                if (message && !user?.isNoteRestricted) {
+                                    const addNoteBtn = page.locator('button:has-text("Add a note"), button[aria-label="Add a note"]').first();
+                                    if (await addNoteBtn.isVisible()) {
+                                        await addNoteBtn.click();
+                                        await randomDelay(500, 1500);
+                                        await page.type('textarea[name="message"]', message, { delay: Math.floor(Math.random() * 50) + 30 });
+                                    }
                                 }
 
-                                // 3. Simulate human scroll to look like we are actually reading
                                 await page.mouse.wheel(0, Math.floor(Math.random() * 500) + 300);
                                 await randomDelay(1000, 2500);
 
-                                await page.click('button:has-text("Send")');
+                                const sendBtn = page.locator('button:has-text("Send"), button[aria-label="Send now"]').first();
+                                if (await sendBtn.isVisible()) {
+                                    await sendBtn.click();
+                                } else {
+                                    await page.keyboard.press('Enter');
+                                }
 
-                                // 4. LinkedIn Ban, Limit & CAPTCHA Detection
+                                // 4. LinkedIn Ban, Limit & Note Restriction Detection
                                 await randomDelay(1500, 3000);
                                 const modals = await page.$$('.artdeco-modal');
                                 for (const modal of modals) {
                                     const text = await modal.innerText();
                                     const lower = text.toLowerCase();
+
+                                    // Detect Personalized Invite Limit (Waalaxy Note Fallback)
+                                    if (lower.includes('personalized') && lower.includes('limit')) {
+                                        console.log(`[RESTRICTION] User ${userId} detected as Note Restricted. Enabling fallback.`);
+                                        await prisma.user.update({
+                                            where: { id: userId },
+                                            data: { isNoteRestricted: true }
+                                        });
+                                        throw new Error(`LINKEDIN_NOTE_RESTRICTED|${text.substring(0, 100)}`);
+                                    }
+
                                     if (lower.includes('limit') || lower.includes('restricted') || lower.includes('email') || lower.includes('captcha') || lower.includes('security')) {
                                         throw new Error(`LINKEDIN_LIMIT_REACHED|${text.substring(0, 100)}`);
                                     }
@@ -243,40 +362,145 @@ export const processWorkflowStep = async (data: any) => {
                                 });
                                 await prisma.lead.update({ where: { id: leadId }, data: { status: 'INVITE_PENDING' } });
                             } else {
-                                throw new Error('Connect button not visible');
+                                throw new Error('Connect button not visible even after checking More menu.');
                             }
                         }
                     } else if (currentNode.subType === 'MESSAGE') {
                         console.log(`[Worker] Attempting to send message to lead ${leadId}`);
 
-                        // Check if Message button exists (means we are connected)
-                        const messageBtn = page.locator('button:has-text("Message")').first();
-                        if (await messageBtn.isVisible()) {
-                            await messageBtn.click();
-                            await randomDelay(1000, 2000);
+                        // Ensure page is ready
+                        await page.waitForLoadState('networkidle');
+                        await page.mouse.wheel(0, 300); // Trigger lazy loads
+                        await randomDelay(1000, 2000);
 
-                            const textBox = page.locator('div[role="textbox"]').first();
+                        // 1. Try to find Message button using Waalaxy selectors
+                        let messageBtn = await getRobustButton(page, MESSAGE_SELECTORS);
+
+                        if (!messageBtn) {
+                            console.log(`[Worker] Message button not immediately visible. Checking 'More' menu...`);
+                            const moreBtn = await getRobustButton(page, MORE_BTN_SELECTORS);
+                            if (moreBtn) {
+                                await moreBtn.click();
+                                await randomDelay(1000, 2000);
+                                messageBtn = await getRobustButton(page, MESSAGE_SELECTORS);
+                            }
+                        }
+
+                        if (messageBtn) {
+                            await messageBtn.click();
+                            await randomDelay(1500, 2500);
+
+                            // Waalaxy-style: Support Subject field (InMail/Message Requests)
+                            const subjectBox = page.locator('input[name="subject"], .msg-form__subject-typeahead input').first();
+                            if (await subjectBox.isVisible()) {
+                                console.log('[Worker] InMail/Request modal detected. Adding subject...');
+                                await subjectBox.fill('Hello!'); // Default subject if none provided
+                                await subjectBox.dispatchEvent('input', { bubbles: true });
+                            }
+
+                            const textBox = page.locator('form[class*=msg-form] [contenteditable=true], div[role="textbox"]').first();
                             if (await textBox.isVisible()) {
                                 await textBox.click(); // Focus
-                                await textBox.fill(''); // Clear if anything there
+                                await textBox.fill(''); // Clear
+
+                                // Type message with human-like delay
                                 await textBox.pressSequentially(message, { delay: Math.floor(Math.random() * 50) + 30 });
+
+                                // Waalaxy Strategy: Dispatch events to wake up React state
+                                await textBox.dispatchEvent('input', { bubbles: true });
+                                await textBox.dispatchEvent('change', { bubbles: true });
+                                await textBox.evaluate((el: HTMLElement) => {
+                                    el.dispatchEvent(new Event('input', { bubbles: true }));
+                                    el.dispatchEvent(new Event('blur', { bubbles: true }));
+                                });
+
                                 await randomDelay(1000, 2000);
 
-                                // Try to click the Send button first, then fallback to Enter
-                                const sendBtn = page.locator('button.msg-form__send-button').first();
+                                // Check if "Enter to send" is hints are visible
+                                const hasEnterHint = await page.isVisible('form[class*=msg-form] .msg-form__send-button:disabled');
+                                const sendBtn = page.locator('button.msg-form__send-button, button[type="submit"]').first();
+
                                 if (await sendBtn.isVisible() && !(await sendBtn.isDisabled())) {
+                                    await sendBtn.click();
+                                } else {
+                                    console.log('[Worker] Send button disabled or not found. Pressing Enter...');
+                                    await page.keyboard.press('Enter');
+                                }
+
+                                // Waalaxy Strategy: Verification
+                                await randomDelay(2000, 3000);
+                                const currentContent = await textBox.innerText();
+                                if (currentContent.trim().length > 0) {
+                                    // If message is still in the box, it often means a "Duplicate Message" 
+                                    // or "Rate Limit" warning appeared and blocked the send.
+                                    const errorVisible = await page.isVisible('.artdeco-inline-feedback--error, .msg-form__error-feedback');
+                                    if (errorVisible) {
+                                        const errorText = await page.locator('.artdeco-inline-feedback--error, .msg-form__error-feedback').first().innerText();
+                                        throw new Error(`MESSAGE_SEND_BLOCKED|${errorText}`);
+                                    }
+                                    throw new Error('MESSAGE_NOT_CLEARED|Message remained in box after send attempt. Possible block.');
+                                }
+
+                                console.log(`[Worker] Message successfully sent and verified for lead ${leadId}`);
+                            } else {
+                                throw new Error('Message textbox not found after clicking Message button');
+                            }
+                        } else {
+                            // 2. CHECK FOR PENDING (Waiting for acceptance)
+                            const pendingBtn = await getRobustButton(page, PENDING_SELECTORS);
+                            if (await pendingBtn.isVisible()) {
+                                console.log(`[Worker] Lead ${leadId} invitation is still PENDING. Rescheduling message for 24 hours.`);
+                                const tomorrow = new Date();
+                                tomorrow.setHours(tomorrow.getHours() + 24);
+                                await prisma.campaignLead.update({
+                                    where: { id: campaignLeadId },
+                                    data: { nextActionDate: applyJitter(tomorrow, 60, 240) }
+                                });
+                                return;
+                            }
+
+                            // 3. FALLBACK: Check if we are even connected
+                            console.log(`[Worker] Still no Message/Pending button for ${leadId}. Checking for 'Connect' button...`);
+                            let connectBtn = page.locator('button:has-text("Connect"), button[aria-label^="Invite"]').first();
+
+                            if (await connectBtn.isVisible()) {
+                                console.log(`[Worker] Not connected to ${leadId}. Redirecting to INVITE flow logic.`);
+                                await connectBtn.click();
+                                await randomDelay(1000, 2000);
+                                if (message) {
+                                    const addNoteBtn = page.locator('button:has-text("Add a note"), button[aria-label="Add a note"]').first();
+                                    if (await addNoteBtn.isVisible()) {
+                                        await addNoteBtn.click();
+                                        await page.type('textarea[name="message"]', message, { delay: 50 });
+                                    }
+                                }
+                                const sendBtn = page.locator('button:has-text("Send"), button[aria-label="Send now"]').first();
+                                if (await sendBtn.isVisible()) {
                                     await sendBtn.click();
                                 } else {
                                     await page.keyboard.press('Enter');
                                 }
 
-                                console.log(`[Worker] Message typed and send command executed for lead ${leadId}`);
+                                await prisma.actionLog.create({
+                                    data: { userId, leadId, campaignId, actionType: 'INVITE' as ActionType, status: 'SUCCESS', errorMessage: 'Auto-fallback to Invite because not connected.' }
+                                });
+                                await prisma.lead.update({ where: { id: leadId }, data: { status: 'INVITE_PENDING' } });
+                                console.log(`[Worker] Sent fallback Connection Request to ${leadId}`);
+
+                                // Reschedule the current MESSAGE step for 24h later to check if connection was accepted
+                                const tomorrow = new Date();
+                                tomorrow.setHours(tomorrow.getHours() + 24);
+                                await prisma.campaignLead.update({
+                                    where: { id: campaignLeadId },
+                                    data: { nextActionDate: applyJitter(tomorrow, 60, 240) }
+                                });
+                                return;
                             } else {
-                                throw new Error('Message textbox not found after clicking Message button');
+                                // Last resort: list button texts to logs
+                                const buttons = await page.$$eval('button', (btns: any) => btns.map((b: any) => b.innerText || b.getAttribute('aria-label')).filter(Boolean));
+                                console.log('[Worker] Failed to find action buttons. Found buttons:', buttons.slice(0, 10));
+                                throw new Error('Message button and Connect button not visible. Profile might be restricted or layout changed.');
                             }
-                        } else {
-                            console.log(`[Worker] Message button not visible for lead ${leadId}. Maybe not connected?`);
-                            throw new Error('Message button not visible. Are you connected to this lead?');
                         }
 
                         await randomDelay(2000, 4000);
@@ -468,18 +692,49 @@ export const processWorkflowStep = async (data: any) => {
             throw error;
         }
 
-        // 3. Lead-Specific Soft Bounces (e.g. invalid URL, missing connect button, deleted profile)
-        if (errorMessage.includes('not visible') || errorMessage.includes('missing') || errorMessage.includes('failed to find') || errorMessage.includes('target closed')) {
-            console.log(`[BOUNCE] Lead ${data.leadId} failed. Ejecting from campaign.`);
+        // 3. Lead-Specific Soft Bounces vs UI Failures (Postpone Strategy)
+        const isProfileFatal = errorMessage.includes('restricted') || errorMessage.includes('deleted') || errorMessage.includes('not found');
+        const isUIError = errorMessage.includes('not visible') || errorMessage.includes('missing') || errorMessage.includes('failed to find') || errorMessage.includes('target closed') || errorMessage.includes('timeout');
+
+        if (isUIError && !isProfileFatal) {
+            // Waalaxy Strategy: POSTPONED
+            // Don't fail the lead yet. LinkedIn might be having a bad day or layout changed slightly.
+            // Try again in 4 hours.
+            console.log(`[POSTPONE] Lead ${data.leadId} encountered a UI issue. Retrying in 4 hours.`);
+
+            const retryDate = new Date();
+            retryDate.setHours(retryDate.getHours() + 4);
+            const postponedDate = applyJitter(retryDate, 15, 60);
+
+            await prisma.campaignLead.update({
+                where: { id: data.campaignLeadId },
+                data: { nextActionDate: postponedDate }
+            });
 
             await prisma.actionLog.create({
                 data: {
                     userId: data.userId,
                     leadId: data.leadId,
                     campaignId: data.campaignId,
-                    actionType: 'PROFILE_VISIT', // fallback
+                    actionType: 'PROFILE_VISIT',
                     status: 'FAILED',
-                    errorMessage: 'Individual bounce: ' + error.message.substring(0, 100)
+                    errorMessage: 'Postponed due to UI error: ' + error.message.substring(0, 100)
+                }
+            });
+            return;
+        }
+
+        if (isProfileFatal) {
+            console.log(`[BOUNCE] Lead ${data.leadId} failed fatably. Ejecting from campaign.`);
+
+            await prisma.actionLog.create({
+                data: {
+                    userId: data.userId,
+                    leadId: data.leadId,
+                    campaignId: data.campaignId,
+                    actionType: 'PROFILE_VISIT',
+                    status: 'FAILED',
+                    errorMessage: 'Fatal bounce: ' + error.message.substring(0, 100)
                 }
             });
 
@@ -493,7 +748,6 @@ export const processWorkflowStep = async (data: any) => {
                 data: { status: 'BOUNCED' }
             });
 
-            // Mark as 'completed' in BullMQ sense so it doesn't retry infinitely for a broken profile.
             return;
         }
 
