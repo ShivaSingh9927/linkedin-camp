@@ -6,7 +6,7 @@
     "scripts": {
         "dev": "ts-node-dev --respawn src/server.ts",
         "build": "tsup",
-        "start": "npx prisma migrate deploy --schema=../../packages/db/schema.prisma && node dist/server.js"
+        "start": "npx prisma db push --schema=../../packages/db/schema.prisma && node dist/server.js"
     },
     "dependencies": {
         "@prisma/client": "latest",
