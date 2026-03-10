@@ -21,5 +21,5 @@ RUN npx prisma generate --schema=packages/db/schema.prisma
 # Build the backend workspace using Turbo
 RUN npx turbo run build --filter=backend
 
-# Start the server (with DB push just like the Railpack logs)
-CMD ["sh", "-c", "npx prisma db push --schema=packages/db/schema.prisma --accept-data-loss && node apps/backend/dist/server.js"]
+# Start the server
+CMD ["sh", "-c", "echo '🔄 Synchronizing database schema...' && npx prisma db push --schema=packages/db/schema.prisma --accept-data-loss && echo '✅ Schema sync complete. Starting server...' && node apps/backend/dist/server.js"]
