@@ -6,7 +6,7 @@
     "scripts": {
         "dev": "ts-node-dev --respawn src/server.ts",
         "build": "tsup",
-        "start": "node dist/server.js"
+        "start": "echo '--- DEBUG: STARTING DB SYNC ---' && npx prisma db push --schema=../../packages/db/schema.prisma --accept-data-loss && echo '--- DEBUG: DB SYNC FINISHED ---' && node dist/server.js"
     },
     "dependencies": {
         "@prisma/client": "latest",

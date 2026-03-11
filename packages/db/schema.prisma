@@ -1,5 +1,6 @@
 generator client {
   provider = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-1.1.x", "debian-openssl-3.0.x", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {
@@ -71,7 +72,12 @@ model User {
   proxyUsername    String?
   proxyPassword    String?
   proxyCountry     String?
-  dailyInviteLimit Int              @default(30) 
+  dailyInviteLimit Int              @default(10) 
+  maxInviteLimit   Int              @default(80)
+  warmupEnabled    Boolean          @default(true)
+  isNoteRestricted Boolean          @default(false)
+  workingHours     Json             @default("{\"start\": 9, \"end\": 18}")
+  workingDays      Int[]            @default([1, 2, 3, 4, 5]) 
   tier             SubscriptionTier @default(CORE)
   trialEndsAt      DateTime?
   linkedinPlan     LinkedinPlan     @default(BASIC)
