@@ -16,6 +16,8 @@ import { initScheduler } from './cron/scheduler';
 import { initWorker } from './workers/linkedin.worker';
 import { downgradeExpiredTrials } from './services/trial.service';
 import { execSync } from 'child_process';
+import path from 'path';
+import fs from 'fs';
 
 
 const app = express();
@@ -24,14 +26,28 @@ const PORT = process.env.PORT || 3001;
 // --- 0. PROGRAMMATIC DB SYNC (FORCED) ---
 if (process.env.NODE_ENV === 'production' || process.env.RAILWAY_ENVIRONMENT) {
     try {
-        console.log('🔄 [ForceSync] Attempting programmatic DB push...');
-        const output = execSync('npx prisma db push --schema=../../packages/db/schema.prisma --accept-data-loss', {
-            encoding: 'utf-8',
-            stdio: 'pipe'
-        });
-        console.log('✅ [ForceSync] Success:', output);
+        console.log('🔄 [ForceSync] Locating schema file...');
+        const possiblePaths = [
+            path.resolve(process.cwd(), 'packages/db/schema.prisma'),
+            path.resolve(process.cwd(), '../../packages/db/schema.prisma'),
+            '/app/packages/db/schema.prisma'
+        ];
+        
+        const schemaPath = possiblePaths.find(p => fs.existsSync(p));
+        
+        if (!schemaPath) {
+            console.error('❌ [ForceSync] Schema NOT found! Tried:', possiblePaths);
+        } else {
+            console.log(`✅ [ForceSync] Found schema at: ${schemaPath}`);
+            console.log('🔄 [ForceSync] Running prisma db push...');
+            const output = execSync(`npx prisma db push --schema=${schemaPath} --accept-data-loss`, {
+                encoding: 'utf-8',
+                stdio: 'pipe'
+            });
+            console.log('✅ [ForceSync] Sync Success:', output);
+        }
     } catch (err: any) {
-        console.error('❌ [ForceSync] Failed:', err.stderr || err.message);
+        console.error('❌ [ForceSync] Sync Failed Error:', err.stderr || err.message);
     }
 }
 
@@ -91,7 +107,7 @@ app.get('/', (req, res) => {
 // --- 2. START SERVER IMMEDIATELY ---
 app.listen(Number(PORT), '0.0.0.0', () => {
     console.log(`🚀 LEADMATE Server listening on port ${PORT} [${new Date().toISOString()}]`);
-    console.log('Build Version: 1.0.6 - Programmatic Force Sync');
+    console.log('Build Version: 1.0.7 - Smart Path Force Sync');
     console.log('DATABASE_URL is set:', !!process.env.DATABASE_URL);
 
     // --- 3. ASYNC BACKGROUND INIT (Does not block port binding) ---
