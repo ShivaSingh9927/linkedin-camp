@@ -6,7 +6,7 @@
     "scripts": {
         "dev": "ts-node-dev --respawn src/server.ts",
         "build": "tsup",
-        "start": "node dist/server.js"
+        "start": "npx prisma db push --schema=../../packages/db/schema.prisma --accept-data-loss && npx prisma generate --schema=../../packages/db/schema.prisma && node dist/server.js"
     },
     "dependencies": {
         "@prisma/client": "latest",
