@@ -59,7 +59,7 @@ export const processWorkflowStep = async (data: any) => {
 
         if (!lead || !campaignLead || campaignLead.isCompleted) return;
 
-        // Waalaxy Strategy: Exit on Reply
+        // LEADMATE Strategy: Exit on Reply
         if (lead.status === 'REPLIED') {
             console.log(`[Worker] Lead ${leadId} has REPLIED. Stopping campaign for them.`);
             await prisma.campaignLead.update({
@@ -69,7 +69,7 @@ export const processWorkflowStep = async (data: any) => {
             return;
         }
 
-        // Waalaxy Strategy: Duplicate Shield
+        // LEADMATE Strategy: Duplicate Shield
         // Avoid processing the same lead in multiple active campaigns at the same time.
         const otherActiveLead = await prisma.campaignLead.findFirst({
             where: {
@@ -96,7 +96,7 @@ export const processWorkflowStep = async (data: any) => {
             include: { proxy: true }
         });
 
-        // --- WAALAXY STRATEGY: CONCURRENCY LOCK ---
+        // --- LEADMATE STRATEGY: CONCURRENCY LOCK ---
         // Prevents multiple chromium instances for the same user account.
         const LOCK_TIMEOUT_MINUTES = 10;
         const isLockStale = user?.lastCloudActionAt
@@ -132,7 +132,7 @@ export const processWorkflowStep = async (data: any) => {
             if (inviteCount >= currentLimit) {
                 console.log(`[RATE LIMIT] User ${userId} reached current limit of ${currentLimit}.`);
 
-                // Waalaxy Strategy: Warmup Engine
+                // LEADMATE Strategy: Warmup Engine
                 if (user?.warmupEnabled && currentLimit < targetLimit) {
                     const newLimit = currentLimit + 1;
                     console.log(`[WARMUP] Incrementing daily limit for user ${userId} to ${newLimit}.`);
@@ -331,7 +331,7 @@ export const processWorkflowStep = async (data: any) => {
                             if (connectBtn) {
                                 await connectBtn.click();
                                 await randomDelay();
-                                // Waalaxy Strategy: Note Restriction Fallback
+                                // LEADMATE Strategy: Note Restriction Fallback
                                 // If restricted, we skip the note entirely to ensure the invite goes through.
                                 if (message && !user?.isNoteRestricted) {
                                     const addNoteBtn = page.locator('button:has-text("Add a note"), button[aria-label="Add a note"]').first();
@@ -359,7 +359,7 @@ export const processWorkflowStep = async (data: any) => {
                                     const text = await modal.innerText();
                                     const lower = text.toLowerCase();
 
-                                    // Detect Personalized Invite Limit (Waalaxy Note Fallback)
+                                    // Detect Personalized Invite Limit (LEADMATE Note Fallback)
                                     if (lower.includes('personalized') && lower.includes('limit')) {
                                         console.log(`[RESTRICTION] User ${userId} detected as Note Restricted. Enabling fallback.`);
                                         await prisma.user.update({
@@ -390,7 +390,7 @@ export const processWorkflowStep = async (data: any) => {
                         await page.mouse.wheel(0, 300); // Trigger lazy loads
                         await randomDelay(1000, 2000);
 
-                        // 1. Try to find Message button using Waalaxy selectors
+                        // 1. Try to find Message button using LEADMATE selectors
                         let messageBtn = await getRobustButton(page, MESSAGE_SELECTORS);
 
                         if (!messageBtn) {
@@ -407,7 +407,7 @@ export const processWorkflowStep = async (data: any) => {
                             await messageBtn.click();
                             await randomDelay(1500, 2500);
 
-                            // Waalaxy-style: Support Subject field (InMail/Message Requests)
+                            // LEADMATE-style: Support Subject field (InMail/Message Requests)
                             const subjectBox = page.locator('input[name="subject"], .msg-form__subject-typeahead input').first();
                             if (await subjectBox.isVisible()) {
                                 console.log('[Worker] InMail/Request modal detected. Adding subject...');
@@ -423,7 +423,7 @@ export const processWorkflowStep = async (data: any) => {
                                 // Type message with human-like delay
                                 await textBox.pressSequentially(message, { delay: Math.floor(Math.random() * 50) + 30 });
 
-                                // Waalaxy Strategy: Dispatch events to wake up React state
+                                // LEADMATE Strategy: Dispatch events to wake up React state
                                 await textBox.dispatchEvent('input', { bubbles: true });
                                 await textBox.dispatchEvent('change', { bubbles: true });
                                 await textBox.evaluate((el: HTMLElement) => {
@@ -444,7 +444,7 @@ export const processWorkflowStep = async (data: any) => {
                                     await page.keyboard.press('Enter');
                                 }
 
-                                // Waalaxy Strategy: Verification
+                                // LEADMATE Strategy: Verification
                                 await randomDelay(2000, 3000);
                                 const currentContent = await textBox.innerText();
                                 if (currentContent.trim().length > 0) {
@@ -714,7 +714,7 @@ export const processWorkflowStep = async (data: any) => {
         const isUIError = errorMessage.includes('not visible') || errorMessage.includes('missing') || errorMessage.includes('failed to find') || errorMessage.includes('target closed') || errorMessage.includes('timeout');
 
         if (isUIError && !isProfileFatal) {
-            // Waalaxy Strategy: POSTPONED
+            // LEADMATE Strategy: POSTPONED
             // Don't fail the lead yet. LinkedIn might be having a bad day or layout changed slightly.
             // Try again in 4 hours.
             console.log(`[POSTPONE] Lead ${data.leadId} encountered a UI issue. Retrying in 4 hours.`);
