@@ -67,8 +67,8 @@ export default function PricingPage() {
                             key={opt}
                             onClick={() => setBilling(opt)}
                             className={`px-5 py-2 rounded-xl text-sm font-bold uppercase tracking-wider transition-all ${billing === opt
-                                    ? 'bg-white shadow-sm text-slate-800'
-                                    : 'text-slate-500 hover:text-slate-700'
+                                ? 'bg-white shadow-sm text-slate-800'
+                                : 'text-slate-500 hover:text-slate-700'
                                 }`}
                         >
                             {opt.charAt(0).toUpperCase() + opt.slice(1)}
@@ -88,8 +88,8 @@ export default function PricingPage() {
                     <div
                         key={tier.name}
                         className={`bg-white rounded-3xl border p-6 flex flex-col transition-all hover:shadow-lg ${tier.highlight
-                                ? 'border-indigo-300 shadow-lg shadow-indigo-100 relative'
-                                : 'border-slate-200 shadow-sm'
+                            ? 'border-indigo-300 shadow-lg shadow-indigo-100 relative'
+                            : 'border-slate-200 shadow-sm'
                             }`}
                     >
                         {tier.badge && (
@@ -119,8 +119,8 @@ export default function PricingPage() {
 
                         <button
                             className={`w-full mt-4 py-2.5 rounded-2xl text-xs font-black uppercase tracking-widest transition-all ${tier.highlight
-                                    ? 'bg-gradient-to-r from-purple-600 to-cyan-500 text-white hover:opacity-90 shadow-lg'
-                                    : 'border-2 border-indigo-200 text-indigo-600 hover:bg-indigo-50'
+                                ? 'bg-gradient-to-r from-purple-600 to-cyan-500 text-white hover:opacity-90 shadow-lg'
+                                : 'border-2 border-indigo-200 text-indigo-600 hover:bg-indigo-50'
                                 }`}
                         >
                             {tier.cta}
