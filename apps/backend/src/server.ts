@@ -75,7 +75,9 @@ app.get('/', (req, res) => {
 
 // --- 2. START SERVER IMMEDIATELY ---
 app.listen(Number(PORT), '0.0.0.0', () => {
-    console.log(`🚀 Server listening on port ${PORT} [${new Date().toISOString()}]`);
+    console.log(`🚀 LEADMATE Server listening on port ${PORT} [${new Date().toISOString()}]`);
+    console.log('Build Version: 1.0.5 - Rebranding + Schema Sync v2');
+    console.log('DATABASE_URL is set:', !!process.env.DATABASE_URL);
 
     // --- 3. ASYNC BACKGROUND INIT (Does not block port binding) ---
     console.log('Initializing background services...');
