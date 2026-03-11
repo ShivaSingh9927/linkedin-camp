@@ -2,10 +2,10 @@
 
 ## Accomplished
 - **Safety Engine Implementation:**
-  - Implemented `safety.service.ts` mimicking Waalaxy to detect working hours (e.g., stopping tasks after 11 PM or outside Mon-Fri) and enforce standard human timelines.
+  - Implemented `safety.service.ts` mimicking LEADMATE to detect working hours (e.g., stopping tasks after 11 PM or outside Mon-Fri) and enforce standard human timelines.
   - Implemented mathematical jitter to randomize task execution delays (especially wait nodes and error throttling).
   - Used `puppeteer-extra-plugin-stealth` and random `userAgent` rotation inside Headless Playwright.
-- **Waalaxy-Style Continuous Session Synchronization:**
+- **LEADMATE-Style Continuous Session Synchronization:**
   - Integrated `chrome.cookies.onChanged` inside the Extension background script to push changes of `li_at` and `JSESSIONID` cookies in real-time.
   - Formatted cookies directly for Playwright to consume effortlessly on the backend.
 - **Cloud Kill Switch:**
@@ -14,7 +14,7 @@
   - Added the `/api/v1/auth/cloud-status` endpoint for the frontend.
   - Disabled background tasks, lead scraping, and synced Inbox Manual logic if the backend worker is online, thus avoiding IP and interaction conflicts!
 - **Residential Proxy Integration Prepared:**
-  - Researched Waalaxy's static Residential ISP proxy attachment strategy.
+  - Researched LEADMATE's static Residential ISP proxy attachment strategy.
   - Refactored all backend headless browser entrypoints to ingest static proxies naturally. Proxies are decoupled from users allowing global proxy assignments for cloud execution later.
 - **Smart Reply Detection:**
   - Overhauled Inbox Sync module `inbox.worker.ts` to detect real replies.

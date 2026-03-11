@@ -74,7 +74,7 @@ Right next to the primary sidebar. Manages folders/lists of prospects.
 2. **My First List** — *Active*  
    - White rounded card with subtle shadow  
    - Gold medal icon  
-3. **Waalaxy (sample list)**  
+3. **LEADMATE (sample list)**  
    - Magic wand icon  
 
 ### **Collapse Button**

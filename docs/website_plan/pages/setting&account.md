@@ -127,7 +127,7 @@ All cards are wide, white, rounded, and have soft shadows.
 #### **Header Area**
 - Dark square icon (translation symbol)
 - **Application language**
-- Subtitle: *Choose your preferred language to use Waalaxy*
+- Subtitle: *Choose your preferred language to use LEADMATE*
 
 #### **Body**
 - Full‑width dropdown  

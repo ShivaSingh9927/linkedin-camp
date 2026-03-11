@@ -1,4 +1,4 @@
-# Product Overview - Waalaxy Replication
+# Product Overview - LEADMATE Replication
 
 ## Description
 A modern LinkedIn automation and outreach platform designed to streamline lead generation and campaign management. It uses a hybrid architecture combining a Chrome Extension for secure session management and lead scraping with a cloud-based backend for workflow execution.

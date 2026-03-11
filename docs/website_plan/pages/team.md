@@ -110,7 +110,7 @@ Features:
 A full-width gradient button:
 
 - Purple → cyan/light blue gradient  
-- White text: **“Test Waalaxy with my colleagues”**
+- White text: **“Test LEADMATE with my colleagues”**
 
 ---
 
