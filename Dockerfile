@@ -22,4 +22,4 @@ RUN npx prisma generate --schema=packages/db/schema.prisma
 RUN npx turbo run build --filter=backend
 
 # Start the server
-CMD ["sh", "-c", "echo '🔄 Synchronizing database schema...' && npx prisma db push --schema=packages/db/schema.prisma --accept-data-loss && echo '✅ Schema sync complete. Starting server...' && node apps/backend/dist/server.js"]
+CMD ["sh", "-c", "echo '🔄 Synchronizing LEADMATE database schema...' && npx prisma generate --schema=packages/db/schema.prisma && npx prisma db push --schema=packages/db/schema.prisma --accept-data-loss && echo '✅ Schema sync complete. Starting server...' && node apps/backend/dist/server.js"]
