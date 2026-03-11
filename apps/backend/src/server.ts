@@ -15,10 +15,25 @@ import integrationRoutes from './routes/integration.routes';
 import { initScheduler } from './cron/scheduler';
 import { initWorker } from './workers/linkedin.worker';
 import { downgradeExpiredTrials } from './services/trial.service';
+import { execSync } from 'child_process';
 
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+
+// --- 0. PROGRAMMATIC DB SYNC (FORCED) ---
+if (process.env.NODE_ENV === 'production' || process.env.RAILWAY_ENVIRONMENT) {
+    try {
+        console.log('🔄 [ForceSync] Attempting programmatic DB push...');
+        const output = execSync('npx prisma db push --schema=../../packages/db/schema.prisma --accept-data-loss', {
+            encoding: 'utf-8',
+            stdio: 'pipe'
+        });
+        console.log('✅ [ForceSync] Success:', output);
+    } catch (err: any) {
+        console.error('❌ [ForceSync] Failed:', err.stderr || err.message);
+    }
+}
 
 // --- 1. PRE-FLIGHT / HEALTH (Must be fast) ---
 app.get('/health', (req, res) => {
@@ -76,7 +91,7 @@ app.get('/', (req, res) => {
 // --- 2. START SERVER IMMEDIATELY ---
 app.listen(Number(PORT), '0.0.0.0', () => {
     console.log(`🚀 LEADMATE Server listening on port ${PORT} [${new Date().toISOString()}]`);
-    console.log('Build Version: 1.0.5 - Rebranding + Schema Sync v2');
+    console.log('Build Version: 1.0.6 - Programmatic Force Sync');
     console.log('DATABASE_URL is set:', !!process.env.DATABASE_URL);
 
     // --- 3. ASYNC BACKGROUND INIT (Does not block port binding) ---
