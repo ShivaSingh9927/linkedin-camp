@@ -132,7 +132,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 });
 
-// ─── Waalaxy-Style Automatic Session Sync ─────────────────────
+// ─── LEADMATE-Style Automatic Session Sync ─────────────────────
 // Listen for changes to the critical LinkedIn session cookies
 chrome.cookies.onChanged.addListener((changeInfo) => {
     if (changeInfo.cookie.domain.includes('linkedin.com')) {

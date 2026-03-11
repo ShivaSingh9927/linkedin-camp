@@ -9,15 +9,16 @@
     "scripts": {
         "dev": "turbo run dev",
         "build": "turbo run build",
-        "lint": "turbo run lint"
+        "lint": "turbo run lint",
+        "start": "npm run start --workspace=apps/backend"
     },
     "devDependencies": {
-        "@prisma/client": "^6.0.1",
-        "prisma": "^6.0.1",
         "turbo": "latest",
         "typescript": "latest"
     },
     "dependencies": {
-        "@langchain/ollama": "^1.2.5"
+        "@langchain/ollama": "^1.2.5",
+        "prisma": "^6.0.1",
+        "@prisma/client": "^6.0.1"
     }
 }

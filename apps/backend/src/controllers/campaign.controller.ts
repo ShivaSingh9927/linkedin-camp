@@ -91,8 +91,9 @@ export const startCampaign = async (req: any, res: Response) => {
         const workflow = campaign.workflowJson as any;
         const startNode = workflow.nodes?.find((n: any) => n.type === 'TRIGGER' || n.type === 'input') || workflow.nodes?.[0];
 
-        let skippedCount = 0;
         let startedCount = 0;
+        let alreadyActiveCount = 0;
+        let enrollmentDetails: any[] = [];
 
         if (startNode) {
             let finalLeadIds = leadIds;
@@ -123,13 +124,13 @@ export const startCampaign = async (req: any, res: Response) => {
                 const activeLeadIds = new Set(activeLeadsInOtherCampaigns.map((cl: any) => cl.leadId));
                 const safeLeadIdsToStart = finalLeadIds.filter((leadId: string) => !activeLeadIds.has(leadId));
 
-                skippedCount = activeLeadIds.size;
+                alreadyActiveCount = activeLeadIds.size;
                 startedCount = safeLeadIdsToStart.length;
 
-                console.log(`[Campaign] Enrollment Stats: ${startedCount} safe, ${skippedCount} skipped (already active).`);
+                console.log(`[Campaign] Enrollment Stats: ${startedCount} safe, ${alreadyActiveCount} skipped (already active).`);
 
-                if (skippedCount > 0) {
-                    console.log(`[SPAM PROTECT] User ${userId} tried to add ${skippedCount} leads to Campaign ${id} that were already active elsewhere.`);
+                if (alreadyActiveCount > 0) {
+                    console.log(`[SPAM PROTECT] User ${userId} tried to add ${alreadyActiveCount} leads to Campaign ${id} that were already active elsewhere.`);
                 }
 
                 // Find the immediate next node after trigger
@@ -141,26 +142,35 @@ export const startCampaign = async (req: any, res: Response) => {
                 if (safeLeadIdsToStart.length > 0) {
                     console.log(`[Campaign] Resetting/Enrolling ${safeLeadIdsToStart.length} leads in campaign ${id}`);
 
-                    // Use a transaction or bulk operation where possible, but upsert is fine for small tests
                     for (const leadId of safeLeadIdsToStart) {
-                        await prisma.campaignLead.upsert({
-                            where: { campaignId_leadId: { campaignId: id, leadId } },
-                            update: {
-                                currentStepId: firstStepId,
-                                nextActionDate: new Date(),
-                                isCompleted: false,
-                            },
-                            create: {
-                                campaignId: id,
-                                leadId,
-                                currentStepId: firstStepId,
-                                nextActionDate: new Date(),
-                                isCompleted: false,
-                            }
-                        });
+                        try {
+                            await prisma.campaignLead.upsert({
+                                where: { campaignId_leadId: { campaignId: id, leadId } },
+                                update: {
+                                    currentStepId: firstStepId,
+                                    nextActionDate: new Date(),
+                                    isCompleted: false,
+                                },
+                                create: {
+                                    campaignId: id,
+                                    leadId,
+                                    currentStepId: firstStepId,
+                                    nextActionDate: new Date(),
+                                    isCompleted: false,
+                                }
+                            });
+                            enrollmentDetails.push({ leadId, status: 'ENROLLED' });
+                        } catch (err: any) {
+                            enrollmentDetails.push({ leadId, status: 'ERROR', error: err.message });
+                        }
                     }
                     console.log(`[Campaign] Successfully started/enrolled ${safeLeadIdsToStart.length} leads.`);
                 }
+
+                // Append already active leads to details for reporting
+                activeLeadIds.forEach(leadId => {
+                    enrollmentDetails.push({ leadId, status: 'SKIPPED', reason: 'ALREADY_ACTIVE_IN_OTHER_CAMPAIGN' });
+                });
             } else {
                 console.warn(`[Campaign] Skipping enrollment logic. leadIds length: 0 and no existing leads found for campaign ${id}`);
             }
@@ -170,7 +180,12 @@ export const startCampaign = async (req: any, res: Response) => {
 
         res.json({
             ...updatedCampaign,
-            meta: { startedCount, skippedCount }
+            meta: {
+                startedCount,
+                alreadyActiveCount,
+                skippedCount: leadIds.length - startedCount - alreadyActiveCount,
+                details: enrollmentDetails.slice(0, 100)
+            }
         });
     } catch (error) {
         console.error('Start campaign error:', error);
