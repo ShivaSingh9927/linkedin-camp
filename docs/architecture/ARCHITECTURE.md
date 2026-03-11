@@ -1,4 +1,4 @@
-# Architecture Documentation - Waalaxy Replication
+# Architecture Documentation - LEADMATE Replication
 
 ## Project Overview
 A hybrid LinkedIn outreach automation system consisting of a Chrome Extension, a Cloud Backend, and a Next.js Dashboard.

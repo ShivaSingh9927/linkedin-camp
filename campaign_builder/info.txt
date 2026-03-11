@@ -1,5 +1,5 @@
 1. The workflow.json Data Structure
-Since you specifically mentioned wanting to add advancements to the standard Waalaxy formula, I've included an AI_PERSONALIZE node type. Instead of just sending static template variables like {{firstName}}, this allows you to hook the workflow into an AI marketing agent pipeline that researches the lead's company and generates a highly contextualized message before sending.
+Since you specifically mentioned wanting to add advancements to the standard LEADMATE formula, I've included an AI_PERSONALIZE node type. Instead of just sending static template variables like {{firstName}}, this allows you to hook the workflow into an AI marketing agent pipeline that researches the lead's company and generates a highly contextualized message before sending.
 
 2. How the Backend Worker Reads This
 When your backend queue picks up a lead, it needs to know what step it is currently on. Here is how the logic flows:

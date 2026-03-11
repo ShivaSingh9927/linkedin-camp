@@ -1,5 +1,5 @@
 Document 1: System Architecture Plan
-A tool like Waalaxy operates on a hybrid model: a Chrome Extension (to act on behalf of the user and steal session cookies) and a Cloud Backend (to manage data, schedules, and workflows).
+A tool like LEADMATE operates on a hybrid model: a Chrome Extension (to act on behalf of the user and steal session cookies) and a Cloud Backend (to manage data, schedules, and workflows).
 
 Client Side 1 (Chrome Extension): Injects code into LinkedIn, scrapes DOM elements, extracts the user's li_at (LinkedIn Auth) cookie, and syncs it to your backend.
 

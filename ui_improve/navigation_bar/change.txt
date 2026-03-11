@@ -1,0 +1,2 @@
+i want to change the side bar containing Home, prospects, campaigns, inbox and crew
+nav.tsx is the example i want in this style, everything else is should be same. it should contain all the pages like Home, prospects, campaigns, inbox and crew

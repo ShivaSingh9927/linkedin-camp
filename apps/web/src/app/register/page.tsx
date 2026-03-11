@@ -37,8 +37,9 @@ export default function RegisterPage() {
         <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
             <div className="max-w-md w-full space-y-8 bg-white p-10 rounded-3xl shadow-xl border">
                 <div className="text-center">
-                    <h1 className="text-4xl font-extrabold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
-                        Get Started
+                    <img src="/leadmate-logo.png" alt="LEADMATE Logo" className="w-20 h-20 mx-auto rounded-3xl mb-4 shadow-md" />
+                    <h1 className="text-4xl font-black bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent italic text-center">
+                        LEADMATE
                     </h1>
                     <p className="mt-2 text-slate-500">Join thousands scaling their LinkedIn outreach</p>
                 </div>

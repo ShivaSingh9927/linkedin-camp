@@ -1,5 +1,5 @@
 Document 4: Core Backend Microservices & Logic
-To replicate Waalaxy, your backend must be split into logical domains.
+To replicate LEADMATE, your backend must be split into logical domains.
 
 1. The Sync & Auth Service
 Receives the LinkedIn session cookies (li_at and JSESSIONID) from the Chrome Extension.

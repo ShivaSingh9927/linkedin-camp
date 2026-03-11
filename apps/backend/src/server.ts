@@ -75,10 +75,25 @@ app.get('/', (req, res) => {
 
 // --- 2. START SERVER IMMEDIATELY ---
 app.listen(Number(PORT), '0.0.0.0', () => {
-    console.log(`🚀 Server listening on port ${PORT} [${new Date().toISOString()}]`);
+    console.log(`🚀 LEADMATE Server listening on port ${PORT} [${new Date().toISOString()}]`);
+    console.log('Build Version: 1.0.6 - Database Diagnostic');
+    console.log('DATABASE_URL is set:', !!process.env.DATABASE_URL);
 
     // --- 3. ASYNC BACKGROUND INIT (Does not block port binding) ---
     console.log('Initializing background services...');
+
+    // Diagnostic: Check actual DB columns
+    prisma.$queryRaw`SELECT column_name FROM information_schema.columns WHERE table_name = 'User'`
+        .then((cols: any) => {
+            console.log('📊 Actual User table columns in DB:', cols.map((c: any) => c.column_name).join(', '));
+            const hasField = cols.some((c: any) => c.column_name === 'maxInviteLimit');
+            if (!hasField) {
+                console.error('❌ CRITICAL: maxInviteLimit is MISSING from the database! Schema sync failed.');
+            } else {
+                console.log('✅ Found maxInviteLimit in DB.');
+            }
+        })
+        .catch(e => console.error('❌ Failed to query DB columns:', e));
 
     try {
         initScheduler();

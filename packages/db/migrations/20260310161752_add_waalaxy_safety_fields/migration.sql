@@ -1,0 +1,8 @@
+-- AlterTable
+ALTER TABLE "User" 
+ALTER COLUMN "dailyInviteLimit" SET DEFAULT 10,
+ADD COLUMN "maxInviteLimit" INTEGER NOT NULL DEFAULT 80,
+ADD COLUMN "warmupEnabled" BOOLEAN NOT NULL DEFAULT true,
+ADD COLUMN "isNoteRestricted" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN "workingHours" JSONB NOT NULL DEFAULT '{"start": 9, "end": 18}',
+ADD COLUMN "workingDays" INTEGER[] DEFAULT ARRAY[1, 2, 3, 4, 5];

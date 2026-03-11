@@ -28,4 +28,4 @@ cmds = [
 ]
 
 [start]
-cmd = "npm run start --workspace=apps/backend"
+cmd = "echo '🚀 Starting LEADMATE with Schema Sync...' && npx prisma generate --schema=packages/db/schema.prisma && npx prisma db push --schema=packages/db/schema.prisma --accept-data-loss && npm run start --workspace=apps/backend"

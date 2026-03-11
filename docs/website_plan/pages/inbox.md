@@ -112,7 +112,7 @@ Vertical stack of items:
 ---
 
 ### **Footer Text (Centered)**
-*“Want to know more about Waalaxy’s Inbox? **It’s over here**”*  
+*“Want to know more about LEADMATE’s Inbox? **It’s over here**”*  
 (Last portion is a hyperlink-style bold text)
 
 ---

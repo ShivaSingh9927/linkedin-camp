@@ -53,7 +53,7 @@ A floating, pill-shaped white navbar aligned toward the **top center/right**.
 ## Component 3: Main Content Area – Header & Toggles
 
 ### **Page Headline**
-- `<h1>` **Join Waalaxy – best prices in the galaxy 😎**  
+- `<h1>` **Join LEADMATE – best prices in the galaxy 😎**  
 - Centered, bold, dark text
 
 ---

@@ -20,7 +20,7 @@ The page utilizes a classic SaaS layout:
 A white (`bg-white`) sidebar with a subtle right border, using a vertical flex layout to push footer links to the bottom.
 
 ### **Top Section (Brand)**
-- **Logo:** Waalaxy alien head (brand blue)
+- **Logo:** LEADMATE alien head (brand blue)
 - **Text:** “WAALAXY”
 - **Chevron:** Downward chevron for workspace/account dropdown
 
@@ -104,7 +104,7 @@ A large rounded white card with soft shadow.
 1. **Completed Task**
    - Checked square (light blue background, white check)
    - Icon: Chrome browser
-   - Text: *Install Waalaxy Chrome extension* (grey, strikethrough)
+   - Text: *Install LEADMATE Chrome extension* (grey, strikethrough)
 
 2. **Pending Task**
    - Empty square checkbox  
@@ -129,7 +129,7 @@ A large rounded white card with soft shadow.
 - YouTube thumbnail:
   - Person image + “FIRST CAMPAIGN WAALAXY TUTORIAL”
   - Red YouTube play button overlay
-- Footer text: **Getting started on Waalaxy in 5 min 🚀**
+- Footer text: **Getting started on LEADMATE in 5 min 🚀**
 
 ---
 

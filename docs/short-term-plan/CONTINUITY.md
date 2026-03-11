@@ -24,9 +24,9 @@
     - Team Feature Phase 1: Schema updated, backend API created, and premium dashboard UI built.
     - Team Feature Phase 2: Built Join Workspace UI, Anti-Duplication Protection, Crew Stats on Dashboard, and Account Switcher for Admins.
     - Cloud Execution & Safety Engine: Implemented working hours, randomized jitter delays, and stealth headless browsing patterns. 
-    - Session Sync: Implemented Waalaxy-style Chrome extension real-time cookie synchronization.
+    - Session Sync: Implemented LEADMATE-style Chrome extension real-time cookie synchronization.
     - Cloud Kill Switch: Added DB state locks (`cloudWorkerActive`, `lastCloudActionAt`). Stopped the extension from scraping simultaneously when headlees browser campaigns are actively sending messages.
-    - Proxy Backend Logic Prepared: Added logic to inject proxy strings directly into the playwright context (mimicking the Waalaxy static IP assignment strategy behind the scenes).
+    - Proxy Backend Logic Prepared: Added logic to inject proxy strings directly into the playwright context (mimicking the LEADMATE static IP assignment strategy behind the scenes).
     - Smart Reply Detection: Halted active campaigns for prospects automatically when user receives a message from them in Inbox.
     - Auto-Withdraw Invites: Scheduled daily cron to withdraw pending connection requests older than 30 days.
     - **Campaign Debugging**:

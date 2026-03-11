@@ -65,9 +65,10 @@ export function Sidebar() {
     return (
         <div className="w-64 border-r bg-white h-screen flex flex-col">
             {/* Brand */}
-            <div className="p-6 border-b">
-                <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
-                    Waalaxy Clone
+            <div className="p-6 border-b flex items-center gap-3">
+                <img src="/leadmate-logo.png" alt="LEADMATE Logo" className="w-10 h-10 rounded-xl shadow-sm" />
+                <h1 className="text-2xl font-black bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent italic text-center">
+                    LEADMATE
                 </h1>
             </div>
 
