@@ -7,7 +7,7 @@ import { AuthWrapper } from "@/components/AuthWrapper";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Waalaxy Clone | LinkedIn Automation",
+  title: "LEADMATE | LinkedIn Automation",
   description: "Scale your LinkedIn outreach with AI-powered campaigns.",
 };
 
@@ -20,7 +20,7 @@ export default function RootLayout({
     <html lang="en">
       <body className={`${inter.className} antialiased`}>
         <AuthWrapper>
-          <SidebarWrapper> 
+          <SidebarWrapper>
             {children}
           </SidebarWrapper>
         </AuthWrapper>

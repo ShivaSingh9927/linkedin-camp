@@ -96,6 +96,23 @@ export const processWorkflowStep = async (data: any) => {
             include: { proxy: true }
         });
 
+        // --- WAALAXY STRATEGY: CONCURRENCY LOCK ---
+        // Prevents multiple chromium instances for the same user account.
+        const LOCK_TIMEOUT_MINUTES = 10;
+        const isLockStale = user?.lastCloudActionAt
+            ? (new Date().getTime() - new Date(user.lastCloudActionAt).getTime()) > (LOCK_TIMEOUT_MINUTES * 60 * 1000)
+            : true;
+
+        if (user?.cloudWorkerActive && !isLockStale) {
+            console.log(`[CONCURRENCY] Worker already active for user ${userId}. Rescheduling task.`);
+            const waitTime = applyJitter(new Date(Date.now() + 15 * 60 * 1000), 5, 10);
+            await prisma.campaignLead.update({
+                where: { id: campaignLeadId },
+                data: { nextActionDate: waitTime }
+            });
+            return;
+        }
+
         // Daily Rate Limiting for INVITE (Warmup Engine)
         if (currentNode.subType === 'INVITE') {
             const today = new Date();

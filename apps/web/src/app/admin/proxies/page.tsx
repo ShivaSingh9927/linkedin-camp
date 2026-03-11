@@ -121,7 +121,7 @@ export default function AdminProxiesPage() {
                     <h1 className="text-3xl font-bold tracking-tight text-slate-900">Proxy Fleet Configuration</h1>
                     <p className="text-slate-500 mt-2">
                         Manage your Static ISP endpoints for cloud LinkedIn automation.
-                        Waalaxy strategy active: max 5 users per IP.
+                        LEADMATE strategy active: max 5 users per IP.
                     </p>
                 </div>
                 <div className="flex gap-4">
