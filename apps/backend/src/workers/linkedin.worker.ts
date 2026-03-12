@@ -6,6 +6,7 @@ import { prisma } from '../server';
 import { ActionType, WorkflowJson } from '@repo/types';
 import { generateIcebreaker } from '../services/ai.service';
 import { canWorkNow, applyJitter, getRandomUserAgent } from '../services/safety.service';
+import { humanMoveAndClick, humanType, warmupSession } from '../services/stealth.service';
 import { triggerWebhook } from '../services/webhook.service';
 
 chromium.use(stealthPlugin());
@@ -178,8 +179,11 @@ export const processWorkflowStep = async (data: any) => {
                 console.log(`[MOCK MODE] Executing ${currentNode.subType} for ${lead?.firstName} ${lead?.lastName}`);
                 if (message) console.log(`[MOCK MODE] Message Content: "${message}"`);
                 await randomDelay(500, 1000);
+                const VALID_ACTION_TYPES = ['PROFILE_VISIT', 'INVITE', 'MESSAGE', 'EMAIL', 'CHECK_REPLY', 'AI_PERSONALIZE'];
+                const logActionType = VALID_ACTION_TYPES.includes(currentNode.subType || '') ? currentNode.subType : 'PROFILE_VISIT';
+
                 await prisma.actionLog.create({
-                    data: { userId, leadId, campaignId, actionType: currentNode.subType as ActionType, status: 'SUCCESS' }
+                    data: { userId, leadId, campaignId, actionType: logActionType as ActionType, status: 'SUCCESS' }
                 });
 
                 // Mock lead status updates
@@ -201,8 +205,8 @@ export const processWorkflowStep = async (data: any) => {
                 let browser;
                 try {
                     const launchOptions: any = {
-                        headless: true,
-                        args: ['--no-sandbox', '--disable-setuid-sandbox']
+                        headless: process.env.HEADLESS_MODE !== 'false',
+                        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled']
                     };
 
                     // @ts-ignore Let's ignore this until TS catches up with Prisma output
@@ -249,7 +253,12 @@ export const processWorkflowStep = async (data: any) => {
                     await context.addCookies(Array.isArray(cookies) ? cookies : [cookies]);
 
                     const page = await context.newPage();
-                    await page.goto(lead.linkedinUrl);
+
+                    // --- STEALTH: SESSION WARMUP ---
+                    await warmupSession(page);
+
+                    await page.goto(lead.linkedinUrl, { waitUntil: 'domcontentloaded' });
+                    await randomDelay(3000, 6000); // "Observe" the profile
 
                     const getRobustButton = async (page: any, selectors: string[]) => {
                         for (const selector of selectors) {
@@ -312,25 +321,29 @@ export const processWorkflowStep = async (data: any) => {
                             }
 
                             if (connectBtn) {
-                                await connectBtn.click();
-                                await randomDelay();
+                                const connectClicked = await humanMoveAndClick(page, connectBtn);
+                                if (!connectClicked) {
+                                    // Fallback if mouse movement fails
+                                    await connectBtn.click({ force: true });
+                                }
+                                await randomDelay(2000, 4000);
                                 // Waalaxy Strategy: Note Restriction Fallback
                                 // If restricted, we skip the note entirely to ensure the invite goes through.
                                 if (message && !user?.isNoteRestricted) {
                                     const addNoteBtn = page.locator('button:has-text("Add a note"), button[aria-label="Add a note"]').first();
                                     if (await addNoteBtn.isVisible()) {
-                                        await addNoteBtn.click();
-                                        await randomDelay(500, 1500);
-                                        await page.type('textarea[name="message"]', message, { delay: Math.floor(Math.random() * 50) + 30 });
+                                        await humanMoveAndClick(page, addNoteBtn);
+                                        await randomDelay(1000, 2000);
+                                        await humanType(page, 'textarea[name="message"]', message);
                                     }
                                 }
 
                                 await page.mouse.wheel(0, Math.floor(Math.random() * 500) + 300);
                                 await randomDelay(1000, 2500);
 
-                                const sendBtn = page.locator('button:has-text("Send"), button[aria-label="Send now"]').first();
+                                const sendBtn = page.locator('button:has-text("Send"), button[aria-label="Send now"]').filter({ visible: true }).first();
                                 if (await sendBtn.isVisible()) {
-                                    await sendBtn.click();
+                                    await humanMoveAndClick(page, sendBtn);
                                 } else {
                                     await page.keyboard.press('Enter');
                                 }
@@ -387,8 +400,11 @@ export const processWorkflowStep = async (data: any) => {
                         }
 
                         if (messageBtn) {
-                            await messageBtn.click();
-                            await randomDelay(1500, 2500);
+                            const btnClicked = await humanMoveAndClick(page, messageBtn);
+                            if (!btnClicked) {
+                                await messageBtn.click({ force: true });
+                            }
+                            await randomDelay(2000, 4000);
 
                             // Waalaxy-style: Support Subject field (InMail/Message Requests)
                             const subjectBox = page.locator('input[name="subject"], .msg-form__subject-typeahead input').first();
@@ -400,11 +416,8 @@ export const processWorkflowStep = async (data: any) => {
 
                             const textBox = page.locator('form[class*=msg-form] [contenteditable=true], div[role="textbox"]').first();
                             if (await textBox.isVisible()) {
-                                await textBox.click(); // Focus
-                                await textBox.fill(''); // Clear
-
-                                // Type message with human-like delay
-                                await textBox.pressSequentially(message, { delay: Math.floor(Math.random() * 50) + 30 });
+                                // Type message with human-like stealth engine
+                                await humanType(page, textBox, message);
 
                                 // Waalaxy Strategy: Dispatch events to wake up React state
                                 await textBox.dispatchEvent('input', { bubbles: true });
@@ -416,12 +429,13 @@ export const processWorkflowStep = async (data: any) => {
 
                                 await randomDelay(1000, 2000);
 
+                                await randomDelay(2500, 5000); // "Thinking" time before send
+
                                 // Check if "Enter to send" is hints are visible
-                                const hasEnterHint = await page.isVisible('form[class*=msg-form] .msg-form__send-button:disabled');
-                                const sendBtn = page.locator('button.msg-form__send-button, button[type="submit"]').first();
+                                const sendBtn = page.locator('button.msg-form__send-button, button[type="submit"]').filter({ visible: true }).first();
 
                                 if (await sendBtn.isVisible() && !(await sendBtn.isDisabled())) {
-                                    await sendBtn.click();
+                                    await humanMoveAndClick(page, sendBtn);
                                 } else {
                                     console.log('[Worker] Send button disabled or not found. Pressing Enter...');
                                     await page.keyboard.press('Enter');
