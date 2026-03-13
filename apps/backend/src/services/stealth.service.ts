@@ -47,9 +47,9 @@ export const humanType = async (page: Page, target: string | Locator, text: stri
                 await page.keyboard.press('Backspace');
                 await wait(randomRange(200, 400));
             }
-            
+
             await page.keyboard.type(text[i], { delay: randomRange(60, 200) });
-            
+
             // Brief "thinking" pause after punctuation or words
             if ([' ', '.', ',', '!'].includes(text[i])) {
                 await wait(randomRange(300, 800));
@@ -78,6 +78,72 @@ export const warmupSession = async (page: Page) => {
         return true;
     } catch (e) {
         console.error('[STEALTH] warmupSession failed:', e);
+        return false;
+    }
+};
+
+/**
+ * Premium: Likes the first visible post on the feed.
+ */
+export const likeRecentPost = async (page: Page) => {
+    try {
+        console.log('[STEALTH] Searching for a post to like...');
+        const likeBtn = page.locator('button[aria-label^="Like"], .react-button__trigger').first();
+        if (await likeBtn.isVisible({ timeout: 5000 })) {
+            const isAlreadyLiked = await likeBtn.getAttribute('aria-pressed');
+            if (isAlreadyLiked === 'true') {
+                console.log('[STEALTH] Post already liked. Skipping.');
+                return true;
+            }
+            return await humanMoveAndClick(page, likeBtn);
+        }
+        return false;
+    } catch (e) {
+        console.error('[STEALTH] likeRecentPost failed:', e);
+        return false;
+    }
+};
+
+/**
+ * Premium: Comments on the first visible post on the feed.
+ */
+export const commentOnRecentPost = async (page: Page, text: string) => {
+    try {
+        console.log('[STEALTH] Attempting to comment on a post...');
+        const commentTrigger = page.locator('button[aria-label^="Comment"], .comment-button').first();
+        if (await commentTrigger.isVisible({ timeout: 5000 })) {
+            await humanMoveAndClick(page, commentTrigger);
+            await wait(randomRange(1000, 2000));
+
+            const commentBox = page.locator('.ql-editor[contenteditable="true"], .comments-comment-box__textarea').first();
+            await humanType(page, commentBox, text);
+            await wait(randomRange(1000, 2000));
+
+            await page.keyboard.press('Enter');
+            console.log('[STEALTH] Comment posted successfully.');
+            return true;
+        }
+        return false;
+    } catch (e) {
+        console.error('[STEALTH] commentOnRecentPost failed:', e);
+        return false;
+    }
+};
+
+/**
+ * Premium: Attaches a document in the active message box.
+ */
+export const attachDocument = async (page: Page, filePath: string) => {
+    try {
+        console.log('[STEALTH] Attempting to attach document:', filePath);
+        // LinkedIn uses a hidden file input for attachments
+        const fileInput = page.locator('input[type="file"][name="file"]').first();
+        await fileInput.setInputFiles(filePath);
+        console.log('[STEALTH] File attached. Waiting for upload...');
+        await wait(randomRange(3000, 5000));
+        return true;
+    } catch (e) {
+        console.error('[STEALTH] attachDocument failed:', e);
         return false;
     }
 };

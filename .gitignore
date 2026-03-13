@@ -19,3 +19,18 @@ build/
 .turbo
 ui_improve
 
+# app sessions
+apps/backend/sessions/
+linkedin_session/
+
+# screenshots and temporary files
+*.png
+*.webp
+sync_error_*.png
+doc_attachment_verify.png
+
+# scratch scripts
+login_and_save.js
+stealth_*.js
+test-*.js
+
