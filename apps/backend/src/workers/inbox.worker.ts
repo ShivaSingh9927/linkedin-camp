@@ -1,182 +1,116 @@
-import { chromium } from 'playwright';
+import { Worker, Job } from 'bullmq';
 import { prisma } from '../server';
-import { ActionType } from '@repo/types';
-import { triggerWebhook } from '../services/webhook.service';
+import { chromium } from 'playwright-extra';
+const stealth = require('puppeteer-extra-plugin-stealth')();
+import Redis from 'ioredis';
+
+chromium.use(stealth);
+
+const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
+const redisConnection = REDIS_URL ? new Redis(REDIS_URL, { maxRetriesPerRequest: null }) : null;
 
 export const syncInbox = async (userId: string) => {
-    console.log(`[Inbox Sync] Starting sync for user ${userId}`);
     const user = await prisma.user.findUnique({
-        where: { id: userId },
-        include: { proxy: true }
+        where: { id: userId }
     });
-    if (!user?.linkedinCookie) {
-        console.log(`[Inbox Sync] No cookies for user ${userId}, skipping.`);
+
+    if (!user || !user.linkedinCookie) {
+        console.error(`[INBOX-WORKER] No LinkedIn session for user ${userId}`);
         return;
     }
 
+    console.log(`[INBOX-WORKER] Syncing inbox for user ${userId}...`);
+
     let browser;
     try {
-        await prisma.user.update({
-            where: { id: userId },
-            data: { cloudWorkerActive: true, lastCloudActionAt: new Date() }
+        browser = await chromium.launch({ 
+            headless: process.env.HEADLESS_MODE !== 'false',
+            args: ['--no-sandbox', '--disable-setuid-sandbox'] 
         });
 
-        const launchOptions: any = { headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox'] };
-        if (user.proxy) {
-            launchOptions.proxy = {
-                server: `http://${user.proxy.proxyHost}:${user.proxy.proxyPort}`,
-                username: user.proxy.proxyUsername || undefined,
-                password: user.proxy.proxyPassword || undefined
-            };
-        }
-
-        browser = await chromium.launch(launchOptions);
+        // Set cookies manually for the worker session
         const context = await browser.newContext();
-
-        // 1. Proxy Bandwidth & Server RAM Optimizer
-        await context.route('**/*', (route) => {
-            const type = route.request().resourceType();
-            if (['image', 'media', 'font', 'stylesheet'].includes(type) || route.request().url().includes('google-analytics')) {
-                route.abort();
-            } else {
-                route.continue();
-            }
-        });
-
-        let cookies;
-        try {
-            cookies = JSON.parse(user.linkedinCookie);
-        } catch (e) {
-            cookies = [{
-                name: 'li_at',
-                value: user.linkedinCookie,
-                domain: '.linkedin.com',
-                path: '/',
-                secure: true,
-                httpOnly: true,
-                sameSite: 'None'
-            }];
-        }
-        await context.addCookies(Array.isArray(cookies) ? cookies : [cookies]);
+        await context.addCookies([{
+            name: 'li_at',
+            value: user.linkedinCookie,
+            domain: '.www.linkedin.com',
+            path: '/',
+            secure: true,
+            httpOnly: true,
+            sameSite: 'None'
+        }]);
 
         const page = await context.newPage();
         await page.goto('https://www.linkedin.com/messaging/', { waitUntil: 'networkidle' });
 
-        // Wait for conversations to load
-        try {
-            await page.waitForSelector('.msg-conversations-container__conversations-list', { timeout: 10000 });
-        } catch (e) {
-            console.log('[Inbox Sync] Messaging list not found, maybe no messages or layout changed.');
-            await browser.close();
-            return;
-        }
-
-        const conversations = await page.$$eval('.msg-conversation-listitem', (items) => {
-            return items.slice(0, 15).map(item => {
-                const name = item.querySelector('.msg-conversation-listitem__participant-names')?.textContent?.trim();
-                const snippet = item.querySelector('.msg-conversation-listitem__message-snippet')?.textContent?.trim();
-                const isUnread = !!item.querySelector('.msg-conversation-card__unread-count');
-
-                // LinkedIn often hides "You:" in the snippet if the other person replied.
-                // We assume if it doesn't start with "You:", it might be a reply.
-                const isReceived = snippet && !snippet.startsWith('You:');
-
-                return { name, snippet, isUnread, isReceived };
+        // Basic message extraction logic
+        const conversations = await page.$$eval('.msg-conversations-container__convo-item', (items: any[]) => {
+            return items.slice(0, 10).map(item => {
+                const name = item.querySelector('.msg-conversation-card__participant-names')?.innerText.trim();
+                const lastMsg = item.querySelector('.msg-conversation-card__message-snippet-body')?.innerText.trim();
+                const link = item.querySelector('a')?.href;
+                return { name, lastMsg, link };
             });
         });
 
-        console.log(`[Inbox Sync] Found ${conversations.length} threads.`);
+        console.log(`[INBOX-WORKER] Found ${conversations.length} recent conversations.`);
 
-        for (const conv of conversations) {
-            if (conv.name && conv.isReceived) {
-                // Find lead by name
-                const nameParts = conv.name.split(' ');
-                const firstName = nameParts[0];
-                const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
+        for (const convo of conversations) {
+            // Find lead in database
+            const lead = await prisma.lead.findFirst({
+                where: { 
+                    userId: userId,
+                    OR: [
+                        { firstName: { contains: convo.name?.split(' ')[0] || '' } },
+                        { lastName: { contains: convo.name?.split(' ')[1] || convo.name || '' } }
+                    ]
+                }
+            });
 
-                const lead = await prisma.lead.findFirst({
-                    where: {
-                        userId,
-                        firstName: { contains: firstName, mode: 'insensitive' },
-                        ...(lastName ? { lastName: { contains: lastName, mode: 'insensitive' } } : {})
-                    }
-                });
-
-                if (lead) {
-                    console.log(`[Inbox Sync] Matched lead: ${lead.firstName} ${lead.lastName} (ID: ${lead.id})`);
-                    // 1. Log the message if new
-                    const latestMessage = await prisma.message.findFirst({
-                        where: { leadId: lead.id, userId },
-                        orderBy: { sentAt: 'desc' }
+            if (lead) {
+                // If the user has replied, mark the lead status appropriately
+                // This is a naive check - in a real app we'd compare dates and message owners
+                if (convo.lastMsg && !convo.lastMsg.includes('You sent')) {
+                    console.log(`[INBOX-WORKER] Detected reply from lead: ${lead.firstName} ${lead.lastName}`);
+                    
+                    // Update campaign lead status to REPLIED
+                    await prisma.campaignLead.updateMany({
+                        where: { leadId: lead.id, isCompleted: false },
+                        data: { status: 'REPLIED' }
                     });
 
-                    // simple check: if snippet is different from latest stored message
-                    if (!latestMessage || latestMessage.content !== conv.snippet) {
-                        console.log(`[Inbox Sync] New message detected for ${lead.firstName}`);
-
-                        await prisma.message.create({
-                            data: {
-                                userId,
-                                leadId: lead.id,
-                                direction: conv.isReceived ? 'RECEIVED' : 'SENT',
-                                content: conv.snippet || '[No Content]',
-                                source: 'LINKEDIN_SYNC',
-                                sentAt: new Date()
-                            }
-                        });
-
-                        // 2. Update status to REPLIED if received
-                        if (conv.isReceived && lead.status !== 'REPLIED') {
-                            await prisma.lead.update({
-                                where: { id: lead.id },
-                                data: { status: 'REPLIED' }
-                            });
-
-                            // 3. Smart Reply Detection: Halt Active Campaigns for this Lead
-                            const haltedCampaigns = await prisma.campaignLead.updateMany({
-                                where: { leadId: lead.id, isCompleted: false },
-                                data: { isCompleted: true }
-                            });
-
-                            if (haltedCampaigns.count > 0) {
-                                console.log(`[Inbox Sync] Smart Reply! Halted ${haltedCampaigns.count} active campaigns for ${lead.firstName}.`);
-                            }
-
-                            // Trigger integration webhook
-                            await triggerWebhook(userId, 'lead.replied', {
-                                leadId: lead.id,
-                                firstName: lead.firstName,
-                                lastName: lead.lastName,
-                                email: lead.email,
-                                linkedinUrl: lead.linkedinUrl,
-                                message: conv.snippet || '[No Content]'
-                            });
-
-                            // 4. Create Notification
-                            await prisma.notification.create({
-                                data: {
-                                    userId,
-                                    type: 'new_reply',
-                                    title: `New reply from ${lead.firstName}`,
-                                    body: conv.snippet || 'Check your LinkedIn inbox for details.',
-                                    meta: { leadId: lead.id } as any
-                                }
-                            });
+                    await prisma.lead.update({
+                        where: { id: lead.id },
+                        data: { status: 'REPLIED' }
+                    });
+                    
+                    // Trigger "Reply" notification (Mock logic)
+                    await prisma.notification.create({
+                        data: {
+                            userId: userId,
+                            title: 'New Reply Received',
+                            body: `${convo.name} just messaged you on LinkedIn.`,
+                            meta: { leadId: lead.id, snippet: convo.lastMsg }
                         }
-                    }
-                } else {
-                    console.log(`[Inbox Sync] Skipping conversation with "${conv.name}" - Lead not found in database.`);
+                    });
                 }
             }
         }
 
+        console.log(`[INBOX-WORKER] Inbox sync completed for user ${userId}`);
+
     } catch (error: any) {
-        console.error('[Inbox Sync] Error:', error.message);
+        console.error(`[INBOX-WORKER] Error syncing inbox for ${userId}:`, error.message);
     } finally {
         if (browser) await browser.close();
-        await prisma.user.update({
-            where: { id: userId },
-            data: { cloudWorkerActive: false, lastCloudActionAt: new Date() }
-        });
     }
+};
+
+export const initInboxWorker = () => {
+    if (!redisConnection) return;
+    const worker = new Worker('inbox-sync', async (job: Job) => {
+        await syncInbox(job.data.userId);
+    }, { connection: redisConnection as any });
+
+    worker.on('completed', (job) => console.log(`Inbox sync ${job.id} done`));
 };
