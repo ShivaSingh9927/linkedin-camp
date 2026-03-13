@@ -7,34 +7,40 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// --- ENUMS ---
+// --- USER & AUTH ---
 
-enum SubscriptionTier {
+enum PlanTier {
   FREE
-  CORE
-  PLUS
-  EXPERT
-  ULTIMATE
+  PRO
+  ADVANCED
 }
 
-enum LinkedinPlan {
-  BASIC
-  PREMIUM
-  SALES_NAV
+model User {
+  id                    String   @id @default(uuid())
+  email                 String   @unique
+  passwordHash          String
+  tier                  PlanTier @default(FREE)
+  
+  // LinkedIn Session
+  linkedinCookie        String?  // Extension or raw sync
+  persistentSessionPath String?  // Path to Playwright session dir
+  
+  // Cloud Worker State
+  cloudWorkerActive     Boolean  @default(false)
+  lastCloudActionAt     DateTime?
+  
+  // Relations
+  campaigns             Campaign[]
+  leads                 Lead[]
+  notifications         Notification[]
+  proxyId               String?
+  assignedProxy         Proxy?   @relation(fields: [proxyId], references: [id])
+  
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 }
 
-enum ProxyTier {
-  ECONOMY
-  PREMIUM
-}
-
-enum LeadStatus {
-  UNCONNECTED
-  INVITE_PENDING
-  CONNECTED
-  REPLIED
-  BOUNCED
-}
+// --- CORE MODELS ---
 
 enum CampaignStatus {
   DRAFT
@@ -43,253 +49,85 @@ enum CampaignStatus {
   COMPLETED
 }
 
-enum ActionType {
-  PROFILE_VISIT
-  INVITE
-  MESSAGE
-  EMAIL
-  CHECK_REPLY
-  AI_PERSONALIZE
+model Campaign {
+  id            String         @id @default(uuid())
+  userId        String
+  name          String
+  status        CampaignStatus @default(DRAFT)
+  
+  // The sequence of actions (Invite -> Delay -> Message etc)
+  workflow      Json           // Array of { type: string, delay: number, text: string }
+  
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  leads         CampaignLead[]
+  logs          WorkerLog[]
+  
+  createdAt     DateTime       @default(now())
 }
 
-enum ActionStatus {
+enum LeadStatus {
+  IMPORTED
   PENDING
-  SUCCESS
-  FAILED
-}
-
-// --- MODELS ---
-
-model User {
-  id               String           @id @default(uuid())
-  email            String           @unique
-  passwordHash     String?          
-  linkedinCookie   String?          
-  proxyIp          String?          
-  proxyHost        String?
-  proxyPort        Int?
-  proxyUsername    String?
-  proxyPassword    String?
-  proxyCountry     String?
-  dailyInviteLimit Int              @default(10) 
-  maxInviteLimit   Int              @default(80)
-  warmupEnabled    Boolean          @default(true)
-  isNoteRestricted Boolean          @default(false)
-  workingHours     Json             @default("{\"start\": 9, \"end\": 18}")
-  workingDays      Int[]            @default([1, 2, 3, 4, 5]) 
-  tier             SubscriptionTier @default(CORE)
-  trialEndsAt      DateTime?
-  linkedinPlan     LinkedinPlan     @default(BASIC)
-  cloudWorkerActive Boolean         @default(false)
-  lastCloudActionAt DateTime?
-  createdAt        DateTime         @default(now())
-  updatedAt        DateTime         @updatedAt
-
-  // Relations
-  leads            Lead[]
-  campaigns        Campaign[]
-  actionLogs       ActionLog[]
-  messages         Message[]
-  messageTemplates MessageTemplate[]
-  notifications    Notification[]
-  teamMembers      TeamMember[]
-  integrations     Integration[]
-  proxyId          String?
-  proxy            Proxy?           @relation(fields: [proxyId], references: [id], onDelete: SetNull)
-}
-
-// --- TEAM & COLLABORATION ---
-
-enum TeamRole {
-  ADMIN
-  MEMBER
-}
-
-model Team {
-  id        String       @id @default(uuid())
-  name      String
-  ownerId   String       // User ID of the creator
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
-
-  // Relations
-  members   TeamMember[]
-  invites   TeamInvite[]
-}
-
-model TeamMember {
-  id        String   @id @default(uuid())
-  teamId    String
-  userId    String
-  role      TeamRole @default(MEMBER)
-  joinedAt  DateTime @default(now())
-
-  // Relations
-  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([teamId, userId])
-}
-
-model TeamInvite {
-  id        String   @id @default(uuid())
-  teamId    String
-  email     String
-  role      TeamRole @default(MEMBER)
-  token     String   @unique
-  status    String   @default("PENDING") // PENDING, ACCEPTED, EXPIRED
-  createdAt DateTime @default(now())
-  expiresAt DateTime
-
-  // Relations
-  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
-
-  @@unique([teamId, email])
-}
-
-// --- INTEGRATIONS ---
-
-enum IntegrationProvider {
-  ZAPIER
-  MAKE
-  CUSTOM
-}
-
-model Integration {
-  id          String              @id @default(uuid())
-  userId      String
-  provider    IntegrationProvider
-  webhookUrl  String
-  isActive    Boolean             @default(true)
-  createdAt   DateTime            @default(now())
-  updatedAt   DateTime            @updatedAt
-
-  user        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, provider])
+  CONNECTED
+  REPLIED
+  BOUNCED
 }
 
 model Lead {
-  id             String     @id @default(uuid())
-  userId         String
-  linkedinUrl    String     
-  firstName      String?
-  lastName       String?
-  jobTitle       String?
-  company        String?
-  email          String?
-  country        String?
-  gender         String?
-  tags           String[]   @default([])
-  status         LeadStatus @default(UNCONNECTED)
-  createdAt      DateTime   @default(now())
-  updatedAt      DateTime   @updatedAt
+  id            String         @id @default(uuid())
+  userId        String
+  linkedinUrl   String
+  firstName     String?
+  lastName      String?
+  headline      String?
+  company       String?
+  location      String?
+  status        LeadStatus     @default(IMPORTED)
+  
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  campaignLeads CampaignLead[]
+  workerLogs    WorkerLog[]
 
-  // Relations
-  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  campaignLeads  CampaignLead[]
-  actionLogs     ActionLog[]
-  messages       Message[]
-
-  @@unique([userId, linkedinUrl]) 
-}
-
-model Campaign {
-  id           String         @id @default(uuid())
-  userId       String
-  name         String
-  status       CampaignStatus @default(DRAFT)
-  workflowJson Json           
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
-
-  // Relations
-  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  leads        CampaignLead[]
-  actionLogs   ActionLog[]
+  createdAt     DateTime       @default(now())
+  @@unique([userId, linkedinUrl])
 }
 
 model CampaignLead {
-  id             String    @id @default(uuid())
-  campaignId     String
-  leadId         String
-  currentStepId  String    
-  nextActionDate DateTime  @default(now()) 
-  isCompleted    Boolean   @default(false)
-  personalization String?   
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  id            String   @id @default(uuid())
+  campaignId    String
+  leadId        String
+  
+  stepIndex     Int      @default(0)
+  lastActionAt  DateTime?
+  isCompleted   Boolean  @default(false)
+  
+  status        LeadStatus @default(PENDING) // Specific progress in this campaign
 
-  // Relations
-  campaign       Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  lead           Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  campaign      Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  lead          Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
 
   @@unique([campaignId, leadId])
 }
 
-model ActionLog {
-  id           String       @id @default(uuid())
-  userId       String
-  leadId       String
-  campaignId   String?
-  actionType   ActionType
-  status       ActionStatus @default(PENDING)
-  errorMessage String?      
-  executedAt   DateTime     @default(now())
+// --- LOGGING & NOTIFICATIONS ---
 
-  // Relations
-  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  lead         Lead         @relation(fields: [leadId], references: [id], onDelete: Cascade)
-  campaign     Campaign?    @relation(fields: [campaignId], references: [id], onDelete: SetNull)
-}
+model WorkerLog {
+  id            String   @id @default(uuid())
+  userId        String
+  campaignId    String?
+  leadId        String?
+  action        String
+  status        String   // SUCCESS, FAILED
+  errorMessage  String?
+  createdAt     DateTime @default(now())
 
-// --- INBOX ---
-
-enum MessageDirection {
-  SENT
-  RECEIVED
-}
-
-model Message {
-  id          String           @id @default(uuid())
-  userId      String
-  leadId      String
-  direction   MessageDirection
-  content     String
-  source      String?          // "CAMPAIGN", "MANUAL", "LINKEDIN_SYNC"
-  campaignId  String?          // which campaign triggered this message (if any)
-  templateId  String?          // which template was used (if any)
-  sentAt      DateTime         @default(now())
-  createdAt   DateTime         @default(now())
-
-  // Relations
-  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  lead        Lead             @relation(fields: [leadId], references: [id], onDelete: Cascade)
-
-  @@index([userId, leadId])
-  @@index([userId, sentAt])
-}
-
-model MessageTemplate {
-  id          String   @id @default(uuid())
-  userId      String
-  name        String
-  content     String
-  variables   String[] @default([]) // e.g. ["firstName", "company", "jobTitle"]
-  category    String?  // "invite", "follow_up", "intro", etc.
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  // Relations
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, name])
+  campaign      Campaign? @relation(fields: [campaignId], references: [id])
+  lead          Lead?     @relation(fields: [leadId], references: [id])
 }
 
 model Notification {
   id        String   @id @default(uuid())
   userId    String
-  type      String   // "new_reply", "campaign_complete", "campaign_error", "reminder"
   title     String
   body      String
   meta      Json?    // { leadId, campaignId, etc. }
@@ -303,6 +141,11 @@ model Notification {
 }
 
 // --- INFRASTRUCTURE ---
+
+enum ProxyTier {
+  ECONOMY
+  RESIDENTIAL
+}
 
 model Proxy {
   id              String   @id @default(uuid())
