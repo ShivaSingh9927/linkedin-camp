@@ -1,149 +1,167 @@
-"use client";
+'use client';
 
 import { useState } from 'react';
-import { Check, Rocket } from 'lucide-react';
+import { 
+    Check, 
+    Star, 
+    Zap, 
+    Gem, 
+    Rocket,
+    Crown,
+    CheckCircle2
+} from 'lucide-react';
+import { motion } from 'framer-motion';
+import { PricingCard, Tier } from '@/components/ui/pricing-card';
+import { PricingTab } from '@/components/ui/pricing-tab';
+import { TopBar } from '@/components/TopBar';
 
-const tiers = [
+const tiers: Tier[] = [
     {
-        name: 'PRO',
-        desc: 'Ideal if you have a strong LinkedIn network and want to turn connections into conversations.',
-        price: '₹431',
-        originalPrice: '₹885/month',
-        invitations: '300 invitations per month',
-        features: ['Automated follow-up messages', 'LinkedIn Campaigns', 'Basic analytics'],
-        cta: 'Choose this plan',
-        highlight: false,
+        name: "Free Forever",
+        key: "free_monthly",
+        monthlyPrice: "Free",
+        yearlyPrice: "Free",
+        description: "For individuals just starting out.",
+        features: [
+            "20 invites per week",
+            "LinkedIn Profile Visits",
+            "Basic Campaign Manager",
+            "Manual Inbox Sync"
+        ],
+        buttonText: "Start for free",
+        icon: Rocket
     },
     {
-        name: 'ADVANCED',
-        desc: 'Perfect for scaling outreach and growing your network fast – at the best price.',
-        price: '₹1,271',
-        originalPrice: '₹2,541/month',
-        invitations: '800 invitations per month',
-        features: ['Everything in PRO', '+500 Invitations', 'Live Chat support', 'API Keys Management'],
-        cta: 'Choose this plan',
-        highlight: true,
-        badge: 'x2.5 more results than PRO ★',
+        name: "Pro Scale",
+        key: "pro_monthly",
+        monthlyPrice: "$59",
+        yearlyPrice: "$29",
+        highlighted: true,
+        description: "Powerful automation for experts.",
+        features: [
+            "100 invites per day",
+            "Auto-Message Responses",
+            "CRM Integration",
+            "Background Persistent Sessions",
+            "Smart AI Sequences",
+            "2-Step Followups"
+        ],
+        buttonText: "Get Started Pro",
+        icon: Zap
     },
     {
-        name: 'BUSINESS',
-        desc: 'Maximize replies by combining LinkedIn and Emails. No leads left behind.',
-        price: '₹1,815',
-        originalPrice: '₹3,629/month',
-        invitations: '800 invitations per month',
-        features: ['Everything in ADVANCED', 'Cold Email features', 'Email finders', 'Additional outreach tools'],
-        cta: 'Current trial',
-        highlight: false,
-    },
-    {
-        name: 'ENTERPRISE',
-        desc: 'Designed for collaboration, for sales teams and agencies.',
-        price: 'Custom',
-        originalPrice: 'Starts at 5 seats',
-        invitations: '800 invitations per month',
-        features: ['The plan you choose, plus:', 'Team workspace', 'Volume discounts', 'Unified billing'],
-        cta: 'Talk to Sales',
-        highlight: false,
-    },
+        name: "Advanced Elite",
+        key: "adv_monthly",
+        monthlyPrice: "$119",
+        yearlyPrice: "$59",
+        description: "The ultimate weapon for teams.",
+        features: [
+            "Unlimited actions (safe limit)",
+            "Dynamic AI Image Generation",
+            "Team Collaboration tools",
+            "Priority Support",
+            "White-label Reports",
+            "API Access"
+        ],
+        buttonText: "Go Elite",
+        icon: Crown
+    }
 ];
 
 export default function PricingPage() {
-    const [billing, setBilling] = useState<'monthly' | 'quarterly' | 'yearly'>('yearly');
+    const [isYearly, setIsYearly] = useState(true);
 
     return (
-        <div className="space-y-8 animate-in fade-in duration-500">
-            {/* Header */}
-            <div className="text-center">
-                <h1 className="text-3xl font-black text-slate-800">
-                    Join Waalaxy – best prices in the galaxy 😎
-                </h1>
-            </div>
+        <div className="min-h-full bg-slate-50">
+            <TopBar 
+                title="Plans & Pricing" 
+                description="Scale your outreach with our power-packed plans."
+            />
 
-            {/* Billing Toggle */}
-            <div className="flex justify-center">
-                <div className="flex items-center space-x-1 bg-slate-100 rounded-2xl p-1">
-                    {(['monthly', 'quarterly', 'yearly'] as const).map((opt) => (
-                        <button
-                            key={opt}
-                            onClick={() => setBilling(opt)}
-                            className={`px-5 py-2 rounded-xl text-sm font-bold uppercase tracking-wider transition-all ${billing === opt
-                                    ? 'bg-white shadow-sm text-slate-800'
-                                    : 'text-slate-500 hover:text-slate-700'
-                                }`}
-                        >
-                            {opt.charAt(0).toUpperCase() + opt.slice(1)}
-                            {opt === 'yearly' && (
-                                <span className="ml-2 text-[10px] bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-black">
-                                    Save 50%
-                                </span>
-                            )}
-                        </button>
+            <main className="max-w-7xl mx-auto px-8 py-16">
+                {/* Header Section */}
+                <div className="text-center space-y-4 mb-16">
+                    <motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="inline-flex items-center space-x-2 px-4 py-2 bg-primary/5 text-primary rounded-full text-[10px] font-black uppercase tracking-widest border border-primary/10"
+                    >
+                        <Star className="w-3 h-3 fill-primary" />
+                        <span>Limited Time Offer: 50% Off Yearly</span>
+                        <Star className="w-3 h-3 fill-primary" />
+                    </motion.div>
+                    
+                    <motion.h2 
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.1 }}
+                        className="text-5xl font-black text-slate-900 tracking-tight"
+                    >
+                        Ready to automate your success?
+                    </motion.h2>
+                    
+                    <motion.div 
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.2 }}
+                        className="flex justify-center mt-12"
+                    >
+                        <div className="bg-white p-2 rounded-full border shadow-xl shadow-slate-200/50 flex">
+                            <PricingTab 
+                                text="Monthly" 
+                                selected={!isYearly} 
+                                onClick={() => setIsYearly(false)} 
+                            />
+                            <PricingTab 
+                                text="Yearly" 
+                                selected={isYearly} 
+                                onClick={() => setIsYearly(true)}
+                                discount 
+                            />
+                        </div>
+                    </motion.div>
+                </div>
+
+                {/* Pricing Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mb-24">
+                    {tiers.map((tier, idx) => (
+                        <PricingCard key={tier.name} tier={tier} isYearly={isYearly} />
                     ))}
                 </div>
-            </div>
 
-            {/* Pricing Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
-                {tiers.map((tier) => (
-                    <div
-                        key={tier.name}
-                        className={`bg-white rounded-3xl border p-6 flex flex-col transition-all hover:shadow-lg ${tier.highlight
-                                ? 'border-indigo-300 shadow-lg shadow-indigo-100 relative'
-                                : 'border-slate-200 shadow-sm'
-                            }`}
-                    >
-                        {tier.badge && (
-                            <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-indigo-600 text-white text-[10px] font-black uppercase tracking-wider px-4 py-1 rounded-full whitespace-nowrap">
-                                {tier.badge}
+                {/* FAQ / Trust Section */}
+                <div className="bg-white rounded-[3rem] border border-slate-100 p-12 shadow-2xl shadow-slate-200/50">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-12 text-center md:text-left">
+                        <div className="space-y-4">
+                            <div className="w-12 h-12 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-600 mx-auto md:mx-0">
+                                <CheckCircle2 className="w-6 h-6" />
                             </div>
-                        )}
-
-                        {tier.highlight && (
-                            <Rocket className="absolute -top-4 -right-4 w-10 h-10 text-indigo-500 rotate-12 opacity-30" />
-                        )}
-
-                        <h3 className={`text-lg font-black uppercase tracking-tight ${tier.highlight ? 'text-indigo-700' : 'text-slate-800'}`}>
-                            {tier.name}
-                        </h3>
-                        <p className="text-sm text-slate-500 mt-1 flex-grow-0">{tier.desc}</p>
-
-                        <div className="mt-4">
-                            <span className="text-3xl font-black text-slate-900">{tier.price}</span>
-                            {tier.originalPrice && tier.price !== 'Custom' && (
-                                <span className="ml-2 text-sm text-slate-400 line-through">{tier.originalPrice}</span>
-                            )}
-                            {tier.price === 'Custom' && (
-                                <p className="text-xs text-slate-400 mt-0.5">{tier.originalPrice}</p>
-                            )}
+                            <h4 className="text-xl font-black text-slate-900">Safety First</h4>
+                            <p className="text-sm text-slate-500 font-bold leading-relaxed">
+                                We respect LinkedIn limits and use advanced human-like behaviors to protect your account.
+                            </p>
                         </div>
-
-                        <button
-                            className={`w-full mt-4 py-2.5 rounded-2xl text-xs font-black uppercase tracking-widest transition-all ${tier.highlight
-                                    ? 'bg-gradient-to-r from-purple-600 to-cyan-500 text-white hover:opacity-90 shadow-lg'
-                                    : 'border-2 border-indigo-200 text-indigo-600 hover:bg-indigo-50'
-                                }`}
-                        >
-                            {tier.cta}
-                        </button>
-
-                        <div className="mt-3 text-center">
-                            <span className="text-[10px] font-bold text-slate-400 bg-slate-50 px-3 py-1 rounded-full">
-                                {tier.invitations}
-                            </span>
+                        <div className="space-y-4">
+                            <div className="w-12 h-12 bg-blue-50 rounded-2xl flex items-center justify-center text-blue-600 mx-auto md:mx-0">
+                                <Rocket className="w-6 h-6" />
+                            </div>
+                            <h4 className="text-xl font-black text-slate-900">Fast Setup</h4>
+                            <p className="text-sm text-slate-500 font-bold leading-relaxed">
+                                Launch your first campaign in under 5 minutes. No coding or complex setup required.
+                            </p>
                         </div>
-
-                        <div className="mt-5 space-y-2 flex-1">
-                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Key Features</p>
-                            {tier.features.map((f) => (
-                                <div key={f} className="flex items-center space-x-2 text-sm">
-                                    <Check className="w-4 h-4 text-emerald-500 flex-shrink-0" />
-                                    <span className="text-slate-600">{f}</span>
-                                </div>
-                            ))}
+                        <div className="space-y-4">
+                            <div className="w-12 h-12 bg-purple-50 rounded-2xl flex items-center justify-center text-purple-600 mx-auto md:mx-0">
+                                <Zap className="w-6 h-6" />
+                            </div>
+                            <h4 className="text-xl font-black text-slate-900">AI Personalization</h4>
+                            <p className="text-sm text-slate-500 font-bold leading-relaxed">
+                                Our AI analyzes landing pages and profiles to write messages that actually get replies.
+                            </p>
                         </div>
                     </div>
-                ))}
-            </div>
+                </div>
+            </main>
         </div>
     );
 }
