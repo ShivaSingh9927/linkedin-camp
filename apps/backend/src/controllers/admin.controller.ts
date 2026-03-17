@@ -15,11 +15,11 @@ export const addProxies = async (req: Request, res: Response): Promise<void> => 
         const errors = [];
 
         for (const line of lines) {
-            // Expected format: ip:port:username:password
+            // Expected format: host:port:username:password
             const parts = line.split(':');
 
             if (parts.length >= 2) {
-                const proxyIp = parts[0];
+                const proxyHost = parts[0];
                 const proxyPort = parseInt(parts[1], 10);
                 const proxyUsername = parts[2] || null;
                 const proxyPassword = parts[3] || null;
@@ -30,25 +30,28 @@ export const addProxies = async (req: Request, res: Response): Promise<void> => 
                 }
 
                 try {
+                    // Note: Use a more robust unique identifier string
+                    const proxyIdStr = `${proxyHost}:${proxyPort}@${proxyUsername || 'anon'}`;
+
                     const proxy = await prisma.proxy.create({
                         data: {
-                            proxyIp: `${proxyIp}:${proxyPort}`, // Use a unique identifier
-                            proxyHost: proxyIp,
-                            proxyPort: proxyPort,
+                            proxyIp: proxyIdStr,
+                            proxyHost,
+                            proxyPort,
                             proxyUsername,
                             proxyPassword,
                             proxyCountry: country || null,
                             tierClass: tierClass || 'ECONOMY',
-                            maxUsers: tierClass === 'PREMIUM' ? 5 : 15,
+                            maxUsers: (tierClass as any) === 'RESIDENTIAL' ? 5 : 12,
                             isAssigned: false
                         }
                     });
                     newProxies.push(proxy);
                 } catch (e: any) {
                     if (e.code === 'P2002') {
-                        errors.push(`Proxy already exists: ${proxyIp}:${proxyPort}`);
+                        errors.push(`Proxy already exists: ${proxyHost}:${proxyPort}`);
                     } else {
-                        errors.push(`Failed to add ${proxyIp}:${proxyPort} - ${e.message}`);
+                        errors.push(`Failed to add ${proxyHost}:${proxyPort} - ${e.message}`);
                     }
                 }
             } else {
@@ -72,6 +75,9 @@ export const listProxies = async (req: Request, res: Response): Promise<void> =>
         const proxies = await prisma.proxy.findMany({
             orderBy: { createdAt: 'desc' },
             include: {
+                assignedUsers: {
+                    select: { id: true, email: true, tier: true }
+                },
                 _count: {
                     select: { assignedUsers: true }
                 }

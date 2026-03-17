@@ -6,6 +6,7 @@ import { chromium } from 'playwright-extra';
 const stealth = require('puppeteer-extra-plugin-stealth')();
 import path from 'path';
 import fs from 'fs';
+import { getOrAssignProxy } from '../services/proxy.service';
 
 chromium.use(stealth);
 
@@ -138,6 +139,7 @@ export const syncLinkedinProfile = async (req: any, res: Response) => {
 
 export const startLinkedinLogin = async (req: any, res: Response) => {
     const userId = req.user.id;
+    await getOrAssignProxy(userId);
     const sessionDir = path.join(process.cwd(), 'sessions', userId);
 
     // Ensure sessions directory exists
@@ -151,7 +153,12 @@ export const startLinkedinLogin = async (req: any, res: Response) => {
     (async () => {
         console.log(`[LOGIN-BOT] Starting browser for user ${userId}...`);
         try {
-            const context = await chromium.launchPersistentContext(sessionDir, {
+            const user = await prisma.user.findUnique({
+                where: { id: userId },
+                include: { proxy: true }
+            });
+
+            const launchOptions: any = {
                 headless: false,
                 args: [
                     '--disable-blink-features=AutomationControlled',
@@ -160,7 +167,18 @@ export const startLinkedinLogin = async (req: any, res: Response) => {
                 ],
                 userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
                 viewport: { width: 1280, height: 720 },
-            });
+            };
+
+            if (user?.proxy) {
+                launchOptions.proxy = {
+                    server: `${user.proxy.proxyHost}:${user.proxy.proxyPort}`,
+                    username: user.proxy.proxyUsername || undefined,
+                    password: user.proxy.proxyPassword || undefined
+                };
+                console.log(`[LOGIN-BOT] Using proxy for login: ${user.proxy.proxyHost}`);
+            }
+
+            const context = await chromium.launchPersistentContext(sessionDir, launchOptions);
 
             const page = context.pages().length > 0 ? context.pages()[0] : await context.newPage();
 
@@ -223,4 +241,33 @@ export const startLinkedinLogin = async (req: any, res: Response) => {
             console.error(`[LOGIN-BOT] Fatal error in login routine for user ${userId}:`, error.message);
         }
     })();
+};
+
+export const heartbeat = async (req: any, res: Response) => {
+    const userId = req.user.id;
+    const { country } = req.body; // Extension can detect country based on browser IP
+
+    try {
+        const now = new Date();
+        await prisma.user.update({
+            where: { id: userId },
+            data: {
+                linkedinActiveInBrowser: true,
+                lastBrowserActivityAt: now,
+                // Update country if not set, helps with proxy assignment later
+                actualCountry: country || undefined
+            }
+        });
+
+        // Set an immediate interlock in Redis for the worker (expires in 60s)
+        const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
+        const Redis = require('ioredis');
+        const redis = new Redis(REDIS_URL);
+        await redis.set(`user_presence:${userId}`, 'ACTIVE', 'EX', 60);
+        await redis.quit();
+
+        res.json({ success: true, message: 'Heartbeat received' });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to process heartbeat' });
+    }
 };

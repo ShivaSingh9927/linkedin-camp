@@ -26,7 +26,7 @@ async function main() {
     const template = 'Hello {firstName}, {icebreaker}';
     const message = template
         .replace('{firstName}', cl.lead.firstName || '')
-        .replace('{icebreaker}', cl.personalization || '');
+        .replace('{icebreaker}', (cl.personalization as string) || '');
     console.log('Sample injected message:', message);
 }
 

@@ -20,7 +20,10 @@ import {
     Mail,
     Wrench,
     LayoutTemplate,
+    Target,
 } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { cn } from '@/lib/utils';
 import api from '@/lib/api';
 import { CampaignNameModal } from '@/components/CampaignNameModal';
 
@@ -170,80 +173,80 @@ export default function CampaignsPage() {
     };
 
     if (loading) return (
-        <div className="flex h-full items-center justify-center p-20">
-            <Loader2 className="w-10 h-10 text-indigo-600 animate-spin" />
+        <div className="flex h-[60vh] items-center justify-center p-20">
+            <Loader2 className="w-10 h-10 text-primary animate-spin" />
         </div>
     );
 
     return (
-        <div className="space-y-6 animate-in fade-in duration-500">
+        <div className="space-y-8 lg:space-y-12 animate-in fade-in duration-500">
             {/* Header */}
-            <div className="flex justify-between items-center">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6">
                 <div>
-                    <h2 className="text-3xl font-black text-slate-800 uppercase tracking-tight italic">My Campaigns</h2>
-                    <p className="text-slate-500 font-medium">Manage and monitor your automated LinkedIn workflows.</p>
+                    <h2 className="text-4xl font-black text-foreground tracking-tight italic uppercase">My Campaigns</h2>
+                    <p className="text-muted-foreground font-bold text-sm mt-1 uppercase tracking-widest opacity-60">Automate your outreach ecosystem.</p>
                 </div>
-                <div className="relative" ref={createMenuRef}>
+                <div className="relative group" ref={createMenuRef}>
                     <button
                         onClick={() => setShowCreateMenu(!showCreateMenu)}
-                        className="flex items-center space-x-2 bg-indigo-600 text-white px-6 py-3 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200"
+                        className="flex items-center space-x-3 bg-primary text-primary-foreground px-8 py-4 rounded-[2rem] font-black uppercase text-xs tracking-widest hover:bg-primary/90 transition-all shadow-xl shadow-primary/20 hover:-translate-y-1 active:scale-95"
                     >
                         <Plus className="w-5 h-5" />
                         <span>Start a Campaign</span>
-                        <ChevronDown className={`w-4 h-4 transition-transform ${showCreateMenu ? 'rotate-180' : ''}`} />
+                        <ChevronDown className={`w-4 h-4 transition-transform duration-300 ${showCreateMenu ? 'rotate-180' : ''}`} />
                     </button>
 
                     {showCreateMenu && (
-                        <div className="absolute right-0 top-full mt-2 w-64 bg-white border rounded-2xl shadow-2xl z-40 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-150">
-                            <div className="p-1.5">
+                        <div className="absolute right-0 top-full mt-4 w-72 bg-background border border-border rounded-[2.5rem] shadow-2xl z-40 overflow-hidden animate-in fade-in slide-in-from-top-4 duration-300 p-2">
+                            <div className="space-y-1">
                                 <button
                                     onClick={() => startCreateCampaign('linkedin')}
-                                    className="w-full flex items-center space-x-3 px-4 py-3 rounded-xl hover:bg-blue-50 transition-colors text-left group"
+                                    className="w-full flex items-center space-x-4 px-5 py-4 rounded-3xl hover:bg-muted transition-all text-left group"
                                 >
-                                    <div className="p-2 bg-blue-50 rounded-xl group-hover:bg-blue-100 transition-colors">
-                                        <Linkedin className="w-4 h-4 text-blue-600" />
+                                    <div className="w-10 h-10 bg-primary/10 rounded-2xl flex items-center justify-center group-hover:bg-primary/20 transition-colors">
+                                        <Linkedin className="w-5 h-5 text-primary" />
                                     </div>
                                     <div>
-                                        <p className="text-sm font-bold text-slate-800">LinkedIn</p>
-                                        <p className="text-[10px] text-slate-400">Visit → Invite → Message flow</p>
+                                        <p className="text-sm font-black text-foreground uppercase tracking-tight">LinkedIn</p>
+                                        <p className="text-[10px] font-bold text-muted-foreground uppercase opacity-60">Growth Machine</p>
                                     </div>
                                 </button>
                                 <button
                                     onClick={() => startCreateCampaign('email')}
-                                    className="w-full flex items-center space-x-3 px-4 py-3 rounded-xl hover:bg-emerald-50 transition-colors text-left group"
+                                    className="w-full flex items-center space-x-4 px-5 py-4 rounded-3xl hover:bg-muted transition-all text-left group"
                                 >
-                                    <div className="p-2 bg-emerald-50 rounded-xl group-hover:bg-emerald-100 transition-colors">
-                                        <Mail className="w-4 h-4 text-emerald-600" />
+                                    <div className="w-10 h-10 bg-emerald-500/10 rounded-2xl flex items-center justify-center group-hover:bg-emerald-500/20 transition-colors">
+                                        <Mail className="w-5 h-5 text-emerald-500" />
                                     </div>
                                     <div>
-                                        <p className="text-sm font-bold text-slate-800">Email</p>
-                                        <p className="text-[10px] text-slate-400">Email drip sequence</p>
+                                        <p className="text-sm font-black text-foreground uppercase tracking-tight">Cold Email</p>
+                                        <p className="text-[10px] font-bold text-muted-foreground uppercase opacity-60">Direct Inbox</p>
                                     </div>
                                 </button>
                                 <button
                                     onClick={() => startCreateCampaign('custom')}
-                                    className="w-full flex items-center space-x-3 px-4 py-3 rounded-xl hover:bg-slate-50 transition-colors text-left group"
+                                    className="w-full flex items-center space-x-4 px-5 py-4 rounded-3xl hover:bg-muted transition-all text-left group"
                                 >
-                                    <div className="p-2 bg-slate-50 rounded-xl group-hover:bg-slate-100 transition-colors">
-                                        <Wrench className="w-4 h-4 text-slate-600" />
+                                    <div className="w-10 h-10 bg-slate-500/10 rounded-2xl flex items-center justify-center group-hover:bg-slate-500/20 transition-colors">
+                                        <Wrench className="w-5 h-5 text-slate-500" />
                                     </div>
                                     <div>
-                                        <p className="text-sm font-bold text-slate-800">Custom</p>
-                                        <p className="text-[10px] text-slate-400">Empty canvas, full control</p>
+                                        <p className="text-sm font-black text-foreground uppercase tracking-tight">Custom Builder</p>
+                                        <p className="text-[10px] font-bold text-muted-foreground uppercase opacity-60">Full Control</p>
                                     </div>
                                 </button>
-                                <div className="border-t my-1" />
+                                <div className="border-t border-border mx-4 my-2" />
                                 <Link
                                     href="/campaigns/templates"
                                     onClick={() => setShowCreateMenu(false)}
-                                    className="w-full flex items-center space-x-3 px-4 py-3 rounded-xl hover:bg-indigo-50 transition-colors group"
+                                    className="w-full flex items-center space-x-4 px-5 py-4 rounded-3xl hover:bg-primary/5 transition-all group"
                                 >
-                                    <div className="p-2 bg-indigo-50 rounded-xl group-hover:bg-indigo-100 transition-colors">
-                                        <LayoutTemplate className="w-4 h-4 text-indigo-600" />
+                                    <div className="w-10 h-10 bg-primary/10 rounded-2xl flex items-center justify-center group-hover:bg-primary/20 transition-colors">
+                                        <LayoutTemplate className="w-5 h-5 text-primary" />
                                     </div>
                                     <div>
-                                        <p className="text-sm font-bold text-slate-800">From Template</p>
-                                        <p className="text-[10px] text-slate-400">Pick a prebuilt workflow</p>
+                                        <p className="text-sm font-black text-primary uppercase tracking-tight">Templates</p>
+                                        <p className="text-[10px] font-bold text-primary/60 uppercase">Prebuilt Flows</p>
                                     </div>
                                 </Link>
                             </div>
@@ -253,28 +256,33 @@ export default function CampaignsPage() {
             </div>
 
             {/* Filter Tabs */}
-            <div className="flex items-center space-x-1 bg-slate-100 rounded-2xl p-1 w-fit">
+            <div className="flex flex-wrap items-center gap-2">
                 {(['ALL', 'ACTIVE', 'PAUSED', 'DRAFT'] as const).map((tab) => {
-                    const icons: Record<string, any> = { ALL: null, ACTIVE: Play, PAUSED: Pause, DRAFT: Clock };
+                    const icons: Record<string, any> = { ALL: Target, ACTIVE: Play, PAUSED: Pause, DRAFT: Clock };
                     const Icon = icons[tab];
                     const colors: Record<string, string> = {
-                        ALL: 'text-slate-700',
-                        ACTIVE: 'text-emerald-600',
-                        PAUSED: 'text-amber-600',
-                        DRAFT: 'text-slate-500',
+                        ALL: 'text-primary',
+                        ACTIVE: 'text-emerald-500',
+                        PAUSED: 'text-amber-500',
+                        DRAFT: 'text-muted-foreground',
                     };
                     return (
                         <button
                             key={tab}
                             onClick={() => setFilter(tab)}
-                            className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${filter === tab
-                                ? 'bg-white shadow-sm text-slate-800'
-                                : 'text-slate-500 hover:text-slate-700'
-                                }`}
+                            className={cn(
+                                "flex items-center space-x-3 px-6 py-3 rounded-full text-[10px] font-black uppercase tracking-[0.1em] transition-all border",
+                                filter === tab
+                                    ? "bg-foreground text-background border-foreground shadow-lg"
+                                    : "bg-background text-muted-foreground border-border hover:bg-muted"
+                            )}
                         >
-                            {Icon && <Icon className={`w-3 h-3 ${colors[tab]}`} />}
-                            <span>{tab === 'ALL' ? 'All' : tab.charAt(0) + tab.slice(1).toLowerCase()}</span>
-                            <span className="ml-1 text-[10px] bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded-full">
+                            <Icon className={cn("w-3.5 h-3.5", filter === tab ? "text-background" : colors[tab])} />
+                            <span>{tab}</span>
+                            <span className={cn(
+                                "ml-1.5 px-2 py-0.5 rounded-full font-black min-w-[20px] text-center",
+                                filter === tab ? "bg-background/20 text-background" : "bg-muted text-muted-foreground"
+                            )}>
                                 {statusCounts[tab]}
                             </span>
                         </button>
@@ -282,209 +290,236 @@ export default function CampaignsPage() {
                 })}
             </div>
 
-            {/* Table */}
-            <div className="bg-white border rounded-3xl shadow-sm overflow-hidden border-slate-200">
-                <table className="w-full text-left">
-                    <thead className="bg-slate-50/80 text-[10px] font-bold border-b text-slate-500 uppercase tracking-widest">
-                        <tr>
-                            <th className="px-6 py-5">Workflow Name</th>
-                            <th className="px-6 py-5">Status</th>
-                            <th className="px-6 py-5">Execution Status</th>
-                            <th className="px-6 py-5 text-right pr-10">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y text-slate-700">
-                        {filteredCampaigns.length === 0 ? (
+            {/* Table / Grid */}
+            <div className="bg-card border border-border rounded-[3rem] shadow-soft overflow-hidden">
+                <div className="overflow-x-auto">
+                    <table className="w-full text-left">
+                        <thead className="bg-muted/50 text-[10px] font-black border-b border-border text-muted-foreground uppercase tracking-[0.2em]">
                             <tr>
-                                <td colSpan={4} className="p-20 text-center">
-                                    <div className="mb-4 bg-slate-50 w-20 h-20 rounded-full flex items-center justify-center mx-auto border-2 border-dashed border-slate-200">
-                                        <Plus className="w-10 h-10 text-slate-300" />
-                                    </div>
-                                    <p className="text-slate-500 font-bold">
-                                        {filter === 'ALL' ? "You don't have any campaigns here" : `No ${filter.toLowerCase()} campaigns`}
-                                    </p>
-                                    <Link href="/campaigns/new/builder" className="text-indigo-600 text-sm font-black uppercase tracking-tighter hover:underline mt-2 inline-block">Start a campaign →</Link>
-                                </td>
+                                <th className="px-10 py-8">Workflow</th>
+                                <th className="px-10 py-8">Status</th>
+                                <th className="px-10 py-8">Performance</th>
+                                <th className="px-10 py-8 text-right">Actions</th>
                             </tr>
-                        ) : filteredCampaigns.map((campaign) => (
-                            <tr key={campaign.id} className="hover:bg-slate-50/50 transition-colors group">
-                                <td className="px-6 py-5">
-                                    <Link href={`/campaigns/${campaign.id}/builder`} className="font-black text-slate-900 hover:text-indigo-600 transition-colors uppercase tracking-tight">
-                                        {campaign.name}
-                                    </Link>
-                                    <p className="text-[10px] text-slate-400 font-bold tracking-widest uppercase mt-1">ID: {campaign.id.slice(0, 8)}...</p>
-                                </td>
-                                <td className="px-6 py-5">
-                                    <div className="flex items-center space-x-2">
-                                        {campaign.status === 'ACTIVE' && <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />}
-                                        <span className={`text-[10px] font-black px-2 py-1 rounded-full uppercase tracking-tighter border shadow-sm ${campaign.status === 'ACTIVE' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' :
-                                            campaign.status === 'PAUSED' ? 'bg-amber-50 text-amber-700 border-amber-100' :
-                                                'bg-slate-50 text-slate-600 border-slate-100'
-                                            }`}>
-                                            {campaign.status}
-                                        </span>
-                                    </div>
-                                </td>
-                                <td className="px-6 py-5 text-sm">
-                                    <div className="flex items-center space-x-2 text-slate-500 font-medium">
-                                        <Clock className="w-4 h-4 text-slate-300" />
-                                        <span>Last active just now</span>
-                                    </div>
-                                </td>
-                                <td className="px-6 py-5 text-right pr-10">
-                                    <div className="flex items-center justify-end space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <button
-                                            onClick={() => fetchStatus(campaign.id)}
-                                            className="p-3 hover:bg-indigo-50 border rounded-xl transition-all shadow-sm hover:shadow-md"
-                                            title="View Status"
+                        </thead>
+                        <tbody className="divide-y divide-border">
+                            {filteredCampaigns.length === 0 ? (
+                                <tr>
+                                    <td colSpan={4} className="p-24 text-center">
+                                        <motion.div
+                                            initial={{ scale: 0.8, opacity: 0 }}
+                                            animate={{ scale: 1, opacity: 1 }}
+                                            className="mb-8 bg-muted w-24 h-24 rounded-[2rem] flex items-center justify-center mx-auto border-4 border-dashed border-border"
                                         >
-                                            <Info className="w-4 h-4 text-indigo-500" />
-                                        </button>
-                                        <button
-                                            onClick={() => toggleStatus(campaign.id, campaign.status)}
-                                            className="p-3 hover:bg-white border rounded-xl transition-all shadow-sm hover:shadow-md"
-                                        >
-                                            {campaign.status === 'ACTIVE' ? (
-                                                <Pause className="w-4 h-4 text-amber-600 fill-amber-600" />
-                                            ) : (
-                                                <Play className="w-4 h-4 text-emerald-600 fill-emerald-600" />
-                                            )}
-                                        </button>
-                                        <button
-                                            onClick={() => deleteCampaign(campaign.id)}
-                                            className="p-3 hover:bg-red-50 border rounded-xl transition-all group/del"
-                                            title="Delete Campaign"
-                                        >
-                                            <Trash2 className="w-4 h-4 text-slate-300 group-hover/del:text-red-500" />
-                                        </button>
-                                        <Link
-                                            href={`/campaigns/${campaign.id}/builder`}
-                                            className="p-3 hover:bg-white border rounded-xl transition-all shadow-sm hover:shadow-md"
-                                        >
-                                            <MoreVertical className="w-4 h-4 text-slate-400" />
+                                            <Plus className="w-10 h-10 text-muted-foreground/30" />
+                                        </motion.div>
+                                        <h3 className="text-xl font-black text-foreground uppercase tracking-tight">Empty Ecosystem</h3>
+                                        <p className="text-muted-foreground font-medium text-sm mt-1">
+                                            {filter === 'ALL' ? "You haven't initialized any campaigns." : `No ${filter.toLowerCase()} iterations found.`}
+                                        </p>
+                                        <Link href="/campaigns/new/builder" className="inline-flex mt-8 bg-primary text-primary-foreground px-8 py-3 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-primary/90 transition-all hover:scale-105">
+                                            Start Your First Campaign
                                         </Link>
-                                    </div>
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
+                                    </td>
+                                </tr>
+                            ) : filteredCampaigns.map((campaign) => (
+                                <tr key={campaign.id} className="hover:bg-muted/30 transition-all group">
+                                    <td className="px-10 py-8">
+                                        <Link href={`/campaigns/${campaign.id}/builder`} className="block">
+                                            <span className="text-lg font-black text-foreground hover:text-primary transition-colors tracking-tight uppercase">
+                                                {campaign.name}
+                                            </span>
+                                            <div className="flex items-center space-x-2 mt-1.5 opacity-60">
+                                                <div className="w-1 h-1 rounded-full bg-muted-foreground" />
+                                                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-none">ID: {campaign.id.slice(0, 8)}</span>
+                                            </div>
+                                        </Link>
+                                    </td>
+                                    <td className="px-10 py-8">
+                                        <div className="flex items-center space-x-3">
+                                            {campaign.status === 'ACTIVE' && (
+                                                <span className="relative flex h-3 w-3">
+                                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                                    <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                                                </span>
+                                            )}
+                                            <span className={cn(
+                                                "text-[10px] font-black px-4 py-1.5 rounded-full uppercase tracking-widest border shadow-sm",
+                                                campaign.status === 'ACTIVE'
+                                                    ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20'
+                                                    : campaign.status === 'PAUSED'
+                                                        ? 'bg-amber-500/10 text-amber-600 border-amber-500/20'
+                                                        : 'bg-muted text-muted-foreground border-border'
+                                            )}>
+                                                {campaign.status}
+                                            </span>
+                                        </div>
+                                    </td>
+                                    <td className="px-10 py-8">
+                                        <div className="space-y-2">
+                                            <div className="flex justify-between items-end">
+                                                <span className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.1em]">Engine health</span>
+                                                <span className="text-[10px] font-black text-emerald-500 uppercase tracking-widest">Normal</span>
+                                            </div>
+                                            <div className="w-32 h-1.5 bg-muted rounded-full overflow-hidden">
+                                                <div className="h-full bg-emerald-500 w-full opacity-80" />
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td className="px-10 py-8 text-right">
+                                        <div className="flex items-center justify-end space-x-2">
+                                            <button
+                                                onClick={() => fetchStatus(campaign.id)}
+                                                className="w-12 h-12 flex items-center justify-center bg-muted/50 text-muted-foreground hover:text-primary hover:bg-muted rounded-2xl transition-all group/info"
+                                                title="View Status"
+                                            >
+                                                <Info className="w-5 h-5 group-hover/info:scale-110 transition-transform" />
+                                            </button>
+                                            <button
+                                                onClick={() => toggleStatus(campaign.id, campaign.status)}
+                                                className={cn(
+                                                    "w-12 h-12 flex items-center justify-center rounded-2xl transition-all shadow-soft",
+                                                    campaign.status === 'ACTIVE'
+                                                        ? "bg-amber-500/10 text-amber-600 hover:bg-amber-500/20"
+                                                        : "bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20"
+                                                )}
+                                            >
+                                                {campaign.status === 'ACTIVE' ? (
+                                                    <Pause className="w-5 h-5 fill-current" />
+                                                ) : (
+                                                    <Play className="w-5 h-5 fill-current ml-1" />
+                                                )}
+                                            </button>
+                                            <button
+                                                onClick={() => deleteCampaign(campaign.id)}
+                                                className="w-12 h-12 flex items-center justify-center bg-muted/50 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-2xl transition-all group/del"
+                                                title="Delete Campaign"
+                                            >
+                                                <Trash2 className="w-5 h-5 group-hover/del:scale-110 transition-transform" />
+                                            </button>
+                                            <Link
+                                                href={`/campaigns/${campaign.id}/builder`}
+                                                className="w-12 h-12 flex items-center justify-center bg-muted/50 text-muted-foreground hover:bg-muted rounded-2xl transition-all"
+                                            >
+                                                <MoreVertical className="w-5 h-5" />
+                                            </Link>
+                                        </div>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
             </div>
 
             {/* Status Panel Modal */}
-            {statusPanel && (
-                <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 animate-in fade-in duration-200">
-                    <div className="bg-white rounded-3xl shadow-2xl max-w-3xl w-full max-h-[85vh] overflow-hidden flex flex-col">
-                        {/* Modal Header */}
-                        <div className="flex items-center justify-between px-8 py-5 border-b bg-slate-50/50">
-                            <div>
-                                <h3 className="text-lg font-black text-slate-800 uppercase tracking-tight">
-                                    Campaign Status
-                                </h3>
-                                {statusPanel.data && (
-                                    <p className="text-sm text-slate-500 font-medium mt-0.5">
-                                        {statusPanel.data.campaign.name}
-                                        <span className={`ml-2 text-[10px] font-black px-2 py-0.5 rounded-full uppercase border ${statusPanel.data.campaign.status === 'ACTIVE' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-slate-50 text-slate-600 border-slate-100'
-                                            }`}>{statusPanel.data.campaign.status}</span>
-                                    </p>
-                                )}
+            <AnimatePresence>
+                {statusPanel && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            onClick={() => setStatusPanel(null)}
+                            className="absolute inset-0 bg-slate-900/40 backdrop-blur-md cursor-pointer"
+                        />
+                        <motion.div
+                            initial={{ scale: 0.95, opacity: 0, y: 30 }}
+                            animate={{ scale: 1, opacity: 1, y: 0 }}
+                            exit={{ scale: 0.95, opacity: 0, y: 30 }}
+                            className="bg-background rounded-[3rem] shadow-2xl border border-border w-full max-w-3xl max-h-[85vh] overflow-hidden flex flex-col relative z-50"
+                        >
+                            <div className="px-10 py-10 border-b border-border flex items-center justify-between bg-muted/30">
+                                <div>
+                                    <h3 className="text-2xl font-black text-foreground uppercase tracking-tight italic">Engine Status</h3>
+                                    {statusPanel.data && (
+                                        <p className="text-xs font-bold text-muted-foreground mt-1 uppercase tracking-widest opacity-70">
+                                            {statusPanel.data.campaign.name} • {statusPanel.data.campaign.status}
+                                        </p>
+                                    )}
+                                </div>
+                                <button
+                                    onClick={() => setStatusPanel(null)}
+                                    className="w-12 h-12 rounded-2xl bg-white border border-border flex items-center justify-center hover:bg-muted transition-all shadow-sm"
+                                >
+                                    <X className="w-6 h-6" />
+                                </button>
                             </div>
-                            <button
-                                onClick={() => setStatusPanel(null)}
-                                className="p-2 hover:bg-slate-100 rounded-xl transition-colors"
-                            >
-                                <X className="w-5 h-5 text-slate-400" />
-                            </button>
-                        </div>
 
-                        {/* Modal Body */}
-                        <div className="flex-1 overflow-y-auto px-8 py-6">
-                            {statusLoading ? (
-                                <div className="flex items-center justify-center py-20">
-                                    <Loader2 className="w-8 h-8 text-indigo-600 animate-spin" />
-                                </div>
-                            ) : statusPanel.data?.leads?.length === 0 ? (
-                                <div className="text-center py-20">
-                                    <AlertCircle className="w-12 h-12 text-slate-300 mx-auto mb-4" />
-                                    <p className="text-slate-500 font-bold">No leads enrolled in this campaign yet.</p>
-                                    <p className="text-slate-400 text-sm mt-1">Start the campaign with leads to see status here.</p>
-                                </div>
-                            ) : (
-                                <div className="space-y-4">
-                                    {statusPanel.data?.leads?.map((lead: any) => (
-                                        <div key={lead.campaignLeadId} className="border rounded-2xl p-5 hover:shadow-sm transition-shadow">
-                                            <div className="flex items-start justify-between">
-                                                <div>
-                                                    <p className="font-black text-slate-800 uppercase tracking-tight">
-                                                        {lead.lead.firstName} {lead.lead.lastName}
-                                                    </p>
-                                                    <a
-                                                        href={lead.lead.linkedinUrl}
-                                                        target="_blank"
-                                                        rel="noreferrer"
-                                                        className="text-xs text-indigo-500 hover:underline"
-                                                    >
-                                                        {lead.lead.linkedinUrl}
-                                                    </a>
+                            <div className="flex-1 overflow-y-auto p-10 scrollbar-hide">
+                                {statusLoading ? (
+                                    <div className="flex h-64 items-center justify-center">
+                                        <Loader2 className="w-10 h-10 text-primary animate-spin" />
+                                    </div>
+                                ) : statusPanel.data?.leads?.length === 0 ? (
+                                    <div className="text-center py-20 opacity-50 space-y-4">
+                                        <AlertCircle className="w-16 h-16 mx-auto text-muted-foreground" />
+                                        <p className="text-sm font-black uppercase tracking-widest text-muted-foreground">Engine is currently empty.</p>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-6">
+                                        {statusPanel.data?.leads?.map((lead: any) => (
+                                            <div key={lead.campaignLeadId} className="bg-card border border-border rounded-[2.5rem] p-8 shadow-soft hover:shadow-xl transition-all">
+                                                <div className="flex items-start justify-between">
+                                                    <div>
+                                                        <h4 className="text-lg font-black text-foreground uppercase tracking-tight">{lead.lead.firstName} {lead.lead.lastName}</h4>
+                                                        <a href={lead.lead.linkedinUrl} target="_blank" className="text-[10px] font-black text-primary uppercase tracking-[0.2em] hover:underline mt-1 inline-block opacity-80">View Nexus Link</a>
+                                                    </div>
+                                                    <span className={cn(
+                                                        "text-[9px] font-black px-4 py-1.5 rounded-full border shadow-sm uppercase tracking-widest",
+                                                        lead.isCompleted ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20" : "bg-primary/10 text-primary border-primary/20"
+                                                    )}>
+                                                        {lead.isCompleted ? 'Finalized' : 'Operational'}
+                                                    </span>
                                                 </div>
-                                                <span className={`text-[10px] font-black px-2 py-1 rounded-full uppercase border ${lead.isCompleted ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-blue-50 text-blue-700 border-blue-100'
-                                                    }`}>
-                                                    {lead.isCompleted ? 'Completed' : 'In Progress'}
-                                                </span>
-                                            </div>
 
-                                            <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
-                                                <div className="bg-slate-50 rounded-xl px-4 py-2">
-                                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Current Step</p>
-                                                    <p className="text-slate-700 font-semibold text-xs mt-0.5">{lead.currentStepId?.slice(0, 12) || 'N/A'}</p>
-                                                </div>
-                                                <div className="bg-slate-50 rounded-xl px-4 py-2">
-                                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Next Action</p>
-                                                    <p className="text-slate-700 font-semibold text-xs mt-0.5">
-                                                        {lead.nextActionDate ? new Date(lead.nextActionDate).toLocaleString() : 'N/A'}
-                                                    </p>
-                                                </div>
-                                            </div>
-
-                                            {/* Ice-breaker */}
-                                            {lead.personalization && (
-                                                <div className="mt-3 bg-indigo-50/50 border border-indigo-100 rounded-xl px-4 py-3">
-                                                    <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest mb-1">AI Ice-breaker</p>
-                                                    <p className="text-sm text-indigo-900 leading-relaxed">{lead.personalization}</p>
-                                                </div>
-                                            )}
-
-                                            {/* Recent Logs */}
-                                            {lead.recentLogs?.length > 0 && (
-                                                <div className="mt-3">
-                                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Recent Activity</p>
-                                                    <div className="space-y-1">
-                                                        {lead.recentLogs.map((log: any, idx: number) => (
-                                                            <div key={idx} className="flex items-center justify-between text-xs py-1.5 px-3 rounded-lg hover:bg-slate-50">
-                                                                <div className="flex items-center space-x-2">
-                                                                    <CheckCircle2 className={`w-3 h-3 ${log.status === 'SUCCESS' ? 'text-emerald-500' : log.status === 'FAILED' ? 'text-red-500' : 'text-slate-300'}`} />
-                                                                    <span className="font-bold text-slate-600">{log.actionType.replace(/_/g, ' ')}</span>
-                                                                </div>
-                                                                <div className="flex items-center space-x-3">
-                                                                    <span className={`font-bold ${log.status === 'SUCCESS' ? 'text-emerald-600' : log.status === 'FAILED' ? 'text-red-600' : 'text-slate-400'}`}>
-                                                                        {log.status}
-                                                                    </span>
-                                                                    <span className="text-slate-400">{new Date(log.executedAt).toLocaleTimeString()}</span>
-                                                                </div>
-                                                            </div>
-                                                        ))}
+                                                <div className="grid grid-cols-2 gap-4 mt-8">
+                                                    <div className="bg-muted p-5 rounded-3xl border border-border/50">
+                                                        <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">Execution Point</span>
+                                                        <p className="text-sm font-black text-foreground uppercase tracking-tight mt-1 truncate">{lead.currentStepId?.slice(-8) || 'INITIAL'}</p>
+                                                    </div>
+                                                    <div className="bg-muted p-5 rounded-3xl border border-border/50">
+                                                        <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">Synchronizer</span>
+                                                        <p className="text-sm font-black text-foreground mt-1 tracking-tight">
+                                                            {lead.nextActionDate ? new Date(lead.nextActionDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'READY'}
+                                                        </p>
                                                     </div>
                                                 </div>
-                                            )}
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
+
+                                                {lead.personalization && (
+                                                    <div className="mt-6 p-6 bg-primary/5 rounded-[2rem] border border-primary/10 italic">
+                                                        <p className="text-sm text-foreground leading-relaxed font-medium">"{lead.personalization}"</p>
+                                                    </div>
+                                                )}
+
+                                                {lead.recentLogs?.length > 0 && (
+                                                    <div className="mt-8 border-t border-border pt-6">
+                                                        <span className="text-[9px] font-black text-muted-foreground uppercase tracking-[0.2em] mb-4 block">Operation Sequence</span>
+                                                        <div className="space-y-3">
+                                                            {lead.recentLogs.map((log: any, idx: number) => (
+                                                                <div key={idx} className="flex items-center justify-between bg-muted/40 p-4 rounded-2xl border border-border/30">
+                                                                    <div className="flex items-center space-x-4">
+                                                                        <div className={cn("w-2 h-2 rounded-full", log.status === 'SUCCESS' ? "bg-emerald-500" : "bg-red-500")} />
+                                                                        <span className="text-[10px] font-black text-foreground uppercase tracking-widest">{log.actionType.replace(/_/g, ' ')}</span>
+                                                                    </div>
+                                                                    <span className="text-[9px] font-bold text-muted-foreground uppercase opacity-60">
+                                                                        {new Date(log.executedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                                    </span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </motion.div>
                     </div>
-                </div>
-            )}
-            {/* Campaign Name Modal */}
+                )}
+            </AnimatePresence>
+
             <CampaignNameModal
                 isOpen={!!pendingCreate}
                 defaultName={pendingCreate?.defaultName || 'New Campaign'}

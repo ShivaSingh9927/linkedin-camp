@@ -14,6 +14,7 @@ import notificationRoutes from './routes/notification.routes';
 import integrationRoutes from './routes/integration.routes';
 import { initScheduler } from './cron/scheduler';
 import { initWorker } from './workers/linkedin.worker';
+import { initProxyHealthWorker } from './workers/proxy.worker';
 import { downgradeExpiredTrials } from './services/trial.service';
 
 
@@ -83,6 +84,7 @@ app.listen(Number(PORT), '0.0.0.0', () => {
     try {
         initScheduler();
         initWorker();
+        initProxyHealthWorker();
         console.log('✅ Campaign Engine Initialized');
     } catch (e) {
         console.error('❌ Failed to init Campaign Engine:', e);

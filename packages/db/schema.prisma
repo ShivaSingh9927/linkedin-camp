@@ -9,23 +9,44 @@ datasource db {
 
 // --- USER & AUTH ---
 
-enum PlanTier {
+enum SubscriptionTier {
   FREE
+  CORE
   PRO
   ADVANCED
+  PLUS
+  EXPERT
+  ULTIMATE
+}
+
+enum LinkedinPlan {
+  BASIC
+  PREMIUM
+  SALES_NAV
 }
 
 model User {
   id                    String   @id @default(uuid())
   email                 String   @unique
   passwordHash          String
-  tier                  PlanTier @default(FREE)
+  tier                  SubscriptionTier @default(FREE)
+  trialEndsAt           DateTime?
+  dailyInviteLimit      Int      @default(20)
+  proxyIp               String?  
+  linkedinPlan          LinkedinPlan @default(BASIC)
+  
+  // Working Hours & Safety
+  workingDays           Int[]    @default([1, 2, 3, 4, 5])
+  workingHours          Json?    // e.g. { start: 9, end: 18 }
   
   // LinkedIn Session
   linkedinCookie        String?  // Extension or raw sync
   persistentSessionPath String?  // Path to Playwright session dir
   
   // Cloud Worker State
+  actualCountry         String?  // India, USA, etc.
+  linkedinActiveInBrowser Boolean @default(false)
+  lastBrowserActivityAt DateTime?
   cloudWorkerActive     Boolean  @default(false)
   lastCloudActionAt     DateTime?
   
@@ -34,7 +55,13 @@ model User {
   leads                 Lead[]
   notifications         Notification[]
   proxyId               String?
-  assignedProxy         Proxy?   @relation(fields: [proxyId], references: [id])
+  proxy                 Proxy?   @relation(fields: [proxyId], references: [id])
+  integrations          Integration[]
+  teamMembers           TeamMember[]
+  workerLogs            WorkerLog[]
+  actionLogs            ActionLog[]
+  messages              Message[]
+  templates             MessageTemplate[]
   
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
@@ -55,12 +82,14 @@ model Campaign {
   name          String
   status        CampaignStatus @default(DRAFT)
   
-  // The sequence of actions (Invite -> Delay -> Message etc)
-  workflow      Json           // Array of { type: string, delay: number, text: string }
+  // The sequence of actions (Node-based or Array)
+  workflow      Json?          // Legacy array style
+  workflowJson  Json?          // New node-based style
   
   user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   leads         CampaignLead[]
   logs          WorkerLog[]
+  actionLogs    ActionLog[]
   
   createdAt     DateTime       @default(now())
 }
@@ -80,28 +109,39 @@ model Lead {
   firstName     String?
   lastName      String?
   headline      String?
+  jobTitle      String?
   company       String?
   location      String?
+  email         String?
+  country       String?
+  gender        String?
+  tags          String[]       @default([])
   status        LeadStatus     @default(IMPORTED)
   
   user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   campaignLeads CampaignLead[]
   workerLogs    WorkerLog[]
+  actionLogs    ActionLog[]
+  messages      Message[]
 
   createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
   @@unique([userId, linkedinUrl])
 }
 
 model CampaignLead {
-  id            String   @id @default(uuid())
-  campaignId    String
-  leadId        String
+  id              String   @id @default(uuid())
+  campaignId      String
+  leadId          String
   
-  stepIndex     Int      @default(0)
-  lastActionAt  DateTime?
-  isCompleted   Boolean  @default(false)
+  stepIndex       Int      @default(0)       // For linear workflows
+  currentStepId   String?                    // For node-based workflows
+  nextActionDate  DateTime? @default(now())
+  lastActionAt    DateTime?
+  isCompleted     Boolean  @default(false)
   
-  status        LeadStatus @default(PENDING) // Specific progress in this campaign
+  status          LeadStatus @default(PENDING)
+  personalization Json?      // Store variables like {{firstName}} values or custom notes
 
   campaign      Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   lead          Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
@@ -109,7 +149,7 @@ model CampaignLead {
   @@unique([campaignId, leadId])
 }
 
-// --- LOGGING & NOTIFICATIONS ---
+// --- LOGGING & MESSAGING ---
 
 model WorkerLog {
   id            String   @id @default(uuid())
@@ -121,8 +161,54 @@ model WorkerLog {
   errorMessage  String?
   createdAt     DateTime @default(now())
 
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   campaign      Campaign? @relation(fields: [campaignId], references: [id])
   lead          Lead?     @relation(fields: [leadId], references: [id])
+}
+
+model ActionLog {
+  id            String   @id @default(uuid())
+  userId        String
+  campaignId    String?
+  leadId        String?
+  actionType    String
+  status        String   @default("SUCCESS")
+  errorMessage  String?
+  executedAt    DateTime @default(now())
+
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  campaign      Campaign? @relation(fields: [campaignId], references: [id])
+  lead          Lead?     @relation(fields: [leadId], references: [id])
+}
+
+model Message {
+  id          String   @id @default(uuid())
+  userId      String
+  leadId      String
+  campaignId  String?
+  templateId  String?
+  direction   String   // SENT, RECEIVED
+  content     String   @db.Text
+  source      String   @default("MANUAL") // MANUAL, CAMPAIGN
+  sentAt      DateTime @default(now())
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lead        Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+}
+
+model MessageTemplate {
+  id        String   @id @default(uuid())
+  userId    String
+  name      String
+  content   String   @db.Text
+  variables String[] @default([])
+  category  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, name])
 }
 
 model Notification {
@@ -130,6 +216,7 @@ model Notification {
   userId    String
   title     String
   body      String
+  type      String   @default("INFO")
   meta      Json?    // { leadId, campaignId, etc. }
   read      Boolean  @default(false)
   createdAt DateTime @default(now())
@@ -138,6 +225,57 @@ model Notification {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, read])
+}
+
+// --- TEAMS ---
+
+enum TeamRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum InviteStatus {
+  PENDING
+  ACCEPTED
+  CANCELLED
+}
+
+model Team {
+  id        String   @id @default(uuid())
+  name      String
+  ownerId   String
+  members   TeamMember[]
+  invites   TeamInvite[]
+  createdAt DateTime @default(now())
+}
+
+model TeamMember {
+  id        String   @id @default(uuid())
+  teamId    String
+  userId    String
+  role      TeamRole @default(MEMBER)
+  
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now())
+
+  @@unique([teamId, userId])
+}
+
+model TeamInvite {
+  id        String   @id @default(uuid())
+  teamId    String
+  email     String
+  role      TeamRole @default(MEMBER)
+  token     String   @unique
+  status    InviteStatus @default(PENDING)
+  
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now())
+  expiresAt DateTime
 }
 
 // --- INFRASTRUCTURE ---
@@ -161,13 +299,29 @@ model Proxy {
   isAssigned      Boolean  @default(false)
   assignedUsers   User[]
   
-  // Time-Slicing Concurrency Lock
   lockedUntil     DateTime?
   lockedByUserId  String?
   
+  failureCount    Int      @default(0)
   banned          Boolean  @default(false)
+  linkedinBanned  Boolean  @default(false)
   bannedAt        DateTime?
   
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+}
+
+model Integration {
+  id          String   @id @default(uuid())
+  userId      String
+  provider    String   // e.g. "HUBSPOT", "ZAPIER"
+  webhookUrl  String?
+  isActive    Boolean  @default(true)
+  config      Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider])
 }

@@ -5,45 +5,58 @@ export const getStats = async (req: any, res: Response) => {
     const userId = req.user.id;
 
     try {
+        // Fetch all relevant metrics in parallel
         const [
             totalLeads,
-            activeCampaigns,
-            successfulActions,
+            activeCampaignsCount,
+            campaignsData,
             recentLogs,
-            invitesSent,
-            messagesSent,
-            connectedLeads,
-            campaigns
+            globalInvites,
+            globalMessages,
+            globalConnected
         ] = await Promise.all([
             prisma.lead.count({ where: { userId } }),
             prisma.campaign.count({ where: { userId, status: 'ACTIVE' } }),
-            prisma.actionLog.count({ where: { userId, status: 'SUCCESS' } }),
-            prisma.actionLog.findMany({
-                where: { userId },
-                orderBy: { executedAt: 'desc' },
-                take: 8,
-                include: { lead: true }
-            }),
-            prisma.actionLog.count({ where: { userId, actionType: 'INVITE', status: 'SUCCESS' } }),
-            prisma.actionLog.count({ where: { userId, actionType: 'MESSAGE', status: 'SUCCESS' } }),
-            prisma.lead.count({ where: { userId, status: { in: ['CONNECTED', 'REPLIED'] } } }),
             prisma.campaign.findMany({
                 where: { userId },
                 select: {
                     id: true,
                     name: true,
                     status: true,
-                    _count: {
+                    leads: {
                         select: {
-                            leads: true,
-                            actionLogs: { where: { status: 'SUCCESS' } }
+                            status: true
                         }
                     }
-                }
-            })
+                },
+                orderBy: { createdAt: 'desc' }
+            }),
+            prisma.actionLog.findMany({
+                where: { userId },
+                orderBy: { executedAt: 'desc' },
+                take: 10,
+                include: { lead: true }
+            }),
+            prisma.actionLog.count({ where: { userId, actionType: 'INVITE', status: 'SUCCESS' } }),
+            prisma.actionLog.count({ where: { userId, actionType: 'MESSAGE', status: 'SUCCESS' } }),
+            prisma.lead.count({ where: { userId, status: { in: ['CONNECTED', 'REPLIED'] } } })
         ]);
 
-        // Calculate 7-day activity
+        // Process Campaign Stats
+        const campaignPerformance = campaignsData.map(camp => {
+            const leads = camp.leads;
+            return {
+                id: camp.id,
+                name: camp.name,
+                status: camp.status,
+                totalLeads: leads.length,
+                pending: leads.filter(l => l.status === 'PENDING').length,
+                connected: leads.filter(l => l.status === 'CONNECTED' || l.status === 'REPLIED').length,
+                replied: leads.filter(l => l.status === 'REPLIED').length
+            };
+        });
+
+        // 7-day activity calculation (re-using existing logic but optimized)
         const sevenDaysAgo = new Date();
         sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
@@ -74,22 +87,21 @@ export const getStats = async (req: any, res: Response) => {
             .map(([date, count]) => ({ date, count }))
             .sort((a, b) => a.date.localeCompare(b.date));
 
+        const totalReplies = await prisma.lead.count({ where: { userId, status: 'REPLIED' } });
+        const totalSent = globalInvites + globalMessages;
+
         res.json({
-            totalLeads,
-            activeCampaigns,
-            successfulActions,
+            global: {
+                totalLeads,
+                activeCampaigns: activeCampaignsCount,
+                sentRequests: totalSent,
+                connectedLeads: globalConnected,
+                replyRate: totalSent > 0 ? Math.round((totalReplies / totalSent) * 100) : 0,
+                dailyRemaining: 80 // Hardcoded for now, could be dynamic
+            },
+            campaignPerformance,
             recentLogs,
-            invitesSent,
-            messagesSent,
-            connectedLeads,
-            chartData,
-            campaignPerformance: campaigns.map(c => ({
-                id: c.id,
-                name: c.name,
-                status: c.status,
-                leads: c._count.leads,
-                actions: c._count.actionLogs
-            }))
+            chartData
         });
     } catch (error) {
         console.error('Stats Error:', error);

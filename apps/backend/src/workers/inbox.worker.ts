@@ -23,9 +23,9 @@ export const syncInbox = async (userId: string) => {
 
     let browser;
     try {
-        browser = await chromium.launch({ 
+        browser = await chromium.launch({
             headless: process.env.HEADLESS_MODE !== 'false',
-            args: ['--no-sandbox', '--disable-setuid-sandbox'] 
+            args: ['--no-sandbox', '--disable-setuid-sandbox']
         });
 
         // Set cookies manually for the worker session
@@ -58,7 +58,7 @@ export const syncInbox = async (userId: string) => {
         for (const convo of conversations) {
             // Find lead in database
             const lead = await prisma.lead.findFirst({
-                where: { 
+                where: {
                     userId: userId,
                     OR: [
                         { firstName: { contains: convo.name?.split(' ')[0] || '' } },
@@ -72,7 +72,7 @@ export const syncInbox = async (userId: string) => {
                 // This is a naive check - in a real app we'd compare dates and message owners
                 if (convo.lastMsg && !convo.lastMsg.includes('You sent')) {
                     console.log(`[INBOX-WORKER] Detected reply from lead: ${lead.firstName} ${lead.lastName}`);
-                    
+
                     // Update campaign lead status to REPLIED
                     await prisma.campaignLead.updateMany({
                         where: { leadId: lead.id, isCompleted: false },
@@ -83,13 +83,14 @@ export const syncInbox = async (userId: string) => {
                         where: { id: lead.id },
                         data: { status: 'REPLIED' }
                     });
-                    
+
                     // Trigger "Reply" notification (Mock logic)
                     await prisma.notification.create({
                         data: {
                             userId: userId,
                             title: 'New Reply Received',
                             body: `${convo.name} just messaged you on LinkedIn.`,
+                            type: 'REPLY',
                             meta: { leadId: lead.id, snippet: convo.lastMsg }
                         }
                     });

@@ -1,8 +1,7 @@
 'use client';
 
 import { usePathname } from 'next/navigation';
-import { Sidebar } from './Sidebar';
-import { Navbar } from './Navbar';
+import { TopNav } from './TopNav';
 
 export function SidebarWrapper({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -11,14 +10,13 @@ export function SidebarWrapper({ children }: { children: React.ReactNode }) {
   if (isAuthPage) return <>{children}</>;
 
   return (
-    <div className="flex h-screen bg-slate-50 overflow-hidden">
-      <Sidebar />
-      <div className="flex-1 flex flex-col min-w-0">
-        <Navbar />
-        <div className="flex-1 overflow-y-auto custom-scrollbar">
+    <div className="min-h-screen bg-muted/30 flex flex-col">
+      <TopNav />
+      <main className="flex-1">
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8 lg:py-10 max-w-screen-2xl">
           {children}
         </div>
-      </div>
+      </main>
     </div>
   );
 }

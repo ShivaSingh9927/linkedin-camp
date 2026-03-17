@@ -1,136 +1,239 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
-:root {
-  /* Waalaxy aesthetic colors */
-  --primary: 215 90% 55%; /* Rich Navy Blue */
-  --primary-foreground: 0 0% 100%;
-  
-  --secondary: 199 89% 48%; /* Bright Sky Blue */
-  --secondary-foreground: 0 0% 100%;
+@theme {
+  --color-card: #ffffff;
+  --color-ring: #8b5cf6;
+  --color-input: #e0e7ff;
+  --color-muted: #f0f2f5;
+  --color-accent: #dbeafe;
+  --color-border: #e2e8f0;
+  --radius-radius: 0.625rem;
 
-  --accent: 142 71% 45%; /* Vibrant Success Green */
-  --accent-foreground: 0 0% 100%;
+  --color-primary: #8b5cf6;
+  --color-primary-foreground: #ffffff;
+  --color-secondary: #f3f0ff;
+  --color-background: #ffffff;
+  --color-foreground: #0f172a;
+  --color-muted-foreground: #64748b;
+  --color-accent-foreground: #1e1b4b;
+  --color-destructive: #ef4444;
+  --color-destructive-foreground: #ffffff;
 
-  --background: 210 40% 98%;
-  --foreground: 222 47% 11%;
+  /* Restore standard slate palette for compatibility */
+  --color-slate-50: #f8fafc;
+  --color-slate-100: #f1f5f9;
+  --color-slate-200: #e2e8f0;
+  --color-slate-300: #cbd5e1;
+  --color-slate-400: #94a3b8;
+  --color-slate-500: #64748b;
+  --color-slate-600: #475569;
+  --color-slate-700: #334155;
+  --color-slate-800: #1e293b;
+  --color-slate-900: #0f172a;
 
-  --card: 0 0% 100%;
-  --card-foreground: 222 47% 11%;
+  /* Restore indigo palette for prospects page */
+  --color-indigo-50: #eef2ff;
+  --color-indigo-100: #e0e7ff;
+  --color-indigo-200: #c7d2fe;
+  --color-indigo-500: #6366f1;
+  --color-indigo-600: #4f46e5;
+  --color-indigo-700: #4338ca;
 
-  --muted: 210 40% 96.1%;
-  --muted-foreground: 215.4 16.3% 46.9%;
+  /* Restore emerald palette */
+  --color-emerald-50: #ecfdf5;
+  --color-emerald-100: #d1fae5;
+  --color-emerald-500: #10b981;
+  --color-emerald-600: #059669;
 
-  --border: 214.3 31.8% 91.4%;
-  --input: 214.3 31.8% 91.4%;
-  --ring: 221.2 83.2% 53.3%;
-  
-  --radius: 1rem;
-}
+  /* Restore amber palette */
+  --color-amber-50: #fffbeb;
+  --color-amber-500: #f59e0b;
+  --color-amber-700: #b45309;
 
-.dark {
-  --background: 222.2 84% 4.9%;
-  --foreground: 210 40% 98%;
-  --card: 222.2 84% 4.9%;
-  --card-foreground: 210 40% 98%;
-  --muted: 217.2 32.6% 17.5%;
-  --muted-foreground: 215 20.2% 65.1%;
-  --primary: 217.2 91.2% 59.8%;
-  --primary-foreground: 222.2 47.1% 11.2%;
-  --border: 217.2 32.6% 17.5%;
+  --font-mono: Fira Code, monospace;
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-serif: Playfair Display, serif;
+
+  --shadow-soft: 0 4px 20px -2px rgba(0, 0, 0, 0.05), 0 2px 10px -2px rgba(0, 0, 0, 0.03);
+  --shadow-glow: 0 0 20px rgba(139, 92, 246, 0.15);
 }
 
 @layer base {
   * {
     @apply border-border;
   }
+
   body {
-    @apply bg-background text-foreground;
+    @apply font-sans bg-background text-foreground antialiased;
   }
-}
 
-/* Custom Utilities */
-.glass {
-  @apply bg-white/70 backdrop-blur-xl border border-white/20 shadow-xl;
-}
-
-.card-hover {
-  @apply transition-all duration-300 hover:shadow-2xl hover:shadow-primary/10 hover:-translate-y-1;
-}
-
-.sidebar-gradient {
-  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
-}
-
-.nav-link-active {
-  @apply bg-primary text-white shadow-lg shadow-primary/30;
-}
-
-/* Animations */
-@keyframes float {
-  0% { transform: translateY(0px); }
-  50% { transform: translateY(-10px); }
-  100% { transform: translateY(0px); }
-}
-
-.animate-float {
-  animation: float 6s ease-in-out infinite;
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    @apply tracking-tight;
+  }
 }
 
 /* Custom Scrollbar */
 ::-webkit-scrollbar {
-  width: 8px;
+  width: 6px;
 }
+
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
 ::-webkit-scrollbar-thumb {
-  @apply bg-slate-200 rounded-full hover:bg-slate-300 transition-colors;
+  background-color: #cbd5e1;
+  border-radius: 9999px;
 }
 
-/* Neumorphic subtle shadows */
-.shadow-soft {
-  box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.05);
+::-webkit-scrollbar-thumb:hover {
+  background-color: #94a3b8;
 }
 
-.shadow-glow {
-  box-shadow: 0 0 20px rgba(59, 130, 246, 0.2);
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
 }
 
-/* Gradient text */
-.text-gradient {
-  @apply bg-clip-text text-transparent bg-gradient-to-r from-primary to-secondary font-bold;
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 
-/* Dashboard spacing */
-.dashboard-container {
-  @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8;
+/* Animations for Auth Page */
+@keyframes elementIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
-/* Campaign Builder Flow */
-.flow-node {
-  @apply relative p-6 rounded-3xl border-2 transition-all cursor-pointer;
+@keyframes slideRight {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
-.flow-node-active {
-  @apply border-primary bg-primary/5 shadow-lg shadow-primary/10;
+@keyframes testimonial {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
 
-/* Skeleton animation */
-@keyframes pulse-slow {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+.animate-element {
+  animation: elementIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  opacity: 0;
 }
 
-.animate-pulse-slow {
-  animation: pulse-slow 3s ease-in-out infinite;
+.animate-slide-right {
+  animation: slideRight 1s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  opacity: 0;
 }
 
-.btn-primary {
-  @apply bg-primary text-white px-6 py-3 rounded-2xl font-bold hover:bg-primary/90 transition-all active:scale-95 shadow-lg shadow-primary/20;
+.animate-in {
+  animation-duration: 500ms;
 }
 
-.btn-secondary {
-  @apply bg-white text-slate-800 px-6 py-3 rounded-2xl font-bold border hover:bg-slate-50 transition-all active:scale-95;
+.fade-in {
+  animation-name: fadeIn;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+.animate-testimonial {
+  animation: testimonial 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  opacity: 0;
+}
+
+.animate-delay-100 {
+  animation-delay: 100ms;
+}
+
+.animate-delay-200 {
+  animation-delay: 200ms;
+}
+
+.animate-delay-300 {
+  animation-delay: 300ms;
+}
+
+.animate-delay-400 {
+  animation-delay: 400ms;
+}
+
+.animate-delay-500 {
+  animation-delay: 500ms;
+}
+
+.animate-delay-600 {
+  animation-delay: 600ms;
+}
+
+.animate-delay-700 {
+  animation-delay: 700ms;
+}
+
+.animate-delay-800 {
+  animation-delay: 800ms;
+}
+
+.animate-delay-900 {
+  animation-delay: 900ms;
+}
+
+.animate-delay-1000 {
+  animation-delay: 1000ms;
+}
+
+.animate-delay-1200 {
+  animation-delay: 1200ms;
+}
+
+.animate-delay-1400 {
+  animation-delay: 1400ms;
+}
+
+@keyframes bounce-slow {
+
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+.animate-bounce-slow {
+  animation: bounce-slow 2s ease-in-out infinite;
 }

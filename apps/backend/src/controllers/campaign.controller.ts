@@ -1,5 +1,6 @@
 import { Response } from 'express';
 import { prisma } from '../server';
+import { getOrAssignProxy } from '../services/proxy.service';
 
 export const createCampaign = async (req: any, res: Response) => {
     const { name, workflowJson } = req.body;
@@ -76,6 +77,9 @@ export const startCampaign = async (req: any, res: Response) => {
     const { leadIds = [] } = req.body || {};
 
     try {
+        // Ensure user has a proxy assigned before starting campaign actions
+        await getOrAssignProxy(userId);
+
         const campaign = await prisma.campaign.findUnique({
             where: { id, userId }
         });
@@ -96,7 +100,7 @@ export const startCampaign = async (req: any, res: Response) => {
 
         if (startNode) {
             let finalLeadIds = leadIds;
-            
+
             // IF leadIds is empty, fetch existing leads for this campaign
             if (!finalLeadIds || finalLeadIds.length === 0) {
                 console.log(`[Campaign] No leadIds provided. Fetching existing leads for campaign ${id} to start them.`);
@@ -206,54 +210,67 @@ export const deleteCampaign = async (req: any, res: Response) => {
     }
 };
 
-// New endpoint: detailed campaign status
+// New endpoint: detailed campaign status with summary
 export const getCampaignStatus = async (req: any, res: Response) => {
     const { id } = req.params;
     const userId = req.user.id;
     try {
         const campaign = await prisma.campaign.findUnique({
             where: { id, userId },
+            include: {
+                leads: {
+                    include: { lead: true },
+                    orderBy: { lastActionAt: 'desc' }
+                }
+            }
         });
+
         if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
 
-        // Fetch all campaign leads for this campaign
-        const campaignLeads = await prisma.campaignLead.findMany({
-            where: { campaignId: id },
-            include: { lead: true },
+        // Fetch all relevant action logs for these leads in this campaign in one go
+        const leadIds = campaign.leads.map(cl => cl.leadId);
+        const allLogs = await prisma.actionLog.findMany({
+            where: {
+                campaignId: id,
+                leadId: { in: leadIds }
+            },
+            orderBy: { executedAt: 'desc' }
         });
 
-        // For each lead, fetch recent action logs (last 5) by leadId
-        const leadsWithLogs = await Promise.all(
-            campaignLeads.map(async (cl: any) => {
-                const logs = await prisma.actionLog.findMany({
-                    where: { leadId: cl.leadId, userId },
-                    orderBy: { executedAt: 'desc' },
-                    take: 5,
-                });
-                return {
-                    campaignLeadId: cl.id,
-                    lead: {
-                        id: cl.lead.id,
-                        firstName: cl.lead.firstName,
-                        lastName: cl.lead.lastName,
-                        linkedinUrl: cl.lead.linkedinUrl,
-                    },
-                    currentStepId: cl.currentStepId,
-                    nextActionDate: cl.nextActionDate,
-                    isCompleted: cl.isCompleted,
-                    personalization: cl.personalization,
-                    recentLogs: logs.map((log: any) => ({
-                        actionType: log.actionType,
-                        status: log.status,
-                        errorMessage: log.errorMessage,
-                        executedAt: log.executedAt,
-                    })),
-                };
-            })
-        );
+        // Group logs by leadId
+        const logsMap: Record<string, any[]> = {};
+        allLogs.forEach(log => {
+            if (!logsMap[log.leadId!]) logsMap[log.leadId!] = [];
+            if (logsMap[log.leadId!].length < 5) logsMap[log.leadId!].push(log);
+        });
+
+        const leadsWithLogs = campaign.leads.map(cl => ({
+            campaignLeadId: cl.id,
+            lead: {
+                id: cl.lead.id,
+                firstName: cl.lead.firstName,
+                lastName: cl.lead.lastName,
+                linkedinUrl: cl.lead.linkedinUrl,
+            },
+            status: cl.status,
+            currentStepId: cl.currentStepId,
+            nextActionDate: cl.nextActionDate,
+            isCompleted: cl.isCompleted,
+            personalization: cl.personalization,
+            recentLogs: logsMap[cl.leadId] || []
+        }));
+
+        // Calculate stats for this specific campaign
+        const stats = {
+            total: campaign.leads.length,
+            pending: campaign.leads.filter(l => l.status === 'PENDING').length,
+            connected: campaign.leads.filter(l => l.status === 'CONNECTED' || l.status === 'REPLIED').length,
+            replied: campaign.leads.filter(l => l.status === 'REPLIED').length,
+        };
 
         res.json({
             campaign: { id: campaign.id, name: campaign.name, status: campaign.status },
+            stats,
             leads: leadsWithLogs,
         });
     } catch (error) {

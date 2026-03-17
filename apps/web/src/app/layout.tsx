@@ -8,7 +8,7 @@ import { Toaster } from 'sonner';
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Waalaxy Clone | LinkedIn Automation",
+  title: "LEADMATE | LinkedIn Automation",
   description: "Scale your LinkedIn outreach with AI-powered campaigns.",
 };
 
