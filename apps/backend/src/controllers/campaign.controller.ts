@@ -1,5 +1,5 @@
 import { Response } from 'express';
-import { prisma } from '../server';
+import { prisma } from '@repo/db';
 import { getOrAssignProxy } from '../services/proxy.service';
 
 export const createCampaign = async (req: any, res: Response) => {

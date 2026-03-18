@@ -1,5 +1,5 @@
 import { Response } from 'express';
-import { prisma } from '../server';
+import { prisma } from '@repo/db';
 import { parse } from 'csv-parse';
 import fs from 'fs';
 

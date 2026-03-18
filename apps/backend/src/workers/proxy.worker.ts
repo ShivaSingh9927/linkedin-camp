@@ -1,4 +1,4 @@
-import { prisma } from '../server';
+import { prisma } from '@repo/db';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 

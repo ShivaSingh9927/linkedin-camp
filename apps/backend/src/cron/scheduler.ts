@@ -1,5 +1,5 @@
 import cron from 'node-cron';
-import { prisma } from '../server';
+import { prisma } from '@repo/db';
 import { Queue } from 'bullmq';
 import Redis from 'ioredis';
 import { syncInbox } from '../workers/inbox.worker';
