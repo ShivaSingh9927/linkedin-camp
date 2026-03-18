@@ -1,5 +1,5 @@
 import { canWorkNow, applyJitter } from '../services/safety.service';
-import { prisma } from '../server';
+import { prisma } from '@repo/db';
 
 async function testSafety() {
     console.log('--- Testing Safety Engine ---');

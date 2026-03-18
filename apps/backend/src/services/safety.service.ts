@@ -1,4 +1,4 @@
-import { prisma } from '../server';
+import { prisma } from '@repo/db';
 
 /**
  * Checks if the current time for a user is within their allowed working hours.

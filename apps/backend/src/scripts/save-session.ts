@@ -1,7 +1,7 @@
 import { chromium } from 'playwright-extra';
 const stealth = require('puppeteer-extra-plugin-stealth')();
 import path from 'path';
-import { prisma } from '../server';
+import { prisma } from '@repo/db';
 
 chromium.use(stealth);
 

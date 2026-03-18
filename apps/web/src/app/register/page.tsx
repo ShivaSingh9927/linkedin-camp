@@ -18,8 +18,7 @@ export default function RegisterPage() {
     try {
       // Fix potential trailing slash in API URL
       const baseUrl = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/$/, '');
-      const fullUrl = `${baseUrl}/auth/register`;
-      
+      const fullUrl = `${baseUrl}/api/v1/auth/register`;
       console.log(`[DEBUG] Registration attempt to: ${fullUrl}`);
 
       const res = await fetch(fullUrl, {

@@ -36,7 +36,7 @@ export default function LinkedInConnectivity() {
     const fetchStatus = async () => {
         try {
             const token = localStorage.getItem('token');
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/linkedin-status`, {
+            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/auth/linkedin-status`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             const data = await res.json();
@@ -71,7 +71,7 @@ export default function LinkedInConnectivity() {
         setLaunching(true);
         try {
             const token = localStorage.getItem('token');
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/start-login`, {
+            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/auth/start-login`, {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${token}` }
             });

@@ -1,5 +1,5 @@
 import { Response } from 'express';
-import { prisma } from '../server';
+import { prisma } from '@repo/db';
 import { syncInbox } from '../workers/inbox.worker';
 
 // ─── CONVERSATIONS (grouped messages by lead) ───

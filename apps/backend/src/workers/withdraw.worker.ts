@@ -1,5 +1,5 @@
 import { chromium } from 'playwright';
-import { prisma } from '../server';
+import { prisma } from '@repo/db';
 import { getRandomUserAgent } from '../services/safety.service';
 
 /**

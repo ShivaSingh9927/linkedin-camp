@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { prisma } from '../server';
+import { prisma } from '@repo/db';
 
 export const getStats = async (req: any, res: Response) => {
     const userId = req.user.id;

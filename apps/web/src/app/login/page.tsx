@@ -18,7 +18,7 @@ export default function LoginPage() {
     try {
       // Fix potential trailing slash in API URL
       const baseUrl = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/$/, '');
-      const fullUrl = `${baseUrl}/auth/login`;
+      const fullUrl = `${baseUrl}/api/v1/auth/login`;
 
       const res = await fetch(fullUrl, {
         method: 'POST',

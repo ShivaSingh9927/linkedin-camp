@@ -1,12 +1,12 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { 
-    Linkedin, 
-    CheckCircle2, 
-    XCircle, 
-    RefreshCcw, 
-    ShieldCheck, 
+import {
+    Linkedin,
+    CheckCircle2,
+    XCircle,
+    RefreshCcw,
+    ShieldCheck,
     ExternalLink,
     AlertCircle,
     Copy,
@@ -29,7 +29,7 @@ export default function LinkedInConnection() {
     const fetchStatus = async () => {
         try {
             const token = localStorage.getItem('token');
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/linkedin-status`, {
+            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/auth/linkedin-status`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             const data = await res.json();
@@ -50,7 +50,7 @@ export default function LinkedInConnection() {
         setIsSyncing(true);
         try {
             const token = localStorage.getItem('token');
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/extension-sync`, {
+            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/auth/extension-sync`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -111,7 +111,7 @@ export default function LinkedInConnection() {
                                 </div>
                             </div>
                         </div>
-                        <button 
+                        <button
                             onClick={fetchStatus}
                             className="p-3 text-slate-400 hover:text-primary transition-all hover:bg-white rounded-2xl border border-transparent hover:border-slate-100 hover:shadow-sm"
                         >
@@ -141,7 +141,7 @@ export default function LinkedInConnection() {
                                 <div className="flex space-x-3">
                                     <div className="relative flex-1">
                                         <Key className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                                        <input 
+                                        <input
                                             type="password"
                                             value={cookieInput}
                                             onChange={(e) => setCookieInput(e.target.value)}
@@ -149,7 +149,7 @@ export default function LinkedInConnection() {
                                             className="w-full pl-11 pr-4 py-3 bg-slate-50 border-none rounded-2xl text-sm focus:ring-2 focus:ring-primary/20 transition-all"
                                         />
                                     </div>
-                                    <button 
+                                    <button
                                         onClick={handleCookieSync}
                                         disabled={isSyncing || !cookieInput}
                                         className="bg-primary text-white px-8 py-3 rounded-2xl font-bold text-sm shadow-lg shadow-primary/20 hover:bg-primary/90 transition-all disabled:opacity-50 active:scale-95"
@@ -206,9 +206,9 @@ export default function LinkedInConnection() {
             <div className="bg-white rounded-3xl border shadow-sm p-8 flex items-center justify-between">
                 <div className="flex items-center space-x-6">
                     <div className="w-12 h-12 rounded-full border-4 border-slate-50 overflow-hidden shadow-sm">
-                        <img 
-                            src="https://api.dicebear.com/7.x/avataaars/svg?seed=Felix" 
-                            alt="Extension" 
+                        <img
+                            src="https://api.dicebear.com/7.x/avataaars/svg?seed=Felix"
+                            alt="Extension"
                             className="w-full h-full object-cover"
                         />
                     </div>
