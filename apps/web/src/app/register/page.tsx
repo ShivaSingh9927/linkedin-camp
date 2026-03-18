@@ -16,12 +16,19 @@ export default function RegisterPage() {
     setLoading(true);
 
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/register`, {
+      // Fix potential trailing slash in API URL
+      const baseUrl = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/$/, '');
+      const fullUrl = `${baseUrl}/auth/register`;
+      
+      console.log(`[DEBUG] Registration attempt to: ${fullUrl}`);
+
+      const res = await fetch(fullUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
       });
 
+      console.log(`[DEBUG] Registration response status: ${res.status}`);
       const data = await res.json();
 
       if (res.ok) {
@@ -32,7 +39,8 @@ export default function RegisterPage() {
       } else {
         toast.error(data.error || 'Registration failed');
       }
-    } catch (error) {
+    } catch (error: any) {
+      console.error('[DEBUG] Registration Error:', error);
       toast.error('An error occurred. Please try again.');
     } finally {
       setLoading(false);
@@ -43,7 +51,7 @@ export default function RegisterPage() {
     <AuthLayout
       type="register"
       title="Create Account"
-      description="Start your journey to massively scale your LinkedIn pipeline."
+      description="Start your automated LinkedIn outreach today."
       loading={loading}
       email={email}
       setEmail={setEmail}

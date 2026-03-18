@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { prisma } from '../server';
+import { prisma } from '@repo/db';
 import { chromium } from 'playwright-extra';
 const stealth = require('puppeteer-extra-plugin-stealth')();
 import path from 'path';
@@ -115,7 +115,7 @@ export const getLinkedinStatus = async (req: any, res: Response) => {
                 lastName: "",
                 headline: "LinkedIn Member",
                 avatarUrl: null
-            }
+              }
         });
     } catch (error) {
         res.status(500).json({ error: 'Failed to fetch status' });
@@ -255,7 +255,7 @@ export const heartbeat = async (req: any, res: Response) => {
                 linkedinActiveInBrowser: true,
                 lastBrowserActivityAt: now,
                 // Update country if not set, helps with proxy assignment later
-                actualCountry: country || undefined
+                actualCountry: country || undefined 
             }
         });
 

@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { prisma } from '../server';
+import { prisma } from '@repo/db';
 
 export const addProxies = async (req: Request, res: Response): Promise<void> => {
     try {

@@ -28,30 +28,25 @@ app.get('/health', (req, res) => {
 
 app.get('/ping', (req, res) => res.send('pong'));
 
-app.use((req, res, next) => {
-    const origin = req.headers.origin;
+app.use(cors({
+    origin: (origin, callback) => {
+        // Allow if no origin (e.g. server-to-server or curl)
+        // OR if it matches our allowed patterns
+        if (!origin ||
+            origin.includes('vercel.app') ||
+            origin.includes('localhost') ||
+            origin.startsWith('chrome-extension://')) {
+            callback(null, true);
+        } else {
+            console.log(`[CORS] Blocked origin: ${origin}`);
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+}));
 
-    // Allow our specific Vercel domain, localhost, and ANY chrome-extension
-    if (origin && (
-        origin.includes('vercel.app') ||
-        origin.includes('localhost') ||
-        origin.startsWith('chrome-extension://')
-    )) {
-        res.setHeader('Access-Control-Allow-Origin', origin);
-        res.setHeader('Access-Control-Allow-Credentials', 'true');
-    }
-
-    res.setHeader('Access-Control-Allow-Private-Network', 'true');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-
-    // Handle Preflight
-    if (req.method === 'OPTIONS') {
-        return res.status(204).end();
-    }
-
-    next();
-});
 app.use(express.json());
 
 // Request logging middleware

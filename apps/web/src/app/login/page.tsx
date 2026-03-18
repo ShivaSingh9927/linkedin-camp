@@ -16,7 +16,11 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/login`, {
+      // Fix potential trailing slash in API URL
+      const baseUrl = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/$/, '');
+      const fullUrl = `${baseUrl}/auth/login`;
+
+      const res = await fetch(fullUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
@@ -33,6 +37,7 @@ export default function LoginPage() {
         toast.error(data.error || 'Login failed');
       }
     } catch (error) {
+      console.error('[DEBUG] Login Error:', error);
       toast.error('An error occurred. Please try again.');
     } finally {
       setLoading(false);

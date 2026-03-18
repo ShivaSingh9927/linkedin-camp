@@ -1,4 +1,4 @@
-import { prisma } from '../server';
+import { prisma } from '@repo/db';
 
 export const getOrAssignProxy = async (userId: string, detectedCountry?: string): Promise<any> => {
     // 1. Fetch user to check current proxy and actual country
