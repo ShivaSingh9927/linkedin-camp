@@ -1,204 +1,143 @@
 'use client';
 
-import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Plus, 
-  Mail, 
-  UserPlus, 
-  Clock, 
-  ChevronRight, 
-  Trash2, 
-  Sparkles,
-  Zap,
-  MousePointer2,
-  MessageSquare
-} from 'lucide-react';
-import { cn } from '@/lib/utils';
+import React, { useMemo, useCallback } from 'react';
+import {
+  ReactFlow,
+  Background,
+  Controls,
+  Connection,
+  addEdge,
+  Node,
+  Edge,
+  OnNodesChange,
+  OnEdgesChange,
+  Panel,
+  BackgroundVariant
+} from '@xyflow/react';
+import '@xyflow/react/dist/style.css';
 
-type StepType = 'INVITE' | 'MESSAGE' | 'DELAY' | 'VISIT' | 'LIKE';
+import { TriggerNode, ActionNode, ConditionNode, DelayNode } from './WorkflowNodes';
+import { Plus, MousePointer2, Mail, UserPlus, Clock, Zap, GitBranch } from 'lucide-react';
 
-interface WorkflowStep {
-  id: string;
-  type: StepType;
-  delay?: number; // hours
-  text?: string;
-  note?: string; // for invites
-}
-
-const STEP_METADATA: Record<StepType, { icon: any, color: string, label: string, description: string }> = {
-  VISIT: {
-    icon: MousePointer2,
-    color: 'bg-amber-500',
-    label: 'Profile Visit',
-    description: 'Visit lead profile to trigger notification'
-  },
-  INVITE: {
-    icon: UserPlus,
-    color: 'bg-blue-500',
-    label: 'Connection Request',
-    description: 'Send a request with optional note'
-  },
-  MESSAGE: {
-    icon: Mail,
-    color: 'bg-emerald-500',
-    label: 'LinkedIn Message',
-    description: 'Send a direct message to connection'
-  },
-  DELAY: {
-    icon: Clock,
-    color: 'bg-slate-400',
-    label: 'Wait Time',
-    description: 'Pause before the next action'
-  },
-  LIKE: {
-    icon: Zap,
-    color: 'bg-purple-500',
-    label: 'Like Post',
-    description: 'Like the most recent post'
-  }
+const nodeTypes = {
+  TRIGGER: TriggerNode,
+  ACTION: ActionNode,
+  CONDITION: ConditionNode,
+  DELAY: DelayNode,
 };
 
-export function CampaignBuilder() {
-  const [steps, setSteps] = useState<WorkflowStep[]>([
-    { id: '1', type: 'VISIT' },
-    { id: '2', type: 'DELAY', delay: 24 },
-    { id: '3', type: 'INVITE', note: "Hi {{firstName}}, I'd love to connect!" }
-  ]);
+interface CampaignBuilderProps {
+  nodes: Node[];
+  edges: Edge[];
+  onNodesChange: OnNodesChange<Node>;
+  onEdgesChange: OnEdgesChange<Edge>;
+  setNodes: React.Dispatch<React.SetStateAction<Node[]>>;
+  setEdges: React.Dispatch<React.SetStateAction<Edge[]>>;
+}
 
-  const addStep = (type: StepType) => {
-    const newStep: WorkflowStep = {
-      id: Math.random().toString(36).substr(2, 9),
-      type,
-      delay: type === 'DELAY' ? 24 : undefined
+export function CampaignBuilder({
+  nodes,
+  edges,
+  onNodesChange,
+  onEdgesChange,
+  setNodes,
+  setEdges
+}: CampaignBuilderProps) {
+
+  const onConnect = useCallback(
+    (params: Connection) => setEdges((eds) => addEdge({ ...params, animated: true, style: { stroke: '#6366f1', strokeWidth: 2 } }, eds)),
+    [setEdges],
+  );
+
+  const addNode = (subType: string, label: string, type: 'ACTION' | 'CONDITION' | 'DELAY' | 'TRIGGER') => {
+    const newNode: Node = {
+      id: `node_${Date.now()}`,
+      type: type,
+      position: { x: Math.random() * 400 + 100, y: Math.random() * 400 + 100 },
+      data: {
+        label,
+        subType,
+        type // backend expects type inside data too
+      },
     };
-    setSteps([...steps, newStep]);
-  };
-
-  const removeStep = (id: string) => {
-    setSteps(steps.filter(s => s.id !== id));
+    setNodes((nds) => nds.concat(newNode));
   };
 
   return (
-    <div className="flex flex-col space-y-8 pb-20">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-bold text-slate-900">Campaign Sequence</h2>
-          <p className="text-sm text-slate-500">Design the automation flow for this campaign.</p>
-        </div>
-        <div className="flex items-center space-x-3">
-          <button className="flex items-center space-x-2 px-4 py-2 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-100 transition-all">
-            <span>Pre-warmup</span>
-            <div className="w-8 h-4 bg-slate-200 rounded-full relative">
-              <div className="absolute left-1 top-1 w-2 h-2 bg-white rounded-full shadow-sm" />
-            </div>
-          </button>
-        </div>
-      </div>
+    <div className="w-full h-full bg-slate-50 relative group">
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        onConnect={onConnect}
+        nodeTypes={nodeTypes}
+        fitView
+        snapToGrid
+        snapGrid={[15, 15]}
+        defaultEdgeOptions={{
+          animated: true,
+          style: { stroke: '#cbd5e1', strokeWidth: 2 }
+        }}
+        className="bg-slate-50/50"
+      >
+        <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#cbd5e1" />
+        <Controls className="!bg-white !border-slate-200 !shadow-sm !rounded-xl overflow-hidden" />
 
-      <div className="relative space-y-12 pl-8 border-l-2 border-dashed border-slate-200 ml-4">
-        <AnimatePresence mode="popLayout">
-          {steps.map((step, index) => {
-            const meta = STEP_METADATA[step.type];
-            return (
-              <motion.div
-                key={step.id}
-                layout
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, scale: 0.9 }}
-                className="relative group"
-              >
-                {/* Node connector dot */}
-                <div className={cn(
-                  "absolute -left-[45px] top-1/2 -translate-y-1/2 w-8 h-8 rounded-full border-4 border-slate-50 flex items-center justify-center shadow-sm z-10 transition-transform group-hover:scale-110",
-                  meta.color
-                )}>
-                  <meta.icon className="w-4 h-4 text-white" />
-                </div>
-
-                <div className="bg-white rounded-3xl border shadow-sm p-6 hover:shadow-xl transition-all hover:border-primary/20">
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center space-x-4">
-                      <div className={cn("p-2 rounded-xl bg-opacity-10", meta.color.replace('bg-', 'bg-opacity-10 text-'))}>
-                        <meta.icon className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <div className="flex items-center space-x-2">
-                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Step {index + 1}</span>
-                          <h4 className="font-bold text-slate-900">{meta.label}</h4>
-                        </div>
-                        <p className="text-xs text-slate-500 mt-0.5">{meta.description}</p>
-                      </div>
-                    </div>
-                    <button 
-                      onClick={() => removeStep(step.id)}
-                      className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-
-                  {step.type === 'DELAY' && (
-                    <div className="mt-6 flex items-center space-x-4 p-4 bg-slate-50 rounded-2xl">
-                      <Clock className="w-4 h-4 text-slate-400" />
-                      <div className="flex items-center space-x-2">
-                        <span className="text-sm font-bold text-slate-700">Wait for</span>
-                        <input 
-                          type="number" 
-                          defaultValue={step.delay}
-                          className="w-16 h-8 bg-white border rounded-lg text-center font-bold text-primary"
-                        />
-                        <span className="text-sm font-bold text-slate-700">hours</span>
-                      </div>
-                    </div>
-                  )}
-
-                  {(step.type === 'INVITE' || step.type === 'MESSAGE') && (
-                    <div className="mt-6 space-y-4">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-slate-500">Personalized Message</span>
-                        <button className="flex items-center space-x-1 text-xs font-bold text-primary hover:underline">
-                          <Sparkles className="w-3 h-3" />
-                          <span>AI Personalize</span>
-                        </button>
-                      </div>
-                      <textarea 
-                        className="w-full p-4 bg-slate-50 border-none rounded-2xl text-sm focus:ring-2 focus:ring-primary/20 min-h-[100px]"
-                        placeholder={`Hi {{firstName}}, I noticed your work at {{company}}...`}
-                        defaultValue={step.note || step.text}
-                      />
-                    </div>
-                  )}
-                </div>
-              </motion.div>
-            );
-          })}
-        </AnimatePresence>
-
-        {/* Add Step Action */}
-        <div className="relative pt-4">
-          <div className="absolute -left-[45px] top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-slate-100 border-4 border-slate-50 flex items-center justify-center text-slate-400">
-            <Plus className="w-4 h-4" />
+        <Panel position="top-right" className="flex flex-col gap-2 p-4 bg-white/80 backdrop-blur-md border border-slate-200 rounded-2xl shadow-xl shadow-slate-200/50 max-w-[200px]">
+          <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-2">
+            <Plus className="w-3 h-3" />
+            Build Sequence
           </div>
-          
-          <div className="flex flex-wrap gap-3">
-            {(Object.keys(STEP_METADATA) as StepType[]).map((type) => {
-              const meta = STEP_METADATA[type];
-              return (
-                <button
-                  key={type}
-                  onClick={() => addStep(type)}
-                  className="flex items-center space-x-2 px-4 py-2 bg-white border rounded-2xl text-xs font-bold text-slate-600 hover:border-primary hover:text-primary hover:shadow-lg transition-all active:scale-95"
-                >
-                  <meta.icon className="w-3 h-3" />
-                  <span>{meta.label}</span>
-                </button>
-              );
-            })}
+
+          <div className="grid grid-cols-1 gap-2">
+            <button
+              onClick={() => addNode('VISIT', 'Profile Visit', 'ACTION')}
+              className="flex items-center gap-2 p-2 rounded-lg hover:bg-amber-50 text-slate-600 hover:text-amber-600 border border-transparent hover:border-amber-100 transition-all text-xs font-bold"
+            >
+              <div className="p-1 bg-amber-100 rounded text-amber-600"><MousePointer2 className="w-3 h-3" /></div>
+              Visit Profile
+            </button>
+
+            <button
+              onClick={() => addNode('INVITE', 'Connect Request', 'ACTION')}
+              className="flex items-center gap-2 p-2 rounded-lg hover:bg-blue-50 text-slate-600 hover:text-blue-600 border border-transparent hover:border-blue-100 transition-all text-xs font-bold"
+            >
+              <div className="p-1 bg-blue-100 rounded text-blue-600"><UserPlus className="w-3 h-3" /></div>
+              Send Invite
+            </button>
+
+            <button
+              onClick={() => addNode('MESSAGE', 'Send Message', 'ACTION')}
+              className="flex items-center gap-2 p-2 rounded-lg hover:bg-emerald-50 text-slate-600 hover:text-emerald-600 border border-transparent hover:border-emerald-100 transition-all text-xs font-bold"
+            >
+              <div className="p-1 bg-emerald-100 rounded text-emerald-600"><Mail className="w-3 h-3" /></div>
+              Send Message
+            </button>
+
+            <button
+              onClick={() => addNode('WAIT', 'Delay', 'DELAY')}
+              className="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-100 text-slate-600 hover:text-slate-900 border border-transparent hover:border-slate-200 transition-all text-xs font-bold"
+            >
+              <div className="p-1 bg-slate-200 rounded text-slate-600"><Clock className="w-3 h-3" /></div>
+              Wait / Delay
+            </button>
+
+            <button
+              onClick={() => addNode('REPLIED', 'If Replied', 'CONDITION')}
+              className="flex items-center gap-2 p-2 rounded-lg hover:bg-purple-50 text-slate-600 hover:text-purple-600 border border-transparent hover:border-purple-100 transition-all text-xs font-bold"
+            >
+              <div className="p-1 bg-purple-100 rounded text-purple-600"><GitBranch className="w-3 h-3" /></div>
+              Check Reply
+            </button>
           </div>
-        </div>
-      </div>
+        </Panel>
+
+        <Panel position="bottom-left" className="bg-white/80 backdrop-blur-md px-3 py-1.5 border border-slate-200 rounded-full shadow-lg text-[10px] font-bold text-slate-400 flex items-center gap-2">
+          <Zap className="w-3 h-3 text-indigo-500 fill-current" />
+          AUTOMATION CANVAS V2.0
+        </Panel>
+      </ReactFlow>
     </div>
   );
 }

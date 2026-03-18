@@ -1,20 +1,20 @@
 'use client';
 
 import { useState } from 'react';
-import { 
-    User, 
-    Linkedin, 
-    Shield, 
-    Bell, 
-    CreditCard, 
-    Lock, 
-    Globe, 
+import {
+    User,
+    Linkedin,
+    Shield,
+    Bell,
+    CreditCard,
+    Lock,
+    Globe,
     ChevronRight,
     Sparkles,
     Trash2,
     Save
 } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import LinkedInConnection from '@/components/LinkedInConnection';
 import { cn } from '@/lib/utils';
 import { TopBar } from '@/components/TopBar';
@@ -39,11 +39,11 @@ export default function SettingsPage() {
 
     return (
         <div className="min-h-full bg-slate-50 flex flex-col">
-            <TopBar 
-                title="Settings" 
+            <TopBar
+                title="Settings"
                 description="Manage your account preferences and integrations."
                 action={
-                    <button 
+                    <button
                         onClick={handleSave}
                         disabled={isSaving}
                         className="flex items-center space-x-2 bg-slate-900 text-white px-6 py-2.5 rounded-2xl text-sm font-black shadow-lg shadow-slate-900/10 hover:shadow-slate-900/20 transition-all active:scale-95 disabled:opacity-50"
@@ -68,8 +68,8 @@ export default function SettingsPage() {
                                 onClick={() => setActiveSection(item.key)}
                                 className={cn(
                                     "w-full flex items-center justify-between px-4 py-3.5 rounded-2xl transition-all group font-bold text-sm",
-                                    activeSection === item.key 
-                                        ? "bg-primary text-white shadow-lg shadow-primary/20" 
+                                    activeSection === item.key
+                                        ? "bg-primary text-white shadow-lg shadow-primary/20"
                                         : "text-slate-500 hover:bg-slate-50"
                                 )}
                             >
@@ -108,22 +108,22 @@ export default function SettingsPage() {
                                         <div className="grid grid-cols-2 gap-8">
                                             <div className="space-y-2">
                                                 <label className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">Display Name</label>
-                                                <input 
-                                                    type="text" 
+                                                <input
+                                                    type="text"
                                                     defaultValue="Shiva Singh"
                                                     className="w-full px-6 py-4 bg-slate-50 border-none rounded-2xl text-sm font-bold focus:ring-2 focus:ring-primary/20"
                                                 />
                                             </div>
                                             <div className="space-y-2">
                                                 <label className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">Email Address</label>
-                                                <input 
-                                                    type="email" 
+                                                <input
+                                                    type="email"
                                                     defaultValue="shiva@example.com"
                                                     className="w-full px-6 py-4 bg-slate-50 border-none rounded-2xl text-sm font-bold focus:ring-2 focus:ring-primary/20"
                                                 />
                                             </div>
                                         </div>
-                                        
+
                                         <div className="mt-12 flex items-center space-x-8">
                                             <div className="w-24 h-24 rounded-[2rem] bg-slate-100 flex items-center justify-center border-4 border-slate-50 overflow-hidden shadow-inner">
                                                 <User className="w-10 h-10 text-slate-300" />
