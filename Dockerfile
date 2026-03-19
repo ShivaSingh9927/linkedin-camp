@@ -21,5 +21,6 @@ RUN npx prisma generate --schema=packages/db/schema.prisma
 # Build the backend workspace using Turbo
 RUN npx turbo run build --filter=backend
 
-# Start the server (with DB push just like the Railpack logs)
-CMD ["sh", "-c", "npx prisma db push --schema=packages/db/schema.prisma --accept-data-loss && npm start --workspace=backend"]
+# Start only the server (no db push) for diagnostic stability
+# We want to see [BACKEND-INIT] in the logs immediately.
+CMD ["sh", "-c", "echo '🚀 STARTING BACKEND CONTAINER' && node apps/backend/dist/server.js"]
