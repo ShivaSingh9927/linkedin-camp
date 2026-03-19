@@ -315,12 +315,62 @@ export const generateDemoLeads = async (req: any, res: Response) => {
     }
 };
 
+export const createManualLead = async (req: any, res: Response) => {
+    const userId = req.user.id;
+    const { firstName, lastName, linkedinUrl, jobTitle, company, email, country, gender, tags } = req.body;
+
+    if (!linkedinUrl) {
+        return res.status(400).json({ error: 'LinkedIn URL is required' });
+    }
+
+    try {
+        const lead = await prisma.lead.upsert({
+            where: { userId_linkedinUrl: { userId, linkedinUrl } },
+            update: {
+                firstName: firstName || undefined,
+                lastName: lastName || undefined,
+                jobTitle: jobTitle || undefined,
+                company: company || undefined,
+                email: email || undefined,
+                country: country || undefined,
+                gender: gender || undefined,
+                tags: tags || []
+            },
+            create: {
+                userId,
+                linkedinUrl,
+                firstName: firstName || '',
+                lastName: lastName || '',
+                jobTitle,
+                company,
+                email,
+                country,
+                gender,
+                tags: tags || []
+            }
+        });
+        res.json({ success: true, lead });
+    } catch (error) {
+        console.error('Error creating manual lead:', error);
+        res.status(500).json({ error: 'Failed to create lead' });
+    }
+};
+
 export const getLeads = async (req: any, res: Response) => {
     const userId = req.user.id;
 
     try {
         const leads = await prisma.lead.findMany({
             where: { userId },
+            include: {
+                campaignLeads: {
+                    include: {
+                        campaign: {
+                            select: { name: true }
+                        }
+                    }
+                }
+            },
             orderBy: { createdAt: 'desc' },
         });
         res.json(leads);

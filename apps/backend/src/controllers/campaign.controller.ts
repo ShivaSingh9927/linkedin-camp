@@ -278,3 +278,23 @@ export const getCampaignStatus = async (req: any, res: Response) => {
         res.status(500).json({ error: 'Failed to fetch campaign status' });
     }
 };
+
+export const removeLeadFromCampaign = async (req: any, res: Response) => {
+    const { id: campaignId, leadId } = req.params;
+    const userId = req.user.id; // Verify ownership if needed
+
+    try {
+        await prisma.campaignLead.delete({
+            where: {
+                campaignId_leadId: {
+                    campaignId,
+                    leadId
+                }
+            }
+        });
+        res.json({ success: true, message: 'Lead removed from campaign' });
+    } catch (error) {
+        console.error('Error removing lead from campaign:', error);
+        res.status(500).json({ error: 'Failed to remove lead from campaign' });
+    }
+};

@@ -1,6 +1,13 @@
 import { Router } from 'express';
-import { importLeads, getLeads, generateDemoLeads, uploadCsvLeads, deleteLead } from '../controllers/lead.controller';
-import { authMiddleware } from '../middleware/auth';
+import {
+    importLeads,
+    getLeads,
+    deleteLead,
+    generateDemoLeads,
+    createManualLead,
+    uploadCsvLeads
+} from '../controllers/lead.controller';
+import { authMiddleware } from '../middleware/auth.middleware';
 import multer from 'multer';
 
 const upload = multer({ dest: 'uploads/' });
@@ -10,8 +17,9 @@ router.use(authMiddleware);
 
 router.post('/import', importLeads);
 router.post('/upload', upload.single('file'), uploadCsvLeads);
-router.post('/demo', generateDemoLeads);
 router.get('/', getLeads);
 router.delete('/:id', deleteLead);
+router.post('/demo', generateDemoLeads);
+router.post('/manual', createManualLead);
 
 export default router;
