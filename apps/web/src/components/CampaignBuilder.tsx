@@ -250,7 +250,7 @@ function CampaignBuilderInner({
                 </div>
             )}
 
-            {!['MESSAGE', 'WAIT', 'TRIGGER'].includes(selectedNode.data.subType || selectedNode.data.type as string) && (
+            {!['MESSAGE', 'WAIT', 'TRIGGER'].includes(((selectedNode.data as any).subType || selectedNode.data.type) as string) && (
                  <div className="flex flex-col items-center justify-center py-12 text-center opacity-50">
                     <div className="p-4 bg-slate-100 rounded-full text-slate-400">
                         <Edit3 className="w-8 h-8" />
