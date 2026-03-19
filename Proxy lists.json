@@ -1,0 +1,52 @@
+[
+  {
+    "entryPoint": "disp.oxylabs.io",
+    "ip": "67.217.229.54",
+    "port": 8001,
+    "countryCode": "IN",
+    "asn": {
+      "name": "Vodafone Idea",
+      "number": 55410
+    }
+  },
+  {
+    "entryPoint": "disp.oxylabs.io",
+    "ip": "167.160.99.41",
+    "port": 8002,
+    "countryCode": "IN",
+    "asn": {
+      "name": "Vodafone Idea",
+      "number": 55410
+    }
+  },
+  {
+    "entryPoint": "disp.oxylabs.io",
+    "ip": "167.160.114.36",
+    "port": 8003,
+    "countryCode": "IN",
+    "asn": {
+      "name": "Vodafone Idea",
+      "number": 55410
+    }
+  },
+  {
+    "entryPoint": "disp.oxylabs.io",
+    "ip": "167.160.115.32",
+    "port": 8004,
+    "countryCode": "IN",
+    "asn": {
+      "name": "Vodafone Idea",
+      "number": 55410
+    }
+  },
+  {
+    "entryPoint": "disp.oxylabs.io",
+    "ip": "167.160.116.28",
+    "port": 8005,
+    "countryCode": "IN",
+    "asn": {
+      "name": "Vodafone Idea",
+      "number": 55410
+    }
+  }
+]
