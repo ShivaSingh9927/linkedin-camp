@@ -183,13 +183,13 @@ export const startLinkedinLogin = async (req: any, res: Response) => {
             });
 
             const launchOptions: any = {
-                headless: false,
+                headless: true,
                 args: [
                     '--disable-blink-features=AutomationControlled',
                     '--no-sandbox',
                     '--disable-setuid-sandbox'
                 ],
-                userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+                userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, Gecko) Chrome/128.0.0.0 Safari/537.36',
                 viewport: { width: 1280, height: 720 },
             };
 
