@@ -90,7 +90,7 @@ export const startSimulationLogin = async (req: any, res: Response) => {
         if (currentUrl.includes('/feed')) {
             // Instant Success (Rare)
             const cookies = await context.cookies();
-            const liAt = cookies.find(c => c.name === 'li_at')?.value;
+            const liAt = cookies.find((c: any) => c.name === 'li_at')?.value;
 
             await prisma.user.update({
                 where: { id: userId },
@@ -146,7 +146,7 @@ export const submitSimulation2FA = async (req: any, res: Response) => {
 
         if (page.url().includes('/feed') || page.url().includes('/in/')) {
             const cookies = await context.cookies();
-            const liAt = cookies.find(c => c.name === 'li_at')?.value;
+            const liAt = cookies.find((c: any) => c.name === 'li_at')?.value;
 
             await prisma.user.update({
                 where: { id: userId },
