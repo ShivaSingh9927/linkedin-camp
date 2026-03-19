@@ -99,7 +99,6 @@ function CampaignBuilderInner({
         return node;
       })
     );
-    toast.success('Step updated');
   };
 
   return (
@@ -199,7 +198,10 @@ function CampaignBuilderInner({
           </div>
 
           <div className="p-6 flex-1 overflow-y-auto space-y-6">
-            {selectedNode.data.subType === 'MESSAGE' && (
+            {(
+              ['MESSAGE', 'SEND MESSAGE'].includes((((selectedNode.data as any).subType || '') as string).toUpperCase()) ||
+              ((selectedNode.data as any).label || '').toUpperCase().includes('MESSAGE')
+            ) && (
               <div className="space-y-3">
                 <label className="text-xs font-bold text-slate-600 flex items-center gap-2">
                   <Mail className="w-3 h-3 text-indigo-500" />
@@ -217,7 +219,11 @@ function CampaignBuilderInner({
               </div>
             )}
 
-            {selectedNode.data.subType === 'WAIT' && (
+            {(
+              ['WAIT', 'DELAY'].includes((((selectedNode.data as any).subType || '') as string).toUpperCase()) ||
+              ((selectedNode.data as any).label || '').toUpperCase().includes('DELAY') ||
+              ((selectedNode.data as any).label || '').toUpperCase().includes('WAIT')
+            ) && (
               <div className="space-y-3">
                 <label className="text-xs font-bold text-slate-600 flex items-center gap-2">
                   <Clock className="w-3 h-3 text-amber-500" />
@@ -239,24 +245,29 @@ function CampaignBuilderInner({
             )}
 
             {selectedNode.data.type === 'TRIGGER' && (
-                <div className="flex flex-col items-center justify-center py-12 text-center space-y-4">
-                    <div className="p-4 bg-indigo-100 rounded-full text-indigo-600">
-                        <Zap className="w-8 h-8 fill-current" />
-                    </div>
-                    <div className="space-y-1">
-                        <p className="text-xs font-black text-slate-800">SEQUENCE START</p>
-                        <p className="text-[10px] text-slate-400 max-w-[150px]">The campaign begins as soon as leads are imported.</p>
-                    </div>
+              <div className="flex flex-col items-center justify-center py-12 text-center space-y-4">
+                <div className="p-4 bg-indigo-100 rounded-full text-indigo-600">
+                  <Zap className="w-8 h-8 fill-current" />
                 </div>
+                <div className="space-y-1">
+                  <p className="text-xs font-black text-slate-800 uppercase">Input: Lead Import</p>
+                  <p className="text-[10px] text-slate-400 max-w-[150px]">The campaign begins as soon as leads are imported.</p>
+                </div>
+              </div>
             )}
 
-            {!['MESSAGE', 'WAIT', 'TRIGGER'].includes(((selectedNode.data as any).subType || selectedNode.data.type) as string) && (
-                 <div className="flex flex-col items-center justify-center py-12 text-center opacity-50">
-                    <div className="p-4 bg-slate-100 rounded-full text-slate-400">
-                        <Edit3 className="w-8 h-8" />
-                    </div>
-                    <p className="text-[10px] font-black text-slate-500 mt-4">NO SETTINGS AVAILABLE</p>
-                 </div>
+            {!(
+              ['MESSAGE', 'SEND MESSAGE', 'WAIT', 'DELAY', 'TRIGGER'].includes((((selectedNode.data as any).subType || selectedNode.data.type || '') as string).toUpperCase()) ||
+              ((selectedNode.data as any).label || '').toUpperCase().includes('MESSAGE') ||
+              ((selectedNode.data as any).label || '').toUpperCase().includes('DELAY') ||
+              ((selectedNode.data as any).label || '').toUpperCase().includes('WAIT')
+            ) && (
+              <div className="flex flex-col items-center justify-center py-12 text-center opacity-50">
+                <div className="p-4 bg-slate-100 rounded-full text-slate-400">
+                  <Edit3 className="w-8 h-8" />
+                </div>
+                <p className="text-[10px] font-black text-slate-500 mt-4">NO SETTINGS AVAILABLE</p>
+              </div>
             )}
           </div>
 
