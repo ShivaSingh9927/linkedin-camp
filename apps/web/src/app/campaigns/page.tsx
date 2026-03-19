@@ -92,12 +92,43 @@ export default function CampaignsPage() {
         setStatusPanel({ campaignId, data: null });
         try {
             const response = await api.get(`/campaigns/${campaignId}/status`);
-            setStatusPanel({ campaignId, data: response.data });
+            const allLeadsRes = await api.get('/leads');
+
+            // Filter out leads already in this campaign
+            const currentLeadIds = new Set(response.data.leads.map((l: any) => l.lead.id));
+            const availableLeads = allLeadsRes.data.filter((l: any) => !currentLeadIds.has(l.id));
+
+            setStatusPanel({
+                campaignId,
+                data: {
+                    ...response.data,
+                    availableLeads
+                }
+            });
         } catch (error) {
             console.error('Failed to fetch campaign status:', error);
             setStatusPanel(null);
         } finally {
             setStatusLoading(false);
+        }
+    };
+
+    const removeLeadFromCampaign = async (campaignId: string, leadId: string) => {
+        if (!confirm('Remove this lead from campaign?')) return;
+        try {
+            await api.delete(`/campaigns/${campaignId}/leads/${leadId}`);
+            fetchStatus(campaignId);
+        } catch (error) {
+            alert('Failed to remove lead.');
+        }
+    };
+
+    const addLeadToCampaign = async (campaignId: string, leadId: string) => {
+        try {
+            await api.post(`/campaigns/${campaignId}/start`, { leadIds: [leadId] });
+            fetchStatus(campaignId);
+        } catch (error) {
+            alert('Failed to add lead.');
         }
     };
 
@@ -438,12 +469,28 @@ export default function CampaignsPage() {
                                         </p>
                                     )}
                                 </div>
-                                <button
-                                    onClick={() => setStatusPanel(null)}
-                                    className="w-12 h-12 rounded-2xl bg-white border border-border flex items-center justify-center hover:bg-muted transition-all shadow-sm"
-                                >
-                                    <X className="w-6 h-6" />
-                                </button>
+                                <div className="flex items-center space-x-3">
+                                    <button
+                                        onClick={() => fetchStatus(statusPanel.campaignId)}
+                                        className="w-10 h-10 rounded-xl bg-white border border-border flex items-center justify-center hover:bg-muted transition-all"
+                                        title="Refresh Status"
+                                    >
+                                        <Loader2 className={cn("w-4 h-4", statusLoading && "animate-spin")} />
+                                    </button>
+                                    <button
+                                        onClick={() => setStatusPanel(null)}
+                                        className="w-12 h-12 rounded-2xl bg-white border border-border flex items-center justify-center hover:bg-muted transition-all shadow-sm"
+                                    >
+                                        <X className="w-6 h-6" />
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="bg-primary/5 px-10 py-6 border-b border-border flex items-center justify-between">
+                                <span className="text-[10px] font-black text-primary uppercase tracking-widest">Lead Management Control</span>
+                                <div className="flex gap-2">
+                                    {/* Additional controls could go here */}
+                                </div>
                             </div>
 
                             <div className="flex-1 overflow-y-auto p-10 scrollbar-hide">
@@ -457,61 +504,100 @@ export default function CampaignsPage() {
                                         <p className="text-sm font-black uppercase tracking-widest text-muted-foreground">Engine is currently empty.</p>
                                     </div>
                                 ) : (
-                                    <div className="space-y-6">
-                                        {statusPanel.data?.leads?.map((lead: any) => (
-                                            <div key={lead.campaignLeadId} className="bg-card border border-border rounded-[2.5rem] p-8 shadow-soft hover:shadow-xl transition-all">
-                                                <div className="flex items-start justify-between">
-                                                    <div>
-                                                        <h4 className="text-lg font-black text-foreground uppercase tracking-tight">{lead.lead.firstName} {lead.lead.lastName}</h4>
-                                                        <a href={lead.lead.linkedinUrl} target="_blank" className="text-[10px] font-black text-primary uppercase tracking-[0.2em] hover:underline mt-1 inline-block opacity-80">View Nexus Link</a>
-                                                    </div>
-                                                    <span className={cn(
-                                                        "text-[9px] font-black px-4 py-1.5 rounded-full border shadow-sm uppercase tracking-widest",
-                                                        lead.isCompleted ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20" : "bg-primary/10 text-primary border-primary/20"
-                                                    )}>
-                                                        {lead.isCompleted ? 'Finalized' : 'Operational'}
-                                                    </span>
-                                                </div>
-
-                                                <div className="grid grid-cols-2 gap-4 mt-8">
-                                                    <div className="bg-muted p-5 rounded-3xl border border-border/50">
-                                                        <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">Execution Point</span>
-                                                        <p className="text-sm font-black text-foreground uppercase tracking-tight mt-1 truncate">{lead.currentStepId?.slice(-8) || 'INITIAL'}</p>
-                                                    </div>
-                                                    <div className="bg-muted p-5 rounded-3xl border border-border/50">
-                                                        <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">Synchronizer</span>
-                                                        <p className="text-sm font-black text-foreground mt-1 tracking-tight">
-                                                            {lead.nextActionDate ? new Date(lead.nextActionDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'READY'}
-                                                        </p>
-                                                    </div>
-                                                </div>
-
-                                                {lead.personalization && (
-                                                    <div className="mt-6 p-6 bg-primary/5 rounded-[2rem] border border-primary/10 italic">
-                                                        <p className="text-sm text-foreground leading-relaxed font-medium">"{lead.personalization}"</p>
-                                                    </div>
-                                                )}
-
-                                                {lead.recentLogs?.length > 0 && (
-                                                    <div className="mt-8 border-t border-border pt-6">
-                                                        <span className="text-[9px] font-black text-muted-foreground uppercase tracking-[0.2em] mb-4 block">Operation Sequence</span>
-                                                        <div className="space-y-3">
-                                                            {lead.recentLogs.map((log: any, idx: number) => (
-                                                                <div key={idx} className="flex items-center justify-between bg-muted/40 p-4 rounded-2xl border border-border/30">
-                                                                    <div className="flex items-center space-x-4">
-                                                                        <div className={cn("w-2 h-2 rounded-full", log.status === 'SUCCESS' ? "bg-emerald-500" : "bg-red-500")} />
-                                                                        <span className="text-[10px] font-black text-foreground uppercase tracking-widest">{log.actionType.replace(/_/g, ' ')}</span>
-                                                                    </div>
-                                                                    <span className="text-[9px] font-bold text-muted-foreground uppercase opacity-60">
-                                                                        {new Date(log.executedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                                                    </span>
-                                                                </div>
-                                                            ))}
+                                    <div className="space-y-12">
+                                        <div className="space-y-6">
+                                            <div className="flex items-center justify-between px-2">
+                                                <h4 className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em]">Active Deployment ({statusPanel.data?.leads?.length})</h4>
+                                            </div>
+                                            {statusPanel.data?.leads?.map((lead: any) => (
+                                                <div key={lead.campaignLeadId} className="bg-card border border-border rounded-[2.5rem] p-8 shadow-soft hover:shadow-xl transition-all relative group">
+                                                    <div className="flex items-start justify-between">
+                                                        <div>
+                                                            <h4 className="text-lg font-black text-foreground uppercase tracking-tight">{lead.lead.firstName} {lead.lead.lastName}</h4>
+                                                            <a href={lead.lead.linkedinUrl} target="_blank" className="text-[10px] font-black text-primary uppercase tracking-[0.2em] hover:underline mt-1 inline-block opacity-80">View Nexus Link</a>
+                                                        </div>
+                                                        <div className="flex items-center space-x-3">
+                                                            <span className={cn(
+                                                                "text-[9px] font-black px-4 py-1.5 rounded-full border shadow-sm uppercase tracking-widest",
+                                                                lead.isCompleted ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20" : "bg-primary/10 text-primary border-primary/20"
+                                                            )}>
+                                                                {lead.isCompleted ? 'Finalized' : 'Operational'}
+                                                            </span>
+                                                            <button
+                                                                onClick={() => removeLeadFromCampaign(statusPanel.campaignId, lead.lead.id)}
+                                                                className="opacity-0 group-hover:opacity-100 w-8 h-8 rounded-lg bg-red-50 text-red-500 flex items-center justify-center hover:bg-red-100 transition-all"
+                                                                title="Remove from Campaign"
+                                                            >
+                                                                <Trash2 className="w-4 h-4" />
+                                                            </button>
                                                         </div>
                                                     </div>
-                                                )}
-                                            </div>
-                                        ))}
+
+                                                    <div className="grid grid-cols-2 gap-4 mt-8">
+                                                        <div className="bg-muted p-5 rounded-3xl border border-border/50">
+                                                            <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">Execution Point</span>
+                                                            <p className="text-sm font-black text-foreground uppercase tracking-tight mt-1 truncate">{lead.currentStepId?.slice(-8) || 'INITIAL'}</p>
+                                                        </div>
+                                                        <div className="bg-muted p-5 rounded-3xl border border-border/50">
+                                                            <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">Synchronizer</span>
+                                                            <p className="text-sm font-black text-foreground mt-1 tracking-tight">
+                                                                {lead.nextActionDate ? new Date(lead.nextActionDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'READY'}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+
+                                                    {lead.personalization && (
+                                                        <div className="mt-6 p-6 bg-primary/5 rounded-[2rem] border border-primary/10 italic">
+                                                            <p className="text-sm text-foreground leading-relaxed font-medium">"{lead.personalization}"</p>
+                                                        </div>
+                                                    )}
+
+                                                    {lead.recentLogs?.length > 0 && (
+                                                        <div className="mt-8 border-t border-border pt-6">
+                                                            <span className="text-[9px] font-black text-muted-foreground uppercase tracking-[0.2em] mb-4 block">Operation Sequence</span>
+                                                            <div className="space-y-3">
+                                                                {lead.recentLogs.map((log: any, idx: number) => (
+                                                                    <div key={idx} className="flex items-center justify-between bg-muted/40 p-4 rounded-2xl border border-border/30">
+                                                                        <div className="flex items-center space-x-4">
+                                                                            <div className={cn("w-2 h-2 rounded-full", log.status === 'SUCCESS' ? "bg-emerald-500" : "bg-red-500")} />
+                                                                            <span className="text-[10px] font-black text-foreground uppercase tracking-widest">{log.actionType.replace(/_/g, ' ')}</span>
+                                                                        </div>
+                                                                        <span className="text-[9px] font-bold text-muted-foreground uppercase opacity-60">
+                                                                            {new Date(log.executedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                                        </span>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        {/* Add Leads Section */}
+                                        <div className="pt-10 border-t border-border">
+                                            <h4 className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] mb-6 px-2 italic">Available Prospects for Reinforcement</h4>
+                                            {statusPanel.data?.availableLeads?.length === 0 ? (
+                                                <p className="text-xs font-bold text-muted-foreground/40 text-center py-10 uppercase italic">No available prospects in global list.</p>
+                                            ) : (
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                                    {statusPanel.data?.availableLeads?.map((lead: any) => (
+                                                        <div key={lead.id} className="flex items-center justify-between p-5 bg-muted/20 border border-border/50 rounded-3xl hover:bg-white transition-all group">
+                                                            <div className="min-w-0">
+                                                                <p className="text-sm font-black text-foreground uppercase truncate">{lead.firstName} {lead.lastName}</p>
+                                                                <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest truncate">{lead.company || 'Global Entity'}</p>
+                                                            </div>
+                                                            <button
+                                                                onClick={() => addLeadToCampaign(statusPanel.campaignId, lead.id)}
+                                                                className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center hover:bg-primary hover:text-primary-foreground transition-all shadow-sm"
+                                                            >
+                                                                <Plus className="w-4 h-4" />
+                                                            </button>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
                                 )}
                             </div>
