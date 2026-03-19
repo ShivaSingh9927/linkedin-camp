@@ -20,7 +20,10 @@ export const ActionNode = ({ id, data }: any) => {
                     </div>
                 </div>
                 <button
-                    onClick={() => deleteElements({ nodes: [{ id }] })}
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        deleteElements({ nodes: [{ id }] });
+                    }}
                     className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
                     title="Delete Node"
                 >
@@ -34,7 +37,7 @@ export const ActionNode = ({ id, data }: any) => {
                     <span className="text-xs font-medium text-slate-600">{data.subType}</span>
                 </div>
                 {data.message && (
-                    <div className="mt-3 p-2 bg-slate-50 rounded-lg text-[10px] text-slate-500 italic border border-dashed border-slate-200">
+                    <div className="mt-3 p-2 bg-slate-50 rounded-lg text-[10px] text-slate-500 italic border border-dashed border-slate-200 line-clamp-3">
                         "{data.message}"
                     </div>
                 )}
@@ -63,7 +66,10 @@ export const ConditionNode = ({ id, data }: any) => {
                     </div>
                 </div>
                 <button
-                    onClick={() => deleteElements({ nodes: [{ id }] })}
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        deleteElements({ nodes: [{ id }] });
+                    }}
                     className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
                 >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -118,7 +124,10 @@ export const DelayNode = ({ id, data }: any) => {
                     </div>
                 </div>
                 <button
-                    onClick={() => deleteElements({ nodes: [{ id }] })}
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        deleteElements({ nodes: [{ id }] });
+                    }}
                     className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
                 >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -127,7 +136,7 @@ export const DelayNode = ({ id, data }: any) => {
 
             <div className="p-4 bg-white flex flex-col items-center justify-center">
                 <div className="text-2xl font-black text-slate-700">{data.days || 1}</div>
-                <div className="text-[10px] font-bold text-slate-400 uppercase">Day(s)</div>
+                <div className="text-[10px] font-bold text-slate-400 uppercase">{data.days === 1 ? 'Day' : 'Days'}</div>
             </div>
 
             <Handle type="source" position={Position.Bottom} className="w-4 h-4 bg-amber-400 border-2 border-white !-bottom-2" />
