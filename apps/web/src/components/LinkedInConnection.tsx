@@ -33,7 +33,8 @@ export default function LinkedInConnection() {
     const fetchStatus = async () => {
         try {
             const token = localStorage.getItem('token');
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/auth/linkedin-status`, {
+            const apiBase = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/v1\/?$/, '');
+            const res = await fetch(`${apiBase}/api/v1/auth/linkedin-status`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             const data = await res.json();
@@ -57,7 +58,8 @@ export default function LinkedInConnection() {
 
         try {
             const token = localStorage.getItem('token');
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/auth/start-simulation`, {
+            const apiBase = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/v1\/?$/, '');
+            const res = await fetch(`${apiBase}/api/v1/auth/start-simulation`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -91,7 +93,8 @@ export default function LinkedInConnection() {
         setStep('SYNCING');
         try {
             const token = localStorage.getItem('token');
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/auth/submit-2fa`, {
+            const apiBase = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/v1\/?$/, '');
+            const res = await fetch(`${apiBase}/api/v1/auth/submit-2fa`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
