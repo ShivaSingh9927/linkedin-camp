@@ -100,22 +100,31 @@ export const processWorkflowStep = async (data: any, job: Job) => {
 
         const page = context.pages()[0] || await context.newPage();
 
+        // If using raw cookie (no persistent session)
         if (!user.persistentSessionPath && user.linkedinCookie) {
+            // Remove any surrounding quotes from the cookie value
+            const cookieValue = user.linkedinCookie.replace(/^"|"$/g, '');
             await context.addCookies([{
                 name: 'li_at',
-                value: user.linkedinCookie,
+                value: cookieValue,
                 domain: '.www.linkedin.com',
                 path: '/',
                 secure: true,
-                httpOnly: true,
-                sameSite: 'None'
+                httpOnly: true
             }]);
+            console.log(`[WORKER] Manually injected li_at cookie for user ${userId}`);
         }
 
         // --- STEP EXECUTION ---
         const workflow = campaign.workflow as any;
         const step = Array.isArray(workflow) ? workflow[stepIndex] : null;
-        if (!step) return;
+        if (!step) {
+            console.error(`[WORKER] Step ${stepIndex} not found in workflow for campaign ${campaignId}`);
+            return;
+        }
+
+        const stepType = (step.subType || step.type || '').toUpperCase();
+        console.log(`[WORKER] Executing step type: ${stepType}`);
 
         if (Math.random() > 0.7) await warmupSession(page);
         if (await checkInterrupt(userId)) throw new Error('INTERRUPTED: User active in browser');
@@ -124,7 +133,7 @@ export const processWorkflowStep = async (data: any, job: Job) => {
         if (await checkInterrupt(userId)) throw new Error('INTERRUPTED: User active in browser');
         await wait(3000);
 
-        if (step.type === 'INVITE' || step.type === 'INVITATION') {
+        if (stepType === 'INVITE' || stepType === 'INVITATION') {
             const hasConnect = await page.isVisible('button:has-text("Connect")');
             const isPending = await page.isVisible('button:has-text("Pending"), button:has-text("Withdraw")');
 
@@ -135,13 +144,15 @@ export const processWorkflowStep = async (data: any, job: Job) => {
                 await humanMoveAndClick(page, 'button:has-text("Connect")');
                 await wait(2000);
 
-                const noteTemplate = step.note || step.message || step.text || '';
+                const noteTemplate = step.note || step.message || step.text || (step.data as any)?.message || '';
                 if (noteTemplate) {
                     const hasAddNote = await page.isVisible('button:has-text("Add a note")');
                     if (hasAddNote) {
                         if (await checkInterrupt(userId)) throw new Error('INTERRUPTED: User active in browser');
                         await humanMoveAndClick(page, 'button:has-text("Add a note")');
-                        const personalizedNote = noteTemplate.replace('{{firstName}}', lead.firstName || 'there').replace('{firstName}', lead.firstName || 'there');
+                        const personalizedNote = noteTemplate
+                            .replace(/\{\{firstName\}\}/g, lead.firstName || 'there')
+                            .replace(/\{firstName\}/g, lead.firstName || 'there');
                         await humanType(page, 'textarea[name="message"]', personalizedNote);
                         await wait(1500);
                     }
@@ -151,18 +162,20 @@ export const processWorkflowStep = async (data: any, job: Job) => {
                 await humanMoveAndClick(page, 'button:has-text("Send")');
                 console.log(`[WORKER] Invite sent to ${lead.firstName}`);
             }
-        } else if (step.type === 'MESSAGE' || step.type === 'SEND MESSAGE') {
+        } else if (stepType === 'MESSAGE' || stepType === 'SEND MESSAGE') {
             const hasMessage = await page.isVisible('button:has-text("Message")');
             if (hasMessage) {
                 if (await checkInterrupt(userId)) throw new Error('INTERRUPTED: User active in browser');
                 await humanMoveAndClick(page, 'button:has-text("Message")');
                 await wait(2500);
 
-                const messageTemplate = step.text || step.message || '';
-                const personalizedMsg = messageTemplate.replace('{{firstName}}', lead.firstName || 'there').replace('{firstName}', lead.firstName || 'there');
+                const messageTemplate = step.text || step.message || (step.data as any)?.message || '';
+                const personalizedMsg = messageTemplate
+                    .replace(/\{\{firstName\}\}/g, lead.firstName || 'there')
+                    .replace(/\{firstName\}/g, lead.firstName || 'there');
 
                 const existingText = await page.innerText('.msg-convo-wrapper') || '';
-                if (existingText.includes(personalizedMsg.substring(0, 100))) {
+                if (existingText.includes(personalizedMsg.substring(0, 50))) {
                     console.log(`[WORKER] Message seems already sent to ${lead.firstName}.`);
                 } else {
                     const msgBox = page.locator('.msg-form__contenteditable').first();
@@ -174,6 +187,8 @@ export const processWorkflowStep = async (data: any, job: Job) => {
                     console.log(`[WORKER] Message sent to ${lead.firstName}`);
                 }
             }
+        } else if (stepType === 'VISIT') {
+            console.log(`[WORKER] Profile visit successful for ${lead.firstName}`);
         }
 
         // Update DB
