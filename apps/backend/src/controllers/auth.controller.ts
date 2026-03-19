@@ -77,6 +77,30 @@ export const syncExtension = async (req: any, res: Response) => {
     }
 };
 
+export const bookmarkletSync = async (req: Request, res: Response) => {
+    const { linkedinCookie, userId } = req.body;
+
+    if (!linkedinCookie || !userId) {
+        return res.status(400).json({ error: 'Missing required params' });
+    }
+
+    try {
+        await prisma.user.update({
+            where: { id: userId },
+            data: {
+                linkedinCookie,
+                linkedinActiveInBrowser: true,
+                lastBrowserActivityAt: new Date()
+            },
+        });
+
+        console.log(`[BOOKMARKLET] Session synced for user ${userId}`);
+        res.json({ success: true, message: 'Session synchronized successfully!' });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to sync via bookmarklet' });
+    }
+};
+
 export const getCloudStatus = async (req: any, res: Response) => {
     const userId = req.user.id;
     try {
@@ -115,7 +139,7 @@ export const getLinkedinStatus = async (req: any, res: Response) => {
                 lastName: "",
                 headline: "LinkedIn Member",
                 avatarUrl: null
-              }
+            }
         });
     } catch (error) {
         res.status(500).json({ error: 'Failed to fetch status' });
@@ -255,7 +279,7 @@ export const heartbeat = async (req: any, res: Response) => {
                 linkedinActiveInBrowser: true,
                 lastBrowserActivityAt: now,
                 // Update country if not set, helps with proxy assignment later
-                actualCountry: country || undefined 
+                actualCountry: country || undefined
             }
         });
 
