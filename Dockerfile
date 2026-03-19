@@ -22,4 +22,4 @@ RUN npx prisma generate --schema=packages/db/schema.prisma
 RUN npx turbo run build --filter=backend
 
 # Start the server (with DB push just like the Railpack logs)
-CMD ["sh", "-c", "npx prisma db push --schema=packages/db/schema.prisma --accept-data-loss && node apps/backend/dist/server.js"]
+CMD ["sh", "-c", "npx prisma db push --schema=packages/db/schema.prisma --accept-data-loss && npm start --workspace=backend"]

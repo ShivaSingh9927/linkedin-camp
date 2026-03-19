@@ -1,7 +1,12 @@
+console.log('[DEBUG-START] server.ts is loading...');
+
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 dotenv.config();
+
+console.log('[DEBUG-CONFIG] Env loaded. PORT:', process.env.PORT);
+
 import { prisma } from '@repo/db';
 import authRoutes from './routes/auth.routes';
 import leadRoutes from './routes/lead.routes';
@@ -17,25 +22,37 @@ import { initWorker } from './workers/linkedin.worker';
 import { initProxyHealthWorker } from './workers/proxy.worker';
 import { downgradeExpiredTrials } from './services/trial.service';
 
-
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// --- 1. PRE-FLIGHT / HEALTH (Must be fast) ---
+// --- 1. HEALTH CHECKS ---
 app.get('/health', (req, res) => {
-    res.json({ status: 'ok', message: 'Backend is alive' });
+    console.log('[DEBUG-HEALTH] Health check request received.');
+    res.json({
+        status: 'ok',
+        message: 'Backend is alive',
+        timestamp: new Date().toISOString(),
+        version: '1.0.1'
+    });
 });
 
-app.get('/ping', (req, res) => res.send('pong'));
+app.get('/ping', (req, res) => {
+    console.log('[DEBUG-PING] Ping request received.');
+    res.send('pong');
+});
 
+console.log('[DEBUG-CORS] Setting up CORS...');
 app.use(cors({
     origin: (origin, callback) => {
-        // Allow if no origin (e.g. server-to-server or curl)
-        // OR if it matches our allowed patterns
-        if (!origin ||
-            origin.includes('vercel.app') ||
-            origin.includes('localhost') ||
-            origin.startsWith('chrome-extension://')) {
+        if (!origin) return callback(null, true);
+        const allowedPatterns = [
+            'vercel.app',
+            'localhost',
+            'chrome-extension://',
+            'railway.app'
+        ];
+        const isAllowed = allowedPatterns.some(pattern => origin.includes(pattern));
+        if (isAllowed) {
             callback(null, true);
         } else {
             console.log(`[CORS] Blocked origin: ${origin}`);
@@ -49,9 +66,8 @@ app.use(cors({
 
 app.use(express.json());
 
-// Request logging middleware
 app.use((req, res, next) => {
-    console.log(`${req.method} ${req.url}`);
+    console.log(`[DEBUG-REQUEST] ${req.method} ${req.url}`);
     next();
 });
 
@@ -70,12 +86,13 @@ app.get('/', (req, res) => {
 });
 
 // --- 2. START SERVER IMMEDIATELY ---
-app.listen(Number(PORT), '0.0.0.0', () => {
-    console.log(`🚀 Server listening on port ${PORT} [${new Date().toISOString()}]`);
+const serverPort = parseInt(String(PORT), 10) || 3001;
+console.log(`[DEBUG-LISTEN] Attempting to listen on 0.0.0.0:${serverPort}...`);
 
-    // --- 3. ASYNC BACKGROUND INIT (Does not block port binding) ---
-    console.log('Initializing background services...');
+app.listen(serverPort, '0.0.0.0', () => {
+    console.log(`🚀 API Server listening on 0.0.0.0:${serverPort} [${new Date().toISOString()}]`);
 
+    console.log('[DEBUG-BG] Initializing background services...');
     try {
         initScheduler();
         initWorker();
