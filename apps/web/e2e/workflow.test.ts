@@ -1,35 +1,42 @@
 import { test, expect } from '@playwright/test';
 
-test('Workflow Builder - Message Settings Panel should be visible and editable', async ({ page }) => {
-    // 1. Navigate to the builder (assuming a campaign exists)
-    // For this e2e test to work, we need a valid campaign ID. 
-    // We'll skip realistic DB setup and just check the UI logic in the next steps.
-    
-    await page.goto('/campaigns/test-campaign/builder');
+test('Workflow Builder - Message Node Textarea exists and is editable', async ({ page }) => {
+    // 1. Navigate to leads page (assuming we're logged in/dev mode)
+    await page.goto('/campaigns');
 
-    // 2. Add a Message Node
-    await page.click('button:has-text("Send Message")');
-    
-    // 3. Select the Node to open Settings
-    const messageNode = page.locator('div:has-text("Send Message")').last();
-    await messageNode.click();
+    // 2. Click 'Start a Campaign'
+    await page.click('button:has-text("Start a Campaign")');
 
-    // 4. Verify Settings Panel Title
+    // 3. Select 'LinkedIn' template
+    await page.click('button:has-text("LinkedIn")');
+
+    // 4. Fill campaign name and confirm
+    await page.fill('input[placeholder="Enter campaign name..."]', 'Test Message Node');
+    await page.click('button:has-text("Confirm Selection")');
+
+    // 5. Wait for builder to load
+    await expect(page).toHaveURL(/\/campaigns\/.*\/builder/);
+
+    // 6. Click on the 'Send Message' node or 'Connect Request' node in the canvas
+    // We target the node by text
+    await page.click('div.react-flow__node-ACTION:has-text("Send Message")');
+
+    // 7. Check if settings panel appears
     await expect(page.locator('h3:has-text("Step Settings")')).toBeVisible();
-    await expect(page.locator('p:has-text("Send Message")')).toBeVisible();
 
-    // 5. Verify Textarea exists (The 'cannot type' fix)
-    const textarea = page.locator('textarea[placeholder*="Type your message here"]');
+    // 8. Verify textarea exists for message
+    const textarea = page.locator('textarea[placeholder="Type your message here..."]');
     await expect(textarea).toBeVisible();
 
-    // 6. Type a custom message
-    const customMsg = "Hello {firstName}, I love your work! Let's connect.";
-    await textarea.fill(customMsg);
-    await expect(textarea).toHaveValue(customMsg);
+    // 9. Type into textarea
+    const testMessage = 'Hello {firstName}, this was typed by an automated test!';
+    await textarea.fill(testMessage);
 
-    // 7. Click Close
+    // 10. Verify value was updated
+    await expect(textarea).toHaveValue(testMessage);
+
+    // 11. Optional: Close settings and reopen to see if it persisted in local state
     await page.click('button:has-text("Close Settings")');
-    await expect(page.locator('h3:has-text("Step Settings")')).not.toBeVisible();
-
-    console.log("✅ UI Integration Test Passed: Settings panel is functional.");
+    await page.click('div.react-flow__node-ACTION:has-text("Send Message")');
+    await expect(textarea).toHaveValue(testMessage);
 });

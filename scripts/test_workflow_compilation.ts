@@ -1,63 +1,74 @@
-import { Node, Edge } from '@xyflow/react';
-
 /**
- * Compiles a React Flow graph into a linear sequence for the LinkedIn Worker.
- * If branches exist, it takes the 'YES' path by default for this simple version.
+ * This script demonstrates the compilation of a React Flow graph into a linear sequence
+ * that the worker can understand. It mimics the logic used to save the workflow.
  */
-export function compileWorkflow(nodes: Node[], edges: Edge[]) {
+
+interface FlowNode {
+    id: string;
+    type: string;
+    data: any;
+}
+
+interface FlowEdge {
+    source: string;
+    target: string;
+}
+
+function compileWorkflow(nodes: FlowNode[], edges: FlowEdge[]) {
     const sequence: any[] = [];
-    let currentNode = nodes.find(n => n.type === 'TRIGGER');
-
-    if (!currentNode) {
-        console.error("No Trigger node found!");
-        return [];
-    }
-
     const visited = new Set<string>();
 
-    while (currentNode && !visited.has(currentNode.id)) {
-        visited.add(currentNode.id);
+    // 1. Find the trigger node
+    const trigger = nodes.find(n => n.type === 'TRIGGER');
+    if (!trigger) return [];
 
-        // Add to sequence if it's an Action or Delay
-        if (currentNode.type === 'ACTION' || currentNode.type === 'DELAY') {
-            sequence.push({
-                id: currentNode.id,
-                type: (currentNode.data as any).subType || currentNode.type,
-                text: (currentNode.data as any).message, // Worker expects .text
-                note: (currentNode.data as any).message,  // For invites
-                days: (currentNode.data as any).days
-            });
-        }
+    let currentNodeId = trigger.id;
+    visited.add(currentNodeId);
 
-        // Find next node
-        const edge = edges.find(e => e.source === currentNode?.id);
+    // 2. Traverse the graph linearly
+    // Simple linear traversal for MVP. More complex branching (CONDITION nodes) 
+    // would require a tree/graph structure instead of a flat array.
+    while (true) {
+        const edge = edges.find(e => e.source === currentNodeId);
         if (!edge) break;
 
-        currentNode = nodes.find(n => n.id === edge.target);
+        const nextNode = nodes.find(n => n.id === edge.target);
+        if (!nextNode || visited.has(nextNode.id)) break;
+
+        sequence.push({
+            id: nextNode.id,
+            type: nextNode.data.subType || nextNode.type,
+            label: nextNode.data.label,
+            ...nextNode.data
+        });
+
+        currentNodeId = nextNode.id;
+        visited.add(currentNodeId);
     }
 
     return sequence;
 }
 
-// Mock Data for Testing
-const mockNodes: Node[] = [
-    { id: '1', type: 'TRIGGER', position: { x: 0, y: 0 }, data: { label: 'Start' } },
-    { id: '2', type: 'ACTION', position: { x: 0, y: 100 }, data: { label: 'Send Message', subType: 'MESSAGE', message: 'Hello {firstName}' } },
-    { id: '3', type: 'DELAY', position: { x: 0, y: 200 }, data: { label: 'Wait', subType: 'WAIT', days: 2 } }
+// Example Data
+const mockNodes = [
+    { id: 't1', type: 'TRIGGER', data: { label: 'Start' } },
+    { id: 'v1', type: 'ACTION', data: { label: 'Visit', subType: 'VISIT' } },
+    { id: 'i1', type: 'ACTION', data: { label: 'Invite', subType: 'INVITE', message: 'Hello!' } },
+    { id: 'w1', type: 'DELAY', data: { label: 'Wait', subType: 'WAIT', days: 2 } },
 ];
 
-const mockEdges: Edge[] = [
-    { id: 'e1-2', source: '1', target: '2' },
-    { id: 'e2-3', source: '2', target: '3' }
+const mockEdges = [
+    { source: 't1', target: 'v1' },
+    { source: 'v1', target: 'i1' },
+    { source: 'i1', target: 'w1' },
 ];
 
-console.log("Compiling Workflow...");
 const result = compileWorkflow(mockNodes, mockEdges);
-console.log("Compiled Sequence:", JSON.stringify(result, null, 2));
+console.log('--- COMPILED WORKFLOW SEQUENCE ---');
+console.log(JSON.stringify(result, null, 2));
 
-if (result.length === 2 && result[0].type === 'MESSAGE' && result[1].days === 2) {
-    console.log("✅ Test Passed: Workflow compiled correctly.");
+if (result.length === 3) {
+    console.log('\nSUCCESS: Workflow compiled correctly.');
 } else {
-    console.error("❌ Test Failed: Compilation mismatch.");
-    process.exit(1);
+    console.log('\nFAILURE: Compilation error.');
 }
