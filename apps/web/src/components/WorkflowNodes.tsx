@@ -1,46 +1,82 @@
 import React from 'react';
-import { Handle, Position } from '@xyflow/react';
-import { Clock, GitBranch, Zap, Layers } from 'lucide-react';
+import { Handle, Position, useReactFlow } from '@xyflow/react';
+import { Clock, GitBranch, Zap, Layers, Trash2, Edit3, X } from 'lucide-react';
 
-export const ActionNode = ({ data }: any) => {
+export const ActionNode = ({ id, data }: any) => {
+    const { deleteElements } = useReactFlow();
+
     return (
-        <div className="bg-white border-2 border-slate-200 rounded-xl shadow-sm overflow-hidden min-w-[200px]">
-            <Handle type="target" position={Position.Top} className="w-3 h-3 bg-slate-400" />
-            <div className="flex items-center space-x-3 p-3 bg-blue-50 border-b border-blue-100">
-                <div className="p-1.5 bg-blue-100 rounded-lg text-blue-600">
-                    <Layers className="w-4 h-4" />
+        <div className="bg-white border-2 border-slate-200 rounded-2xl shadow-lg hover:shadow-xl transition-all overflow-hidden min-w-[220px] group">
+            <Handle type="target" position={Position.Top} className="w-4 h-4 bg-slate-400 border-2 border-white !-top-2" />
+            
+            <div className="flex items-center justify-between p-3 bg-indigo-50 border-b border-indigo-100">
+                <div className="flex items-center space-x-3">
+                    <div className="p-2 bg-indigo-100 rounded-lg text-indigo-600">
+                        <Layers className="w-4 h-4" />
+                    </div>
+                    <div>
+                        <div className="text-[10px] uppercase font-black text-indigo-400 tracking-widest">Action</div>
+                        <div className="text-xs font-bold text-slate-800">{data.label}</div>
+                    </div>
                 </div>
-                <div>
-                    <div className="text-xs font-bold text-slate-700">{data.label}</div>
-                    <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Action • {data.subType}</div>
-                </div>
+                <button 
+                    onClick={() => deleteElements({ nodes: [{ id }] })}
+                    className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                    title="Delete Node"
+                >
+                    <Trash2 className="w-3.5 h-3.5" />
+                </button>
             </div>
-            {data.message && (
-                <div className="p-3 bg-white text-xs text-slate-500 line-clamp-2 italic">
-                    {data.message}
+
+            <div className="p-4 bg-white">
+                <div className="flex flex-col space-y-1">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Subtype</span>
+                    <span className="text-xs font-medium text-slate-600">{data.subType}</span>
                 </div>
-            )}
-            <Handle type="source" position={Position.Bottom} className="w-3 h-3 bg-slate-400" />
+                {data.message && (
+                    <div className="mt-3 p-2 bg-slate-50 rounded-lg text-[10px] text-slate-500 italic border border-dashed border-slate-200">
+                        "{data.message}"
+                    </div>
+                )}
+            </div>
+
+            <Handle type="source" position={Position.Bottom} className="w-4 h-4 bg-indigo-400 border-2 border-white !-bottom-2" />
         </div>
     );
 };
 
-export const ConditionNode = ({ data }: any) => {
+export const ConditionNode = ({ id, data }: any) => {
+    const { deleteElements } = useReactFlow();
+
     return (
-        <div className="bg-white border-2 border-slate-200 rounded-xl shadow-sm overflow-hidden min-w-[200px]">
-            <Handle type="target" position={Position.Top} className="w-3 h-3 bg-slate-400" />
-            <div className="flex items-center space-x-3 p-3 bg-amber-50 border-b border-amber-100">
-                <div className="p-1.5 bg-amber-100 rounded-lg text-amber-600">
-                    <GitBranch className="w-4 h-4" />
+        <div className="bg-white border-2 border-slate-200 rounded-2xl shadow-lg hover:shadow-xl transition-all overflow-hidden min-w-[220px] group">
+            <Handle type="target" position={Position.Top} className="w-4 h-4 bg-slate-400 border-2 border-white !-top-2" />
+            
+            <div className="flex items-center justify-between p-3 bg-purple-50 border-b border-purple-100">
+                <div className="flex items-center space-x-3">
+                    <div className="p-2 bg-purple-100 rounded-lg text-purple-600">
+                        <GitBranch className="w-4 h-4" />
+                    </div>
+                    <div>
+                        <div className="text-[10px] uppercase font-black text-purple-400 tracking-widest">Logic</div>
+                        <div className="text-xs font-bold text-slate-800">{data.label}</div>
+                    </div>
                 </div>
-                <div>
-                    <div className="text-xs font-bold text-slate-700">{data.label}</div>
-                    <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Condition • {data.subType}</div>
-                </div>
+                <button 
+                    onClick={() => deleteElements({ nodes: [{ id }] })}
+                    className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                >
+                    <Trash2 className="w-3.5 h-3.5" />
+                </button>
             </div>
-            <div className="flex justify-between p-2 bg-slate-50 text-[10px] font-black uppercase tracking-wider text-slate-500 border-t">
-                <div className="text-red-500">No</div>
-                <div className="text-emerald-500">Yes</div>
+
+            <div className="bg-slate-50 border-t flex items-center justify-center py-2">
+                 <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{data.subType}</span>
+            </div>
+
+            <div className="flex justify-between p-3 bg-white text-[10px] font-black uppercase tracking-wider text-slate-500 border-t items-center">
+                <div className="flex items-center text-red-500 bg-red-50 px-2 py-1 rounded">No</div>
+                <div className="flex items-center text-emerald-500 bg-emerald-50 px-2 py-1 rounded">Yes</div>
             </div>
 
             {/* NO Branch */}
@@ -48,7 +84,8 @@ export const ConditionNode = ({ data }: any) => {
                 type="source"
                 position={Position.Bottom}
                 id="no"
-                style={{ left: '20%', background: '#ef4444', width: '12px', height: '12px' }}
+                title="Negative Path"
+                style={{ left: '20%', background: '#ef4444', width: '12px', height: '12px', bottom: '-6px' }}
             />
 
             {/* YES Branch */}
@@ -56,41 +93,62 @@ export const ConditionNode = ({ data }: any) => {
                 type="source"
                 position={Position.Bottom}
                 id="yes"
-                style={{ left: '80%', background: '#10b981', width: '12px', height: '12px' }}
+                title="Positive Path"
+                style={{ left: '80%', background: '#10b981', width: '12px', height: '12px', bottom: '-6px' }}
             />
         </div>
     );
 };
 
-export const DelayNode = ({ data }: any) => {
+export const DelayNode = ({ id, data }: any) => {
+    const { deleteElements } = useReactFlow();
+
     return (
-        <div className="bg-white border-2 border-slate-200 rounded-xl shadow-sm overflow-hidden min-w-[200px]">
-            <Handle type="target" position={Position.Top} className="w-3 h-3 bg-slate-400" />
-            <div className="flex items-center space-x-3 p-3 bg-slate-50 border-b border-slate-100">
-                <div className="p-1.5 bg-slate-200 rounded-lg text-slate-600">
-                    <Clock className="w-4 h-4" />
+        <div className="bg-white border-2 border-slate-200 rounded-2xl shadow-lg hover:shadow-xl transition-all overflow-hidden min-w-[220px] group">
+            <Handle type="target" position={Position.Top} className="w-4 h-4 bg-slate-400 border-2 border-white !-top-2" />
+            
+            <div className="flex items-center justify-between p-3 bg-amber-50 border-b border-amber-100">
+                <div className="flex items-center space-x-3">
+                    <div className="p-2 bg-amber-100 rounded-lg text-amber-600">
+                        <Clock className="w-4 h-4" />
+                    </div>
+                    <div>
+                        <div className="text-[10px] uppercase font-black text-amber-500 tracking-widest">Delay</div>
+                        <div className="text-xs font-bold text-slate-800">Wait Duration</div>
+                    </div>
                 </div>
-                <div>
-                    <div className="text-xs font-bold text-slate-700">{data.label}</div>
-                    <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Delay</div>
-                </div>
+                <button 
+                    onClick={() => deleteElements({ nodes: [{ id }] })}
+                    className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                >
+                    <Trash2 className="w-3.5 h-3.5" />
+                </button>
             </div>
-            <div className="p-3 bg-white text-xs font-medium text-slate-600 flex space-x-2">
-                <div>Wait duration: {data.days || 1} day(s)</div>
+
+            <div className="p-4 bg-white flex flex-col items-center justify-center">
+                 <div className="text-2xl font-black text-slate-700">{data.days || 1}</div>
+                 <div className="text-[10px] font-bold text-slate-400 uppercase">Day(s)</div>
             </div>
-            <Handle type="source" position={Position.Bottom} className="w-3 h-3 bg-slate-400" />
+
+            <Handle type="source" position={Position.Bottom} className="w-4 h-4 bg-amber-400 border-2 border-white !-bottom-2" />
         </div>
     );
 };
 
-export const TriggerNode = ({ data }: any) => {
+export const TriggerNode = ({ id, data }: any) => {
     return (
-        <div className="bg-white border-2 border-indigo-200 rounded-xl shadow-md overflow-hidden min-w-[200px]">
-            <div className="flex items-center justify-center space-x-2 p-4 bg-indigo-600 text-white">
-                <Zap className="w-5 h-5 fill-current" />
-                <div className="font-black tracking-wide">{data.label || 'CAMPAIGN START'}</div>
+        <div className="bg-white border-2 border-indigo-200 rounded-2xl shadow-xl overflow-hidden min-w-[220px]">
+            <div className="flex items-center justify-center space-x-3 p-5 bg-indigo-600 text-white">
+                <Zap className="w-6 h-6 fill-current text-indigo-200" />
+                <div>
+                    <div className="text-[10px] font-black opacity-70 tracking-widest uppercase">Start Event</div>
+                    <div className="font-bold tracking-tight text-lg">{data.label || 'CAMPAIGN START'}</div>
+                </div>
             </div>
-            <Handle type="source" position={Position.Bottom} className="w-4 h-4 bg-indigo-500 border-2 border-white" />
+            <div className="p-4 bg-indigo-50/50 flex flex-col items-center">
+                 <span className="text-[10px] font-bold text-indigo-400 uppercase">Input: Lead Import</span>
+            </div>
+            <Handle type="source" position={Position.Bottom} className="w-5 h-5 bg-indigo-500 border-4 border-white !-bottom-2.5 shadow-lg" />
         </div>
     );
 };
