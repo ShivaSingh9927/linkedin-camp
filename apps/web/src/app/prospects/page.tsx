@@ -69,6 +69,16 @@ export default function LeadsPage() {
     const [loading, setLoading] = useState(true);
     const [actionLoading, setActionLoading] = useState(false);
     const [showAssignModal, setShowAssignModal] = useState(false);
+    const [showManualModal, setShowManualModal] = useState(false);
+    const [manualLeadData, setManualLeadData] = useState({
+        firstName: '',
+        lastName: '',
+        linkedinUrl: '',
+        jobTitle: '',
+        company: '',
+        email: '',
+        tags: ''
+    });
     const [searchQuery, setSearchQuery] = useState('');
     const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -113,6 +123,35 @@ export default function LeadsPage() {
             setCampaigns(response.data.filter((c: any) => c.status !== 'COMPLETED'));
         } catch (error) {
             console.error('Failed to fetch campaigns:', error);
+        }
+    };
+
+    const handleManualLeadSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setActionLoading(true);
+        try {
+            const payload = {
+                ...manualLeadData,
+                tags: manualLeadData.tags ? manualLeadData.tags.split(',').map(t => t.trim()) : []
+            };
+            await api.post('/leads/manual', payload);
+            alert('Lead added successfully!');
+            setShowManualModal(false);
+            setManualLeadData({
+                firstName: '',
+                lastName: '',
+                linkedinUrl: '',
+                jobTitle: '',
+                company: '',
+                email: '',
+                tags: ''
+            });
+            fetchLeads();
+        } catch (error) {
+            console.error('Manual add failed:', error);
+            alert('Failed to add lead. Check LinkedIn URL uniqueness.');
+        } finally {
+            setActionLoading(false);
         }
     };
 
@@ -403,6 +442,14 @@ export default function LeadsPage() {
                                 className="hidden"
                             />
                             <button
+                                onClick={() => setShowManualModal(true)}
+                                className="flex items-center space-x-2 bg-indigo-50 border border-indigo-100 px-6 py-3 rounded-2xl font-black text-indigo-600 hover:bg-indigo-100 transition-all shadow-soft text-[10px] uppercase tracking-widest"
+                            >
+                                <Plus className="w-4 h-4" />
+                                <span>Add Lead</span>
+                            </button>
+
+                            <button
                                 onClick={() => fileInputRef.current?.click()}
                                 className="flex items-center space-x-2 bg-white border border-border px-6 py-3 rounded-2xl font-black text-muted-foreground hover:text-foreground hover:border-primary/30 transition-all shadow-soft text-[10px] uppercase tracking-widest"
                             >
@@ -490,7 +537,6 @@ export default function LeadsPage() {
                                                         {s.replace('_', ' ')}
                                                     </button>
                                                 ))}
-                                                {/* Add more filter options with same styling */}
                                                 {fp.key === 'gender' && GENDER_OPTIONS.map(g => (
                                                     <button key={g} onClick={() => setFilter('gender', g)} className={cn("w-full text-left px-5 py-3 text-[10px] font-black uppercase tracking-widest rounded-2xl transition-all mb-1", filters.gender === g ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted")}>
                                                         {g}
@@ -542,6 +588,7 @@ export default function LeadsPage() {
                                     <th className="px-6 py-6">Organization</th>
                                     <th className="px-6 py-6">E-Mail</th>
                                     <th className="px-6 py-6">Status</th>
+                                    <th className="px-6 py-6">In Campaign</th>
                                     <th className="px-6 py-6">Segments</th>
                                     <th className="px-10 py-6 text-right">Nexus</th>
                                 </tr>
@@ -614,6 +661,19 @@ export default function LeadsPage() {
                                             )}>
                                                 {lead.status.replace('_', ' ')}
                                             </span>
+                                        </td>
+                                        <td className="px-6 py-7">
+                                            <div className="flex flex-col gap-1">
+                                                {lead.campaignLeads && lead.campaignLeads.length > 0 ? (
+                                                    lead.campaignLeads.map((cl, i) => (
+                                                        <span key={i} className="text-[9px] font-black text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded uppercase tracking-tighter truncate max-w-[120px]" title={cl.campaign.name}>
+                                                            {cl.campaign.name}
+                                                        </span>
+                                                    ))
+                                                ) : (
+                                                    <span className="text-[9px] font-bold text-muted-foreground/30 uppercase">Not Assigned</span>
+                                                )}
+                                            </div>
                                         </td>
                                         <td className="px-6 py-7">
                                             <div className="flex flex-wrap gap-1.5 max-w-[200px]">
@@ -690,6 +750,98 @@ export default function LeadsPage() {
                             Abort Sync Protocol
                         </button>
                     </div>
+                </div>
+            )}
+
+            {/* Manual Add Modal */}
+            {showManualModal && (
+                <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+                    <div className="absolute inset-0 bg-slate-950/40 backdrop-blur-xl animate-in fade-in duration-300" onClick={() => setShowManualModal(false)} />
+                    <form
+                        onSubmit={handleManualLeadSubmit}
+                        className="bg-background w-full max-w-2xl rounded-[3.5rem] shadow-2xl border border-white/20 p-12 relative z-[120] animate-in zoom-in-95 slide-in-from-bottom-8 duration-300 overflow-y-auto max-h-[90vh]"
+                    >
+                        <div className="flex justify-between items-center mb-10">
+                            <div>
+                                <h3 className="text-3xl font-black text-foreground uppercase tracking-tight italic">Manual Identification</h3>
+                                <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest mt-2 px-1">Register a new prospect manually into ecosystem.</p>
+                            </div>
+                            <button type="button" onClick={() => setShowManualModal(false)} className="w-12 h-12 bg-muted rounded-2xl flex items-center justify-center hover:bg-red-50 hover:text-red-500 transition-all">
+                                <X className="w-6 h-6" />
+                            </button>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-6 mb-10">
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] px-2">First Name</label>
+                                <input
+                                    required
+                                    type="text"
+                                    value={manualLeadData.firstName}
+                                    onChange={e => setManualLeadData({ ...manualLeadData, firstName: e.target.value })}
+                                    className="w-full bg-muted/30 border border-border rounded-2xl px-5 py-4 font-bold text-sm focus:ring-2 focus:ring-primary/20 outline-none"
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] px-2">Last Name</label>
+                                <input
+                                    required
+                                    type="text"
+                                    value={manualLeadData.lastName}
+                                    onChange={e => setManualLeadData({ ...manualLeadData, lastName: e.target.value })}
+                                    className="w-full bg-muted/30 border border-border rounded-2xl px-5 py-4 font-bold text-sm focus:ring-2 focus:ring-primary/20 outline-none"
+                                />
+                            </div>
+                            <div className="col-span-2 space-y-2">
+                                <label className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] px-2">LinkedIn URL (Target Link)</label>
+                                <input
+                                    required
+                                    type="url"
+                                    value={manualLeadData.linkedinUrl}
+                                    onChange={e => setManualLeadData({ ...manualLeadData, linkedinUrl: e.target.value })}
+                                    placeholder="https://www.linkedin.com/in/username"
+                                    className="w-full bg-muted/30 border border-border rounded-2xl px-5 py-4 font-bold text-sm focus:ring-2 focus:ring-primary/20 outline-none"
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] px-2">Job Title</label>
+                                <input
+                                    type="text"
+                                    value={manualLeadData.jobTitle}
+                                    onChange={e => setManualLeadData({ ...manualLeadData, jobTitle: e.target.value })}
+                                    className="w-full bg-muted/30 border border-border rounded-2xl px-5 py-4 font-bold text-sm focus:ring-2 focus:ring-primary/20 outline-none"
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] px-2">Company</label>
+                                <input
+                                    type="text"
+                                    value={manualLeadData.company}
+                                    onChange={e => setManualLeadData({ ...manualLeadData, company: e.target.value })}
+                                    className="w-full bg-muted/30 border border-border rounded-2xl px-5 py-4 font-bold text-sm focus:ring-2 focus:ring-primary/20 outline-none"
+                                />
+                            </div>
+                            <div className="col-span-2 space-y-2">
+                                <label className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] px-2">Tags (comma separated)</label>
+                                <input
+                                    type="text"
+                                    value={manualLeadData.tags}
+                                    onChange={e => setManualLeadData({ ...manualLeadData, tags: e.target.value })}
+                                    placeholder="hot-lead, saas, enterprise"
+                                    className="w-full bg-muted/30 border border-border rounded-2xl px-5 py-4 font-bold text-sm focus:ring-2 focus:ring-primary/20 outline-none"
+                                />
+                            </div>
+                        </div>
+
+                        <button
+                            type="submit"
+                            disabled={actionLoading}
+                            className="w-full py-5 rounded-[2rem] bg-primary text-primary-foreground font-black uppercase text-xs tracking-[0.2em] hover:bg-primary/90 transition-all shadow-xl shadow-primary/20 flex items-center justify-center space-x-3 active:scale-95"
+                        >
+                            {actionLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Plus className="w-5 h-5" />}
+                            <span>Complete Identification</span>
+                        </button>
+                    </form>
                 </div>
             )}
         </div>
