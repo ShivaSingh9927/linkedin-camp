@@ -13,12 +13,14 @@ import {
   OnEdgesChange,
   Panel,
   BackgroundVariant,
-  ReactFlowProvider
+  ReactFlowProvider,
+  useReactFlow
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
 import { TriggerNode, ActionNode, ConditionNode, DelayNode } from './WorkflowNodes';
 import { Plus, MousePointer2, Mail, UserPlus, Clock, Zap, GitBranch } from 'lucide-react';
+import { toast } from 'sonner';
 
 const nodeTypes = {
   TRIGGER: TriggerNode,
@@ -37,11 +39,11 @@ interface CampaignBuilderProps {
 }
 
 export function CampaignBuilder(props: CampaignBuilderProps) {
-    return (
-        <ReactFlowProvider>
-            <CampaignBuilderInner {...props} />
-        </ReactFlowProvider>
-    );
+  return (
+    <ReactFlowProvider>
+      <CampaignBuilderInner {...props} />
+    </ReactFlowProvider>
+  );
 }
 
 function CampaignBuilderInner({
@@ -58,73 +60,83 @@ function CampaignBuilderInner({
     [setEdges],
   );
 
+  const { addNodes } = useReactFlow();
+
   const addNode = (subType: string, label: string, type: string) => {
     const newNode: Node = {
-      id: `node_${Date.now()}`,
+      id: `node_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
       type: type,
-      position: { x: 400, y: 300 }, // Fixed position for better visibility
+      position: {
+        x: 400 + (nodes.length * 20),
+        y: 200 + (nodes.length * 20)
+      },
       data: {
         label,
         subType,
-        type // backend expects type inside data too
+        type
       },
     };
-    setNodes((nds) => nds.concat(newNode));
+
+    addNodes(newNode);
+    toast.success(`Added ${label} step!`);
+
+    // Explicitly update parent if needed, although addNodes should trigger onNodesChange
+    // setNodes((nds) => [...nds, newNode]);
   };
 
   return (
     <div className="w-full h-full bg-slate-50 relative group flex flex-col">
       {/* Floating Menu - Moved outside ReactFlow but inside relative container */}
       <div className="absolute top-4 right-4 z-50 flex flex-col gap-2 p-4 bg-white border border-slate-200 rounded-2xl shadow-2xl max-w-[200px]">
-          <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-2">
-            <Plus className="w-3 h-3" />
-            Build Sequence
-          </div>
+        <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-2">
+          <Plus className="w-3 h-3" />
+          Build Sequence
+        </div>
 
-          <div className="grid grid-cols-1 gap-2">
-            <button
-              onClick={() => addNode('VISIT', 'Profile Visit', 'ACTION')}
-              className="flex items-center gap-2 p-2 rounded-lg hover:bg-amber-50 text-slate-600 hover:text-amber-600 border border-transparent hover:border-amber-100 transition-all text-xs font-bold"
-            >
-              <div className="p-1 bg-amber-100 rounded text-amber-600"><MousePointer2 className="w-3 h-3" /></div>
-              Visit Profile
-            </button>
+        <div className="grid grid-cols-1 gap-2">
+          <button
+            onClick={() => addNode('VISIT', 'Profile Visit', 'ACTION')}
+            className="flex items-center gap-2 p-2 rounded-lg hover:bg-amber-50 text-slate-600 hover:text-amber-600 border border-transparent hover:border-amber-100 transition-all text-xs font-bold"
+          >
+            <div className="p-1 bg-amber-100 rounded text-amber-600"><MousePointer2 className="w-3 h-3" /></div>
+            Visit Profile
+          </button>
 
-            <button
-              onClick={() => addNode('INVITE', 'Connect Request', 'ACTION')}
-              className="flex items-center gap-2 p-2 rounded-lg hover:bg-blue-50 text-slate-600 hover:text-blue-600 border border-transparent hover:border-blue-100 transition-all text-xs font-bold"
-            >
-              <div className="p-1 bg-blue-100 rounded text-blue-600"><UserPlus className="w-3 h-3" /></div>
-              Send Invite
-            </button>
+          <button
+            onClick={() => addNode('INVITE', 'Connect Request', 'ACTION')}
+            className="flex items-center gap-2 p-2 rounded-lg hover:bg-blue-50 text-slate-600 hover:text-blue-600 border border-transparent hover:border-blue-100 transition-all text-xs font-bold"
+          >
+            <div className="p-1 bg-blue-100 rounded text-blue-600"><UserPlus className="w-3 h-3" /></div>
+            Send Invite
+          </button>
 
-            <button
-              onClick={() => addNode('MESSAGE', 'Send Message', 'ACTION')}
-              className="flex items-center gap-2 p-2 rounded-lg hover:bg-emerald-50 text-slate-600 hover:text-emerald-600 border border-transparent hover:border-emerald-100 transition-all text-xs font-bold"
-            >
-              <div className="p-1 bg-emerald-100 rounded text-emerald-600"><Mail className="w-3 h-3" /></div>
-              Send Message
-            </button>
+          <button
+            onClick={() => addNode('MESSAGE', 'Send Message', 'ACTION')}
+            className="flex items-center gap-2 p-2 rounded-lg hover:bg-emerald-50 text-slate-600 hover:text-emerald-600 border border-transparent hover:border-emerald-100 transition-all text-xs font-bold"
+          >
+            <div className="p-1 bg-emerald-100 rounded text-emerald-600"><Mail className="w-3 h-3" /></div>
+            Send Message
+          </button>
 
-            <button
-              onClick={() => addNode('WAIT', 'Delay', 'DELAY')}
-              className="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-100 text-slate-600 hover:text-slate-900 border border-transparent hover:border-slate-200 transition-all text-xs font-bold"
-            >
-              <div className="p-1 bg-slate-200 rounded text-slate-600"><Clock className="w-3 h-3" /></div>
-              Wait / Delay
-            </button>
+          <button
+            onClick={() => addNode('WAIT', 'Delay', 'DELAY')}
+            className="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-100 text-slate-600 hover:text-slate-900 border border-transparent hover:border-slate-200 transition-all text-xs font-bold"
+          >
+            <div className="p-1 bg-slate-200 rounded text-slate-600"><Clock className="w-3 h-3" /></div>
+            Wait / Delay
+          </button>
 
-            <button
-              onClick={() => addNode('REPLIED', 'If Replied', 'CONDITION')}
-              className="flex items-center gap-2 p-2 rounded-lg hover:bg-purple-50 text-slate-600 hover:text-purple-600 border border-transparent hover:border-purple-100 transition-all text-xs font-bold"
-            >
-              <div className="p-1 bg-purple-100 rounded text-purple-600"><GitBranch className="w-3 h-3" /></div>
-              Check Reply
-            </button>
-          </div>
+          <button
+            onClick={() => addNode('REPLIED', 'If Replied', 'CONDITION')}
+            className="flex items-center gap-2 p-2 rounded-lg hover:bg-purple-50 text-slate-600 hover:text-purple-600 border border-transparent hover:border-purple-100 transition-all text-xs font-bold"
+          >
+            <div className="p-1 bg-purple-100 rounded text-purple-600"><GitBranch className="w-3 h-3" /></div>
+            Check Reply
+          </button>
+        </div>
       </div>
 
-      <div className="flex-1 min-h-[500px]">
+      <div className="w-full h-[700px] border-t bg-slate-50">
         <ReactFlow
           nodes={nodes}
           edges={edges}
@@ -143,7 +155,7 @@ function CampaignBuilderInner({
         >
           <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#cbd5e1" />
           <Controls className="!bg-white !border-slate-200 !shadow-sm !rounded-xl overflow-hidden" />
-          
+
           <Panel position="bottom-left" className="bg-white/80 backdrop-blur-md px-3 py-1.5 border border-slate-200 rounded-full shadow-lg text-[10px] font-bold text-slate-400 flex items-center gap-2">
             <Zap className="w-3 h-3 text-indigo-500 fill-current" />
             AUTOMATION CANVAS V2.0

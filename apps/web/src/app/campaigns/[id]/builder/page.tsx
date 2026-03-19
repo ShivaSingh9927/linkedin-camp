@@ -30,11 +30,11 @@ export default function CampaignBuilderPage({ params }: { params: Promise<{ id: 
     }, [id]);
 
     const fetchCampaign = async () => {
-        const defaultNode: Node = { 
-            id: 'start', 
-            type: 'TRIGGER', 
-            position: { x: 250, y: 100 }, 
-            data: { label: 'SEQUENCE START', type: 'TRIGGER', subType: 'START' } 
+        const defaultNode: Node = {
+            id: 'start',
+            type: 'TRIGGER',
+            position: { x: 250, y: 100 },
+            data: { label: 'SEQUENCE START', type: 'TRIGGER', subType: 'START' }
         };
 
         if (id === 'new') {
@@ -118,7 +118,7 @@ export default function CampaignBuilderPage({ params }: { params: Promise<{ id: 
             console.error('Failed to save campaign:', error);
             alert('Error saving campaign.');
         } finally {
-            setSaving(false);
+            setLoading(false);
         }
     };
 
