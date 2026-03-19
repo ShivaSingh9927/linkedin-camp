@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { AuthLayout } from '@/components/AuthLayout';
+import api from '@/lib/api';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -16,29 +17,17 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      // Fix potential trailing slash in API URL
-      const baseUrl = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/$/, '');
-      const fullUrl = `${baseUrl}/api/v1/auth/login`;
+      const res = await api.post('/auth/login', { email, password });
+      const data = res.data;
 
-      const res = await fetch(fullUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      });
-
-      const data = await res.json();
-
-      if (res.ok) {
-        localStorage.setItem('token', data.token);
-        localStorage.setItem('user', JSON.stringify(data.user));
-        toast.success(`Welcome back, ${data.user.email.split('@')[0]}!`);
-        router.push('/');
-      } else {
-        toast.error(data.error || 'Login failed');
-      }
-    } catch (error) {
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('user', JSON.stringify(data.user));
+      toast.success(`Welcome back, ${data.user.email.split('@')[0]}!`);
+      router.push('/');
+    } catch (error: any) {
       console.error('[DEBUG] Login Error:', error);
-      toast.error('An error occurred. Please try again.');
+      const errorMessage = error.response?.data?.error || 'Login failed';
+      toast.error(errorMessage === 'Login failed' ? 'An error occurred. Please try again.' : errorMessage);
     } finally {
       setLoading(false);
     }

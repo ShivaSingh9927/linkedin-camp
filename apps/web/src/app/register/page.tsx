@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { AuthLayout } from '@/components/AuthLayout';
+import api from '@/lib/api';
 
 export default function RegisterPage() {
   const [email, setEmail] = useState('');
@@ -16,31 +17,17 @@ export default function RegisterPage() {
     setLoading(true);
 
     try {
-      // Fix potential trailing slash in API URL
-      const baseUrl = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/$/, '');
-      const fullUrl = `${baseUrl}/api/v1/auth/register`;
-      console.log(`[DEBUG] Registration attempt to: ${fullUrl}`);
+      const res = await api.post('/auth/register', { email, password });
+      const data = res.data;
 
-      const res = await fetch(fullUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      });
-
-      console.log(`[DEBUG] Registration response status: ${res.status}`);
-      const data = await res.json();
-
-      if (res.ok) {
-        localStorage.setItem('token', data.token);
-        localStorage.setItem('user', JSON.stringify(data.user));
-        toast.success('Account created successfully!');
-        router.push('/');
-      } else {
-        toast.error(data.error || 'Registration failed');
-      }
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('user', JSON.stringify(data.user));
+      toast.success('Account created successfully!');
+      router.push('/');
     } catch (error: any) {
       console.error('[DEBUG] Registration Error:', error);
-      toast.error('An error occurred. Please try again.');
+      const errorMessage = error.response?.data?.error || 'Registration failed';
+      toast.error(errorMessage === 'Registration failed' ? 'An error occurred. Please try again.' : errorMessage);
     } finally {
       setLoading(false);
     }
