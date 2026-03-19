@@ -83,7 +83,7 @@ export const processWorkflowStep = async (data: any, job: Job) => {
 
         // Use persistent context if available for high-tier accounts
         const launchOptions: any = {
-            headless: process.env.HEADLESS_MODE !== 'false',
+            headless: true, // Always headless on cloud
             args: ['--no-sandbox', '--disable-setuid-sandbox']
         };
 
@@ -112,10 +112,7 @@ export const processWorkflowStep = async (data: any, job: Job) => {
             await context.addCookies([{
                 name: 'li_at',
                 value: cookieValue,
-                domain: '.www.linkedin.com',
-                path: '/',
-                secure: true,
-                httpOnly: true
+                url: 'https://www.linkedin.com'
             }]);
             console.log(`[WORKER] Manually injected li_at cookie for user ${userId}`);
         }
@@ -148,130 +145,46 @@ export const processWorkflowStep = async (data: any, job: Job) => {
                 if (await checkInterrupt(userId)) throw new Error('INTERRUPTED: User active in browser');
                 await humanMoveAndClick(page, 'button:has-text("Connect")');
                 await wait(2000);
-
-                const noteTemplate = step.note || step.message || step.text || (step.data as any)?.message || '';
-                if (noteTemplate) {
-                    const hasAddNote = await page.isVisible('button:has-text("Add a note")');
-                    if (hasAddNote) {
-                        if (await checkInterrupt(userId)) throw new Error('INTERRUPTED: User active in browser');
-                        await humanMoveAndClick(page, 'button:has-text("Add a note")');
-                        const personalizedNote = noteTemplate
-                            .replace(/\{\{firstName\}\}/g, lead.firstName || 'there')
-                            .replace(/\{firstName\}/g, lead.firstName || 'there');
-                        await humanType(page, 'textarea[name="message"]', personalizedNote);
-                        await wait(1500);
-                    }
-                }
-
-                if (await checkInterrupt(userId)) throw new Error('INTERRUPTED: User active in browser');
-                await humanMoveAndClick(page, 'button:has-text("Send")');
-                console.log(`[WORKER] Invite sent to ${lead.firstName}`);
+                await page.click('button[aria-label="Send now"]');
+            } else {
+                console.log(`[WORKER] No connect button found for ${lead.firstName}.`);
             }
-        } else if (stepType === 'MESSAGE' || stepType === 'SEND MESSAGE') {
-            const hasMessage = await page.isVisible('button:has-text("Message")');
-            if (hasMessage) {
-                if (await checkInterrupt(userId)) throw new Error('INTERRUPTED: User active in browser');
+        } else if (stepType === 'MESSAGE') {
+            const hasMessageButton = await page.isVisible('button:has-text("Message")');
+            if (hasMessageButton) {
                 await humanMoveAndClick(page, 'button:has-text("Message")');
-                await wait(2500);
-
-                const messageTemplate = step.text || step.message || (step.data as any)?.message || '';
-                const personalizedMsg = messageTemplate
-                    .replace(/\{\{firstName\}\}/g, lead.firstName || 'there')
-                    .replace(/\{firstName\}/g, lead.firstName || 'there');
-
-                const existingText = await page.innerText('.msg-convo-wrapper') || '';
-                if (existingText.includes(personalizedMsg.substring(0, 50))) {
-                    console.log(`[WORKER] Message seems already sent to ${lead.firstName}.`);
-                } else {
-                    const msgBox = page.locator('.msg-form__contenteditable').first();
-                    if (await checkInterrupt(userId)) throw new Error('INTERRUPTED: User active in browser');
-                    await humanType(page, msgBox, personalizedMsg);
-                    await wait(1500);
-                    if (await checkInterrupt(userId)) throw new Error('INTERRUPTED: User active in browser');
-                    await page.keyboard.press('Control+Enter');
-                    console.log(`[WORKER] Message sent to ${lead.firstName}`);
-                }
+                await wait(2000);
+                const message = step.message || 'Hello {{firstName}}!';
+                const finalMessage = message.replace(/{{firstName}}/g, lead.firstName || '');
+                await humanType(page, '.msg-form__contenteditable', finalMessage);
+                await wait(1000);
+                await page.click('button[type="submit"]');
             }
         } else if (stepType === 'VISIT') {
-            console.log(`[WORKER] Profile visit successful for ${lead.firstName}`);
+            console.log(`[WORKER] Profile visit completed for ${lead.firstName}.`);
         }
 
-        // Update DB
-        const actionType = (step as any)?.type || 'UNKNOWN';
-
-        await Promise.all([
-            // 1. Create Action Log
-            prisma.actionLog.create({
-                data: {
-                    userId,
-                    campaignId,
-                    leadId,
-                    actionType,
-                    status: 'SUCCESS'
-                }
-            }),
-            // 2. Update Campaign Lead progress
-            prisma.campaignLead.update({
-                where: { id: (data as any).campaignLeadId },
-                data: {
-                    stepIndex: stepIndex + 1,
-                    lastActionAt: new Date(),
-                    isCompleted: (stepIndex + 1 >= (campaign.workflow as any[]).length),
-                    status: actionType === 'INVITE' ? 'PENDING' : actionType === 'MESSAGE' ? 'CONNECTED' : undefined
-                }
-            })
-        ]);
-
-    } catch (error: any) {
-        if (error.message.includes('INTERRUPTED')) {
-            console.log(`[WORKER] Workflow step index ${stepIndex} interrupted for user ${userId}. Job will be retried automatically when user is offline.`);
-            // Don't mark as failed in a way that suggests a bug, just exit. 
-            // BullMQ will treat the thrown error as a job failure and retry it based on backoff.
-            throw error;
-        }
-
-        console.error(`[WORKER] Action failed for lead ${lead.id}:`, error.message);
-
-        // Handle LinkedIn Restrictions
-        if (error.message.includes('restricted') || error.message.includes('unusual activity')) {
-            await prisma.user.update({
-                where: { id: userId },
-                data: { cloudWorkerActive: false }
-            });
-
-            await prisma.notification.create({
-                data: {
-                    userId: userId,
-                    title: 'Account Restricted',
-                    body: 'LinkedIn detected unusual activity. Actions have been paused for safety.',
-                    meta: { severity: 'CRITICAL' }
-                }
-            });
-        }
-
-        // Save log
-        await prisma.workerLog.create({
+        // Update progress
+        await prisma.campaignLead.updateMany({
+            where: { leadId: lead.id, campaignId: campaign.id },
             data: {
-                userId,
-                campaignId,
-                leadId,
-                action: (campaign.workflow as any)?.[stepIndex]?.type || 'UNKNOWN',
-                status: 'FAILED',
-                errorMessage: error.message.substring(0, 255)
+                stepIndex: stepIndex + 1,
+                lastActionAt: new Date(),
+                nextActionDate: new Date(Date.now() + 24 * 60 * 60 * 1000) // 1 day later
             }
         });
 
+    } catch (error: any) {
+        console.error(`[WORKER] Action failed for lead ${lead.id}:`, error.message);
     } finally {
-        // --- RELEASE & COOLDOWN ---
-        if (user?.proxyId && redisConnection) {
+        // --- PROXY SAFETY COOL DOWN ---
+        if (user.proxyId && redisConnection) {
             const lockKey = `${PROXY_LOCK_PREFIX}${user.proxyId}`;
-            // Set cooldown: Keep it "locked" for 60s so another user doesn't jump in immediately
+            // Set cooldown lock instead of just deleting
             await redisConnection.set(lockKey, 'COOLDOWN', 'EX', PROXY_COOLDOWN_SEC);
-            console.log(`[WORKER] Released proxy ${user.proxyId}. Entering ${PROXY_COOLDOWN_SEC}s cooldown.`);
         }
 
         if (browser) await browser.close();
-        else if (context) await context.close();
     }
 };
 
@@ -279,8 +192,8 @@ export const initWorker = () => {
     if (!redisConnection) return;
     const worker = new Worker('linkedin-actions', async (job: Job) => {
         await processWorkflowStep(job.data, job);
-    }, { connection: redisConnection as any });
+    }, { connection: redisConnection as any, concurrency: 1 });
 
     worker.on('completed', (job) => console.log(`Job ${job.id} done`));
-    worker.on('failed', (job, err) => console.error(`Job ${job?.id} failed:`, err.message));
+    worker.on('failed', (job, err) => console.log(`Job ${job?.id} failed:`, err.message));
 };

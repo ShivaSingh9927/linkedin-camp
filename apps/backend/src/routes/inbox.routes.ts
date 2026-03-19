@@ -12,7 +12,7 @@ import {
     markNotificationsRead,
     syncInboxManual,
 } from '../controllers/inbox.controller';
-import { authMiddleware } from '../middleware/auth';
+import { authMiddleware } from '../middleware/auth.middleware';
 
 const router = Router();
 

@@ -24,7 +24,7 @@ export const syncInbox = async (userId: string) => {
     let browser;
     try {
         browser = await chromium.launch({
-            headless: process.env.HEADLESS_MODE !== 'false',
+            headless: true,
             args: ['--no-sandbox', '--disable-setuid-sandbox']
         });
 
@@ -33,11 +33,7 @@ export const syncInbox = async (userId: string) => {
         await context.addCookies([{
             name: 'li_at',
             value: user.linkedinCookie,
-            domain: '.www.linkedin.com',
-            path: '/',
-            secure: true,
-            httpOnly: true,
-            sameSite: 'None'
+            url: 'https://www.linkedin.com'
         }]);
 
         const page = await context.newPage();
