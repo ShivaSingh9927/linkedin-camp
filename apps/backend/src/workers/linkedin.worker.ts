@@ -125,7 +125,8 @@ export const processWorkflowStep = async (data: any, job: Job) => {
             return;
         }
 
-        const stepType = (step.subType || step.type || '').toUpperCase();
+        let stepType = (step.subType || step.type || '').toUpperCase();
+        if (stepType === 'START' && step.type === 'ACTION') stepType = 'VISIT';
         console.log(`[WORKER] Executing step type: ${stepType}`);
 
         if (Math.random() > 0.7) await warmupSession(page);
