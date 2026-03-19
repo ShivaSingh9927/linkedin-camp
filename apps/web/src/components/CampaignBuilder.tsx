@@ -12,7 +12,8 @@ import {
   OnNodesChange,
   OnEdgesChange,
   Panel,
-  BackgroundVariant
+  BackgroundVariant,
+  ReactFlowProvider
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
@@ -35,7 +36,15 @@ interface CampaignBuilderProps {
   setEdges: React.Dispatch<React.SetStateAction<Edge[]>>;
 }
 
-export function CampaignBuilder({
+export function CampaignBuilder(props: CampaignBuilderProps) {
+    return (
+        <ReactFlowProvider>
+            <CampaignBuilderInner {...props} />
+        </ReactFlowProvider>
+    );
+}
+
+function CampaignBuilderInner({
   nodes,
   edges,
   onNodesChange,
@@ -49,11 +58,11 @@ export function CampaignBuilder({
     [setEdges],
   );
 
-  const addNode = (subType: string, label: string, type: 'ACTION' | 'CONDITION' | 'DELAY' | 'TRIGGER') => {
+  const addNode = (subType: string, label: string, type: string) => {
     const newNode: Node = {
       id: `node_${Date.now()}`,
       type: type,
-      position: { x: Math.random() * 400 + 100, y: Math.random() * 400 + 100 },
+      position: { x: 400, y: 300 }, // Fixed position for better visibility
       data: {
         label,
         subType,
@@ -64,27 +73,9 @@ export function CampaignBuilder({
   };
 
   return (
-    <div className="w-full h-full bg-slate-50 relative group">
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        onConnect={onConnect}
-        nodeTypes={nodeTypes}
-        fitView
-        snapToGrid
-        snapGrid={[15, 15]}
-        defaultEdgeOptions={{
-          animated: true,
-          style: { stroke: '#cbd5e1', strokeWidth: 2 }
-        }}
-        className="bg-slate-50/50"
-      >
-        <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#cbd5e1" />
-        <Controls className="!bg-white !border-slate-200 !shadow-sm !rounded-xl overflow-hidden" />
-
-        <Panel position="top-right" className="flex flex-col gap-2 p-4 bg-white/80 backdrop-blur-md border border-slate-200 rounded-2xl shadow-xl shadow-slate-200/50 max-w-[200px]">
+    <div className="w-full h-full bg-slate-50 relative group flex flex-col">
+      {/* Floating Menu - Moved outside ReactFlow but inside relative container */}
+      <div className="absolute top-4 right-4 z-50 flex flex-col gap-2 p-4 bg-white border border-slate-200 rounded-2xl shadow-2xl max-w-[200px]">
           <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-2">
             <Plus className="w-3 h-3" />
             Build Sequence
@@ -131,13 +122,34 @@ export function CampaignBuilder({
               Check Reply
             </button>
           </div>
-        </Panel>
+      </div>
 
-        <Panel position="bottom-left" className="bg-white/80 backdrop-blur-md px-3 py-1.5 border border-slate-200 rounded-full shadow-lg text-[10px] font-bold text-slate-400 flex items-center gap-2">
-          <Zap className="w-3 h-3 text-indigo-500 fill-current" />
-          AUTOMATION CANVAS V2.0
-        </Panel>
-      </ReactFlow>
+      <div className="flex-1 min-h-[500px]">
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onConnect={onConnect}
+          nodeTypes={nodeTypes}
+          fitView
+          snapToGrid
+          snapGrid={[15, 15]}
+          defaultEdgeOptions={{
+            animated: true,
+            style: { stroke: '#cbd5e1', strokeWidth: 2 }
+          }}
+          className="bg-slate-50/50"
+        >
+          <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#cbd5e1" />
+          <Controls className="!bg-white !border-slate-200 !shadow-sm !rounded-xl overflow-hidden" />
+          
+          <Panel position="bottom-left" className="bg-white/80 backdrop-blur-md px-3 py-1.5 border border-slate-200 rounded-full shadow-lg text-[10px] font-bold text-slate-400 flex items-center gap-2">
+            <Zap className="w-3 h-3 text-indigo-500 fill-current" />
+            AUTOMATION CANVAS V2.0
+          </Panel>
+        </ReactFlow>
+      </div>
     </div>
   );
 }
