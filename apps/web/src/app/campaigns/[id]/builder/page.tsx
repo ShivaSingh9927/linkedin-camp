@@ -30,10 +30,15 @@ export default function CampaignBuilderPage({ params }: { params: Promise<{ id: 
     }, [id]);
 
     const fetchCampaign = async () => {
+        const defaultNode: Node = { 
+            id: 'start', 
+            type: 'TRIGGER', 
+            position: { x: 250, y: 100 }, 
+            data: { label: 'SEQUENCE START', type: 'TRIGGER', subType: 'START' } 
+        };
+
         if (id === 'new') {
-            setNodes([
-                { id: 'node_1', position: { x: 250, y: 50 }, data: { label: 'Trigger: Lead Added' }, type: 'input' }
-            ]);
+            setNodes([defaultNode]);
             setLoading(false);
             return;
         }
@@ -44,12 +49,15 @@ export default function CampaignBuilderPage({ params }: { params: Promise<{ id: 
             setCampaignName(campaign.name);
             setStatus(campaign.status);
 
-            if (campaign.workflowJson) {
-                setNodes(campaign.workflowJson.nodes || []);
+            if (campaign.workflowJson && campaign.workflowJson.nodes && campaign.workflowJson.nodes.length > 0) {
+                setNodes(campaign.workflowJson.nodes);
                 setEdges(campaign.workflowJson.edges || []);
+            } else {
+                setNodes([defaultNode]);
             }
         } catch (error) {
             console.error('Failed to fetch campaign:', error);
+            setNodes([defaultNode]);
         } finally {
             setLoading(false);
         }
