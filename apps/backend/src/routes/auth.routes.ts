@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { register, login, syncExtension, getCloudStatus, getLinkedinStatus, syncLinkedinProfile, startLinkedinLogin, heartbeat, bookmarkletSync } from '../controllers/auth.controller';
 import { startSimulationLogin, submitSimulation2FA } from '../controllers/simulation.controller';
-import { authMiddleware } from '../middleware/auth';
+import { authMiddleware } from '../middleware/auth.middleware';
 
 const router = Router();
 
