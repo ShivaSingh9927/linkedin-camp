@@ -44,6 +44,8 @@ export const processWorkflowStep = async (data: any, job: Job) => {
 
     // 2. Safety Check: Plan Limits
     const dailyLimit = user.tier === 'PRO' ? 100 : user.tier === 'ADVANCED' ? 200 : 20;
+    // In production, increment a daily counter in Redis or DB
+    // if (count >= dailyLimit) return;
 
     let browser: any;
     let context: any;
@@ -54,7 +56,7 @@ export const processWorkflowStep = async (data: any, job: Job) => {
         const isUserActiveInBrowser = user.linkedinActiveInBrowser || (user.lastBrowserActivityAt && user.lastBrowserActivityAt > fifteenMinsAgo);
 
         if (isUserActiveInBrowser) {
-            const delayMs = (Math.floor(Math.random() * 300) + 600) * 1000;
+            const delayMs = (Math.floor(Math.random() * 300) + 600) * 1000; // 10-15 minutes
             console.log(`[WORKER] User ${userId} is currently active in browser. Stalling cloud action for safety. Delaying by ${delayMs / 1000}s`);
             await job.moveToDelayed(Date.now() + delayMs);
             return;
@@ -66,19 +68,22 @@ export const processWorkflowStep = async (data: any, job: Job) => {
             const isLocked = await redisConnection.get(lockKey);
 
             if (isLocked) {
-                const delayMs = (Math.floor(Math.random() * 120) + 60) * 1000;
+                // If the proxy is being used by another user or in cooldown, delay this job
+                const delayMs = (Math.floor(Math.random() * 120) + 60) * 1000; // 1-3 minutes
                 console.log(`[WORKER] Proxy ${user.proxyId} is busy or in cooldown. Delaying job ${job.id} by ${delayMs / 1000}s`);
                 await job.moveToDelayed(Date.now() + delayMs);
                 return;
             }
 
+            // Lock the proxy for the duration of this action (max 5 mins failsafe)
             await redisConnection.set(lockKey, 'LOCKED', 'EX', 300);
         }
 
         console.log(`[WORKER] Initiating action for lead ${lead.id} (${lead.firstName})`);
 
+        // Use persistent context if available for high-tier accounts
         const launchOptions: any = {
-            headless: true,
+            headless: process.env.HEADLESS_MODE !== 'false',
             args: ['--no-sandbox', '--disable-setuid-sandbox']
         };
 
@@ -195,6 +200,7 @@ export const processWorkflowStep = async (data: any, job: Job) => {
         const actionType = (step as any)?.type || 'UNKNOWN';
 
         await Promise.all([
+            // 1. Create Action Log
             prisma.actionLog.create({
                 data: {
                     userId,
@@ -204,32 +210,77 @@ export const processWorkflowStep = async (data: any, job: Job) => {
                     status: 'SUCCESS'
                 }
             }),
-            prisma.lead.update({
-                where: { id: leadId },
-                data: { lastActionAt: new Date() }
+            // 2. Update Campaign Lead progress
+            prisma.campaignLead.update({
+                where: { id: (data as any).campaignLeadId },
+                data: {
+                    stepIndex: stepIndex + 1,
+                    lastActionAt: new Date(),
+                    isCompleted: (stepIndex + 1 >= (campaign.workflow as any[]).length),
+                    status: actionType === 'INVITE' ? 'PENDING' : actionType === 'MESSAGE' ? 'CONNECTED' : undefined
+                }
             })
         ]);
 
     } catch (error: any) {
-        console.error(`[WORKER ERROR] ${error.message}`);
-        await prisma.actionLog.create({
+        if (error.message.includes('INTERRUPTED')) {
+            console.log(`[WORKER] Workflow step index ${stepIndex} interrupted for user ${userId}. Job will be retried automatically when user is offline.`);
+            // Don't mark as failed in a way that suggests a bug, just exit. 
+            // BullMQ will treat the thrown error as a job failure and retry it based on backoff.
+            throw error;
+        }
+
+        console.error(`[WORKER] Action failed for lead ${lead.id}:`, error.message);
+
+        // Handle LinkedIn Restrictions
+        if (error.message.includes('restricted') || error.message.includes('unusual activity')) {
+            await prisma.user.update({
+                where: { id: userId },
+                data: { cloudWorkerActive: false }
+            });
+
+            await prisma.notification.create({
+                data: {
+                    userId: userId,
+                    title: 'Account Restricted',
+                    body: 'LinkedIn detected unusual activity. Actions have been paused for safety.',
+                    meta: { severity: 'CRITICAL' }
+                }
+            });
+        }
+
+        // Save log
+        await prisma.workerLog.create({
             data: {
                 userId,
                 campaignId,
                 leadId,
-                actionType: 'ERROR',
+                action: (campaign.workflow as any)?.[stepIndex]?.type || 'UNKNOWN',
                 status: 'FAILED',
-                error: error.message
+                errorMessage: error.message.substring(0, 255)
             }
         });
-        throw error;
+
     } finally {
-        if (browser) await browser.close();
-        if (context) await context.close();
-        
-        if (user.proxyId && redisConnection) {
-            await redisConnection.del(`${PROXY_LOCK_PREFIX}${user.proxyId}`);
-            await redisConnection.set(`${PROXY_LOCK_PREFIX}${user.proxyId}`, 'COOLDOWN', 'EX', PROXY_COOLDOWN_SEC);
+        // --- RELEASE & COOLDOWN ---
+        if (user?.proxyId && redisConnection) {
+            const lockKey = `${PROXY_LOCK_PREFIX}${user.proxyId}`;
+            // Set cooldown: Keep it "locked" for 60s so another user doesn't jump in immediately
+            await redisConnection.set(lockKey, 'COOLDOWN', 'EX', PROXY_COOLDOWN_SEC);
+            console.log(`[WORKER] Released proxy ${user.proxyId}. Entering ${PROXY_COOLDOWN_SEC}s cooldown.`);
         }
+
+        if (browser) await browser.close();
+        else if (context) await context.close();
     }
+};
+
+export const initWorker = () => {
+    if (!redisConnection) return;
+    const worker = new Worker('linkedin-actions', async (job: Job) => {
+        await processWorkflowStep(job.data, job);
+    }, { connection: redisConnection as any });
+
+    worker.on('completed', (job) => console.log(`Job ${job.id} done`));
+    worker.on('failed', (job, err) => console.error(`Job ${job?.id} failed:`, err.message));
 };

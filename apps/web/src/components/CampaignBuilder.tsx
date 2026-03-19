@@ -99,6 +99,7 @@ function CampaignBuilderInner({
         return node;
       })
     );
+    toast.success('Step updated');
   };
 
   return (
@@ -202,47 +203,47 @@ function CampaignBuilderInner({
               ['MESSAGE', 'SEND MESSAGE'].includes((((selectedNode.data as any).subType || '') as string).toUpperCase()) ||
               ((selectedNode.data as any).label || '').toUpperCase().includes('MESSAGE')
             ) && (
-              <div className="space-y-3">
-                <label className="text-xs font-bold text-slate-600 flex items-center gap-2">
-                  <Mail className="w-3 h-3 text-indigo-500" />
-                  Message Content
-                </label>
-                <textarea
-                  value={(selectedNode.data as any).message || ''}
-                  onChange={(e) => updateNodeData(selectedNode.id, { message: e.target.value })}
-                  className="w-full h-40 p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all resize-none"
-                  placeholder="Type your message here..."
-                />
-                <div className="p-2 bg-indigo-50 rounded-lg border border-indigo-100 text-[10px] text-indigo-600 font-medium leading-relaxed">
-                  💡 Tip: You can use <span className="font-bold underline">{'{firstName}'}</span> to personalize your message.
+                <div className="space-y-3">
+                  <label className="text-xs font-bold text-slate-600 flex items-center gap-2">
+                    <Mail className="w-3 h-3 text-indigo-500" />
+                    Message Content
+                  </label>
+                  <textarea
+                    value={(selectedNode.data as any).message || ''}
+                    onChange={(e) => updateNodeData(selectedNode.id, { message: e.target.value })}
+                    className="w-full h-40 p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all resize-none"
+                    placeholder="Type your message here..."
+                  />
+                  <div className="p-2 bg-indigo-50 rounded-lg border border-indigo-100 text-[10px] text-indigo-600 font-medium leading-relaxed">
+                    💡 Tip: You can use <span className="font-bold underline">{'{firstName}'}</span> to personalize your message.
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
 
             {(
               ['WAIT', 'DELAY'].includes((((selectedNode.data as any).subType || '') as string).toUpperCase()) ||
               ((selectedNode.data as any).label || '').toUpperCase().includes('DELAY') ||
               ((selectedNode.data as any).label || '').toUpperCase().includes('WAIT')
             ) && (
-              <div className="space-y-3">
-                <label className="text-xs font-bold text-slate-600 flex items-center gap-2">
-                  <Clock className="w-3 h-3 text-amber-500" />
-                  Delay Duration
-                </label>
-                <div className="flex items-center gap-4">
-                  <input
-                    type="number"
-                    min="1"
-                    max="30"
-                    value={(selectedNode.data as any).days || 1}
-                    onChange={(e) => updateNodeData(selectedNode.id, { days: parseInt(e.target.value) })}
-                    className="w-24 p-3 bg-slate-50 border border-slate-200 rounded-xl text-center font-bold text-slate-800"
-                  />
-                  <span className="text-sm font-bold text-slate-400 uppercase">Days</span>
+                <div className="space-y-3">
+                  <label className="text-xs font-bold text-slate-600 flex items-center gap-2">
+                    <Clock className="w-3 h-3 text-amber-500" />
+                    Delay Duration
+                  </label>
+                  <div className="flex items-center gap-4">
+                    <input
+                      type="number"
+                      min="1"
+                      max="30"
+                      value={(selectedNode.data as any).days || 1}
+                      onChange={(e) => updateNodeData(selectedNode.id, { days: parseInt(e.target.value) })}
+                      className="w-24 p-3 bg-slate-50 border border-slate-200 rounded-xl text-center font-bold text-slate-800"
+                    />
+                    <span className="text-sm font-bold text-slate-400 uppercase">Days</span>
+                  </div>
+                  <p className="text-[10px] text-slate-400 italic">The sequence will pause for this many days before moving to the next step.</p>
                 </div>
-                <p className="text-[10px] text-slate-400 italic">The sequence will pause for this many days before moving to the next step.</p>
-              </div>
-            )}
+              )}
 
             {selectedNode.data.type === 'TRIGGER' && (
               <div className="flex flex-col items-center justify-center py-12 text-center space-y-4">
@@ -262,22 +263,22 @@ function CampaignBuilderInner({
               ((selectedNode.data as any).label || '').toUpperCase().includes('DELAY') ||
               ((selectedNode.data as any).label || '').toUpperCase().includes('WAIT')
             ) && (
-              <div className="flex flex-col items-center justify-center py-12 text-center opacity-50">
-                <div className="p-4 bg-slate-100 rounded-full text-slate-400">
-                  <Edit3 className="w-8 h-8" />
+                <div className="flex flex-col items-center justify-center py-12 text-center opacity-50">
+                  <div className="p-4 bg-slate-100 rounded-full text-slate-400">
+                    <Edit3 className="w-8 h-8" />
+                  </div>
+                  <p className="text-[10px] font-black text-slate-500 mt-4">NO SETTINGS AVAILABLE</p>
                 </div>
-                <p className="text-[10px] font-black text-slate-500 mt-4">NO SETTINGS AVAILABLE</p>
-              </div>
-            )}
+              )}
           </div>
 
           <div className="p-6 border-t bg-slate-50 mt-auto">
-             <button
-                onClick={() => setSelectedNodeId(null)}
-                className="w-full py-3 bg-slate-800 text-white rounded-xl font-bold text-xs hover:bg-slate-900 transition-all shadow-lg shadow-slate-200"
-             >
-                Close Settings
-             </button>
+            <button
+              onClick={() => setSelectedNodeId(null)}
+              className="w-full py-3 bg-slate-800 text-white rounded-xl font-bold text-xs hover:bg-slate-900 transition-all shadow-lg shadow-slate-200"
+            >
+              Close Settings
+            </button>
           </div>
         </div>
       )}

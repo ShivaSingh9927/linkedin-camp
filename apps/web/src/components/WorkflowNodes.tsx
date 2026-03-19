@@ -20,10 +20,7 @@ export const ActionNode = ({ id, data }: any) => {
                     </div>
                 </div>
                 <button
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        deleteElements({ nodes: [{ id }] });
-                    }}
+                    onClick={() => deleteElements({ nodes: [{ id }] })}
                     className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
                     title="Delete Node"
                 >
@@ -66,10 +63,7 @@ export const ConditionNode = ({ id, data }: any) => {
                     </div>
                 </div>
                 <button
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        deleteElements({ nodes: [{ id }] });
-                    }}
+                    onClick={() => deleteElements({ nodes: [{ id }] })}
                     className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
                 >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -124,10 +118,7 @@ export const DelayNode = ({ id, data }: any) => {
                     </div>
                 </div>
                 <button
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        deleteElements({ nodes: [{ id }] });
-                    }}
+                    onClick={() => deleteElements({ nodes: [{ id }] })}
                     className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
                 >
                     <Trash2 className="w-3.5 h-3.5" />
