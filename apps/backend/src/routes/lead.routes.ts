@@ -7,7 +7,7 @@ import {
     createManualLead,
     uploadCsvLeads
 } from '../controllers/lead.controller';
-import { authMiddleware } from '../middleware/auth.middleware';
+import { authMiddleware } from '../middleware/auth';
 import multer from 'multer';
 
 const upload = multer({ dest: 'uploads/' });

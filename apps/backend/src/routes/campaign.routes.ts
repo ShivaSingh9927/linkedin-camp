@@ -10,7 +10,7 @@ import {
     getCampaignStatus,
     removeLeadFromCampaign
 } from '../controllers/campaign.controller';
-import { authMiddleware } from '../middleware/auth.middleware';
+import { authMiddleware } from '../middleware/auth';
 
 const router = Router();
 
