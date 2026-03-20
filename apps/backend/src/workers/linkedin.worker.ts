@@ -113,10 +113,30 @@ export const processWorkflowStep = async (data: any, job: Job) => {
 
         // --- STEP EXECUTION ---
         const workflow = campaign.workflow as any;
-        const step = Array.isArray(workflow) ? workflow[stepIndex] : null;
+        let step = null;
+        if (Array.isArray(workflow)) {
+            // First check if it's a direct index (classic)
+            if (typeof stepIndex === 'number' && workflow[stepIndex]) {
+                step = workflow[stepIndex];
+            } else {
+                // Otherwise find by ID (Visual Builder n1, n2, etc.)
+                step = workflow.find((s: any) =>
+                    s.id === stepIndex ||
+                    s.nodeId === stepIndex ||
+                    s.id === `step_${stepIndex}` ||
+                    (typeof stepIndex === 'string' && stepIndex.includes(s.id))
+                );
+            }
+        }
+
         if (!step) {
             console.error(`[WORKER] Step ${stepIndex} not found in workflow for campaign ${campaignId}`);
-            return;
+            // Check if workflow is object based
+            if (workflow && typeof workflow === 'object' && workflow[stepIndex]) {
+                step = workflow[stepIndex];
+            } else {
+                return;
+            }
         }
 
         let stepType = (step.subType || step.type || '').toUpperCase();
