@@ -37,12 +37,14 @@ export const syncInbox = async (userId: string) => {
             ? rawCookie.split('li_at=')[1].split(';')[0].trim()
             : rawCookie.replace(/^"|"$/g, '').trim();
 
+        console.log(`[INBOX-WORKER] Injecting li_at cookie (Length: ${cookieValue.length})`);
+
         await context.addCookies([{
             name: 'li_at',
             value: cookieValue,
-            domain: '.www.linkedin.com',
+            domain: '.linkedin.com',
             path: '/',
-            expires: Math.floor(Date.now() / 1000) + 3600 * 24 * 365, // 1 year fallback
+            expires: Math.floor(Date.now() / 1000) + 3600 * 24 * 365,
             httpOnly: true,
             secure: true,
             sameSite: 'None'
