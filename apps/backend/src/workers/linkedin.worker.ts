@@ -111,31 +111,6 @@ export const processWorkflowStep = async (data: any, job: Job) => {
 
         const page = context.pages()[0] || await context.newPage();
 
-        // If using persistent session but it's empty (no cookies), prime it with user's saved cookie
-        const existingCookies = await context.cookies();
-        const hasLiAt = existingCookies.some((c: any) => c.name === 'li_at');
-
-        if (!hasLiAt && user.linkedinCookie) {
-            const rawCookie = user.linkedinCookie || '';
-            const cookieValue = rawCookie.includes('li_at=')
-                ? rawCookie.split('li_at=')[1].split(';')[0].trim()
-                : rawCookie.replace(/^"|"$/g, '').trim();
-
-            console.log(`[WORKER] Priming session with li_at cookie (Length: ${cookieValue.length})`);
-
-            await context.addCookies([{
-                name: 'li_at',
-                value: cookieValue,
-                domain: '.linkedin.com',
-                path: '/',
-                expires: Math.floor(Date.now() / 1000) + 3600 * 24 * 365,
-                httpOnly: true,
-                secure: true,
-                sameSite: 'None'
-            }]);
-            console.log(`[WORKER] Successfully primed li_at cookie for user ${userId}`);
-        }
-
         // --- STEP EXECUTION ---
         const workflow = campaign.workflow as any;
         const step = Array.isArray(workflow) ? workflow[stepIndex] : null;

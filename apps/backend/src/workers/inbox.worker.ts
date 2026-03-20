@@ -35,29 +35,6 @@ export const syncInbox = async (userId: string) => {
         console.log(`[INBOX-WORKER] Launching persistent context for user ${userId} at ${sessionPath}`);
         context = await chromium.launchPersistentContext(sessionPath, launchOptions);
 
-        // Basic cookie injection logic as a fallback/priming step
-        const cookies = await context.cookies();
-        const hasLiAt = cookies.some(c => c.name === 'li_at');
-
-        if (!hasLiAt && user.linkedinCookie) {
-            const rawCookie = user.linkedinCookie || '';
-            const cookieValue = rawCookie.includes('li_at=')
-                ? rawCookie.split('li_at=')[1].split(';')[0].trim()
-                : rawCookie.replace(/^"|"$/g, '').trim();
-
-            console.log(`[INBOX-WORKER] Priming new session with li_at cookie (Length: ${cookieValue.length})`);
-            await context.addCookies([{
-                name: 'li_at',
-                value: cookieValue,
-                domain: '.linkedin.com',
-                path: '/',
-                expires: Math.floor(Date.now() / 1000) + 3600 * 24 * 365,
-                httpOnly: true,
-                secure: true,
-                sameSite: 'None'
-            }]);
-        }
-
         const page = await context.newPage();
         await page.goto('https://www.linkedin.com/messaging/', { waitUntil: 'networkidle' });
 
