@@ -107,12 +107,21 @@ export const processWorkflowStep = async (data: any, job: Job) => {
 
         // If using raw cookie (no persistent session)
         if (!user.persistentSessionPath && user.linkedinCookie) {
-            // Remove any surrounding quotes from the cookie value
-            const cookieValue = user.linkedinCookie.replace(/^"|"$/g, '');
+            // Robust parsing: handle if the user pasted the full "li_at=..." string
+            const rawCookie = user.linkedinCookie || '';
+            const cookieValue = rawCookie.includes('li_at=')
+                ? rawCookie.split('li_at=')[1].split(';')[0].trim()
+                : rawCookie.replace(/^"|"$/g, '').trim();
+
             await context.addCookies([{
                 name: 'li_at',
                 value: cookieValue,
-                url: 'https://www.linkedin.com'
+                domain: '.www.linkedin.com',
+                path: '/',
+                expires: Math.floor(Date.now() / 1000) + 3600 * 24 * 365, // 1 year fallback
+                httpOnly: true,
+                secure: true,
+                sameSite: 'None'
             }]);
             console.log(`[WORKER] Manually injected li_at cookie for user ${userId}`);
         }

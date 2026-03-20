@@ -30,10 +30,22 @@ export const syncInbox = async (userId: string) => {
 
         // Set cookies manually for the worker session
         const context = await browser.newContext();
+
+        // Robust parsing: handle if the user pasted the full "li_at=..." string
+        const rawCookie = user.linkedinCookie || '';
+        const cookieValue = rawCookie.includes('li_at=')
+            ? rawCookie.split('li_at=')[1].split(';')[0].trim()
+            : rawCookie.replace(/^"|"$/g, '').trim();
+
         await context.addCookies([{
             name: 'li_at',
-            value: user.linkedinCookie,
-            url: 'https://www.linkedin.com'
+            value: cookieValue,
+            domain: '.www.linkedin.com',
+            path: '/',
+            expires: Math.floor(Date.now() / 1000) + 3600 * 24 * 365, // 1 year fallback
+            httpOnly: true,
+            secure: true,
+            sameSite: 'None'
         }]);
 
         const page = await context.newPage();
