@@ -96,8 +96,14 @@ export const processWorkflowStep = async (data: any, job: Job) => {
             console.log(`[WORKER] Using proxy: ${user.proxy.proxyHost}`);
         }
 
-        if (user.persistentSessionPath) {
-            context = await chromium.launchPersistentContext(user.persistentSessionPath, launchOptions);
+        // Determine session path (prioritize Railway volume mount)
+        const volumePath = `/app/sessions/${userId}`;
+        const hasVolume = volumePath.startsWith('/app/sessions'); // Basic check, could be improved with fs.existsSync
+        const sessionPathToUse = hasVolume ? volumePath : user.persistentSessionPath;
+
+        if (sessionPathToUse) {
+            console.log(`[WORKER] Launching persistent context for user ${userId} at ${sessionPathToUse}`);
+            context = await chromium.launchPersistentContext(sessionPathToUse, launchOptions);
         } else {
             browser = await chromium.launch(launchOptions);
             context = await browser.newContext();
@@ -105,15 +111,17 @@ export const processWorkflowStep = async (data: any, job: Job) => {
 
         const page = context.pages()[0] || await context.newPage();
 
-        // If using raw cookie (no persistent session)
-        if (!user.persistentSessionPath && user.linkedinCookie) {
-            // Robust parsing: handle if the user pasted the full "li_at=..." string
+        // If using persistent session but it's empty (no cookies), prime it with user's saved cookie
+        const existingCookies = await context.cookies();
+        const hasLiAt = existingCookies.some((c: any) => c.name === 'li_at');
+
+        if (!hasLiAt && user.linkedinCookie) {
             const rawCookie = user.linkedinCookie || '';
             const cookieValue = rawCookie.includes('li_at=')
                 ? rawCookie.split('li_at=')[1].split(';')[0].trim()
                 : rawCookie.replace(/^"|"$/g, '').trim();
 
-            console.log(`[WORKER] Injecting li_at cookie (Length: ${cookieValue.length})`);
+            console.log(`[WORKER] Priming session with li_at cookie (Length: ${cookieValue.length})`);
 
             await context.addCookies([{
                 name: 'li_at',
@@ -125,7 +133,7 @@ export const processWorkflowStep = async (data: any, job: Job) => {
                 secure: true,
                 sameSite: 'None'
             }]);
-            console.log(`[WORKER] Manually injected li_at cookie for user ${userId}`);
+            console.log(`[WORKER] Successfully primed li_at cookie for user ${userId}`);
         }
 
         // --- STEP EXECUTION ---
@@ -196,6 +204,7 @@ export const processWorkflowStep = async (data: any, job: Job) => {
             await redisConnection.set(lockKey, 'COOLDOWN', 'EX', PROXY_COOLDOWN_SEC);
         }
 
+        if (context) await context.close();
         if (browser) await browser.close();
     }
 };

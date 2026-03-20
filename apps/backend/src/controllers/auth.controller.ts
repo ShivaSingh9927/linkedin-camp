@@ -164,11 +164,17 @@ export const syncLinkedinProfile = async (req: any, res: Response) => {
 export const startLinkedinLogin = async (req: any, res: Response) => {
     const userId = req.user.id;
     await getOrAssignProxy(userId);
-    const sessionDir = path.join(process.cwd(), 'sessions', userId);
+    const isCloud = process.env.RAILWAY_ENVIRONMENT || process.env.NODE_ENV === 'production';
+    const baseSessionDir = isCloud ? '/app/sessions' : path.join(process.cwd(), 'sessions');
+    const sessionDir = path.join(baseSessionDir, userId);
 
-    // Ensure sessions directory exists
-    if (!fs.existsSync(path.join(process.cwd(), 'sessions'))) {
-        fs.mkdirSync(path.join(process.cwd(), 'sessions'));
+    // Ensure base sessions directory exists
+    if (!fs.existsSync(baseSessionDir)) {
+        try {
+            fs.mkdirSync(baseSessionDir, { recursive: true });
+        } catch (e: any) {
+            console.error(`[LOGIN-BOT] Error creating session directory: ${e.message}`);
+        }
     }
 
     res.json({ success: true, message: 'Launching LinkedIn login browser...' });

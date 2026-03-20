@@ -21,34 +21,42 @@ export const syncInbox = async (userId: string) => {
 
     console.log(`[INBOX-WORKER] Syncing inbox for user ${userId}...`);
 
+    const sessionPath = `/app/sessions/${userId}`;
+    let context;
     let browser;
+
     try {
-        browser = await chromium.launch({
+        const launchOptions: any = {
             headless: true,
             args: ['--no-sandbox', '--disable-setuid-sandbox']
-        });
+        };
 
-        // Set cookies manually for the worker session
-        const context = await browser.newContext();
+        // Use the persistent volume path if mounted
+        console.log(`[INBOX-WORKER] Launching persistent context for user ${userId} at ${sessionPath}`);
+        context = await chromium.launchPersistentContext(sessionPath, launchOptions);
 
-        // Robust parsing: handle if the user pasted the full "li_at=..." string
-        const rawCookie = user.linkedinCookie || '';
-        const cookieValue = rawCookie.includes('li_at=')
-            ? rawCookie.split('li_at=')[1].split(';')[0].trim()
-            : rawCookie.replace(/^"|"$/g, '').trim();
+        // Basic cookie injection logic as a fallback/priming step
+        const cookies = await context.cookies();
+        const hasLiAt = cookies.some(c => c.name === 'li_at');
 
-        console.log(`[INBOX-WORKER] Injecting li_at cookie (Length: ${cookieValue.length})`);
+        if (!hasLiAt && user.linkedinCookie) {
+            const rawCookie = user.linkedinCookie || '';
+            const cookieValue = rawCookie.includes('li_at=')
+                ? rawCookie.split('li_at=')[1].split(';')[0].trim()
+                : rawCookie.replace(/^"|"$/g, '').trim();
 
-        await context.addCookies([{
-            name: 'li_at',
-            value: cookieValue,
-            domain: '.linkedin.com',
-            path: '/',
-            expires: Math.floor(Date.now() / 1000) + 3600 * 24 * 365,
-            httpOnly: true,
-            secure: true,
-            sameSite: 'None'
-        }]);
+            console.log(`[INBOX-WORKER] Priming new session with li_at cookie (Length: ${cookieValue.length})`);
+            await context.addCookies([{
+                name: 'li_at',
+                value: cookieValue,
+                domain: '.linkedin.com',
+                path: '/',
+                expires: Math.floor(Date.now() / 1000) + 3600 * 24 * 365,
+                httpOnly: true,
+                secure: true,
+                sameSite: 'None'
+            }]);
+        }
 
         const page = await context.newPage();
         await page.goto('https://www.linkedin.com/messaging/', { waitUntil: 'networkidle' });
@@ -113,6 +121,7 @@ export const syncInbox = async (userId: string) => {
     } catch (error: any) {
         console.error(`[INBOX-WORKER] Error syncing inbox for ${userId}:`, error.message);
     } finally {
+        if (context) await context.close();
         if (browser) await browser.close();
     }
 };
