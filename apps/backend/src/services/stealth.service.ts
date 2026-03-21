@@ -1,7 +1,7 @@
 import { Page, Locator } from 'playwright';
 
 const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
-const randomRange = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1) + min);
+export const randomRange = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1) + min);
 
 /**
  * Moves the mouse in a human-like (non-linear) way to an element and clicks it.

@@ -26,18 +26,18 @@ export const checkProxyHealth = async (proxyId: string) => {
 
         if (!reportedIp) throw new Error('Proxy offline or empty response from ipify');
 
-        // 2. LinkedIn-Specific Health Check
-        // We check a public LinkedIn page. LinkedIn often returns status 999 for suspicious scrapers.
-        let linkedinBlocked = false;
-        try {
-            const { stdout: linkedinOut, stderr } = await execAsync(`curl -x ${proxyUrl} -m 30 -s -o /dev/null -w "%{http_code}" https://www.linkedin.com/help/linkedin/answer/a123`);
-            const httpCode = linkedinOut.trim();
-            console.log(`[PROXY-HEALTH] LinkedIn test status for ${proxy.proxyIp}: ${httpCode}`);
+            // 2. LinkedIn-Specific Health Check
+            // We check the LinkedIn homepage.
+            let linkedinBlocked = false;
+            try {
+                const { stdout: linkedinOut } = await execAsync(`curl -x ${proxyUrl} -m 30 -s -k -o /dev/null -w "%{http_code}" https://www.linkedin.com`);
+                const httpCode = linkedinOut.trim();
+                console.log(`[PROXY-HEALTH] LinkedIn test status for ${proxy.proxyIp}: ${httpCode}`);
 
-            if (httpCode === '999' || httpCode === '403') {
-                linkedinBlocked = true;
-            }
-        } catch (le: any) {
+                if (httpCode === '999' || httpCode === '403') {
+                    linkedinBlocked = true;
+                }
+            } catch (le: any) {
             console.warn(`[PROXY-HEALTH] LinkedIn reachability test failed: ${le.message}`);
         }
 

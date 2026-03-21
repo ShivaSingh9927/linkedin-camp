@@ -3,7 +3,7 @@ import { prisma } from '@repo/db';
 import { chromium } from 'playwright-extra';
 const stealth = require('puppeteer-extra-plugin-stealth')();
 import Redis from 'ioredis';
-import { humanMoveAndClick, humanType, warmupSession } from '../services/stealth.service';
+import { humanMoveAndClick, humanType, warmupSession, randomRange } from '../services/stealth.service';
 
 chromium.use(stealth);
 
@@ -23,7 +23,8 @@ const checkInterrupt = async (userId: string): Promise<boolean> => {
 };
 
 export const processWorkflowStep = async (data: any, job: Job) => {
-    const { userId, campaignId, leadId, stepIndex } = data;
+    // Support both new scheduler format (currentStepId + workflowJson) and legacy (stepIndex)
+    const { userId, campaignId, leadId, campaignLeadId, currentStepId, workflowJson, stepIndex: legacyStepIndex } = data;
 
     const user = await prisma.user.findUnique({
         where: { id: userId },
@@ -84,7 +85,9 @@ export const processWorkflowStep = async (data: any, job: Job) => {
         // Use persistent context if available for high-tier accounts
         const launchOptions: any = {
             headless: true, // Always headless on cloud
-            args: ['--no-sandbox', '--disable-setuid-sandbox']
+            viewport: { width: 1440, height: 900 },
+            userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled']
         };
 
         if (user.proxy) {
@@ -111,44 +114,73 @@ export const processWorkflowStep = async (data: any, job: Job) => {
 
         const page = context.pages()[0] || await context.newPage();
 
-        // --- STEP EXECUTION ---
-        const workflow = campaign.workflow as any;
-        let step = null;
-        if (Array.isArray(workflow)) {
-            // First check if it's a direct index (classic)
-            if (typeof stepIndex === 'number' && workflow[stepIndex]) {
-                step = workflow[stepIndex];
-            } else {
-                // Otherwise find by ID (Visual Builder n1, n2, etc.)
-                step = workflow.find((s: any) =>
-                    s.id === stepIndex ||
-                    s.nodeId === stepIndex ||
-                    s.id === `step_${stepIndex}` ||
-                    (typeof stepIndex === 'string' && stepIndex.includes(s.id))
+        // --- STEP RESOLUTION ---
+        // Resolve the workflow: prefer workflowJson from job data, then campaign.workflowJson, then legacy campaign.workflow
+        const rawWorkflow = workflowJson || campaign.workflowJson || campaign.workflow;
+        const parsedWorkflow = typeof rawWorkflow === 'string' ? JSON.parse(rawWorkflow) : rawWorkflow;
+
+        // Resolve the step identifier: prefer currentStepId (node-based), fallback to legacyStepIndex
+        const stepId = currentStepId ?? legacyStepIndex;
+
+        let step: any = null;
+        let isNodeBased = false;
+
+        // Check if it's a node-based workflow (has nodes array)
+        if (parsedWorkflow && parsedWorkflow.nodes && Array.isArray(parsedWorkflow.nodes)) {
+            isNodeBased = true;
+            step = parsedWorkflow.nodes.find((n: any) => n.id === stepId);
+            if (!step) {
+                // Fallback: try matching by nodeId or other patterns
+                step = parsedWorkflow.nodes.find((n: any) =>
+                    n.nodeId === stepId ||
+                    n.id === `step_${stepId}` ||
+                    (typeof stepId === 'string' && stepId.includes(n.id))
                 );
             }
+        } else if (Array.isArray(parsedWorkflow)) {
+            // Legacy array-based workflow
+            if (typeof stepId === 'number' && parsedWorkflow[stepId]) {
+                step = parsedWorkflow[stepId];
+            } else {
+                step = parsedWorkflow.find((s: any) =>
+                    s.id === stepId ||
+                    s.nodeId === stepId ||
+                    s.id === `step_${stepId}`
+                );
+            }
+        } else if (parsedWorkflow && typeof parsedWorkflow === 'object' && parsedWorkflow[stepId]) {
+            step = parsedWorkflow[stepId];
         }
 
         if (!step) {
-            console.error(`[WORKER] Step ${stepIndex} not found in workflow for campaign ${campaignId}`);
-            // Check if workflow is object based
-            if (workflow && typeof workflow === 'object' && workflow[stepIndex]) {
-                step = workflow[stepIndex];
-            } else {
-                return;
-            }
+            console.error(`[WORKER] Step "${stepId}" not found in workflow for campaign ${campaignId}. Workflow type: ${isNodeBased ? 'node-based' : 'legacy'}. Available nodes: ${isNodeBased ? parsedWorkflow.nodes.map((n: any) => n.id).join(', ') : 'N/A'}`);
+            return;
         }
 
-        let stepType = (step.subType || step.type || '').toUpperCase();
-        if (stepType === 'START' && step.type === 'ACTION') stepType = 'VISIT';
-        console.log(`[WORKER] Executing step type: ${stepType}`);
-
-        if (Math.random() > 0.7) await warmupSession(page);
+        // ReactFlow stores custom data under node.data, so resolve from both locations
+        const stepData = step.data || step; // step.data for ReactFlow nodes, step itself for flat format
+        let stepType = (stepData.subType || step.subType || step.type || '').toUpperCase();
+        if ((stepType === 'START' || stepType === 'ACTION') && step.type === 'ACTION' && !stepData.subType && !step.subType) stepType = 'VISIT';
+        // Handle case where subType is stored as PROFILE_VISIT
+        if (stepType === 'PROFILE_VISIT') stepType = 'VISIT';
+        // --- MANDATORY WARMUP (match stealth_headless.js behavior) ---
+        await warmupSession(page);
+        
         if (await checkInterrupt(userId)) throw new Error('INTERRUPTED: User active in browser');
 
-        await page.goto(lead.linkedinUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+        console.log(`[WORKER] Navigating to profile: ${lead.linkedinUrl}`);
+        await page.goto(lead.linkedinUrl, { waitUntil: 'domcontentloaded', timeout: 90000 });
+        
+        // --- AUTHWALL DETECTION ---
+        const finalUrl = page.url();
+        if (finalUrl.includes('authwall') || finalUrl.includes('login')) {
+            console.error(`[WORKER] ⚠️ BLOCKED by Authwall/Login gate. Railway/Proxy IP may be flagged. URL: ${finalUrl}`);
+            return; // Don't advance progress, retry next cycle
+        }
+
         if (await checkInterrupt(userId)) throw new Error('INTERRUPTED: User active in browser');
-        await wait(3000);
+        await wait(randomRange(3000, 6000)); // "Observing" time from your script
+
 
         if (stepType === 'INVITE' || stepType === 'INVITATION') {
             const hasConnect = await page.isVisible('button:has-text("Connect")');
@@ -161,33 +193,164 @@ export const processWorkflowStep = async (data: any, job: Job) => {
                 await humanMoveAndClick(page, 'button:has-text("Connect")');
                 await wait(2000);
                 await page.click('button[aria-label="Send now"]');
+                console.log(`[WORKER] Connection request sent to ${lead.firstName}.`);
             } else {
-                console.log(`[WORKER] No connect button found for ${lead.firstName}.`);
+                console.log(`[WORKER] No connect button found for ${lead.firstName}. Skipping step — will retry next cycle.`);
+                return; // Don't advance — retry on next scheduler cycle
             }
         } else if (stepType === 'MESSAGE') {
-            const hasMessageButton = await page.isVisible('button:has-text("Message")');
-            if (hasMessageButton) {
-                await humanMoveAndClick(page, 'button:has-text("Message")');
-                await wait(2000);
-                const message = step.message || 'Hello {{firstName}}!';
-                const finalMessage = message.replace(/{{firstName}}/g, lead.firstName || '');
-                await humanType(page, '.msg-form__contenteditable', finalMessage);
-                await wait(1000);
-                await page.click('button[type="submit"]');
+            // Log the current page URL for debugging
+            console.log(`[WORKER] Current page URL: ${page.url()}`);
+
+            // --- MULTI-SELECTOR MESSAGE BUTTON DETECTION (from stealth_headless.js) ---
+            const messageButtonSelectors = [
+                'button:has-text("Message")',
+                'a:has-text("Message")',
+                '[data-control-name="message"]',
+                '.pvs-profile-actions button:has-text("Message")',
+                'button.artdeco-button:has-text("Message")',
+            ];
+
+            let messageClicked = false;
+            for (const sel of messageButtonSelectors) {
+                try {
+                    const btn = page.locator(sel).filter({ visible: true }).first();
+                    if (await btn.isVisible({ timeout: 2000 })) {
+                        messageClicked = await humanMoveAndClick(page, btn);
+                        if (messageClicked) {
+                            console.log(`[WORKER] Clicked Message button using selector: ${sel}`);
+                            break;
+                        }
+                    }
+                } catch (e) { /* try next selector */ }
             }
+
+            if (!messageClicked) {
+                console.log(`[WORKER] Message button not found on profile. Falling back to messaging link...`);
+                await page.goto('https://www.linkedin.com/messaging/', { waitUntil: 'domcontentloaded' });
+                await wait(randomRange(2000, 4000));
+            }
+
+            await wait(randomRange(1500, 3000));
+
+            // Read message from stepData (ReactFlow .data) or step root (flat format)
+            const message = stepData.message || step.message || 'Hello {firstName}!';
+            // Support both {firstName} and {{firstName}} template syntax
+            const finalMessage = message
+                .replace(/\{\{firstName\}\}/g, lead.firstName || '')
+                .replace(/\{firstName\}/g, lead.firstName || '');
+            console.log(`[WORKER] Sending message to ${lead.firstName}: "${finalMessage.substring(0, 80)}"`);
+
+            // --- TYPE MESSAGE (multi-selector input from stealth_headless.js) ---
+            const msgInputSelector = 'div.msg-form__contenteditable[contenteditable="true"], .msg-form__textarea, [role="textbox"]';
+            await humanType(page, msgInputSelector, finalMessage);
+
+            console.log(`[WORKER] Message typed. Sending...`);
+            await wait(randomRange(1000, 2500));
+
+            // --- SEND BUTTON (from stealth_headless.js) ---
+            const sendBtnSelector = 'button.msg-form__send-button, button[type="submit"]:has-text("Send")';
+            const sendBtn = page.locator(sendBtnSelector).filter({ visible: true }).first();
+            let sent = false;
+            try {
+                if (await sendBtn.isVisible({ timeout: 3000 })) {
+                    sent = await humanMoveAndClick(page, sendBtn);
+                }
+            } catch (e) { /* fallback below */ }
+
+            if (!sent) {
+                console.log('[WORKER] Send button click failed, pressing Enter as fallback...');
+                await page.keyboard.press('Enter');
+            }
+
+            console.log(`[WORKER] ✅ Message sent to ${lead.firstName}.`);
         } else if (stepType === 'VISIT') {
             console.log(`[WORKER] Profile visit completed for ${lead.firstName}.`);
         }
 
-        // Update progress
-        await prisma.campaignLead.updateMany({
-            where: { leadId: lead.id, campaignId: campaign.id },
-            data: {
-                stepIndex: stepIndex + 1,
-                lastActionAt: new Date(),
-                nextActionDate: new Date(Date.now() + 24 * 60 * 60 * 1000) // 1 day later
+        // --- UPDATE PROGRESS: Find next step ---
+        let nextStepId: string | null = null;
+        let isWorkflowComplete = false;
+
+        if (isNodeBased && parsedWorkflow.edges) {
+            // Find the edge going out of the current step
+            const nextEdge = parsedWorkflow.edges.find((e: any) => e.source === stepId);
+            if (nextEdge) {
+                nextStepId = nextEdge.target;
+                console.log(`[WORKER] Next step for lead ${lead.firstName}: ${nextStepId}`);
+            } else {
+                // No outgoing edge = end of workflow
+                isWorkflowComplete = true;
+                console.log(`[WORKER] Workflow complete for lead ${lead.firstName} (no next edge from ${stepId})`);
             }
-        });
+        } else {
+            // Legacy: increment numeric index
+            const nextIndex = (typeof stepId === 'number' ? stepId : 0) + 1;
+            if (Array.isArray(parsedWorkflow) && nextIndex < parsedWorkflow.length) {
+                nextStepId = String(nextIndex);
+            } else {
+                isWorkflowComplete = true;
+            }
+        }
+
+        // --- Calculate nextActionDate based on next step type ---
+        let nextActionDate = new Date(); // Default: ready immediately (next scheduler cycle)
+
+        if (nextStepId && isNodeBased && parsedWorkflow.nodes) {
+            const nextNode = parsedWorkflow.nodes.find((n: any) => n.id === nextStepId);
+            if (nextNode) {
+                const nextData = nextNode.data || nextNode;
+                const nextType = (nextData.subType || nextNode.subType || nextNode.type || '').toUpperCase();
+                if (nextType === 'WAIT' || nextType === 'DELAY') {
+                    // Respect the configured delay — builder stores as "days" in data
+                    const delayDays = nextData.delayDays || nextData.days || nextNode.delayDays || 0;
+                    const delayHours = nextData.delayHours || nextData.hours || nextNode.delayHours || 0;
+                    const delayMs = (delayDays * 24 * 60 * 60 * 1000) + (delayHours * 60 * 60 * 1000);
+                    nextActionDate = new Date(Date.now() + (delayMs || 24 * 60 * 60 * 1000)); // fallback 1 day
+                    console.log(`[WORKER] Next step is DELAY node. Scheduling in ${delayDays}d ${delayHours}h for lead ${lead.firstName}`);
+
+                    // For DELAY nodes, skip to the node AFTER the delay
+                    const edgeAfterDelay = parsedWorkflow.edges.find((e: any) => e.source === nextStepId);
+                    if (edgeAfterDelay) {
+                        nextStepId = edgeAfterDelay.target;
+                        console.log(`[WORKER] Skipping delay node, actual next action step: ${nextStepId}`);
+                    } else {
+                        isWorkflowComplete = true;
+                        console.log(`[WORKER] Delay node is last in workflow, marking complete.`);
+                    }
+                } else {
+                    // Non-delay step: add a small random gap (2-5 min) for human-like pacing
+                    const safetyGapMs = (Math.floor(Math.random() * 180) + 120) * 1000;
+                    nextActionDate = new Date(Date.now() + safetyGapMs);
+                    console.log(`[WORKER] Next step is action node. Scheduling in ${Math.round(safetyGapMs / 1000)}s for lead ${lead.firstName}`);
+                }
+            }
+        }
+
+        // Use campaignLeadId if available for precise update, otherwise fall back to composite key
+        const updateWhere = campaignLeadId
+            ? { id: campaignLeadId }
+            : { campaignId_leadId: { campaignId: campaign.id, leadId: lead.id } };
+
+        if (isWorkflowComplete) {
+            await prisma.campaignLead.update({
+                where: updateWhere as any,
+                data: {
+                    currentStepId: null,
+                    lastActionAt: new Date(),
+                    isCompleted: true,
+                }
+            });
+        } else {
+            await prisma.campaignLead.update({
+                where: updateWhere as any,
+                data: {
+                    currentStepId: nextStepId,
+                    lastActionAt: new Date(),
+                    nextActionDate,
+                }
+            });
+        }
 
     } catch (error: any) {
         console.error(`[WORKER] Action failed for lead ${lead.id}:`, error.message);
