@@ -63,6 +63,15 @@ app.listen(serverPort, '0.0.0.0', () => {
             app.use('/api/v1/integrations', integrationRoutes);
 
             initScheduler();
+
+            // TEMPORARY: Kickstart route for testing
+            app.get('/api/admin/jumpstart', async (req, res) => {
+                const count = await prisma.campaignLead.updateMany({
+                   where: { isCompleted: false },
+                   data: { nextActionDate: new Date() }
+                });
+                res.json({ success: true, count });
+            });
             initWorker();
             initProxyHealthWorker();
             console.log('[BACKEND-COMPLETE] All background services ready');
