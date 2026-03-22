@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  backend:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    restart: always
+    environment:
+      - DATABASE_URL=postgresql://shiva:password123@db:5432/linkedin_camp
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=Iamironman@3
+      - PORT=3001
+      - NODE_ENV=production
+    ports:
+      - "3001:3001"
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - linkedin_sessions:/app/sessions
+    networks:
+      - linkedin-network
+
+  db:
+    image: postgres:15-alpine
+    restart: always
+    environment:
+      - POSTGRES_USER=shiva
+      - POSTGRES_PASSWORD=password123
+      - POSTGRES_DB=linkedin_camp
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    networks:
+      - linkedin-network
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+    networks:
+      - linkedin-network
+
+networks:
+  linkedin-network:
+    driver: bridge
+
+volumes:
+  pg_data:
+  linkedin_sessions:

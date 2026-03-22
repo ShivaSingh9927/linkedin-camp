@@ -4,6 +4,7 @@ import { chromium } from 'playwright-extra';
 const stealth = require('puppeteer-extra-plugin-stealth')();
 import { getOrAssignProxy } from '../services/proxy.service';
 import path from 'path';
+import fs from 'fs';
 
 chromium.use(stealth);
 
@@ -12,13 +13,14 @@ const activeSessions: Record<string, {
     context: any;
     page: any;
     timestamp: number;
+    browser?: any;
 }> = {};
 
-// Clean up old sessions every 10 mins
+// Clean up old sessions every 15 mins
 setInterval(() => {
     const now = Date.now();
     Object.keys(activeSessions).forEach(async (userId) => {
-        if (now - activeSessions[userId].timestamp > 10 * 60 * 1000) {
+        if (now - activeSessions[userId].timestamp > 15 * 60 * 1000) {
             console.log(`[SIMULATION] Cleaning up expired session for user ${userId}`);
             await activeSessions[userId].context.close().catch(() => { });
             delete activeSessions[userId];
@@ -35,20 +37,34 @@ export const startSimulationLogin = async (req: any, res: Response) => {
     }
 
     try {
-        console.log(`[SIMULATION] Starting login for user ${userId} (${email})...`);
+        console.log(`[SIMULATION] Starting persistent login for user ${userId} (${email})...`);
 
         // 1. Assign Proxy
         const userWithProxy = await getOrAssignProxy(userId);
+        
+        // 2. Setup Session Directory
+        const sessionPath = path.join(process.cwd(), 'sessions', userId);
+        if (!fs.existsSync(path.join(process.cwd(), 'sessions'))) {
+            fs.mkdirSync(path.join(process.cwd(), 'sessions'), { recursive: true });
+        }
 
-        // 2. Launch Stealth Browser
+        // 3. Launch Persistent Context (Just like login_and_save.js)
         const launchOptions: any = {
-            headless: true, // MUST be headless on Railway
+            headless: true, // MUST be headless on cloud
             args: [
                 '--disable-blink-features=AutomationControlled',
                 '--no-sandbox',
-                '--disable-setuid-sandbox'
+                '--disable-setuid-sandbox',
+                '--disable-infobars',
+                '--window-position=0,0',
+                '--ignore-certifcate-errors',
+                '--ignore-certifcate-errors-spki-list',
             ],
             userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+            viewport: { width: 1440, height: 900 },
+            extraHTTPHeaders: {
+                'Accept-Language': 'en-US,en;q=0.9',
+            }
         };
 
         if (userWithProxy?.proxy) {
@@ -59,55 +75,84 @@ export const startSimulationLogin = async (req: any, res: Response) => {
             };
         }
 
-        const browser = await chromium.launch(launchOptions);
-        const context = await browser.newContext();
-        const page = await context.newPage();
+        const context = await chromium.launchPersistentContext(sessionPath, launchOptions);
+        const page = context.pages().length > 0 ? context.pages()[0] : await context.newPage();
 
-        // 3. Navigate to Login
-        await page.goto('https://www.linkedin.com/login', { waitUntil: 'domcontentloaded' });
+        // 4. Navigate to Login
+        console.log(`[SIMULATION] Navigating to LinkedIn Login...`);
+        await page.goto('https://www.linkedin.com/login', { 
+            waitUntil: 'domcontentloaded',
+            timeout: 60000 
+        });
 
-        // 4. Enter Credentials
+        // 5. Check if already logged in (using persistent session)
+        if (page.url().includes('/feed')) {
+            const cookies = await context.cookies();
+            const liAt = cookies.find(c => c.name === 'li_at')?.value;
+            await prisma.user.update({
+                where: { id: userId },
+                data: { 
+                    linkedinCookie: liAt,
+                    persistentSessionPath: sessionPath
+                }
+            });
+            await context.close();
+            return res.json({ success: true, connected: true });
+        }
+
+        // 6. Enter Credentials
+        console.log(`[SIMULATION] Entering credentials...`);
+        await page.waitForSelector('#username', { timeout: 10000 });
         await page.fill('#username', email);
         await page.fill('#password', password);
-        await page.click('button[type="submit"]');
+        
+        await Promise.all([
+            page.click('button[type="submit"]'),
+            page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {})
+        ]);
 
-        // 5. Detect state
-        await page.waitForTimeout(5000); // Give it a moment to react
-
+        // 7. Detect State (Challenge vs Feed)
         const currentUrl = page.url();
-        console.log(`[SIMULATION] Current URL after login attempt: ${currentUrl}`);
+        console.log(`[SIMULATION] Current URL: ${currentUrl}`);
 
-        if (currentUrl.includes('/checkpoint/challenge')) {
-            // Need 2FA
+        if (currentUrl.includes('/checkpoint/challenge') || await page.isVisible('.checkpoint-code-input')) {
+            console.log(`[SIMULATION] 2FA Required for user ${userId}`);
             activeSessions[userId] = { context, page, timestamp: Date.now() };
             return res.json({
                 success: true,
                 requires2FA: true,
-                message: 'LinkedIn requires security verification. Please enter the code sent to your email.'
+                message: 'LinkedIn Security Check: Please enter the code sent to your email.'
             });
         }
 
         if (currentUrl.includes('/feed')) {
-            // Instant Success (Rare)
+            console.log(`[SIMULATION] Login Success for user ${userId}`);
             const cookies = await context.cookies();
             const liAt = cookies.find(c => c.name === 'li_at')?.value;
 
             await prisma.user.update({
                 where: { id: userId },
-                data: { linkedinCookie: liAt }
+                data: { 
+                    linkedinCookie: liAt,
+                    persistentSessionPath: sessionPath
+                }
             });
 
-            await browser.close();
+            await page.waitForTimeout(5000); // Allow session to stabilize
+            await context.close();
             return res.json({ success: true, connected: true });
         }
 
-        // Error fallback
-        await browser.close();
-        return res.status(400).json({ error: 'Login failed. Please check your credentials or try again later.' });
+        // Fallback for unexpected states
+        const errorText = await page.innerText('.alert-content, #error-for-password').catch(() => null);
+        await context.close();
+        return res.status(400).json({ 
+            error: errorText || 'Verification failed. Please check your email/password and try again.' 
+        });
 
     } catch (error: any) {
-        console.error(`[SIMULATION] Error during login for ${userId}:`, error.message);
-        res.status(500).json({ error: 'Internal server error during simulated login' });
+        console.error(`[SIMULATION] Fatal error for ${userId}:`, error.message);
+        res.status(500).json({ error: 'Cloud browser error. Please try again in a few minutes.' });
     }
 };
 
@@ -116,16 +161,21 @@ export const submitSimulation2FA = async (req: any, res: Response) => {
     const { code } = req.body;
 
     if (!code || !activeSessions[userId]) {
-        return res.status(400).json({ error: 'Invalid session or missing code' });
+        return res.status(400).json({ error: 'Session expired or invalid. Please start over.' });
     }
 
     const { page, context } = activeSessions[userId];
 
     try {
-        console.log(`[SIMULATION] Submitting 2FA code for user ${userId}...`);
+        console.log(`[SIMULATION] Submitting 2FA code for user ${userId}: ${code}`);
 
-        // Fill the 2FA input (LinkedIn uses various selectors, common are 'input#input-code' or just looking for the pin-input)
-        const selectors = ['input#input-code', 'input[name="pin"]', '.checkpoint-code-input'];
+        const selectors = [
+            'input#input-code', 
+            'input[name="pin"]', 
+            '.checkpoint-code-input',
+            'input[aria-label="Verification code"]'
+        ];
+        
         let filled = false;
         for (const selector of selectors) {
             try {
@@ -138,30 +188,51 @@ export const submitSimulation2FA = async (req: any, res: Response) => {
         }
 
         if (!filled) {
-            return res.status(400).json({ error: 'Could not find verification code input' });
+            // Try typing blindly if selector fails but it's clearly a pin page
+            await page.keyboard.type(code);
+            filled = true;
         }
 
-        await page.click('#email-pin-submit-button, button[type="submit"]');
-        await page.waitForTimeout(10000); // Wait for feed
+        await Promise.all([
+            page.click('#email-pin-submit-button, button[type="submit"], .checkpoint-continue'),
+            page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {})
+        ]);
+
+        // Wait up to 15s for the feed
+        for (let i = 0; i < 5; i++) {
+            if (page.url().includes('/feed') || page.url().includes('/in/')) break;
+            await page.waitForTimeout(3000);
+        }
 
         if (page.url().includes('/feed') || page.url().includes('/in/')) {
+            console.log(`[SIMULATION] 2FA Verified! Saving session for user ${userId}`);
             const cookies = await context.cookies();
             const liAt = cookies.find((c: any) => c.name === 'li_at')?.value;
+            const sessionPath = path.join(process.cwd(), 'sessions', userId);
 
             await prisma.user.update({
                 where: { id: userId },
-                data: { linkedinCookie: liAt }
+                data: { 
+                    linkedinCookie: liAt,
+                    persistentSessionPath: sessionPath
+                }
             });
 
+            await page.waitForTimeout(10000); // CRITICAL: Save session files to disk
             await context.close();
             delete activeSessions[userId];
             return res.json({ success: true, connected: true });
         }
 
-        res.status(400).json({ error: 'Verification failed. Please try again.' });
+        console.log(`[SIMULATION] Post-2FA URL: ${page.url()}`);
+        res.status(400).json({ error: 'Verification failed. The code may be incorrect or expired.' });
 
     } catch (error: any) {
         console.error(`[SIMULATION] Error during 2FA for ${userId}:`, error.message);
-        res.status(500).json({ error: 'Internal server error during 2FA' });
+        if (activeSessions[userId]) {
+            await activeSessions[userId].context.close().catch(() => {});
+            delete activeSessions[userId];
+        }
+        res.status(500).json({ error: 'Verification error. Please try again.' });
     }
 };
