@@ -54,4 +54,12 @@ if (
     });
     urlObserver.observe(document.body, { childList: true, subtree: true });
 
+    // Bridge: Listen for "Sync" button click from Dashboard UI
+    window.addEventListener('message', (event) => {
+        if (event.data && event.data.type === 'LINKEDIN_CAMP_FORCE_SYNC') {
+            console.log('[Dashboard Bridge] Detected force sync request. Notifying background script...');
+            chrome.runtime.sendMessage({ type: 'FORCE_LOGIN_SYNC' });
+        }
+    });
+
 } // end else guard

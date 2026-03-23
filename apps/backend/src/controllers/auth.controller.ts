@@ -68,10 +68,14 @@ export const syncExtension = async (req: any, res: Response) => {
     try {
         await prisma.user.update({
             where: { id: userId },
-            data: { linkedinCookie },
+            data: { 
+                linkedinCookie,
+                linkedinActiveInBrowser: true,
+                lastBrowserActivityAt: new Date()
+            },
         });
 
-        res.json({ success: true, message: 'LinkedIn cookie synced successfully' });
+        res.json({ success: true, message: 'LinkedIn cookie and activity status synced successfully' });
     } catch (error) {
         res.status(500).json({ error: 'Failed to sync cookie' });
     }

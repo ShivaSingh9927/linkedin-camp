@@ -186,35 +186,64 @@ export default function LinkedInConnection() {
                                             onSubmit={handleInitialLogin}
                                             className="space-y-5"
                                         >
-                                            <div className="space-y-2">
-                                                <div className="relative">
-                                                    <input
-                                                        type="email"
-                                                        value={email}
-                                                        onChange={(e) => setEmail(e.target.value)}
-                                                        className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-[#0077b5] focus:bg-white outline-none transition-all placeholder:text-slate-400 font-medium"
-                                                        placeholder="Email or Phone"
-                                                        required
-                                                    />
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    window.postMessage({ type: 'LINKEDIN_CAMP_FORCE_SYNC' }, '*');
+                                                    toast.info('Opening secure sync window...');
+                                                }}
+                                                className="w-full group relative flex items-center justify-center gap-3 bg-slate-900 text-white py-4 rounded-full font-bold text-lg shadow-xl shadow-slate-900/10 hover:bg-black transition-all active:scale-[0.98]"
+                                            >
+                                                <div className="w-6 h-6 bg-[#0077b5] rounded-md flex items-center justify-center">
+                                                    <Linkedin className="w-4 h-4 text-white" />
+                                                </div>
+                                                One-Click Extension Sync
+                                                <div className="absolute -top-3 -right-2 px-2 py-1 bg-accent text-white text-[10px] font-black rounded-lg shadow-lg rotate-12 scale-90">
+                                                    RECOMMENDED
+                                                </div>
+                                            </button>
+
+                                            <div className="relative my-6">
+                                                <div className="absolute inset-0 flex items-center">
+                                                    <span className="w-full border-t border-slate-100" />
+                                                </div>
+                                                <div className="relative flex justify-center text-xs uppercase">
+                                                    <span className="bg-white px-2 text-slate-400 font-bold tracking-widest">Or Securely Connect With</span>
                                                 </div>
                                             </div>
-                                            <div className="space-y-2">
-                                                <div className="relative">
-                                                    <input
-                                                        type={showPassword ? "text" : "password"}
-                                                        value={password}
-                                                        onChange={(e) => setPassword(e.target.value)}
-                                                        className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-[#0077b5] focus:bg-white outline-none transition-all placeholder:text-slate-400 font-medium"
-                                                        placeholder="Password"
-                                                        required
-                                                    />
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => setShowPassword(!showPassword)}
-                                                        className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-[#0077b5] transition-colors"
-                                                    >
-                                                        {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                                                    </button>
+
+                                            <div className="space-y-4">
+                                                <div className="space-y-2">
+                                                    <div className="relative">
+                                                        <input
+                                                            type="email"
+                                                            value={email}
+                                                            onChange={(e) => setEmail(e.target.value)}
+                                                            className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-[#0077b5] focus:bg-white outline-none transition-all placeholder:text-slate-400 font-medium"
+                                                            placeholder="Email or Phone"
+                                                            required
+                                                        />
+                                                    </div>
+                                                </div>
+
+                                                <div className="space-y-2">
+                                                    <div className="relative">
+                                                        <input
+                                                            type={showPassword ? "text" : "password"}
+                                                            value={password}
+                                                            onChange={(e) => setPassword(e.target.value)}
+                                                            className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-[#0077b5] focus:bg-white outline-none transition-all placeholder:text-slate-400 font-medium"
+                                                            placeholder="Password"
+                                                            required
+                                                        />
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setShowPassword(!showPassword)}
+                                                            className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-[#0077b5] transition-colors"
+                                                        >
+                                                            {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                                                        </button>
+                                                    </div>
                                                 </div>
                                             </div>
 

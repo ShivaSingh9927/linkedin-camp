@@ -47,10 +47,13 @@ async function offscreenFetch(url, options) {
 
 // ─── Backend URLs ───────────────────────────────────────────
 const BACKEND_URLS = [
+    'http://204.168.167.198:3001',
     'http://localhost:3001',
     'http://127.0.0.1:3001',
     'https://linkedin-camp-production.up.railway.app'
 ];
+
+let syncTabId = null;
 
 async function checkCloudStatus(token) {
     for (const base of BACKEND_URLS) {
@@ -81,6 +84,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         chrome.storage.local.set({ token: message.token });
         console.log('AutoConnect: Token saved from dashboard');
         autoSyncSession(); // Trigger a sync right away
+        return;
+    }
+
+    if (message.type === 'FORCE_LOGIN_SYNC') {
+        console.log('[Sync] Force login requested. Opening LinkedIn...');
+        chrome.tabs.create({ url: 'https://www.linkedin.com/login' }, (tab) => {
+            syncTabId = tab.id;
+        });
         return;
     }
 
@@ -129,6 +140,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             sendResponse({ success: false, error: lastErr });
         });
         return true;
+    }
+});
+
+// Watch for the login tab reaching the feed
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+    if (tabId === syncTabId && changeInfo.url && (changeInfo.url.includes('/feed') || changeInfo.url.includes('linkedin.com/mynetwork'))) {
+        console.log('[Sync] User logged in. Triggering session sync...');
+        
+        // Give LinkedIn a moment to settle cookies
+        setTimeout(() => {
+            autoSyncSession().then(result => {
+                if (result.success) {
+                    console.log('[Sync] Session captured successfully. Closing tab.');
+                    chrome.tabs.remove(tabId);
+                    syncTabId = null;
+                }
+            });
+        }, 3000);
     }
 });
 
