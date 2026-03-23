@@ -192,7 +192,7 @@ async function autoSyncSession() {
                 let lastErr = null;
                 for (const base of BACKEND_URLS) {
                     try {
-                        const resp = await directFetch(`${base}/api/v1/auth/extension-sync`, {
+                        const resp = await directFetch(`${base}/api/v1/auth/sync-extension`, {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/json',
