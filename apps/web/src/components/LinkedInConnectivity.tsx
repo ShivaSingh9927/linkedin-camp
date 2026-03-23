@@ -195,8 +195,37 @@ export default function LinkedInConnectivity() {
                                         </div>
                                         <div className="grid grid-cols-1 gap-4">
                                             <button 
+                                                onClick={() => {
+                                                    window.postMessage({ type: 'LINKEDIN_CAMP_FORCE_SYNC' }, '*');
+                                                    toast.info('Opening secure sync window...');
+                                                    setShowModal(false);
+                                                }}
+                                                className="group relative text-left p-6 bg-slate-900 rounded-[2rem] border-2 border-transparent hover:bg-black hover:shadow-2xl transition-all"
+                                            >
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <div className="w-10 h-10 rounded-2xl bg-[#0077b5] flex items-center justify-center text-white group-hover:scale-110 transition-transform">
+                                                        <Chrome className="w-5 h-5" />
+                                                    </div>
+                                                    <div className="px-2 py-1 bg-accent text-white text-[8px] font-black rounded-lg shadow-lg rotate-12">
+                                                        RECOMMENDED
+                                                    </div>
+                                                </div>
+                                                <h4 className="font-black text-white uppercase text-xs tracking-wider">One-Click Extension Sync</h4>
+                                                <p className="text-[10px] text-slate-400 font-bold mt-1 uppercase">Instant & Secure. Opens original LinkedIn login page.</p>
+                                            </button>
+
+                                            <div className="relative my-2">
+                                                <div className="absolute inset-0 flex items-center">
+                                                    <span className="w-full border-t border-slate-100" />
+                                                </div>
+                                                <div className="relative flex justify-center text-[8px] uppercase">
+                                                    <span className="bg-white px-2 text-slate-300 font-bold tracking-widest text-[8px]">Or use cloud simulation</span>
+                                                </div>
+                                            </div>
+
+                                            <button 
                                                 onClick={() => setStep('CREDENTIALS')}
-                                                className="group text-left p-6 bg-slate-50 rounded-[2rem] border-2 border-transparent hover:border-primary/20 hover:bg-white hover:shadow-2xl transition-all"
+                                                className="group text-left p-6 bg-slate-50 rounded-[2rem] border-2 border-transparent hover:border-primary/20 hover:bg-white hover:shadow-xl transition-all"
                                             >
                                                 <div className="flex items-center justify-between mb-2">
                                                     <div className="w-10 h-10 rounded-2xl bg-primary/10 flex items-center justify-center text-primary group-hover:scale-110 transition-transform">
@@ -204,17 +233,9 @@ export default function LinkedInConnectivity() {
                                                     </div>
                                                     <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-primary transition-colors" />
                                                 </div>
-                                                <h4 className="font-black text-slate-900 uppercase text-xs tracking-wider">Cloud Native Sync (Fastest)</h4>
+                                                <h4 className="font-black text-slate-900 uppercase text-xs tracking-wider">Cloud Native Sync</h4>
                                                 <p className="text-[10px] text-slate-500 font-bold mt-1 uppercase opacity-60">Enter credentials once to unlock 24/7 cloud speed.</p>
                                             </button>
-                                            
-                                            <div className="p-6 bg-slate-50/50 rounded-[2rem] border-2 border-dashed border-slate-200 opacity-60">
-                                                <div className="flex items-center space-x-3 mb-2">
-                                                    <Chrome className="w-5 h-5 text-slate-400" />
-                                                    <h4 className="font-black text-slate-400 uppercase text-xs tracking-wider">Chrome Extension Sync</h4>
-                                                </div>
-                                                <p className="text-[10px] text-slate-400 font-bold uppercase">Deployment phase: Under refinement.</p>
-                                            </div>
                                         </div>
                                         <button onClick={() => setShowModal(false)} className="w-full text-center text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-slate-600">Maybe Later</button>
                                     </motion.div>
