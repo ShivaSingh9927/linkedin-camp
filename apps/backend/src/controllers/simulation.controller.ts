@@ -67,12 +67,15 @@ export const startSimulationLogin = async (req: any, res: Response) => {
             }
         };
 
-        if (userWithProxy?.proxy) {
+        if (userWithProxy) {
+            console.log(`[SIMULATION] Routing request through proxy: ${userWithProxy.proxyIp}`);
             launchOptions.proxy = {
-                server: `${userWithProxy.proxy.proxyHost}:${userWithProxy.proxy.proxyPort}`,
-                username: userWithProxy.proxy.proxyUsername || undefined,
-                password: userWithProxy.proxy.proxyPassword || undefined
+                server: `${userWithProxy.proxyHost}:${userWithProxy.proxyPort}`,
+                username: userWithProxy.proxyUsername || undefined,
+                password: userWithProxy.proxyPassword || undefined
             };
+        } else {
+            console.warn(`[SIMULATION] No proxy assigned for user ${userId}. Proceeding with direct connection.`);
         }
 
         const context = await chromium.launchPersistentContext(sessionPath, launchOptions);
