@@ -58,7 +58,8 @@
             "matches": [
                 "https://linkedin-camp-web.vercel.app/*",
                 "https://*.vercel.app/*",
-                "http://localhost:3000/*"
+                "http://localhost:3000/*",
+                "http://204.168.167.198:*/*"
             ],
             "js": [
                 "dashboard-sync.js"

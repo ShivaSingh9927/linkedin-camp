@@ -4,10 +4,11 @@
 const hostname = window.location.hostname;
 if (
     hostname !== 'localhost' &&
+    hostname !== '204.168.167.198' &&
     !hostname.startsWith('linkedin-camp-web')
 ) {
     // Not our app, bail out
-    console.log('AutoConnect: Skipping non-matching Vercel site:', hostname);
+    console.log('AutoConnect: Skipping non-matching deployment:', hostname);
 } else {
 
     let lastToken = null;
