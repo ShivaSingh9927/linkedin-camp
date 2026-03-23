@@ -8,49 +8,26 @@ chrome.sidePanel.setOptions({
     enabled: true
 }).catch(() => { /* sidePanel API might not be available in older Chrome */ });
 
-// ─── Offscreen Document ─────────────────────────────────────
-let creatingOffscreen;
-async function ensureOffscreen() {
-    const existingContexts = await chrome.runtime.getContexts({
-        contextTypes: ['OFFSCREEN_DOCUMENT'],
-        documentUrls: [chrome.runtime.getURL('offscreen.html')]
-    });
-    if (existingContexts.length > 0) return;
-
-    if (creatingOffscreen) {
-        await creatingOffscreen;
-    } else {
-        creatingOffscreen = chrome.offscreen.createDocument({
-            url: 'offscreen.html',
-            reasons: ['DOM_SCRAPING'],
-            justification: 'Making API calls to localhost backend'
-        });
-        await creatingOffscreen;
-        creatingOffscreen = null;
+// Helper: Direct fetch from the background agent
+async function directFetch(url, options) {
+    try {
+        const response = await fetch(url, options);
+        // Check if status is ok
+        if (!response.ok) {
+            const body = await response.json().catch(() => ({}));
+            return { success: false, error: body.error || `HTTP ${response.status}`, status: response.status };
+        }
+        return await response.json();
+    } catch (e) {
+        console.error('[Network Error] Connection failed to:', url, e);
+        return { success: false, error: e.message };
     }
-}
-
-// Helper: send fetch request through the offscreen document
-async function offscreenFetch(url, options) {
-    await ensureOffscreen();
-
-    return new Promise((resolve) => {
-        chrome.runtime.sendMessage({
-            type: 'OFFSCREEN_FETCH',
-            url,
-            options
-        }, (response) => {
-            resolve(response);
-        });
-    });
 }
 
 // ─── Backend URLs ───────────────────────────────────────────
 const BACKEND_URLS = [
     'http://204.168.167.198:3001',
-    'http://localhost:3001',
-    'http://127.0.0.1:3001',
-    'https://linkedin-camp-production.up.railway.app'
+    'http://localhost:3001'
 ];
 
 let syncTabId = null;
@@ -58,22 +35,50 @@ let syncTabId = null;
 async function checkCloudStatus(token) {
     for (const base of BACKEND_URLS) {
         try {
-            const resp = await offscreenFetch(`${base}/api/v1/auth/cloud-status`, {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
+            const resp = await directFetch(`${base}/api/v1/auth/cloud-status`, {
+                headers: { 'Authorization': `Bearer ${token}` }
             });
-            if (resp && resp.success) {
-                return resp; // { success: true, hasCloudWorkersRunning: boolean, ... }
-            }
+            if (resp && resp.success) return resp;
         } catch (e) {
-            console.error(`Status check failed for ${base}`, e);
+            console.error(`Status check failed for ${base}:`, e);
         }
     }
     return { hasCloudWorkersRunning: false };
 }
 
+// Watch for the login tab reaching the feed
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+    if (tabId === syncTabId) {
+        const urlToCheck = (changeInfo.url || tab.url || "").toLowerCase();
+        const isLinkedInSuccess = urlToCheck.includes('linkedin.com/feed') || 
+                                 urlToCheck.includes('linkedin.com/mynetwork') ||
+                                 urlToCheck.includes('linkedin.com/messaging');
+
+        if (isLinkedInSuccess && (changeInfo.status === 'complete' || changeInfo.url)) {
+            console.log('[Sync] Success page detected. Initializing capture sequence...');
+            
+            // Wait slightly for cookies to settle
+            setTimeout(async () => {
+                // Try to sync with retries
+                for (let i = 0; i < 3; i++) {
+                    console.log(`[Sync] Sync attempt ${i + 1}/3...`);
+                    const result = await autoSyncSession();
+                    if (result.success) {
+                        console.log('[Sync] Success! Closing protected window.');
+                        chrome.tabs.remove(tabId);
+                        syncTabId = null;
+                        return;
+                    }
+                    console.warn(`[Sync] Attempt ${i + 1} failed:`, result.error);
+                    await new Promise(r => setTimeout(r, 2000)); // Wait before retry
+                }
+                console.error('[Sync] All sync attempts failed. Tab remains open for manual check.');
+            }, 1500);
+        }
+    }
+});
+
+// ─── Messages ────────────────────────────────────────────────
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // Ignore messages meant for offscreen.js
     if (message.type === 'OFFSCREEN_FETCH') {
@@ -81,14 +86,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     if (message.type === 'SAVE_TOKEN') {
-        chrome.storage.local.set({ token: message.token });
-        console.log('AutoConnect: Token saved from dashboard');
-        autoSyncSession(); // Trigger a sync right away
+        chrome.storage.local.set({ token: message.token }, () => {
+            console.log('[Auth] Token updated from dashboard');
+            if (message.token) autoSyncSession();
+        });
         return;
     }
 
     if (message.type === 'FORCE_LOGIN_SYNC') {
-        console.log('[Sync] Force login requested. Opening LinkedIn...');
+        console.log('[Sync] Force login protocol initiated...');
         chrome.tabs.create({ url: 'https://www.linkedin.com/login' }, (tab) => {
             syncTabId = tab.id;
         });
@@ -96,7 +102,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     if (message.type === 'SYNC_COOKIE') {
-        autoSyncSession().then(result => sendResponse(result));
+        autoSyncSession().then(res => sendResponse(res));
         return true;
     }
 
@@ -109,10 +115,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     if (message.type === 'IMPORT_LEADS') {
         chrome.storage.local.get(['token'], async (result) => {
-            if (!result.token) {
-                return sendResponse({ success: false, error: 'No auth token. Open your Dashboard and log in first.' });
-            }
-
+            if (!result.token) return sendResponse({ success: false, error: 'Authorization missing' });
+            
             // Cloud Kill Switch check
             const status = await checkCloudStatus(result.token);
             if (status.hasCloudWorkersRunning) {
@@ -121,8 +125,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
             let lastErr = null;
             for (const base of BACKEND_URLS) {
-                console.log(`AutoConnect: Trying backend for import at ${base}`);
-                const resp = await offscreenFetch(`${base}/api/v1/leads/import`, {
+                const resp = await directFetch(`${base}/api/v1/leads/import`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -130,34 +133,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     },
                     body: JSON.stringify({ leads: message.leads })
                 });
-
-                if (resp && resp.success) {
-                    return sendResponse(resp);
-                }
-                lastErr = resp ? resp.error : 'No response from offscreen';
+                if (resp && resp.success) return sendResponse(resp);
+                lastErr = resp ? (resp.error || `Error ${resp.status}`) : 'Network Error';
             }
-
             sendResponse({ success: false, error: lastErr });
         });
         return true;
-    }
-});
-
-// Watch for the login tab reaching the feed
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-    if (tabId === syncTabId && changeInfo.url && (changeInfo.url.includes('/feed') || changeInfo.url.includes('linkedin.com/mynetwork'))) {
-        console.log('[Sync] User logged in. Triggering session sync...');
-        
-        // Give LinkedIn a moment to settle cookies
-        setTimeout(() => {
-            autoSyncSession().then(result => {
-                if (result.success) {
-                    console.log('[Sync] Session captured successfully. Closing tab.');
-                    chrome.tabs.remove(tabId);
-                    syncTabId = null;
-                }
-            });
-        }, 3000);
     }
 });
 
@@ -185,15 +166,14 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 async function autoSyncSession() {
     return new Promise((resolve) => {
         chrome.storage.local.get(['token'], async (result) => {
-            if (!result.token) {
-                return resolve({ success: false, error: 'Not authenticated' });
-            }
+            const token = result.token;
+            if (!token) return resolve({ success: false, error: 'Extension not authenticated. Please reload your dashboard.' });
 
             // Grab all linkedin cookies
             chrome.cookies.getAll({ domain: "linkedin.com" }, async (cookies) => {
                 const liAt = cookies.find(c => c.name === 'li_at');
                 if (!liAt) {
-                    return resolve({ success: false, error: 'Not logged into LinkedIn' });
+                    return resolve({ success: false, error: 'li_at cookie not found' });
                 }
 
                 // Format exactly as Playwright expects
@@ -211,19 +191,23 @@ async function autoSyncSession() {
 
                 let lastErr = null;
                 for (const base of BACKEND_URLS) {
-                    const resp = await offscreenFetch(`${base}/api/v1/auth/extension-sync`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${result.token}`
-                        },
-                        body: JSON.stringify({ linkedinCookie: cookieJsonStr })
-                    });
-                    if (resp && resp.success) {
-                        console.log('[Session Sync] Successfully synced full session to cloud!');
-                        return resolve(resp);
+                    try {
+                        const resp = await directFetch(`${base}/api/v1/auth/extension-sync`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${token}`
+                            },
+                            body: JSON.stringify({ linkedinCookie: cookieJsonStr })
+                        });
+                        if (resp && resp.success) {
+                            console.log('[Session Sync] Successfully synced full session to cloud!');
+                            return resolve(resp);
+                        }
+                        lastErr = resp ? (resp.error || `Error ${resp.status}`) : 'Backend unreachable';
+                    } catch (e) {
+                        lastErr = e.message;
                     }
-                    lastErr = resp ? resp.error : 'No response';
                 }
                 resolve({ success: false, error: lastErr });
             });

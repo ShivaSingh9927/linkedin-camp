@@ -10,7 +10,6 @@
         "cookies",
         "storage",
         "tabs",
-        "offscreen",
         "scripting",
         "sidePanel",
         "alarms"
