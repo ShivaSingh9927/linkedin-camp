@@ -30,15 +30,30 @@ export const initScheduler = () => {
       // Fetch users who are actively running campaigns
       const activeUsers = await prisma.user.findMany({
         where: { campaigns: { some: { status: 'ACTIVE' } } },
-        select: { id: true, linkedinCookie: true }
+        select: { 
+          id: true, 
+          linkedinCookie: true,
+          linkedinActiveInBrowser: true,
+          lastBrowserActivityAt: true
+        }
       });
 
       let totalPushed = 0;
 
       // Round Robin: Process up to 5 pending leads per user per cycle
-      // This prevents a single user with 1000 tasks from blocking other users.
       console.log(`[Scheduler] Found ${activeUsers.length} users with ACTIVE campaigns.`);
       for (const user of activeUsers) {
+        // Dynamic Failover Logic: If user is active on their laptop extension, skip cloud task queueing
+        // This prevents parallel logins which lead to LinkedIn security flags.
+        const now = new Date().getTime();
+        const lastActivity = user.lastBrowserActivityAt ? new Date(user.lastBrowserActivityAt).getTime() : 0;
+        const isExtensionActive = user.linkedinActiveInBrowser && (now - lastActivity < 3 * 60 * 1000);
+
+        if (isExtensionActive) {
+          console.log(`[Scheduler] User ${user.id} is active on extension (laptop). Skipping cloud scheduler to avoid IP conflicts.`);
+          continue;
+        }
+
         if (!user.linkedinCookie) {
           console.log(`[Scheduler] User ${user.id} has no LinkedIn cookie. Skipping.`);
           continue; // Skip users without auth

@@ -115,11 +115,35 @@ export const startSimulationLogin = async (req: any, res: Response) => {
         ]);
 
         // 7. Detect State (Challenge vs Feed)
-        const currentUrl = page.url();
-        console.log(`[SIMULATION] Current URL: ${currentUrl}`);
+        let currentUrl = page.url();
+        console.log(`[SIMULATION] Post-login URL: ${currentUrl}`);
 
-        if (currentUrl.includes('/checkpoint/challenge') || await page.isVisible('.checkpoint-code-input')) {
-            console.log(`[SIMULATION] 2FA Required for user ${userId}`);
+        // Handle intermediate challenges (e.g. "Select verification method" or "Send code" screens)
+        const isChallenge = currentUrl.includes('/checkpoint/challenge') || 
+                          await page.isVisible('.checkpoint-code-input') ||
+                          await page.isVisible('button:has-text("Send code")') ||
+                          await page.isVisible('button:has-text("Continue")');
+
+        if (isChallenge) {
+            console.log(`[SIMULATION] Security Challenge detected for user ${userId}`);
+            
+            // If there's a "Send code" or "Continue" button, click it to actually trigger the 2FA email
+            const triggerButtons = [
+                'button:has-text("Send code")', 
+                'button:has-text("Continue")', 
+                'button#email-pin-submit-button',
+                '.checkpoint-continue'
+            ];
+            
+            for (const btn of triggerButtons) {
+                if (await page.isVisible(btn)) {
+                    console.log(`[SIMULATION] Clicking trigger button: ${btn}`);
+                    await page.click(btn);
+                    await page.waitForTimeout(5000);
+                    break;
+                }
+            }
+
             activeSessions[userId] = { context, page, timestamp: Date.now() };
             return res.json({
                 success: true,
@@ -137,7 +161,8 @@ export const startSimulationLogin = async (req: any, res: Response) => {
                 where: { id: userId },
                 data: { 
                     linkedinCookie: liAt,
-                    persistentSessionPath: sessionPath
+                    persistentSessionPath: sessionPath,
+                    linkedinActiveInBrowser: false // Reset extension state when cloud takes over
                 }
             });
 
@@ -146,7 +171,11 @@ export const startSimulationLogin = async (req: any, res: Response) => {
             return res.json({ success: true, connected: true });
         }
 
-        // Fallback for unexpected states
+        // Fallback for unexpected states - take a screenshot for debugging
+        console.log(`[SIMULATION] Unexpected state. URL: ${page.url()}`);
+        const screenshotPath = path.join(process.cwd(), 'sessions', `${userId}_error.png`);
+        await page.screenshot({ path: screenshotPath }).catch(() => {});
+        
         const errorText = await page.innerText('.alert-content, #error-for-password').catch(() => null);
         await context.close();
         return res.status(400).json({ 
@@ -155,6 +184,10 @@ export const startSimulationLogin = async (req: any, res: Response) => {
 
     } catch (error: any) {
         console.error(`[SIMULATION] Fatal error for ${userId}:`, error.message);
+        if (activeSessions[userId]) {
+            await activeSessions[userId].context.close().catch(() => {});
+            delete activeSessions[userId];
+        }
         res.status(500).json({ error: 'Cloud browser error. Please try again in a few minutes.' });
     }
 };
@@ -192,6 +225,7 @@ export const submitSimulation2FA = async (req: any, res: Response) => {
 
         if (!filled) {
             // Try typing blindly if selector fails but it's clearly a pin page
+            await page.keyboard.press('Tab'); // Often focuses the first input
             await page.keyboard.type(code);
             filled = true;
         }
@@ -217,17 +251,21 @@ export const submitSimulation2FA = async (req: any, res: Response) => {
                 where: { id: userId },
                 data: { 
                     linkedinCookie: liAt,
-                    persistentSessionPath: sessionPath
+                    persistentSessionPath: sessionPath,
+                    linkedinActiveInBrowser: false
                 }
             });
 
-            await page.waitForTimeout(10000); // CRITICAL: Save session files to disk
+            await page.waitForTimeout(5000); // CRITICAL: Save session files to disk
             await context.close();
             delete activeSessions[userId];
             return res.json({ success: true, connected: true });
         }
 
         console.log(`[SIMULATION] Post-2FA URL: ${page.url()}`);
+        const errorScreenshot = path.join(process.cwd(), 'sessions', `${userId}_2fa_error.png`);
+        await page.screenshot({ path: errorScreenshot }).catch(() => {});
+        
         res.status(400).json({ error: 'Verification failed. The code may be incorrect or expired.' });
 
     } catch (error: any) {
