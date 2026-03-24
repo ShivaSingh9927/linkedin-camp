@@ -41,6 +41,7 @@ model User {
   
   // LinkedIn Session
   linkedinCookie        String?  // Extension or raw sync
+  linkedinLocalStorage  String?  // Extension sync of localStorage
   persistentSessionPath String?  // Path to Playwright session dir
   
   // Cloud Worker State
