@@ -62,15 +62,13 @@ export const login = async (req: Request, res: Response) => {
 };
 
 export const syncExtension = async (req: any, res: Response) => {
-    const { linkedinCookie, linkedinLocalStorage } = req.body;
+    const { linkedinCookie, linkedinLocalStorage, fingerprint } = req.body;
     const userId = req.user.id;
 
     try {
         console.log(`[SYNC-EVENT] User ${userId} is syncing extension session...`);
-        if (linkedinCookie) {
-            console.log(`[SYNC-EVENT]   Payload length: ${linkedinCookie.length} bytes`);
-        }
-
+        
+        // 1. Update Database
         await prisma.user.update({
             where: { id: userId },
             data: { 
@@ -81,8 +79,107 @@ export const syncExtension = async (req: any, res: Response) => {
             },
         });
 
-        console.log(`[SYNC-EVENT] User ${userId} successfully updated session in database.`);
-        res.json({ success: true, message: 'LinkedIn session and fingerprint synced successfully' });
+        // 2. Prepare Session Directory (Mimic phase1_local_login.js)
+        const sessionPath = path.join(process.cwd(), 'sessions', userId);
+        if (!fs.existsSync(sessionPath)) {
+            fs.mkdirSync(sessionPath, { recursive: true });
+        }
+
+        // Save fingerprint for Phase 2 automation
+        if (fingerprint) {
+            fs.writeFileSync(
+                path.join(sessionPath, 'fingerprint.json'), 
+                JSON.stringify(fingerprint, null, 2)
+            );
+        }
+
+        // 3. LAUNCH VERIFICATION LOOP (As requested: "check if feed is loading")
+        // We do this asynchronously so we can return a "Processing" status or wait if it's fast
+        console.log(`[SYNC-VERIFY] Initiating cloud verification for user ${userId}...`);
+        
+        // Assign Proxy if not exists
+        const userProxy = await getOrAssignProxy(userId);
+
+        const verificationPromise = (async () => {
+            let browser;
+            let context;
+            try {
+                const launchOptions: any = {
+                    headless: true, // Use headless with XVFB on server
+                    args: [
+                        '--disable-blink-features=AutomationControlled',
+                        '--no-sandbox',
+                        '--disable-setuid-sandbox'
+                    ],
+                    userAgent: fingerprint?.userAgent || 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
+                };
+
+                if (userProxy) {
+                    launchOptions.proxy = {
+                        server: `${userProxy.proxyHost}:${userProxy.proxyPort}`,
+                        username: userProxy.proxyUsername || undefined,
+                        password: userProxy.proxyPassword || undefined
+                    };
+                }
+
+                // Launch context with the directory to "prime" it
+                context = await chromium.launchPersistentContext(sessionPath, launchOptions);
+                const page = context.pages()[0] || await context.newPage();
+
+                // Inject cookies if they weren't already in the persistent context
+                if (linkedinCookie) {
+                    try {
+                        const cookies = JSON.parse(linkedinCookie);
+                        await context.addCookies(cookies);
+                    } catch (e) {
+                        // Fallback for li_at string
+                        await context.addCookies([{ 
+                            name: 'li_at', 
+                            value: linkedinCookie, 
+                            domain: '.linkedin.com', 
+                            path: '/', 
+                            secure: true, 
+                            httpOnly: true 
+                        }]);
+                    }
+                }
+
+                console.log(`[SYNC-VERIFY] Navigating to feed for verification...`);
+                await page.goto('https://www.linkedin.com/feed/', { 
+                    waitUntil: 'domcontentloaded', 
+                    timeout: 60000 
+                });
+
+                await page.waitForTimeout(5000); // Wait for dynamic content
+
+                const isFeed = page.url().includes('/feed') || await page.isVisible('.global-nav');
+                
+                if (isFeed) {
+                    console.log(`[SYNC-VERIFY] ✅ SUCCESS: Feed detected for user ${userId}. Session is primed on cloud.`);
+                    await prisma.user.update({
+                        where: { id: userId },
+                        data: { persistentSessionPath: sessionPath }
+                    });
+                    return true;
+                } else {
+                    console.warn(`[SYNC-VERIFY] ❌ FAILED: Feed not detected for user ${userId}. URL: ${page.url()}`);
+                    return false;
+                }
+            } catch (err: any) {
+                console.error(`[SYNC-VERIFY] ❌ ERROR during verification:`, err.message);
+                return false;
+            } finally {
+                if (context) await context.close();
+            }
+        })();
+
+        // For now, we return success immediately but let the verification happen in background
+        // The frontend polling (fetchStatus) will pick up the 'persistentSessionPath' when done.
+        res.json({ 
+            success: true, 
+            message: 'Session data received. Verification in progress on Hetzner node...' 
+        });
+
     } catch (error) {
         console.error('Sync failed:', error);
         res.status(500).json({ error: 'Failed to sync session' });

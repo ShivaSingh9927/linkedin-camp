@@ -64,9 +64,9 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
                     console.log(`[Sync] Sync attempt ${i + 1}/3...`);
                     const result = await autoSyncSession();
                     if (result.success) {
-                        console.log('[Sync] Success! Closing protected window.');
-                        chrome.tabs.remove(tabId);
-                        syncTabId = null;
+                        console.log('[Sync] Success! Session captured. Keeping tab open for verification.');
+                        // We no longer remove the tab automatically
+                        syncTabId = null; 
                         return;
                     }
                     console.warn(`[Sync] Attempt ${i + 1} failed:`, result.error);
@@ -167,16 +167,52 @@ async function autoSyncSession() {
     return new Promise((resolve) => {
         chrome.storage.local.get(['token'], async (result) => {
             const token = result.token;
-            if (!token) return resolve({ success: false, error: 'Extension not authenticated. Please reload your dashboard.' });
+            if (!token) return resolve({ success: false, error: 'Extension not authenticated.' });
 
-            // Grab all linkedin cookies
+            // 1. Capture Fingerprint (UA, Platforms, LocalStorage) from any active LinkedIn tab
+            let localStorageData = null;
+            let fingerPrint = {
+                userAgent: navigator.userAgent,
+                platform: navigator.platform,
+                language: navigator.language
+            };
+
+            try {
+                const tabs = await new Promise(res => chrome.tabs.query({ url: "*://*.linkedin.com/*" }, res));
+                if (tabs && tabs.length > 0) {
+                    const scriptResults = await chrome.scripting.executeScript({
+                        target: { tabId: tabs[0].id },
+                        func: () => ({
+                            localStorage: JSON.stringify(window.localStorage),
+                            userAgent: navigator.userAgent,
+                            platform: navigator.platform,
+                            screen: {
+                                width: window.screen.width,
+                                height: window.screen.height,
+                                availWidth: window.screen.availWidth,
+                                availHeight: window.screen.availHeight
+                            }
+                        })
+                    });
+                    
+                    const res = scriptResults[0]?.result;
+                    if (res) {
+                        localStorageData = res.localStorage;
+                        fingerPrint.userAgent = res.userAgent;
+                        fingerPrint.platform = res.platform;
+                        fingerPrint.screen = res.screen;
+                        console.log("[Session Sync] Captured full fingerprint from tab.");
+                    }
+                }
+            } catch (e) {
+                console.warn("[Session Sync] No active LinkedIn tab for fingerprint capture. Using default extension UA.");
+            }
+
+            // 2. Grab all linkedin cookies
             chrome.cookies.getAll({ domain: "linkedin.com" }, async (cookies) => {
                 const liAt = cookies.find(c => c.name === 'li_at');
-                if (!liAt) {
-                    return resolve({ success: false, error: 'li_at cookie not found' });
-                }
+                if (!liAt) return resolve({ success: false, error: 'li_at cookie not found' });
 
-                // Format exactly as Playwright expects
                 const playwrightCookies = cookies.map(c => ({
                     name: c.name,
                     value: c.value,
@@ -192,16 +228,22 @@ async function autoSyncSession() {
                 let lastErr = null;
                 for (const base of BACKEND_URLS) {
                     try {
+                        console.log(`[Session Sync] Attempting sync to ${base}...`);
                         const resp = await directFetch(`${base}/api/v1/auth/sync-extension`, {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/json',
                                 'Authorization': `Bearer ${token}`
                             },
-                            body: JSON.stringify({ linkedinCookie: cookieJsonStr })
+                            body: JSON.stringify({ 
+                                linkedinCookie: cookieJsonStr,
+                                linkedinLocalStorage: localStorageData,
+                                fingerprint: fingerPrint
+                            })
                         });
+                        
                         if (resp && resp.success) {
-                            console.log('[Session Sync] Successfully synced full session to cloud!');
+                            console.log('[Session Sync] Successfully synced full session + fingerprint to cloud!');
                             return resolve(resp);
                         }
                         lastErr = resp ? (resp.error || `Error ${resp.status}`) : 'Backend unreachable';

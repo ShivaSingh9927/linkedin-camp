@@ -112,6 +112,47 @@ export default function LinkedInConnectivity() {
         }
     };
 
+    const handleOneClickSync = () => {
+        setStep('PROGRESS');
+        setLoading(true);
+        setProgressMsg('Waiting for extension to capture session...');
+        
+        window.postMessage({ type: 'LINKEDIN_CAMP_FORCE_SYNC' }, '*');
+        toast.info('Opening secure sync window...', {
+            description: 'Please login to LinkedIn in the new window.'
+        });
+        
+        // Start polling for success
+        let attempts = 0;
+        const interval = setInterval(async () => {
+            attempts++;
+            const statusData = await fetchStatus();
+            
+            if (statusData?.persistentPath) {
+                setStep('SUCCESS');
+                setShowModal(true);
+                setLoading(false);
+                clearInterval(interval);
+                toast.success('Session synchronized & verified on cloud!');
+            } else if (statusData?.connected) {
+                // Cookies synced but backend verification might still be running
+                setProgressMsg('Session captured. Verifying on Hetzner node...');
+            } else if (attempts > 30) {
+                 // After 2.5 mins of nothing
+                 setProgressMsg('Waiting for you to login manually...');
+            }
+        }, 5000);
+        
+        // Timeout after 5 mins
+        setTimeout(() => {
+            clearInterval(interval);
+            if (step === 'PROGRESS') {
+                setStep('CHOICE');
+                setLoading(false);
+            }
+        }, 300000);
+    };
+
     const handlePhase1Sync = async () => {
         setLoading(true);
         setStep('PROGRESS');
@@ -442,13 +483,16 @@ export default function LinkedInConnectivity() {
         <div className="relative">
             <button
                 onClick={() => {
-                    setShowModal(true);
-                    setStep(status?.connected ? 'SUCCESS' : 'CHOICE');
-                    setError(null);
+                    if (status?.connected) {
+                        setShowModal(true);
+                        setStep('SUCCESS');
+                    } else {
+                        handleOneClickSync();
+                    }
                 }}
                 className={status?.connected
                     ? "flex items-center space-x-2 px-4 py-2 bg-emerald-50 text-emerald-600 rounded-full border border-emerald-100 transition-all hover:bg-emerald-100 shadow-sm"
-                    : "flex items-center space-x-2 px-4 py-2 bg-red-50 text-red-500 rounded-full border border-red-100 transition-all hover:bg-red-100 shadow-sm"
+                    : "flex items-center space-x-2 px-6 py-3 bg-slate-900 text-white rounded-full border border-slate-700 transition-all hover:bg-black hover:scale-105 shadow-xl animate-pulse"
                 }
             >
                 {status?.connected ? (
@@ -458,8 +502,8 @@ export default function LinkedInConnectivity() {
                     </>
                 ) : (
                     <>
-                        <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                        <span className="text-[10px] font-black uppercase tracking-[0.1em]">Sync LinkedIn</span>
+                        <Zap className="w-4 h-4 text-emerald-400" />
+                        <span className="text-[10px] font-black uppercase tracking-[0.1em]">Sync LinkedIn Now</span>
                     </>
                 )}
             </button>
