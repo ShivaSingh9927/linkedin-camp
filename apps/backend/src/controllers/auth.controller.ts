@@ -62,22 +62,30 @@ export const login = async (req: Request, res: Response) => {
 };
 
 export const syncExtension = async (req: any, res: Response) => {
-    const { linkedinCookie } = req.body;
+    const { linkedinCookie, linkedinLocalStorage } = req.body;
     const userId = req.user.id;
 
     try {
+        console.log(`[SYNC-EVENT] User ${userId} is syncing extension session...`);
+        if (linkedinCookie) {
+            console.log(`[SYNC-EVENT]   Payload length: ${linkedinCookie.length} bytes`);
+        }
+
         await prisma.user.update({
             where: { id: userId },
             data: { 
                 linkedinCookie,
+                linkedinLocalStorage,
                 linkedinActiveInBrowser: true,
                 lastBrowserActivityAt: new Date()
             },
         });
 
-        res.json({ success: true, message: 'LinkedIn cookie and activity status synced successfully' });
+        console.log(`[SYNC-EVENT] User ${userId} successfully updated session in database.`);
+        res.json({ success: true, message: 'LinkedIn session and fingerprint synced successfully' });
     } catch (error) {
-        res.status(500).json({ error: 'Failed to sync cookie' });
+        console.error('Sync failed:', error);
+        res.status(500).json({ error: 'Failed to sync session' });
     }
 };
 
@@ -136,10 +144,10 @@ export const getLinkedinStatus = async (req: any, res: Response) => {
 
         res.json({
             connected: !!user.linkedinCookie || !!user.persistentSessionPath,
-            cookie: user.linkedinCookie,
-            persistent: !!user.persistentSessionPath,
+            cookieLength: user.linkedinCookie ? user.linkedinCookie.length : 0,
+            persistentPath: user.persistentSessionPath,
             profile: {
-                firstName: user.email.split('@')[0], // Placeholder until sync is run
+                firstName: user.email.split('@')[0], 
                 lastName: "",
                 headline: "LinkedIn Member",
                 avatarUrl: null

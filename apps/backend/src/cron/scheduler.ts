@@ -22,8 +22,8 @@ export const initScheduler = () => {
     return;
   }
 
-  // 1. Campaign Step Scheduler (Every 5 mins)
-  cron.schedule('*/5 * * * *', async () => {
+  // 1. Campaign Step Scheduler (Every 1 minute)
+  cron.schedule('*/1 * * * *', async () => {
     console.log('Running campaign scheduler heartbeat...');
 
     try {
@@ -33,6 +33,7 @@ export const initScheduler = () => {
         select: { 
           id: true, 
           linkedinCookie: true,
+          persistentSessionPath: true, // ADDED
           linkedinActiveInBrowser: true,
           lastBrowserActivityAt: true
         }
@@ -46,17 +47,21 @@ export const initScheduler = () => {
         // Dynamic Failover Logic: If user is active on their laptop extension, skip cloud task queueing
         // This prevents parallel logins which lead to LinkedIn security flags.
         const now = new Date().getTime();
+        const tenMins = 5 * 60 * 1000;
         const lastActivity = user.lastBrowserActivityAt ? new Date(user.lastBrowserActivityAt).getTime() : 0;
-        const isExtensionActive = user.linkedinActiveInBrowser && (now - lastActivity < 3 * 60 * 1000);
+        
+        // Skip if extension is in active state AND had activity in last 10 minutes
+        const isExtensionActive = user.linkedinActiveInBrowser && (now - lastActivity < tenMins);
 
         if (isExtensionActive) {
           console.log(`[Scheduler] User ${user.id} is active on extension (laptop). Skipping cloud scheduler to avoid IP conflicts.`);
           continue;
         }
 
-        if (!user.linkedinCookie) {
-          console.log(`[Scheduler] User ${user.id} has no LinkedIn cookie. Skipping.`);
-          continue; // Skip users without auth
+        // Check for ANY form of session
+        if (!user.linkedinCookie && !user.persistentSessionPath) {
+          console.log(`[Scheduler] User ${user.id} has no LinkedIn session (cookie or persistent). Skipping.`);
+          continue; 
         }
 
         const userPendingTasks = await prisma.campaignLead.findMany({
