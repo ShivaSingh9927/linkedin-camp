@@ -114,8 +114,37 @@ export const processWorkflowStep = async (data: any, job: Job) => {
             console.log(`[WORKER] Launching persistent context for user ${userId} at ${sessionPathToUse}`);
             context = await chromium.launchPersistentContext(sessionPathToUse, launchOptions);
         } else {
+            console.log(`[WORKER] Launching standard browser for ${userId} (no persistent context on server)`);
             browser = await chromium.launch(launchOptions);
             context = await browser.newContext();
+            
+            // --- LOAD COOKIES FROM DB (SaaS Extension Fallback) ---
+            if (user.linkedinCookie) {
+                try {
+                    const domainToInject = user.proxy ? '.linkedin.com' : 'linkedin.com'; // Adjust based on proxy env
+                    const cookies = JSON.parse(user.linkedinCookie);
+                    
+                    // Basic sanity check: ensure we have an array
+                    if (Array.isArray(cookies)) {
+                         console.log(`[WORKER] Injecting ${cookies.length} cookies from DB for user ${userId}`);
+                         await context.addCookies(cookies);
+                    } else {
+                         // Fallback for single li_at string
+                         console.log(`[WORKER] Injecting li_at cookie for user ${userId}`);
+                         await context.addCookies([{ 
+                             name: 'li_at', 
+                             value: user.linkedinCookie, 
+                             domain: '.linkedin.com', 
+                             path: '/',
+                             secure: true, 
+                             httpOnly: true, 
+                             sameSite: 'Lax' 
+                         }]);
+                    }
+                } catch (e) {
+                    console.error('[WORKER] Error parsing cookies from DB:', e);
+                }
+            }
         }
 
         const page = context.pages()[0] || await context.newPage();
@@ -193,14 +222,16 @@ export const processWorkflowStep = async (data: any, job: Job) => {
         if (finalUrl.includes('authwall') || finalUrl.includes('login') || hasSignIn) {
             console.log('[WORKER] ⚠️ Session expired or Guest Mode detected. Manual Sync required.');
             
-            // Mark as disconnected in DB
-            await prisma.user.update({
-                where: { id: userId },
-                data: { 
-                    linkedinCookie: null,
-                    persistentSessionPath: null 
-                }
-            });
+            // Only clear it IF we actually have a path to clear, otherwise it might be a transient load error
+            if (sessionPathToUse) {
+                await prisma.user.update({
+                    where: { id: userId },
+                    data: { 
+                        linkedinCookie: null,
+                        persistentSessionPath: null 
+                    }
+                });
+            }
 
             // Send notification to user
             await prisma.notification.create({
