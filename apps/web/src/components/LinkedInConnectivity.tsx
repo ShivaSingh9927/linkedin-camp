@@ -112,6 +112,49 @@ export default function LinkedInConnectivity() {
         }
     };
 
+    const handlePhase1Sync = async () => {
+        setLoading(true);
+        setStep('PROGRESS');
+        setProgressMsg('Launching manual sync window on server...');
+        setError(null);
+
+        try {
+            const token = localStorage.getItem('token');
+            const apiBase = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/v1\/?$/, '');
+            
+            const res = await fetch(`${apiBase}/api/v1/auth/start-phase1-sync`, {
+                method: 'POST',
+                headers: { 
+                    'Authorization': `Bearer ${token}` 
+                }
+            });
+
+            const data = await res.json();
+            if (data.success) {
+                toast.success('Manual sync window opened on server!');
+                setProgressMsg('Please login manually in the server browser window.');
+                
+                // Poll for status
+                const interval = setInterval(async () => {
+                    const statusData = await fetchStatus();
+                    if (statusData?.persistentSessionPath) {
+                        setStep('SUCCESS');
+                        clearInterval(interval);
+                        toast.success('Persistent session synced successfully!');
+                    }
+                }, 10000);
+            } else {
+                setError(data.error || 'Failed to start manual sync.');
+                setStep('CHOICE');
+            }
+        } catch (err) {
+            setError('Connection error.');
+            setStep('CHOICE');
+        } finally {
+            setLoading(false);
+        }
+    };
+
     const handleVerify2FA = async (e: React.FormEvent) => {
         e.preventDefault();
         setError(null);
@@ -235,6 +278,20 @@ export default function LinkedInConnectivity() {
                                                 </div>
                                                 <h4 className="font-black text-slate-900 uppercase text-xs tracking-wider">Cloud Native Sync</h4>
                                                 <p className="text-[10px] text-slate-500 font-bold mt-1 uppercase opacity-60">Enter credentials once to unlock 24/7 cloud speed.</p>
+                                            </button>
+
+                                            <button 
+                                                onClick={handlePhase1Sync}
+                                                className="group text-left p-6 bg-amber-50 rounded-[2rem] border-2 border-transparent hover:border-amber-200 hover:bg-white hover:shadow-xl transition-all"
+                                            >
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <div className="w-10 h-10 rounded-2xl bg-amber-500/10 flex items-center justify-center text-amber-600 group-hover:scale-110 transition-transform">
+                                                        <Globe className="w-5 h-5" />
+                                                    </div>
+                                                    <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-amber-500 transition-colors" />
+                                                </div>
+                                                <h4 className="font-black text-amber-900 uppercase text-xs tracking-wider">Manual Server Sync</h4>
+                                                <p className="text-[10px] text-amber-600/70 font-bold mt-1 uppercase opacity-60">Launch a browser on the server to login manually (Bio-Stealth).</p>
                                             </button>
                                         </div>
                                         <button onClick={() => setShowModal(false)} className="w-full text-center text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-slate-600">Maybe Later</button>
@@ -391,7 +448,7 @@ export default function LinkedInConnectivity() {
                 }}
                 className={status?.connected
                     ? "flex items-center space-x-2 px-4 py-2 bg-emerald-50 text-emerald-600 rounded-full border border-emerald-100 transition-all hover:bg-emerald-100 shadow-sm"
-                    : "flex items-center space-x-2 px-4 py-2 bg-slate-100 text-slate-500 rounded-full border border-slate-200 transition-all hover:bg-slate-200"
+                    : "flex items-center space-x-2 px-4 py-2 bg-red-50 text-red-500 rounded-full border border-red-100 transition-all hover:bg-red-100 shadow-sm"
                 }
             >
                 {status?.connected ? (
@@ -401,7 +458,7 @@ export default function LinkedInConnectivity() {
                     </>
                 ) : (
                     <>
-                        <div className="w-2 h-2 rounded-full bg-slate-400" />
+                        <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
                         <span className="text-[10px] font-black uppercase tracking-[0.1em]">Sync LinkedIn</span>
                     </>
                 )}

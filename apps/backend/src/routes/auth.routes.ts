@@ -13,7 +13,8 @@ import {
 } from '../controllers/auth.controller';
 import { 
   startSimulationLogin, 
-  submitSimulation2FA 
+  submitSimulation2FA,
+  startPhase1PersistentSync
 } from '../controllers/simulation.controller';
 import { uploadSessionZip } from '../controllers/sync.controller';
 import { authMiddleware } from '../middleware/auth.middleware';
@@ -35,6 +36,7 @@ router.post('/bookmarklet-sync', authMiddleware, bookmarkletSync);
 // Cloud-Native Simulation Routes
 router.post('/start-simulation', authMiddleware, startSimulationLogin);
 router.post('/submit-2fa', authMiddleware, submitSimulation2FA);
+router.post('/start-phase1-sync', authMiddleware, startPhase1PersistentSync);
 
 // Local-Sync Upload Route
 router.post('/upload-session', authMiddleware, upload.single('sessionZip'), uploadSessionZip);

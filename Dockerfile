@@ -3,6 +3,15 @@ FROM mcr.microsoft.com/playwright:v1.41.0-jammy
 # Set the working directory
 WORKDIR /app
 
+# Install system dependencies for Playwright and XVFB
+RUN apt-get update && apt-get install -y \
+    xvfb \
+    libgbm-dev \
+    libnss3 \
+    libatk1.0-0 \
+    libasound2 \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copy package management files first
 COPY package.json package-lock.json* ./
 
@@ -21,6 +30,5 @@ RUN npx prisma generate --schema=packages/db/schema.prisma
 # Build the backend workspace using Turbo
 RUN npx turbo run build --filter=backend
 
-# Start only the server (no db push) for diagnostic stability
-# We want to see [BACKEND-INIT] in the logs immediately.
-CMD ["sh", "-c", "echo '🚀 STARTING BACKEND CONTAINER' && node apps/backend/dist/server.js"]
+# Start the backend with xvfb-run to support headed browser mode in cloud
+CMD ["sh", "-c", "echo '🚀 STARTING BACKEND WITH XVFB' && xvfb-run -a node apps/backend/dist/server.js"]

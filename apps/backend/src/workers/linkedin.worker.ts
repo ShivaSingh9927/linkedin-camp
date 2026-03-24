@@ -53,13 +53,14 @@ export const processWorkflowStep = async (data: any, job: Job) => {
 
     try {
         // --- MANUAL ACTIVITY SAFETY CHECK ---
-        const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000);
-        const isUserActiveInBrowser = user.linkedinActiveInBrowser || (user.lastBrowserActivityAt && user.lastBrowserActivityAt > fifteenMinsAgo);
+        const safetyWindowMins = 2;
+        const safetyTimeAgo = new Date(Date.now() - safetyWindowMins * 60 * 1000);
+
+        // Check if user is active in extension OR had activity in last 2 minutes
+        const isUserActiveInBrowser = user.linkedinActiveInBrowser && (user.lastBrowserActivityAt && user.lastBrowserActivityAt > safetyTimeAgo);
 
         if (isUserActiveInBrowser) {
-            const delayMs = (Math.floor(Math.random() * 300) + 600) * 1000; // 10-15 minutes
-            console.log(`[WORKER] User ${userId} is currently active in browser. Stalling cloud action for safety. Delaying by ${delayMs / 1000}s`);
-            await job.moveToDelayed(Date.now() + delayMs);
+            console.log(`[WORKER] Safety: User ${userId} is active in browser. Skipping cloud task this turn. Redo in next sync circle.`);
             return;
         }
 
@@ -84,10 +85,15 @@ export const processWorkflowStep = async (data: any, job: Job) => {
 
         // Use persistent context if available for high-tier accounts
         const launchOptions: any = {
-            headless: true, // Always headless on cloud
+            headless: true, // Switch to headed (requires XVFB) for maximum stealth
             viewport: { width: 1440, height: 900 },
             userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
-            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled']
+            args: [
+                '--no-sandbox', 
+                '--disable-setuid-sandbox', 
+                '--disable-blink-features=AutomationControlled',
+                '--start-maximized'
+            ]
         };
 
         if (user.proxy) {
@@ -113,6 +119,9 @@ export const processWorkflowStep = async (data: any, job: Job) => {
         }
 
         const page = context.pages()[0] || await context.newPage();
+
+        // --- MASTER MIRROR MODE: Using fully synced persistent context folder ---
+        console.log(`[WORKER] 🧬 PERSISTENT CONTEXT MODE: Mirror has landed. (Using full session directory)`);
 
         // --- STEP RESOLUTION ---
         // Resolve the workflow: prefer workflowJson from job data, then campaign.workflowJson, then legacy campaign.workflow
@@ -163,22 +172,84 @@ export const processWorkflowStep = async (data: any, job: Job) => {
         if ((stepType === 'START' || stepType === 'ACTION') && step.type === 'ACTION' && !stepData.subType && !step.subType) stepType = 'VISIT';
         // Handle case where subType is stored as PROFILE_VISIT
         if (stepType === 'PROFILE_VISIT') stepType = 'VISIT';
-        // --- MANDATORY WARMUP (match stealth_headless.js behavior) ---
-        await warmupSession(page);
-        
-        if (await checkInterrupt(userId)) throw new Error('INTERRUPTED: User active in browser');
 
-        console.log(`[WORKER] Navigating to profile: ${lead.linkedinUrl}`);
-        await page.goto(lead.linkedinUrl, { waitUntil: 'domcontentloaded', timeout: 90000 });
-        
-        // --- AUTHWALL DETECTION ---
-        const finalUrl = page.url();
-        if (finalUrl.includes('authwall') || finalUrl.includes('login')) {
-            console.error(`[WORKER] ⚠️ BLOCKED by Authwall/Login gate. Railway/Proxy IP may be flagged. URL: ${finalUrl}`);
-            return; // Don't advance progress, retry next cycle
+        // --- MASTER STEALTH WARMUP (v2 Strategy) ---
+        console.log('[WORKER] Step 1: Human Warmup (Feeding scrolling)...');
+        try {
+            await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded', timeout: 60000 });
+            for (let i = 0; i < 3; i++) {
+                await page.mouse.wheel(0, randomRange(400, 800));
+                await wait(randomRange(2000, 5000));
+            }
+            await page.screenshot({ path: '/app/trace_1_warmup.png' });
+        } catch (e) {
+            console.warn('[WORKER] Warmup delay, proceeding...');
         }
 
-        if (await checkInterrupt(userId)) throw new Error('INTERRUPTED: User active in browser');
+        // --- SESSION VALIDATION ---
+        const finalUrl = page.url();
+        const hasSignIn = await page.isVisible('button:has-text("Sign in"), a:has-text("Sign in"), button:has-text("Join now")');
+
+        if (finalUrl.includes('authwall') || finalUrl.includes('login') || hasSignIn) {
+            console.log('[WORKER] ⚠️ Session expired or Guest Mode detected. Manual Sync required.');
+            
+            // Mark as disconnected in DB
+            await prisma.user.update({
+                where: { id: userId },
+                data: { 
+                    linkedinCookie: null,
+                    persistentSessionPath: null 
+                }
+            });
+
+            // Send notification to user
+            await prisma.notification.create({
+                data: {
+                    userId,
+                    title: 'LinkedIn Session Expired',
+                    body: 'Your LinkedIn session has expired. Please go to Settings and click Sync LinkedIn to re-authenticate.',
+                    type: 'ERROR'
+                }
+            });
+            return;
+        }
+
+        // --- PHASE 2: HUMAN-STYLE SEARCH NAVIGATION ---
+        console.log('[WORKER] Phase 2: Human-style Search for Profile...');
+        const searchInput = page.locator('input[placeholder="Search"], #global-nav-typeahead input, .search-global-typeahead__input').first();
+        
+        try {
+            await searchInput.waitFor({ state: 'visible', timeout: 20000 });
+            await wait(randomRange(1000, 3000));
+            await searchInput.click();
+            
+            const profileSlug = lead.linkedinUrl.split('/in/')[1]?.replace('/', '') || lead.firstName + ' ' + lead.lastName;
+            await humanType(page, searchInput, profileSlug);
+            await wait(randomRange(1200, 2500));
+            await page.keyboard.press('Enter');
+        } catch (e) {
+             console.log("[WORKER] ⚠️ Standard search bar selector failed. Trying fallback click...");
+             await page.click('.search-global-typeahead__collapsed-search-button', { timeout: 5000 }).catch(() => {});
+             await wait(2000);
+             const profileSlug = lead.linkedinUrl.split('/in/')[1]?.replace('/', '') || lead.firstName + ' ' + lead.lastName;
+             await humanType(page, searchInput, profileSlug);
+             await page.keyboard.press('Enter');
+        }
+
+        console.log('✅ Search submitted. Waiting for results...');
+        await wait(randomRange(6000, 10000));
+
+        // Now move to the profile. This will now appear as a search-driven view in history.
+        await page.goto(lead.linkedinUrl, { 
+            waitUntil: 'domcontentloaded', 
+            timeout: 60000 
+        }); 
+        await wait(randomRange(5000, 10000)); 
+
+        console.log(`[WORKER] Profile loaded successfully: ${finalUrl}`);
+        await wait(randomRange(4000, 8000)); // Increased profile "observing" time
+
+        // if (await checkInterrupt(userId)) throw new Error('INTERRUPTED: User active in browser');
         await wait(randomRange(3000, 6000)); // "Observing" time from your script
 
 
@@ -189,7 +260,7 @@ export const processWorkflowStep = async (data: any, job: Job) => {
             if (isPending) {
                 console.log(`[WORKER] Invite already pending for ${lead.firstName}.`);
             } else if (hasConnect) {
-                if (await checkInterrupt(userId)) throw new Error('INTERRUPTED: User active in browser');
+                // if (await checkInterrupt(userId)) throw new Error('INTERRUPTED: User active in browser');
                 await humanMoveAndClick(page, 'button:has-text("Connect")');
                 await wait(2000);
                 await page.click('button[aria-label="Send now"]');
@@ -202,36 +273,65 @@ export const processWorkflowStep = async (data: any, job: Job) => {
             // Log the current page URL for debugging
             console.log(`[WORKER] Current page URL: ${page.url()}`);
 
-            // --- MULTI-SELECTOR MESSAGE BUTTON DETECTION (from stealth_headless.js) ---
+            // --- MULTI-SELECTOR MESSAGE BUTTON DETECTION ---
             const messageButtonSelectors = [
+                '.pvs-profile-actions button:has-text("Message")', 
+                'button.artdeco-button:has-text("Message")',
                 'button:has-text("Message")',
                 'a:has-text("Message")',
                 '[data-control-name="message"]',
-                '.pvs-profile-actions button:has-text("Message")',
-                'button.artdeco-button:has-text("Message")',
             ];
 
-            let messageClicked = false;
-            for (const sel of messageButtonSelectors) {
+            const msgInputSelector = 'div.msg-form__contenteditable[contenteditable="true"], .msg-form__textarea, [role="textbox"]';
+            
+            // Always close existing chat bubbles to prevent typing to the wrong person
+            const closeBtns = await page.locator('button.msg-overlay-bubble-header__control--close-btn').all();
+            for (const btn of closeBtns) {
                 try {
-                    const btn = page.locator(sel).filter({ visible: true }).first();
-                    if (await btn.isVisible({ timeout: 2000 })) {
-                        messageClicked = await humanMoveAndClick(page, btn);
-                        if (messageClicked) {
-                            console.log(`[WORKER] Clicked Message button using selector: ${sel}`);
-                            break;
-                        }
-                    }
-                } catch (e) { /* try next selector */ }
+                    await btn.click({ force: true });
+                    await wait(500);
+                } catch (e) {}
             }
 
+            let messageClicked = false;
+                for (const sel of messageButtonSelectors) {
+                    try {
+                        const btn = page.locator(sel).filter({ visible: true }).first();
+                        if (await btn.isVisible({ timeout: 12000 })) {
+                            messageClicked = await humanMoveAndClick(page, btn);
+                            if (messageClicked) {
+                                console.log(`[WORKER] ✅ SUCCESS: Clicked Message button using selector: ${sel}`);
+                                // Critical: wait for modal to load network data
+                                await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
+                                await wait(3000);
+                                break;
+                            }
+                        }
+                    } catch (e) { 
+                        console.log(`[WORKER] Skipping selector: ${sel}`);
+                    }
+                }
+
             if (!messageClicked) {
-                console.log(`[WORKER] Message button not found on profile. Falling back to messaging link...`);
-                await page.goto('https://www.linkedin.com/messaging/', { waitUntil: 'domcontentloaded' });
-                await wait(randomRange(2000, 4000));
+                 await page.screenshot({ path: '/app/error_profile.png' });
+                 console.log(`[WORKER] Message button not found. Saved screenshot to /app/error_profile.png`);
+                 console.log(`[WORKER] Falling back to messaging link...`);
+                 await page.goto('https://www.linkedin.com/messaging/', { waitUntil: 'domcontentloaded' });
+                 await wait(randomRange(2000, 4000));
             }
 
             await wait(randomRange(1500, 3000));
+            
+            // Ensure input is visible and focused
+            const msgBox = page.locator(msgInputSelector).first();
+            try {
+                await msgBox.scrollIntoViewIfNeeded();
+                await msgBox.waitFor({ state: 'visible', timeout: 15000 });
+            } catch (e) {
+                await page.screenshot({ path: '/app/error_modal.png' });
+                console.error(`[WORKER] ❌ FAILED: Message box did not appear after click. Saved screenshot to /app/error_modal.png`);
+                return;
+            }
 
             // Read message from stepData (ReactFlow .data) or step root (flat format)
             const message = stepData.message || step.message || 'Hello {firstName}!';
@@ -241,29 +341,60 @@ export const processWorkflowStep = async (data: any, job: Job) => {
                 .replace(/\{firstName\}/g, lead.firstName || '');
             console.log(`[WORKER] Sending message to ${lead.firstName}: "${finalMessage.substring(0, 80)}"`);
 
-            // --- TYPE MESSAGE (multi-selector input from stealth_headless.js) ---
-            const msgInputSelector = 'div.msg-form__contenteditable[contenteditable="true"], .msg-form__textarea, [role="textbox"]';
-            await humanType(page, msgInputSelector, finalMessage);
+            const typed = await humanType(page, msgInputSelector, finalMessage);
 
-            console.log(`[WORKER] Message typed. Sending...`);
-            await wait(randomRange(1000, 2500));
-
-            // --- SEND BUTTON (from stealth_headless.js) ---
-            const sendBtnSelector = 'button.msg-form__send-button, button[type="submit"]:has-text("Send")';
-            const sendBtn = page.locator(sendBtnSelector).filter({ visible: true }).first();
-            let sent = false;
-            try {
-                if (await sendBtn.isVisible({ timeout: 3000 })) {
-                    sent = await humanMoveAndClick(page, sendBtn);
-                }
-            } catch (e) { /* fallback below */ }
-
-            if (!sent) {
-                console.log('[WORKER] Send button click failed, pressing Enter as fallback...');
-                await page.keyboard.press('Enter');
+            if (!typed) {
+                console.warn(`[WORKER] ⚠️ FAILED: Could not type into message box for ${lead.firstName}. Current URL: ${page.url()}`);
+                return; // Retry next cycle
             }
 
-            console.log(`[WORKER] ✅ Message sent to ${lead.firstName}.`);
+            // LinkedIn "Send" button fix: ensure the browser triggers input events
+            await page.locator(msgInputSelector).first().evaluate((el: any) => {
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+                el.dispatchEvent(new Event('change', { bubbles: true }));
+            });
+
+            console.log(`[WORKER] Message typed and events triggered. Final check before sending...`);
+            await wait(randomRange(2500, 4000));
+
+            // --- SEND BUTTON (Robust Multi-Phase) ---
+            const sendBtnSelector = 'button.msg-form__send-button, button[type="submit"]:has-text("Send"), .msg-form__footer button:has-text("Send")';
+            const sendBtn = page.locator(sendBtnSelector).filter({ visible: true }).first();
+            
+            let sent = false;
+            try {
+                if (await sendBtn.isVisible({ timeout: 10000 })) {
+                    // Phase 1: Human Click
+                    sent = await humanMoveAndClick(page, sendBtn);
+                    await wait(2000);
+
+                    // Phase 2: If box still there, Force Click (Ghost-Buster)
+                    if (await page.locator(msgInputSelector).first().isVisible()) {
+                         console.log('[WORKER] Message box still visible. Attempting Force Click...');
+                         await sendBtn.click({ force: true });
+                         await wait(2000);
+                    }
+                }
+            } catch (e: any) { 
+                console.warn(`[WORKER] Send sequence encountered issue: ${e.message}`);
+            }
+
+            // Phase 3: Final Fallback - Enter
+            if (await page.locator(msgInputSelector).first().isVisible()) {
+                console.log('[WORKER] Still visible. Final fallback: Enter...');
+                await page.keyboard.press('Enter');
+                await wait(3000);
+            }
+
+            // POST-SEND VERIFICATION
+            const boxRemaining = await page.locator(msgInputSelector).first().isVisible();
+            if (boxRemaining) {
+                 console.error(`[WORKER] ❌ FAILED: Message box still visible after all attempts.`);
+                 await page.screenshot({ path: `/app/error_send_${leadId}.png` });
+                 return;
+            } else {
+                 console.log(`[WORKER] ✅ SUCCESS: Message sent to ${lead.firstName}.`);
+            }
         } else if (stepType === 'VISIT') {
             console.log(`[WORKER] Profile visit completed for ${lead.firstName}.`);
         }

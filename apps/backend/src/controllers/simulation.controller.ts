@@ -14,6 +14,7 @@ const activeSessions: Record<string, {
     page: any;
     timestamp: number;
     browser?: any;
+    type?: 'SIMULATION' | 'PHASE1';
 }> = {};
 
 // Clean up old sessions every 15 mins
@@ -275,5 +276,80 @@ export const submitSimulation2FA = async (req: any, res: Response) => {
             delete activeSessions[userId];
         }
         res.status(500).json({ error: 'Verification error. Please try again.' });
+    }
+};
+
+export const startPhase1PersistentSync = async (req: any, res: Response) => {
+    const userId = req.user.id;
+
+    try {
+        console.log(`[PHASE 1] Starting MANUAL persistent sync for user ${userId}...`);
+
+        // 1. Setup Session Directory
+        const sessionPath = path.join(process.cwd(), 'sessions', userId);
+        if (!fs.existsSync(path.join(process.cwd(), 'sessions'))) {
+            fs.mkdirSync(path.join(process.cwd(), 'sessions'), { recursive: true });
+        }
+
+        // 2. Launch Persistent Context (HEADED)
+        const context = await chromium.launchPersistentContext(sessionPath, {
+            headless: false, // User needs to see this!
+            args: [
+                '--disable-blink-features=AutomationControlled',
+                '--start-maximized'
+            ],
+            viewport: null
+        });
+
+        const page = context.pages().length > 0 ? context.pages()[0] : await context.newPage();
+        activeSessions[userId] = { context, page, timestamp: Date.now(), type: 'PHASE1' };
+
+        console.log(`[PHASE 1] Navigating to LinkedIn Login...`);
+        await page.goto('https://www.linkedin.com/login');
+
+        // Start a background loop to check for login success
+        const checkLogin = setInterval(async () => {
+            try {
+                if (page.isClosed()) {
+                    clearInterval(checkLogin);
+                    delete activeSessions[userId];
+                    return;
+                }
+
+                if (page.url().includes('/feed')) {
+                    console.log(`[PHASE 1] Login detected for user ${userId}!`);
+                    clearInterval(checkLogin);
+                    
+                    // Capture UA for identity cloning (optional but good)
+                    // const userAgent = await page.evaluate(() => navigator.userAgent);
+                    
+                    // Wait 15s to ensure session is saved to disk
+                    await page.waitForTimeout(15000);
+                    
+                    await prisma.user.update({
+                        where: { id: userId },
+                        data: { 
+                            persistentSessionPath: sessionPath,
+                            linkedinCookie: (await context.cookies()).find(c => c.name === 'li_at')?.value
+                        }
+                    });
+
+                    console.log(`[PHASE 1] Session saved for user ${userId}. Closing browser.`);
+                    await context.close();
+                    delete activeSessions[userId];
+                }
+            } catch (e) {
+                clearInterval(checkLogin);
+            }
+        }, 5000);
+
+        res.json({ 
+            success: true, 
+            message: 'Manual login window opened. Please login in the browser window on the server.' 
+        });
+
+    } catch (error: any) {
+        console.error(`[PHASE 1] Error:`, error.message);
+        res.status(500).json({ error: 'Failed to launch manual login window.' });
     }
 };
