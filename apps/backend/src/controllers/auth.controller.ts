@@ -7,6 +7,7 @@ const stealth = require('puppeteer-extra-plugin-stealth')();
 import path from 'path';
 import fs from 'fs';
 import { getOrAssignProxy } from '../services/proxy.service';
+import axios from 'axios';
 
 chromium.use(stealth);
 
@@ -240,6 +241,7 @@ export const getLinkedinStatus = async (req: any, res: Response) => {
         if (!user) return res.status(404).json({ error: 'User not found' });
 
         res.json({
+            userId: user.id,
             connected: !!user.linkedinCookie || !!user.persistentSessionPath,
             cookieLength: user.linkedinCookie ? user.linkedinCookie.length : 0,
             persistentPath: user.persistentSessionPath,
@@ -380,6 +382,38 @@ export const startLinkedinLogin = async (req: any, res: Response) => {
             console.error(`[LOGIN-BOT] Fatal error in login routine for user ${userId}:`, error.message);
         }
     })();
+};
+
+export const cloudLogin = async (req: any, res: Response) => {
+    const userId = req.user.id;
+    const browserlessHost = process.env.BROWSERLESS_HOST || 'browserless';
+    const browserlessPort = process.env.BROWSERLESS_PORT || '3000';
+    const token = process.env.BROWSERLESS_TOKEN || 'Raja_Security_2026';
+
+    try {
+        console.log(`[CLOUD-LOGIN] Launching interactive session for user ${userId}...`);
+        
+        // Use Browserless JSON API to start a session with a pre-loaded URL
+        // We'll use the management API to start a session that will persist in a data directory
+        const launchOptions = {
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                `--user-data-dir=/sessions/${userId}`
+            ]
+        };
+
+        // Standard Browserless Redirect URL for v1/v2
+        // We want the user to end up on the LinkedIn Login page
+        const debuggerUrl = `http://204.168.167.198:3000/debugger?url=${encodeURIComponent('https://www.linkedin.com/login')}`;
+        
+        // This is the fastest "One-Click" that doesn't rely on us holding a websocket open in the backend
+        res.redirect(debuggerUrl);
+
+    } catch (error: any) {
+        console.error(`[CLOUD-LOGIN] Error:`, error.message);
+        res.status(500).send("Failed to launch cloud login session.");
+    }
 };
 
 export const heartbeat = async (req: any, res: Response) => {

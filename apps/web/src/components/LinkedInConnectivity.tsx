@@ -268,7 +268,7 @@ export default function LinkedInConnectivity() {
                                         <div className="px-4 py-2 bg-slate-50 border border-slate-100 rounded-xl flex items-center justify-between">
                                             <span className="text-[10px] font-bold text-slate-500 uppercase">Window not loading?</span>
                                             <a 
-                                                href={`http://204.168.167.198:3000/?url=https://www.linkedin.com/login&launch=${encodeURIComponent(JSON.stringify({ args: ["--no-sandbox", "--disable-setuid-sandbox", `--user-data-dir=/sessions/${status?.userId || 'unknown'}`] }))}`} 
+                                                href={`${(process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/v1\/?$/, '')}/api/v1/auth/cloud-login?token=${localStorage.getItem('token')}`} 
                                                 target="_blank" 
                                                 rel="noopener noreferrer"
                                                 className="flex items-center gap-1 text-[10px] font-black text-[#0077b5] uppercase hover:underline"

@@ -9,7 +9,8 @@ import {
   syncLinkedinProfile, 
   startLinkedinLogin, 
   heartbeat, 
-  bookmarkletSync 
+  bookmarkletSync,
+  cloudLogin 
 } from '../controllers/auth.controller';
 import { 
   startSimulationLogin, 
@@ -32,6 +33,7 @@ router.post('/sync-profile', authMiddleware, syncLinkedinProfile);
 router.post('/start-login', authMiddleware, startLinkedinLogin);
 router.post('/heartbeat', authMiddleware, heartbeat);
 router.post('/bookmarklet-sync', authMiddleware, bookmarkletSync);
+router.get('/cloud-login', authMiddleware, cloudLogin);
 
 // Cloud-Native Simulation Routes
 router.post('/start-simulation', authMiddleware, startSimulationLogin);
