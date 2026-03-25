@@ -65,22 +65,25 @@ export const humanType = async (page: Page, target: string | Locator, text: stri
 /**
  * Performs a session "warmup" by scrolling the home feed.
  */
-export const warmupSession = async (page: Page) => {
+export async function warmupSession(page: Page) {
+    console.log('[STEALTH] Warming up session with lightweight page...');
     try {
-        console.log('[STEALTH] Warming up session by scrolling feed...');
-        await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded' });
-        await wait(randomRange(2000, 4000));
+        // Use a lighter page than the feed to avoid heavy image timeouts
+        await page.goto('https://www.linkedin.com/jobs/', {
+            waitUntil: 'domcontentloaded',
+            timeout: 120000
+        });
 
-        for (let i = 0; i < randomRange(2, 4); i++) {
-            await page.mouse.wheel(0, randomRange(400, 900));
-            await wait(randomRange(2500, 6000)); // Simulate "reading" the post
-        }
-        return true;
-    } catch (e) {
-        console.error('[STEALTH] warmupSession failed:', e);
-        return false;
+        // Random scrolling
+        await page.evaluate(() => {
+            window.scrollBy(0, Math.floor(Math.random() * 500) + 200);
+        });
+
+        await page.waitForTimeout(Math.floor(Math.random() * 3000) + 2000);
+    } catch (error) {
+        console.warn('[STEALTH] Warmup encountered a minor delay, proceeding anyway...');
     }
-};
+}
 
 /**
  * Premium: Likes the first visible post on the feed.

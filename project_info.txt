@@ -1,0 +1,20 @@
+/home/shiva/Documents/linkedin-camp
+in this project 
+my frontend is on vercel and backend is on hetzner.
+i was trying to sync with linkedin
+as we linkedin is having a strict security wall for this what i was trying is:
+1. the user login into it's account.
+2. he/she click "sync linkedin" button present in the top, currently it is red.
+3. this will open a new window in his/her local machine, he/she will signup/login.
+4. when they signup/login we will copy the session files (not just cookies) to the server in a folder "user_client" just as done in /home/shiva/Documents/linkedin-camp/phase1_local_login.js
+5. This "user_client" will be used by the backend on the hetzner server (root@204.168.167.198).
+6. the backend will use a headless browser to login as a user, the backend uses dedicated ISP from oxylabs /home/shiva/Documents/linkedin-camp/Proxy lists.json, /home/shiva/Documents/linkedin-camp/username.txt to avoid linked security wall.
+7. the user can create different-different campaigns using different nodes like invite, connect, message etc. you see them in code.
+current the tested nodes are feed visit, profile visit and message. other nodes i haven't tested yet.
+8. i am ran a simple campiagn in which there is a one lead (my other account) on the server using disp /home/shiva/Documents/linkedin-camp/phase2_proxy_automation.js using this file and it worked perfectly.
+9. now i want to run it on the server using the frontend. But when i login in the frontend and click sync linkedin button it took me to the linkedin login page > feed successfully but then it closes.
+also in the backend i don't see the sync logs as after getting all the logs backend have to go to the user linkedin account and check if the feed is loading or not.
+after this it will send a response to the frontend the sync is successful synced and "sync linked" button turns green.
+
+if you have any query ask me.
+i want you to fix this issue and make it work as expected. but first discuss what you understand and any query you think you have.

@@ -12,13 +12,34 @@ services:
       - JWT_SECRET=Iamironman@3
       - PORT=3001
       - NODE_ENV=production
+      - BROWSERLESS_HOST=browserless
+      - BROWSERLESS_PORT=3000
+      - BROWSERLESS_TOKEN=Raja_Security_2026
     ports:
       - "3001:3001"
     depends_on:
       - db
       - redis
+      - browserless
     volumes:
-      - linkedin_sessions:/app/sessions
+      - /root/linkedin-sessions:/app/sessions
+    networks:
+      - linkedin-network
+
+  browserless:
+    image: ghcr.io/browserless/chromium
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - MAX_CONCURRENT_SESSIONS=5
+      - TOKEN=Raja_Security_2026
+      - WORKSPACE_DIR=/sessions
+      - ENABLE_CORS=true
+      - ENABLE_DEBUGGER=true
+      - DEBUG=true
+    volumes:
+      - /root/linkedin-sessions:/sessions
     networks:
       - linkedin-network
 
@@ -46,4 +67,3 @@ networks:
 
 volumes:
   pg_data:
-  linkedin_sessions:

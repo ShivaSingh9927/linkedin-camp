@@ -18,7 +18,8 @@ build/
 .venv
 .turbo
 ui_improve
-
+*.zip
+*.json
 # app sessions
 apps/backend/sessions/
 linkedin_session/
@@ -35,3 +36,7 @@ stealth_*.js
 test-*.js
 
 good_images_pred.zip
+**/proxy_fix_session/
+**/local_raja_session/
+**/google_test_session/
+**/local_stealth_test_visible.js
