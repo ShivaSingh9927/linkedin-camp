@@ -403,11 +403,23 @@ export const cloudLogin = async (req: any, res: Response) => {
             ]
         };
 
-        // Standard Browserless Redirect URL for v1/v2
-        // We want the user to end up on the LinkedIn Login page
-        const debuggerUrl = `http://204.168.167.198:3000/debugger?url=${encodeURIComponent('https://www.linkedin.com/login')}`;
+        // Standard "Interactive Explorer" with Auto-Launch Script
+        // We encode the navigation code so it runs AUTOMATICALLY
+        const script = `
+            export default async ({ page }) => {
+            await page.goto('https://www.linkedin.com/login', { waitUntil: 'domcontentloaded' });
+            // Keep open for you for 15 minutes
+            await new Promise(r => setTimeout(r, 900000)); 
+            };`.trim();
         
-        // This is the fastest "One-Click" that doesn't rely on us holding a websocket open in the backend
+        const encodedScript = Buffer.from(script).toString('base64');
+        const launch = encodeURIComponent(JSON.stringify({
+            args: ["--no-sandbox", "--disable-setuid-sandbox", `--user-data-dir=/sessions/${userId}`]
+        }));
+        
+        // This URL forces Browserless to open AND start running the sign-in code immediately
+        const debuggerUrl = `http://204.168.167.198:3000/debugger?launch=${launch}&script=${encodedScript}`;
+        
         res.redirect(debuggerUrl);
 
     } catch (error: any) {
