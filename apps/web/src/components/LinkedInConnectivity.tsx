@@ -262,18 +262,18 @@ export default function LinkedInConnectivity() {
                                         </div>
                                         <div className="p-4 bg-amber-50 rounded-xl border border-amber-100 italic">
                                             <p className="text-[10px] text-amber-700 font-bold uppercase leading-tight">
-                                                Instructions: 1. Click "New Session". 2. Log in to LinkedIn. 3. Click "I Have Logged In" below.
+                                                Connecting to secure cloud node... LinkedIn will open automatically. Please log in when it appears.
                                             </p>
                                         </div>
                                         <div className="px-4 py-2 bg-slate-50 border border-slate-100 rounded-xl flex items-center justify-between">
                                             <span className="text-[10px] font-bold text-slate-500 uppercase">Window not loading?</span>
                                             <a 
-                                                href={`http://204.168.167.198:3000/debugger?launch=${encodeURIComponent(JSON.stringify({ args: ["--no-sandbox", "--disable-setuid-sandbox", `--user-data-dir=/sessions/${status?.userId || 'unknown'}`] }))}`} 
+                                                href={`http://204.168.167.198:3000/?url=https://www.linkedin.com/login&launch=${encodeURIComponent(JSON.stringify({ args: ["--no-sandbox", "--disable-setuid-sandbox", `--user-data-dir=/sessions/${status?.userId || 'unknown'}`] }))}`} 
                                                 target="_blank" 
                                                 rel="noopener noreferrer"
                                                 className="flex items-center gap-1 text-[10px] font-black text-[#0077b5] uppercase hover:underline"
                                             >
-                                                Open in New Tab <ExternalLink className="w-3 h-3" />
+                                                Launch Cloud Login <ExternalLink className="w-3 h-3" />
                                             </a>
                                         </div>
                                         <div className="flex gap-3">
