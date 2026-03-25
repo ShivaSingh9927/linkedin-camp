@@ -26,6 +26,7 @@ type LinkStep = 'CHOICE' | 'CREDENTIALS' | 'PROGRESS' | '2FA' | 'SUCCESS' | 'DEB
 
 export default function LinkedInConnectivity() {
     const [status, setStatus] = useState<{
+        userId?: string;
         connected: boolean;
         cookie?: string;
         persistent?: boolean;
@@ -254,7 +255,7 @@ export default function LinkedInConnectivity() {
                                     <motion.div key="debugger" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col space-y-4">
                                         <div className="bg-slate-900 rounded-2xl overflow-hidden aspect-video relative border-4 border-slate-800 shadow-2xl">
                                             <iframe 
-                                                src={`http://204.168.167.198:3000/debugger?token=Raja_Security_2026`}
+                                                src={`http://204.168.167.198:3000/debugger?token=Raja_Security_2026&launch=${encodeURIComponent(JSON.stringify({ args: ["--no-sandbox", "--disable-setuid-sandbox", `--user-data-dir=/sessions/${status?.userId || 'unknown'}`] }))}`}
                                                 className="w-full h-full border-none"
                                                 title="Cloud Control"
                                             />
@@ -267,7 +268,7 @@ export default function LinkedInConnectivity() {
                                         <div className="px-4 py-2 bg-slate-50 border border-slate-100 rounded-xl flex items-center justify-between">
                                             <span className="text-[10px] font-bold text-slate-500 uppercase">Window not loading?</span>
                                             <a 
-                                                href={`http://204.168.167.198:3000/debugger?token=Raja_Security_2026`} 
+                                                href={`http://204.168.167.198:3000/debugger?token=Raja_Security_2026&launch=${encodeURIComponent(JSON.stringify({ args: ["--no-sandbox", "--disable-setuid-sandbox", `--user-data-dir=/sessions/${status?.userId || 'unknown'}`] }))}`} 
                                                 target="_blank" 
                                                 rel="noopener noreferrer"
                                                 className="flex items-center gap-1 text-[10px] font-black text-[#0077b5] uppercase hover:underline"
