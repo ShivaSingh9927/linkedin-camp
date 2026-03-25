@@ -264,6 +264,17 @@ export default function LinkedInConnectivity() {
                                                 Instructions: 1. Click "New Session". 2. Log in to LinkedIn. 3. Click "I Have Logged In" below.
                                             </p>
                                         </div>
+                                        <div className="px-4 py-2 bg-slate-50 border border-slate-100 rounded-xl flex items-center justify-between">
+                                            <span className="text-[10px] font-bold text-slate-500 uppercase">Window not loading?</span>
+                                            <a 
+                                                href={`http://204.168.167.198:3000/debugger?token=Raja_Security_2026`} 
+                                                target="_blank" 
+                                                rel="noopener noreferrer"
+                                                className="flex items-center gap-1 text-[10px] font-black text-[#0077b5] uppercase hover:underline"
+                                            >
+                                                Open in New Tab <ExternalLink className="w-3 h-3" />
+                                            </a>
+                                        </div>
                                         <div className="flex gap-3">
                                             <button onClick={() => setStep('CHOICE')} className="flex-1 h-12 bg-slate-100 rounded-xl font-black text-[10px] uppercase">Back</button>
                                             <button onClick={() => { setStep('SUCCESS'); fetchStatus(); }} className="flex-[2] h-12 bg-emerald-500 text-white rounded-xl font-black text-[10px] uppercase">I Have Logged In</button>
