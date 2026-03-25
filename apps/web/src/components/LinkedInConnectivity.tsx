@@ -277,7 +277,20 @@ export default function LinkedInConnectivity() {
                                             <CheckCircle2 className="w-12 h-12 text-white" />
                                         </div>
                                         <h3 className="text-3xl font-black text-slate-900 italic uppercase">Signals Locked</h3>
-                                        <button onClick={() => setShowModal(false)} className="w-full h-14 bg-slate-900 text-white rounded-[24px] font-black text-sm uppercase">Enter Dashboard</button>
+                                        <div className="flex flex-col gap-3">
+                                            <button 
+                                                onClick={() => setShowModal(false)} 
+                                                className="w-full h-14 bg-slate-900 text-white rounded-[24px] font-black text-sm uppercase"
+                                            >
+                                                Enter Dashboard
+                                            </button>
+                                            <button 
+                                                onClick={() => setStep('CHOICE')} 
+                                                className="w-full h-10 text-slate-400 font-bold text-[10px] uppercase hover:text-slate-600 transition-colors"
+                                            >
+                                                Re-Sync or Manage Connection
+                                            </button>
+                                        </div>
                                     </motion.div>
                                 )}
                             </AnimatePresence>
@@ -292,8 +305,8 @@ export default function LinkedInConnectivity() {
         <div className="relative">
             <button
                 onClick={() => {
-                    if (status?.connected) { setShowModal(true); setStep('SUCCESS'); }
-                    else { setShowModal(true); setStep('CHOICE'); }
+                    setShowModal(true);
+                    setStep('CHOICE');
                 }}
                 className={status?.connected
                     ? "flex items-center space-x-2 px-4 py-2 bg-emerald-50 text-emerald-600 rounded-full border border-emerald-100"
