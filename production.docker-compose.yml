@@ -27,15 +27,15 @@ services:
       - linkedin-network
 
   browserless:
-    image: ghcr.io/browserless/chromium
+    image: browserless/chrome:latest
     restart: always
     ports:
       - "3000:3000"
     environment:
-      - MAX_CONCURRENT_SESSIONS=5
-      - TOKEN=Raja_Security_2026
-      - WORKSPACE_DIR=/sessions
-      - ENABLE_CORS=true
+      - CONCURRENT=5
+      # - TOKEN=Raja_Security_2026
+      - WORKSPACE=/sessions
+      - CORS=true
       - ENABLE_DEBUGGER=true
       - DEBUG=true
     volumes:
