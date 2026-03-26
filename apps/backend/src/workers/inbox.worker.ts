@@ -31,9 +31,49 @@ export const syncInbox = async (userId: string) => {
             args: ['--no-sandbox', '--disable-setuid-sandbox']
         };
 
-        // Use the persistent volume path if mounted
-        console.log(`[INBOX-WORKER] Launching persistent context for user ${userId} at ${sessionPath}`);
-        context = await chromium.launchPersistentContext(sessionPath, launchOptions);
+        // Use the purely in-memory context fallback to avoid SingletonLock issues
+        console.log(`[INBOX-WORKER] Launching standard browser for user ${userId} to avoid SingletonLock`);
+        
+        launchOptions.locale = 'en-IN';
+        launchOptions.timezoneId = 'Asia/Kolkata';
+
+        browser = await chromium.launch(launchOptions);
+        context = await browser.newContext(launchOptions);
+        
+        // --- INJECT COOKIES/STORAGE FOR SESSION PARITY ---
+        if (user.linkedinCookie) {
+            try {
+                const cookies = JSON.parse(user.linkedinCookie);
+                if (Array.isArray(cookies)) {
+                    await context.addCookies(cookies);
+                } else {
+                    await context.addCookies([{ 
+                        name: 'li_at', 
+                        value: user.linkedinCookie, 
+                        domain: '.linkedin.com', 
+                        path: '/',
+                        secure: true, 
+                        httpOnly: true, 
+                        sameSite: 'Lax' 
+                    }]);
+                }
+            } catch (e) {
+                console.error('[INBOX-WORKER] Error parsing cookies from DB:', e);
+            }
+        }
+        
+        if (user.linkedinLocalStorage) {
+            try {
+                const localStorageData = JSON.parse(user.linkedinLocalStorage);
+                await context.addInitScript((storage: any) => {
+                    for (const key in storage) {
+                        window.localStorage.setItem(key, storage[key]);
+                    }
+                }, localStorageData);
+            } catch (e) {
+                console.error('[INBOX-WORKER] Error injecting LocalStorage:', e);
+            }
+        }
 
         const page = await context.newPage();
         await page.goto('https://www.linkedin.com/messaging/', { waitUntil: 'networkidle' });
@@ -98,8 +138,8 @@ export const syncInbox = async (userId: string) => {
     } catch (error: any) {
         console.error(`[INBOX-WORKER] Error syncing inbox for ${userId}:`, error.message);
     } finally {
-        if (context) await context.close();
-        if (browser) await browser.close();
+        if (context) await context.close().catch(() => {});
+        if (browser) await browser.close().catch(() => {});
     }
 };
 

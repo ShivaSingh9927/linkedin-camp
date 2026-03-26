@@ -157,14 +157,11 @@ export const processWorkflowStep = async (data: any, job: Job) => {
         launchOptions.timezoneId = 'Asia/Kolkata';
         launchOptions.viewport = null; // matching phase2 script
 
-        if (user.persistentSessionPath && fs.existsSync(user.persistentSessionPath)) {
-            console.log(`[WORKER] Launching persistent context for user ${userId} at ${sessionPathToUse}`);
-            context = await chromium.launchPersistentContext(sessionPathToUse, launchOptions);
-        } else {
-            console.log(`[WORKER] Launching standard browser for ${userId} (no persistent context on server)`);
-            browser = await chromium.launch(launchOptions);
-            context = await browser.newContext(launchOptions);
-        }
+        // DISABLED PERSISTENT CONTEXT: It causes SingletonLock conflicts and caching corrupted states.
+        // We strictly mimic phase2.js: fresh context + DB cookies + DB localStorage
+        console.log(`[WORKER] Launching standard browser for ${userId} (Mirroring phase2.js behavior)`);
+        browser = await chromium.launch(launchOptions);
+        context = await browser.newContext(launchOptions);
         
         // --- ALWAYS LOAD COOKIES FROM DB (Forces sync parity) ---
         if (user.linkedinCookie) {
@@ -213,8 +210,7 @@ export const processWorkflowStep = async (data: any, job: Job) => {
 
         const page = context.pages()[0] || await context.newPage();
 
-        // --- MASTER MIRROR MODE: Using fully synced persistent context folder ---
-        console.log(`[WORKER] 🧬 PERSISTENT CONTEXT MODE: Mirror has landed. (Using full session directory)`);
+        console.log(`[WORKER] 🧬 IN-MEMORY CONTEXT MODE: Fresh session seeded from DB.`);
 
         // --- STEP RESOLUTION ---
         // Resolve the workflow: prefer workflowJson from job data, then campaign.workflowJson, then legacy campaign.workflow

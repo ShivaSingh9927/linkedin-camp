@@ -138,8 +138,11 @@ export const syncExtension = async (req: any, res: Response) => {
                 // Launch headed context via XVFB for maximum stealth
                 launchOptions.headless = false; 
 
-                // Launch context with the directory to "prime" it
-                context = await chromium.launchPersistentContext(sessionPath, launchOptions);
+                // Launch an IN-MEMORY context to avoid SingletonLock issues
+                launchOptions.locale = 'en-IN';
+                launchOptions.timezoneId = 'Asia/Kolkata';
+                browser = await chromium.launch(launchOptions);
+                context = await browser.newContext(launchOptions);
                 const page = context.pages()[0] || await context.newPage();
 
                 // Inject cookies if they weren't already in the persistent context
@@ -203,7 +206,8 @@ export const syncExtension = async (req: any, res: Response) => {
                 console.error(`[SYNC-VERIFY] ❌ ERROR during verification:`, err.message);
                 return false;
             } finally {
-                if (context) await context.close();
+                if (context) await context.close().catch(() => {});
+                if (browser) await browser.close().catch(() => {});
             }
         })();
 
