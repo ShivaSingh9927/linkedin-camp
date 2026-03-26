@@ -275,19 +275,21 @@ export const processWorkflowStep = async (data: any, job: Job) => {
         // --- SESSION VALIDATION (ROBUST) ---
         await page.waitForTimeout(5000); // Wait for dynamic content
         const finalUrl = page.url();
-        const isLoggedIn = await page.isVisible('.global-nav') || await page.isVisible('#global-nav');
+        const pageTitle = await page.title();
+        const isLoggedIn = await page.isVisible('.global-nav') || 
+                           await page.isVisible('#global-nav') || 
+                           await page.isVisible('input[placeholder="Search"]') ||
+                           pageTitle.includes('Feed');
+
         const isAuthWall = finalUrl.includes('authwall') || finalUrl.includes('login') || finalUrl.includes('checkpoint');
 
         if (isAuthWall || !isLoggedIn) {
-            console.log(`[WORKER] ⚠️ Session invalid. URL: ${finalUrl}, LoggedInElement: ${isLoggedIn}`);
+            console.log(`[WORKER] ⚠️ Session invalid. URL: ${finalUrl}, Title: ${pageTitle}, LoggedInMarker: ${isLoggedIn}`);
             
             // Capture evidence for debug
             const screenshotPath = `/tmp/worker_fail_${userId}_${Date.now()}.png`;
             await page.screenshot({ path: screenshotPath, fullPage: true }).catch(() => {});
-            console.log(`[WORKER] Failure screenshot saved to: ${screenshotPath}`);
-            
-            const pageTitle = await page.title();
-            console.log(`[WORKER] Page Title was: ${pageTitle}`);
+            console.log(`[WORKER] Failure screenshot saved to: ${screenshotPath} (inside container)`);
             
             // NOTE: We no longer auto-clear the session path here immediately.
             // A proxy timeout might trigger this page redirect. Let the user re-sync manually 
