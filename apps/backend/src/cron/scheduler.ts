@@ -44,17 +44,18 @@ export const initScheduler = () => {
       // Round Robin: Process up to 5 pending leads per user per cycle
       console.log(`[Scheduler] Found ${activeUsers.length} users with ACTIVE campaigns.`);
       for (const user of activeUsers) {
-        // Dynamic Failover Logic: If user is active on their laptop extension, skip cloud task queueing
-        // This prevents parallel logins which lead to LinkedIn security flags.
+        // NEW: Check Redis presence first (fastest, expires in 60s)
+        const redisPresence = redisConnection ? await redisConnection.get(`user_presence:${user.id}`) : null;
+        
         const now = new Date().getTime();
-        const tenMins = 5 * 60 * 1000;
+        const twoMins = 2 * 60 * 1000;
         const lastActivity = user.lastBrowserActivityAt ? new Date(user.lastBrowserActivityAt).getTime() : 0;
         
-        // Skip if extension is in active state AND had activity in last 10 minutes
-        const isExtensionActive = user.linkedinActiveInBrowser && (now - lastActivity < tenMins);
+        // Skip only if Redis says ACTIVE OR DB activity is very recent (< 2 mins)
+        const isExtensionActive = redisPresence === 'ACTIVE' || (user.linkedinActiveInBrowser && (now - lastActivity < twoMins));
 
         if (isExtensionActive) {
-          console.log(`[Scheduler] User ${user.id} is active on extension (laptop). Skipping cloud scheduler to avoid IP conflicts.`);
+          console.log(`[Scheduler] User ${user.id} is active on extension (laptop). Skipping cloud scheduler for safety.`);
           continue;
         }
 
