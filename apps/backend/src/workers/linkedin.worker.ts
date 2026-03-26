@@ -264,12 +264,11 @@ export const processWorkflowStep = async (data: any, job: Job) => {
         // --- MASTER STEALTH WARMUP (v2 Strategy) ---
         console.log('[WORKER] Step 1: Human Warmup (Feeding scrolling)...');
         try {
-            await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded', timeout: 60000 });
-            for (let i = 0; i < 3; i++) {
-                await page.mouse.wheel(0, randomRange(400, 800));
-                await wait(randomRange(2000, 5000));
+            await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded', timeout: 30000 });
+            for (let i = 0; i < 2; i++) {
+                await page.mouse.wheel(0, randomRange(300, 600));
+                await wait(randomRange(1500, 3000));
             }
-            await page.screenshot({ path: '/app/trace_1_warmup.png' });
         } catch (e) {
             console.warn('[WORKER] Warmup delay, proceeding...');
         }
@@ -282,16 +281,9 @@ export const processWorkflowStep = async (data: any, job: Job) => {
         if (isAuthWall || !isLoggedIn) {
             console.log(`[WORKER] ⚠️ Session invalid. URL: ${finalUrl}, LoggedInElement: ${isLoggedIn}`);
             
-            // Only clear it IF we actually have a path to clear, otherwise it might be a transient load error
-            if (sessionPathToUse) {
-                await prisma.user.update({
-                    where: { id: userId },
-                    data: { 
-                        linkedinCookie: null,
-                        persistentSessionPath: null 
-                    }
-                });
-            }
+            // NOTE: We no longer auto-clear the session path here immediately.
+            // A proxy timeout might trigger this page redirect. Let the user re-sync manually 
+            // without destructively wiping the database state yet.
 
             // Send notification to user
             await prisma.notification.create({
