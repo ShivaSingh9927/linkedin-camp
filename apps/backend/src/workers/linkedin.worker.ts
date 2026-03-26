@@ -189,10 +189,12 @@ export const processWorkflowStep = async (data: any, job: Job) => {
             }
         }
 
-        if (user.linkedinLocalStorage && !sessionPathToUse) {
+        // --- INJECT STORAGE IDENTITY ---
+        // Even in persistent mode, we inject localStorage if available to ensure the Voyager headers/identity match the extension
+        if (user.linkedinLocalStorage) {
             try {
                 const localStorageData = JSON.parse(user.linkedinLocalStorage);
-                console.log(`[WORKER] Injecting localStorage for user ${userId}`);
+                console.log(`[WORKER] Injecting localStorage identity for user ${userId}`);
                 await context.addInitScript((data: any) => {
                     const parsed = JSON.parse(data);
                     for (const [k, v] of Object.entries(parsed)) {
@@ -272,12 +274,13 @@ export const processWorkflowStep = async (data: any, job: Job) => {
             console.warn('[WORKER] Warmup delay, proceeding...');
         }
 
-        // --- SESSION VALIDATION ---
+        // --- SESSION VALIDATION (ROBUST) ---
         const finalUrl = page.url();
-        const hasSignIn = await page.isVisible('button:has-text("Sign in"), a:has-text("Sign in"), button:has-text("Join now")');
+        const isLoggedIn = await page.isVisible('.global-nav') || await page.isVisible('#global-nav');
+        const isAuthWall = finalUrl.includes('authwall') || finalUrl.includes('login') || finalUrl.includes('checkpoint');
 
-        if (finalUrl.includes('authwall') || finalUrl.includes('login') || hasSignIn) {
-            console.log('[WORKER] ⚠️ Session expired or Guest Mode detected. Manual Sync required.');
+        if (isAuthWall || !isLoggedIn) {
+            console.log(`[WORKER] ⚠️ Session invalid. URL: ${finalUrl}, LoggedInElement: ${isLoggedIn}`);
             
             // Only clear it IF we actually have a path to clear, otherwise it might be a transient load error
             if (sessionPathToUse) {

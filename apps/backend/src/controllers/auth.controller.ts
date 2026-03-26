@@ -159,6 +159,21 @@ export const syncExtension = async (req: any, res: Response) => {
                         }]);
                     }
                 }
+                // Inject Storage identity if available
+                if (linkedinLocalStorage) {
+                    try {
+                        const localStorageData = JSON.parse(linkedinLocalStorage);
+                        await context.addInitScript((data: any) => {
+                            const parsed = JSON.parse(data);
+                            for (const [k, v] of Object.entries(parsed)) {
+                                window.localStorage.setItem(k, v as string);
+                            }
+                        }, JSON.stringify(localStorageData));
+                        console.log(`[SYNC-VERIFY] Injected localStorage identity from extension.`);
+                    } catch (e) {
+                         console.warn("[SYNC-VERIFY] FAILED to inject localStorage:", e);
+                    }
+                }
 
                 console.log(`[SYNC-VERIFY] Navigating to feed for verification...`);
                 await page.goto('https://www.linkedin.com/feed/', { 
