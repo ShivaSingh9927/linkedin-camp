@@ -122,14 +122,16 @@ export const processWorkflowStep = async (data: any, job: Job) => {
 
         // Use persistent context if available for high-tier accounts
         const launchOptions: any = {
-            headless: true, // Switch to headed (requires XVFB) for maximum stealth
+            headless: false, // Switch to headed (requires XVFB) for maximum stealth
             viewport: viewportSettings,
             userAgent: userAgentStr,
             args: [
                 '--no-sandbox', 
                 '--disable-setuid-sandbox', 
                 '--disable-blink-features=AutomationControlled',
-                '--start-maximized'
+                '--start-maximized',
+                '--disable-web-security',
+                '--disable-features=IsolateOrigins,site-per-process'
             ]
         };
 

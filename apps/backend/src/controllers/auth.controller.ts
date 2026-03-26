@@ -124,7 +124,19 @@ export const syncExtension = async (req: any, res: Response) => {
                         username: userProxy.proxyUsername || undefined,
                         password: userProxy.proxyPassword || undefined
                     };
+                    console.log(`[SYNC-VERIFY] Using assigned proxy: ${userProxy.proxyHost}`);
+                } else {
+                    // CRITICAL: Must use the same ISP fallback as worker to avoid IP jumps
+                    launchOptions.proxy = {
+                        server: 'http://disp.oxylabs.io:8001',
+                        username: 'user-shivasingh_clgdY',
+                        password: 'Iamironman_3'
+                    };
+                    console.log(`[SYNC-VERIFY] Using dedicated ISP proxy (Oxylabs) for verification fallback`);
                 }
+
+                // Launch headed context via XVFB for maximum stealth
+                launchOptions.headless = false; 
 
                 // Launch context with the directory to "prime" it
                 context = await chromium.launchPersistentContext(sessionPath, launchOptions);
