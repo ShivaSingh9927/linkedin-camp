@@ -120,31 +120,35 @@ export const processWorkflowStep = async (data: any, job: Job) => {
             console.error('[WORKER] Error reading fingerprint:', e);
         }
 
-        // Use persistent context if available for high-tier accounts
+        // Separated Options to match phase2.js structure
         const launchOptions: any = {
-            headless: false, // Switch to headed (requires XVFB) for maximum stealth
-            viewport: viewportSettings,
-            userAgent: userAgentStr,
+            headless: false,
             args: [
                 '--no-sandbox', 
                 '--disable-setuid-sandbox', 
                 '--disable-blink-features=AutomationControlled',
                 '--start-maximized',
-                '--disable-web-security',
-                '--disable-features=IsolateOrigins,site-per-process'
+                '--disable-web-security'
             ]
         };
 
+        const contextOptions: any = {
+            userAgent: userAgentStr,
+            viewport: null, // Allow browser to define
+            locale: 'en-IN',
+            timezoneId: 'Asia/Kolkata'
+        };
+
         if (activeProxy) {
-            launchOptions.proxy = {
-                server: `${activeProxy.proxyHost}:${activeProxy.proxyPort}`,
+            contextOptions.proxy = {
+                server: `http://${activeProxy.proxyHost}:${activeProxy.proxyPort}`,
                 username: activeProxy.proxyUsername || undefined,
                 password: activeProxy.proxyPassword || undefined
             };
             console.log(`[WORKER] Using DB proxy: ${activeProxy.proxyHost}`);
         } else {
             // Dedicated ISP Proxy fallback to avoid LinkedIn ban
-            launchOptions.proxy = {
+            contextOptions.proxy = {
                 server: 'http://disp.oxylabs.io:8001',
                 username: 'user-shivasingh_clgdY',
                 password: 'Iamironman_3'
@@ -152,16 +156,10 @@ export const processWorkflowStep = async (data: any, job: Job) => {
             console.log(`[WORKER] Using dedicated ISP proxy (Oxylabs) to avoid ban`);
         }
 
-        // Apply locale/timezone from phase2 to match identity (or default to IN)
-        launchOptions.locale = 'en-IN';
-        launchOptions.timezoneId = 'Asia/Kolkata';
-        launchOptions.viewport = null; // matching phase2 script
-
-        // DISABLED PERSISTENT CONTEXT: It causes SingletonLock conflicts and caching corrupted states.
-        // We strictly mimic phase2.js: fresh context + DB cookies + DB localStorage
+        // We strictly mimic phase2.js: standard launch + fresh context + injection
         console.log(`[WORKER] Launching standard browser for ${userId} (Mirroring phase2.js behavior)`);
         browser = await chromium.launch(launchOptions);
-        context = await browser.newContext(launchOptions);
+        context = await browser.newContext(contextOptions);
         
         // --- ALWAYS LOAD COOKIES FROM DB (Forces sync parity) ---
         if (user.linkedinCookie) {
@@ -275,12 +273,21 @@ export const processWorkflowStep = async (data: any, job: Job) => {
         }
 
         // --- SESSION VALIDATION (ROBUST) ---
+        await page.waitForTimeout(5000); // Wait for dynamic content
         const finalUrl = page.url();
         const isLoggedIn = await page.isVisible('.global-nav') || await page.isVisible('#global-nav');
         const isAuthWall = finalUrl.includes('authwall') || finalUrl.includes('login') || finalUrl.includes('checkpoint');
 
         if (isAuthWall || !isLoggedIn) {
             console.log(`[WORKER] ⚠️ Session invalid. URL: ${finalUrl}, LoggedInElement: ${isLoggedIn}`);
+            
+            // Capture evidence for debug
+            const screenshotPath = `/tmp/worker_fail_${userId}_${Date.now()}.png`;
+            await page.screenshot({ path: screenshotPath, fullPage: true }).catch(() => {});
+            console.log(`[WORKER] Failure screenshot saved to: ${screenshotPath}`);
+            
+            const pageTitle = await page.title();
+            console.log(`[WORKER] Page Title was: ${pageTitle}`);
             
             // NOTE: We no longer auto-clear the session path here immediately.
             // A proxy timeout might trigger this page redirect. Let the user re-sync manually 

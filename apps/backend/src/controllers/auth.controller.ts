@@ -109,25 +109,33 @@ export const syncExtension = async (req: any, res: Response) => {
             let context;
             try {
                 const launchOptions: any = {
-                    headless: true, // Use headless with XVFB on server
+                    headless: false,
                     args: [
+                        '--no-sandbox', 
+                        '--disable-setuid-sandbox', 
                         '--disable-blink-features=AutomationControlled',
-                        '--no-sandbox',
-                        '--disable-setuid-sandbox'
-                    ],
-                    userAgent: fingerprint?.userAgent || 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
+                        '--start-maximized',
+                        '--disable-web-security'
+                    ]
+                };
+
+                const contextOptions: any = {
+                    userAgent: fingerprint?.userAgent || 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+                    viewport: null,
+                    locale: 'en-IN',
+                    timezoneId: 'Asia/Kolkata'
                 };
 
                 if (userProxy) {
-                    launchOptions.proxy = {
-                        server: `${userProxy.proxyHost}:${userProxy.proxyPort}`,
+                    contextOptions.proxy = {
+                        server: `http://${userProxy.proxyHost}:${userProxy.proxyPort}`,
                         username: userProxy.proxyUsername || undefined,
                         password: userProxy.proxyPassword || undefined
                     };
                     console.log(`[SYNC-VERIFY] Using assigned proxy: ${userProxy.proxyHost}`);
                 } else {
                     // CRITICAL: Must use the same ISP fallback as worker to avoid IP jumps
-                    launchOptions.proxy = {
+                    contextOptions.proxy = {
                         server: 'http://disp.oxylabs.io:8001',
                         username: 'user-shivasingh_clgdY',
                         password: 'Iamironman_3'
@@ -135,14 +143,9 @@ export const syncExtension = async (req: any, res: Response) => {
                     console.log(`[SYNC-VERIFY] Using dedicated ISP proxy (Oxylabs) for verification fallback`);
                 }
 
-                // Launch headed context via XVFB for maximum stealth
-                launchOptions.headless = false; 
-
                 // Launch an IN-MEMORY context to avoid SingletonLock issues
-                launchOptions.locale = 'en-IN';
-                launchOptions.timezoneId = 'Asia/Kolkata';
                 browser = await chromium.launch(launchOptions);
-                context = await browser.newContext(launchOptions);
+                context = await browser.newContext(contextOptions);
                 const page = context.pages()[0] || await context.newPage();
 
                 // Inject cookies if they weren't already in the persistent context
