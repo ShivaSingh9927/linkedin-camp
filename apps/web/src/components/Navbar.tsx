@@ -58,12 +58,16 @@ export function Navbar() {
     <header className="h-20 bg-white/80 backdrop-blur-xl border-b border-slate-100 flex items-center justify-between px-8 sticky top-0 z-50">
       <div className="flex items-center space-x-12">
         <Link href="/" className="flex items-center space-x-3 group">
-          <div className="w-10 h-10 bg-primary rounded-2xl flex items-center justify-center shadow-lg shadow-primary/20 group-hover:rotate-6 transition-transform">
-            <Send className="w-6 h-6 text-white" />
+          <div className="w-36 h-36 bg-primary/10 rounded-2xl flex items-center justify-center shadow-lg shadow-primary/10 group-hover:scale-105 transition-all duration-300 relative overflow-hidden">
+            <img 
+              src="/leadmate.jpeg" 
+              alt="Leadmate" 
+              className="w-full h-full object-cover rounded-2xl p-0.5" 
+            />
           </div>
           <div>
-            <span className="text-xl font-black text-slate-900 tracking-tight">WAALAXY</span>
-            <span className="block text-[10px] font-black text-primary -mt-1 tracking-[0.2em] uppercase">CLONE</span>
+            <span className="text-2xl font-black text-slate-900 tracking-tight leading-none block">LEADMATE</span>
+            <span className="text-[10px] font-black text-primary tracking-[0.25em] uppercase mt-0.5 block">Automate</span>
           </div>
         </Link>
 

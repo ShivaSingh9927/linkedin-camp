@@ -1,0 +1,27 @@
+Here is a categorized list of what they are doing that we aren't yet:
+
+### 1. Advanced Lead Management & CRM
+*   **Prospect Tagging System**: They have nested `ProspectTag` and `SelectProspectsTags` containers. This allows users to categorize leads (e.g., "Interested", "Followed Up", "High Priority") to manage thousands of prospects efficiently.
+*   **Company-Centric Viewing**: They have a dedicated `CompanyPage`. This allows searching for prospects by company rather than just individual profiles, which is crucial for B2B account-based marketing.
+*   **Filters & Smart Lists**: Their `ProspectsFilters` is very robust, allowing users to filter by "Status", "Last Action", and "Tag", which we currently lack in our simpler table view.
+
+### 2. Campaign & Automation Logic
+*   **Visual Sequence Creator**: Their `SequenceCreatorRoutes` suggests a much more flexible, node-based builder. Our system is currently a "Linear Step" list, whereas they support complex branching logic.
+*   **"Quick Launch" Center**: They have a `StartQuickCampaign` feature for jumping into simple one-off actions (like just visiting 10 profiles) without building a full workflow.
+*   **Multi-Channel (Email + LinkedIn)**: Based on `PreviewEmail` and `TestEmail` containers, Waalaxy integrates **Email outreach** directly alongside LinkedIn tasks. We are currently 100% focused on LinkedIn.
+
+### 3. Integrations & Power Tools
+*   **Outgoing Webhooks & Zapier**: They have a `WebhookForm` and `Stargate-client`. This lets users "push" a lead to their CRM (like Salesforce or HubSpot) automatically when they reply.
+*   **Internal Cloud Messenger**: They have `LinkedinMessengerRoutes` and `Pictochat-client`. This is a massive feature that lets you chat with your LinkedIn leads **inside the dashboard** so you don't have to go back to LinkedIn.com and risk manual detection.
+*   **Lead Enrichment**: The `Enutrof-client` suggests they have built-in tools for "finding" the business email addresses of LinkedIn prospects automatically.
+
+### 4. Admin & Team Features
+*   **Team/Organization Support**: They have `CompanyMemberSelector`. This allows an agency or team to manage multiple LinkedIn accounts from a single dashboard.
+*   **Admin "Impersonate" Mode**: `LogoutImpersonateOverlay` allows their support team to log in as a user to fix bugs—an essential enterprise feature.
+*   **Onboarding Tour**: They have a specialized `OnboardingForm` to walk new users through their first campaign launch.
+
+### 5. Architectural Maturity (Microservices)
+Looking at their `libs/clients`, they have 18 distinct service clients (like `Akatsuki`, `Bouncer`, `Hermes`). This shows they have separated their backend into many specialized pieces:
+*   **`Bouncer`**: Likely handles rate-limiting and account safety logic.
+*   **`Hermes`**: Handles notification delivery.
+*   **`Zilean`**: Likely handles time-based scheduling and cron logic.

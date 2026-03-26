@@ -349,15 +349,35 @@ export const processWorkflowStep = async (data: any, job: Job) => {
         if (stepType === 'INVITE' || stepType === 'INVITATION') {
             const hasConnect = await page.isVisible('button:has-text("Connect")');
             const isPending = await page.isVisible('button:has-text("Pending"), button:has-text("Withdraw")');
+            const isConnected = await page.isVisible('button:has-text("Message")');
 
             if (isPending) {
                 console.log(`[WORKER] Invite already pending for ${lead.firstName}.`);
+                await prisma.lead.update({
+                    where: { id: lead.id },
+                    data: { status: 'PENDING' }
+                });
+            } else if (isConnected) {
+                console.log(`[WORKER] Lead ${lead.firstName} is already a connection. Skipping invite.`);
+                await prisma.lead.update({
+                    where: { id: lead.id },
+                    data: { status: 'CONNECTED' }
+                });
+                // Progress to next step immediately (no need to wait)
             } else if (hasConnect) {
                 // if (await checkInterrupt(userId)) throw new Error('INTERRUPTED: User active in browser');
                 await humanMoveAndClick(page, 'button:has-text("Connect")');
                 await wait(2000);
                 await page.click('button[aria-label="Send now"]');
                 console.log(`[WORKER] Connection request sent to ${lead.firstName}.`);
+                
+                await prisma.lead.update({
+                    where: { id: lead.id },
+                    data: { 
+                        status: 'PENDING',
+                        tags: { push: 'bot:invite_sent' }
+                    }
+                });
             } else {
                 console.log(`[WORKER] No connect button found for ${lead.firstName}. Skipping step — will retry next cycle.`);
                 return; // Don't advance — retry on next scheduler cycle
@@ -505,12 +525,24 @@ export const processWorkflowStep = async (data: any, job: Job) => {
             // Success Case 2: Pop-up box closed (Standard Message Button mode)
             if (afterUrl.includes('/thread/') || !boxRemaining) {
                  console.log(`[WORKER] ✅ SUCCESS: Message sent. URL transitioned to: ${afterUrl}`);
+                 await prisma.lead.update({
+                    where: { id: lead.id },
+                    data: { 
+                        status: 'CONNECTED',
+                        tags: { push: 'bot:messaged' }
+                    }
+                 });
             } else {
                  // In full-page "Compose" mode, the input box might remain visible but empty.
                  // We'll trust the send click but save a screenshot for debug investigation.
                  console.log(`[WORKER] Tentative success. Box still visible. URL: ${afterUrl}`);
                  const endScreenshot = `/tmp/send_final_${userId}_${Date.now()}.png`;
                  await page.screenshot({ path: endScreenshot }).catch(() => {});
+                 
+                 await prisma.lead.update({
+                    where: { id: lead.id },
+                    data: { status: 'CONNECTED' } // Assume connected if we reached message box
+                 });
             }
         } else if (stepType === 'VISIT') {
             console.log(`[WORKER] Profile visit completed for ${lead.firstName}.`);

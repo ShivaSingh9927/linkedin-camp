@@ -70,9 +70,18 @@ export function TopNav() {
         <header className="sticky top-0 z-50 w-full border-b border-border bg-background/80 backdrop-blur-xl">
             <div className="w-full px-6 lg:px-10 h-20 flex items-center justify-between relative">
                 {/* Left Side: Brand */}
-                <Link href="/" className="flex items-center space-x-3 flex-shrink-0">
-                    <img src="/leadmate.jpeg" alt="LEADMATE" className="w-10 h-10 rounded-xl object-cover" />
-                    <span className="text-xl font-black text-foreground tracking-tight hidden sm:block">LEADMATE</span>
+                <Link href="/" className="flex items-center space-x-4 flex-shrink-0 group">
+                    <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center shadow-xl shadow-primary/10 group-hover:scale-105 transition-all duration-300">
+                        <img 
+                            src="/leadmate.jpeg" 
+                            alt="LEADMATE" 
+                            className="w-full h-full rounded-2xl object-cover p-1" 
+                        />
+                    </div>
+                    <div className="hidden sm:block">
+                        <span className="text-2xl font-black text-foreground tracking-tight leading-none block">LEADMATE</span>
+                        <span className="text-[10px] font-black text-primary tracking-[0.3em] uppercase mt-1 block">AI Outreach</span>
+                    </div>
                 </Link>
 
                 {/* Center: Desktop Nav */}

@@ -44,14 +44,18 @@ export function Sidebar() {
   return (
     <div className="w-72 bg-white border-r border-slate-100 flex flex-col h-full sticky top-0 overflow-y-auto custom-scrollbar">
       {/* Brand */}
-      <div className="p-8">
-        <Link href="/" className="flex items-center space-x-3 group">
-          <div className="w-12 h-12 bg-primary rounded-2xl flex items-center justify-center shadow-xl shadow-primary/20 rotate-3 group-hover:rotate-0 transition-transform">
-            <Send className="w-7 h-7 text-white" />
+      <div className="p-8 mb-4">
+        <Link href="/" className="flex items-center space-x-4 group">
+          <div className="w-16 h-16 bg-primary/10 rounded-3xl flex items-center justify-center shadow-xl shadow-primary/10 group-hover:rotate-[-4deg] transition-all duration-300 relative overflow-hidden">
+            <img 
+              src="/leadmate.jpeg" 
+              alt="Leadmate" 
+              className="w-full h-full object-cover rounded-3xl p-1" 
+            />
           </div>
           <div>
-            <span className="text-2xl font-black text-slate-900 tracking-tight">SALES</span>
-            <span className="block text-[10px] font-black text-primary -mt-1 tracking-[0.3em] uppercase">BOT</span>
+            <span className="text-2xl font-black text-slate-900 tracking-tight leading-none block">LEADMATE</span>
+            <span className="text-[10px] font-black text-primary tracking-[0.3em] uppercase mt-1.5 block">AI Outreach</span>
           </div>
         </Link>
       </div>
