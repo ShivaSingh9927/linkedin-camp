@@ -152,40 +152,45 @@ export const processWorkflowStep = async (data: any, job: Job) => {
             console.log(`[WORKER] Using dedicated ISP proxy (Oxylabs) to avoid ban`);
         }
 
+        // Apply locale/timezone from phase2 to match identity (or default to IN)
+        launchOptions.locale = 'en-IN';
+        launchOptions.timezoneId = 'Asia/Kolkata';
+        launchOptions.viewport = null; // matching phase2 script
+
         if (user.persistentSessionPath && fs.existsSync(user.persistentSessionPath)) {
             console.log(`[WORKER] Launching persistent context for user ${userId} at ${sessionPathToUse}`);
             context = await chromium.launchPersistentContext(sessionPathToUse, launchOptions);
         } else {
             console.log(`[WORKER] Launching standard browser for ${userId} (no persistent context on server)`);
             browser = await chromium.launch(launchOptions);
-            context = await browser.newContext();
-            
-            // --- LOAD COOKIES FROM DB (SaaS Extension Fallback) ---
-            if (user.linkedinCookie) {
-                try {
-                    const domainToInject = user.proxy ? '.linkedin.com' : 'linkedin.com'; // Adjust based on proxy env
-                    const cookies = JSON.parse(user.linkedinCookie);
-                    
-                    // Basic sanity check: ensure we have an array
-                    if (Array.isArray(cookies)) {
-                         console.log(`[WORKER] Injecting ${cookies.length} cookies from DB for user ${userId}`);
-                         await context.addCookies(cookies);
-                    } else {
-                         // Fallback for single li_at string
-                         console.log(`[WORKER] Injecting li_at cookie for user ${userId}`);
-                         await context.addCookies([{ 
-                             name: 'li_at', 
-                             value: user.linkedinCookie, 
-                             domain: '.linkedin.com', 
-                             path: '/',
-                             secure: true, 
-                             httpOnly: true, 
-                             sameSite: 'Lax' 
-                         }]);
-                    }
-                } catch (e) {
-                    console.error('[WORKER] Error parsing cookies from DB:', e);
+            context = await browser.newContext(launchOptions);
+        }
+        
+        // --- ALWAYS LOAD COOKIES FROM DB (Forces sync parity) ---
+        if (user.linkedinCookie) {
+            try {
+                const domainToInject = user.proxy ? '.linkedin.com' : 'linkedin.com'; // Adjust based on proxy env
+                const cookies = JSON.parse(user.linkedinCookie);
+                
+                // Basic sanity check: ensure we have an array
+                if (Array.isArray(cookies)) {
+                     console.log(`[WORKER] Forcing Injection of ${cookies.length} cookies from DB for user ${userId}`);
+                     await context.addCookies(cookies);
+                } else {
+                     // Fallback for single li_at string
+                     console.log(`[WORKER] Forcing Injection of li_at cookie for user ${userId}`);
+                     await context.addCookies([{ 
+                         name: 'li_at', 
+                         value: user.linkedinCookie, 
+                         domain: '.linkedin.com', 
+                         path: '/',
+                         secure: true, 
+                         httpOnly: true, 
+                         sameSite: 'Lax' 
+                     }]);
                 }
+            } catch (e) {
+                console.error('[WORKER] Error parsing cookies from DB:', e);
             }
         }
 
