@@ -42,6 +42,9 @@ export const getOrAssignProxy = async (userId: string, detectedCountry?: string)
         ? 'RESIDENTIAL'
         : 'ECONOMY';
 
+    // Apply scaling strategy: 12 users for freemium/economy, 5 users for paid/residential
+    const maxCapacity = tier === 'RESIDENTIAL' ? 5 : 12;
+
     // Strategy:
     // Try 1: Match Tier AND Country
     // Try 2: Match Tier ONLY (Fallback)
@@ -59,7 +62,7 @@ export const getOrAssignProxy = async (userId: string, detectedCountry?: string)
     });
 
     // Verify capacity
-    if (targetProxy && (targetProxy as any)._count.assignedUsers >= targetProxy.maxUsers) {
+    if (targetProxy && (targetProxy as any)._count.assignedUsers >= maxCapacity) {
         targetProxy = null;
     }
 
@@ -74,7 +77,7 @@ export const getOrAssignProxy = async (userId: string, detectedCountry?: string)
             },
             include: { _count: { select: { assignedUsers: true } } }
         });
-        targetProxy = (proxies as any[]).find(p => p._count.assignedUsers < p.maxUsers) || null;
+        targetProxy = (proxies as any[]).find(p => p._count.assignedUsers < maxCapacity) || null;
     }
 
     if (!targetProxy) {

@@ -1,10 +1,83 @@
+# version: '3.8'
+
+# services:
+#   backend:
+#     build: 
+#       context: .
+#       dockerfile: Dockerfile
+#     restart: always
+#     environment:
+#       - DATABASE_URL=postgresql://shiva:password123@db:5432/linkedin_camp
+#       - REDIS_URL=redis://redis:6379
+#       - JWT_SECRET=Iamironman@3
+#       - PORT=3001
+#       - NODE_ENV=production
+#       - BROWSERLESS_HOST=browserless
+#       - BROWSERLESS_PORT=3000
+#       - BROWSERLESS_TOKEN=Raja_Security_2026
+#     ports:
+#       - "3001:3001"
+#     depends_on:
+#       - db
+#       - redis
+#       - browserless
+#     volumes:
+#       - /root/linkedin-sessions:/app/sessions
+#     networks:
+#       - linkedin-network
+
+# version: '3'
+# services:
+#   browserless:
+#     image: browserless/browserless:latest  # Changed from /chrome to /browserless
+#     restart: always
+#     ports:
+#       - "3000:3000"
+#     environment:
+#       - MAX_CONCURRENT_SESSIONS=5
+#       - TOKEN=Raja_Security_2026
+#       - WORKSPACE_DIR=/sessions             # Variable name fix
+#       - ENABLE_DEBUGGER=true
+#       - ENABLE_CORS=true                    # Variable name fix
+#       - PREBOOT_CHROME=true
+#     volumes:
+#       - /root/linkedin-sessions:/sessions
+#     networks:
+#       - linkedin-network
+
+# networks:
+#   linkedin-network:
+#     driver: bridge
+#   db:
+#     image: postgres:15-alpine
+#     restart: always
+#     environment:
+#       - POSTGRES_USER=shiva
+#       - POSTGRES_PASSWORD=password123
+#       - POSTGRES_DB=linkedin_camp
+#     volumes:
+#       - pg_data:/var/lib/postgresql/data
+#     networks:
+#       - linkedin-network
+
+#   redis:
+#     image: redis:7-alpine
+#     restart: always
+#     networks:
+#       - linkedin-network
+
+# networks:
+#   linkedin-network:
+#     driver: bridge
+
+# volumes:
+#   pg_data:
+
 version: '3.8'
 
 services:
   backend:
-    build: 
-      context: .
-      dockerfile: Dockerfile
+    build: .
     restart: always
     environment:
       - DATABASE_URL=postgresql://shiva:password123@db:5432/linkedin_camp
@@ -12,34 +85,13 @@ services:
       - JWT_SECRET=Iamironman@3
       - PORT=3001
       - NODE_ENV=production
-      - BROWSERLESS_HOST=browserless
-      - BROWSERLESS_PORT=3000
-      - BROWSERLESS_TOKEN=Raja_Security_2026
     ports:
       - "3001:3001"
     depends_on:
       - db
       - redis
-      - browserless
     volumes:
       - /root/linkedin-sessions:/app/sessions
-    networks:
-      - linkedin-network
-
-  browserless:
-    image: browserless/chrome:latest
-    restart: always
-    ports:
-      - "3000:3000"
-    environment:
-      - CONCURRENT=5
-      # - TOKEN=Raja_Security_2026
-      - WORKSPACE=/sessions
-      - CORS=true
-      - ENABLE_DEBUGGER=true
-      - DEBUG=true
-    volumes:
-      - /root/linkedin-sessions:/sessions
     networks:
       - linkedin-network
 

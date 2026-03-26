@@ -3,7 +3,10 @@ import { prisma } from '@repo/db';
 import { chromium } from 'playwright-extra';
 const stealth = require('puppeteer-extra-plugin-stealth')();
 import Redis from 'ioredis';
+import * as fs from 'fs';
+import * as path from 'path';
 import { humanMoveAndClick, humanType, warmupSession, randomRange } from '../services/stealth.service';
+import { getOrAssignProxy } from '../services/proxy.service';
 
 chromium.use(stealth);
 
@@ -50,6 +53,7 @@ export const processWorkflowStep = async (data: any, job: Job) => {
 
     let browser: any;
     let context: any;
+    let activeProxy: any = user.proxy;
 
     try {
         // --- MANUAL ACTIVITY SAFETY CHECK ---
@@ -64,15 +68,24 @@ export const processWorkflowStep = async (data: any, job: Job) => {
             return;
         }
 
+        // --- ENSURE PROXY ASSIGNMENT ---
+        if (!activeProxy) {
+            console.log(`[WORKER] No proxy assigned for user ${userId}. Fetching from DB pool...`);
+            activeProxy = await getOrAssignProxy(userId);
+            if (!activeProxy) {
+                console.warn(`[WORKER] Could not assign proxy for ${userId}. Relying on internal Oxylabs fallback.`);
+            }
+        }
+
         // --- PROXY SAFETY LOCK ---
-        if (user.proxyId && redisConnection) {
-            const lockKey = `${PROXY_LOCK_PREFIX}${user.proxyId}`;
+        if (activeProxy && activeProxy.id && redisConnection) {
+            const lockKey = `${PROXY_LOCK_PREFIX}${activeProxy.id}`;
             const isLocked = await redisConnection.get(lockKey);
 
             if (isLocked) {
                 // If the proxy is being used by another user or in cooldown, delay this job
                 const delayMs = (Math.floor(Math.random() * 120) + 60) * 1000; // 1-3 minutes
-                console.log(`[WORKER] Proxy ${user.proxyId} is busy or in cooldown. Delaying job ${job.id} by ${delayMs / 1000}s`);
+                console.log(`[WORKER] Proxy ${activeProxy.id} is busy or in cooldown. Delaying job ${job.id} by ${delayMs / 1000}s`);
                 await job.moveToDelayed(Date.now() + delayMs);
                 return;
             }
@@ -83,11 +96,35 @@ export const processWorkflowStep = async (data: any, job: Job) => {
 
         console.log(`[WORKER] Initiating action for lead ${lead.id} (${lead.firstName})`);
 
+        // Determine session path (prioritize Railway volume mount)
+        const isCloud = process.env.RAILWAY_ENVIRONMENT || process.env.NODE_ENV === 'production';
+        const baseSessionDir = isCloud ? '/app/sessions' : path.join(process.cwd(), 'sessions');
+        const sessionPathToUse = user.persistentSessionPath || path.join(baseSessionDir, userId);
+
+        let userAgentStr = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36';
+        let viewportSettings = { width: 1440, height: 900 };
+
+        try {
+            const fingerprintPath = path.join(sessionPathToUse, 'fingerprint.json');
+            if (fs.existsSync(fingerprintPath)) {
+                const fpData = JSON.parse(fs.readFileSync(fingerprintPath, 'utf-8'));
+                if (fpData.userAgent) {
+                    userAgentStr = fpData.userAgent;
+                    console.log(`[WORKER] Loaded custom User-Agent from fingerprint: ${userAgentStr.substring(0, 50)}...`);
+                }
+                if (fpData.screen && fpData.screen.width && fpData.screen.height) {
+                    viewportSettings = { width: fpData.screen.width, height: fpData.screen.height };
+                }
+            }
+        } catch (e) {
+            console.error('[WORKER] Error reading fingerprint:', e);
+        }
+
         // Use persistent context if available for high-tier accounts
         const launchOptions: any = {
             headless: true, // Switch to headed (requires XVFB) for maximum stealth
-            viewport: { width: 1440, height: 900 },
-            userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+            viewport: viewportSettings,
+            userAgent: userAgentStr,
             args: [
                 '--no-sandbox', 
                 '--disable-setuid-sandbox', 
@@ -96,21 +133,24 @@ export const processWorkflowStep = async (data: any, job: Job) => {
             ]
         };
 
-        if (user.proxy) {
+        if (activeProxy) {
             launchOptions.proxy = {
-                server: `${user.proxy.proxyHost}:${user.proxy.proxyPort}`,
-                username: user.proxy.proxyUsername || undefined,
-                password: user.proxy.proxyPassword || undefined
+                server: `${activeProxy.proxyHost}:${activeProxy.proxyPort}`,
+                username: activeProxy.proxyUsername || undefined,
+                password: activeProxy.proxyPassword || undefined
             };
-            console.log(`[WORKER] Using proxy: ${user.proxy.proxyHost}`);
+            console.log(`[WORKER] Using DB proxy: ${activeProxy.proxyHost}`);
+        } else {
+            // Dedicated ISP Proxy fallback to avoid LinkedIn ban
+            launchOptions.proxy = {
+                server: 'http://disp.oxylabs.io:8001',
+                username: 'user-shivasingh_clgdY',
+                password: 'Iamironman_3'
+            };
+            console.log(`[WORKER] Using dedicated ISP proxy (Oxylabs) to avoid ban`);
         }
 
-        // Determine session path (prioritize Railway volume mount)
-        const volumePath = `/app/sessions/${userId}`;
-        const hasVolume = volumePath.startsWith('/app/sessions'); // Basic check, could be improved with fs.existsSync
-        const sessionPathToUse = hasVolume ? volumePath : user.persistentSessionPath;
-
-        if (sessionPathToUse) {
+        if (user.persistentSessionPath && fs.existsSync(user.persistentSessionPath)) {
             console.log(`[WORKER] Launching persistent context for user ${userId} at ${sessionPathToUse}`);
             context = await chromium.launchPersistentContext(sessionPathToUse, launchOptions);
         } else {
@@ -144,6 +184,21 @@ export const processWorkflowStep = async (data: any, job: Job) => {
                 } catch (e) {
                     console.error('[WORKER] Error parsing cookies from DB:', e);
                 }
+            }
+        }
+
+        if (user.linkedinLocalStorage && !sessionPathToUse) {
+            try {
+                const localStorageData = JSON.parse(user.linkedinLocalStorage);
+                console.log(`[WORKER] Injecting localStorage for user ${userId}`);
+                await context.addInitScript((data: any) => {
+                    const parsed = JSON.parse(data);
+                    for (const [k, v] of Object.entries(parsed)) {
+                        window.localStorage.setItem(k, v as string);
+                    }
+                }, JSON.stringify(localStorageData));
+            } catch (e) {
+                console.error('[WORKER] Error parsing localStorage from DB:', e);
             }
         }
 
@@ -315,16 +370,32 @@ export const processWorkflowStep = async (data: any, job: Job) => {
 
             const msgInputSelector = 'div.msg-form__contenteditable[contenteditable="true"], .msg-form__textarea, [role="textbox"]';
             
-            // Always close existing chat bubbles to prevent typing to the wrong person
-            const closeBtns = await page.locator('button.msg-overlay-bubble-header__control--close-btn').all();
-            for (const btn of closeBtns) {
-                try {
-                    await btn.click({ force: true });
-                    await wait(500);
-                } catch (e) {}
-            }
+            // --- DIRECT COMPOSE URL EXTRACTION (Phase 2 Strategy) ---
+            console.log('[WORKER] Extracting compose URL...');
+            const composeUrl = await page.evaluate(() => {
+                const link = document.querySelector('a[href*="/messaging/compose/?profileUrn"]');
+                return link ? (link as HTMLAnchorElement).href : null;
+            });
 
-            let messageClicked = false;
+            if (composeUrl) {
+                console.log(`[WORKER] ✅ Compose URL found: ${composeUrl}`);
+                await wait(randomRange(2000, 4000));
+
+                console.log('[WORKER] Opening messaging directly via compose URL...');
+                await page.goto(composeUrl, { waitUntil: 'domcontentloaded' });
+                await wait(randomRange(15000, 20000));
+            } else {
+                console.log('[WORKER] Compose URL not found in profile. Falling back to MESSAGE button approach...');
+                // Always close existing chat bubbles to prevent typing to the wrong person
+                const closeBtns = await page.locator('button.msg-overlay-bubble-header__control--close-btn').all();
+                for (const btn of closeBtns) {
+                    try {
+                        await btn.click({ force: true });
+                        await wait(500);
+                    } catch (e) {}
+                }
+
+                let messageClicked = false;
                 for (const sel of messageButtonSelectors) {
                     try {
                         const btn = page.locator(sel).filter({ visible: true }).first();
@@ -343,12 +414,13 @@ export const processWorkflowStep = async (data: any, job: Job) => {
                     }
                 }
 
-            if (!messageClicked) {
-                 await page.screenshot({ path: '/app/error_profile.png' });
-                 console.log(`[WORKER] Message button not found. Saved screenshot to /app/error_profile.png`);
-                 console.log(`[WORKER] Falling back to messaging link...`);
-                 await page.goto('https://www.linkedin.com/messaging/', { waitUntil: 'domcontentloaded' });
-                 await wait(randomRange(2000, 4000));
+                if (!messageClicked) {
+                     await page.screenshot({ path: '/app/error_profile.png' });
+                     console.log(`[WORKER] Message button not found. Saved screenshot to /app/error_profile.png`);
+                     console.log(`[WORKER] Falling back to messaging link...`);
+                     await page.goto('https://www.linkedin.com/messaging/', { waitUntil: 'domcontentloaded' });
+                     await wait(randomRange(2000, 4000));
+                }
             }
 
             await wait(randomRange(1500, 3000));
@@ -518,8 +590,14 @@ export const processWorkflowStep = async (data: any, job: Job) => {
         console.error(`[WORKER] Action failed for lead ${lead.id}:`, error.message);
     } finally {
         // --- PROXY SAFETY COOL DOWN ---
-        if (user.proxyId && redisConnection) {
-            const lockKey = `${PROXY_LOCK_PREFIX}${user.proxyId}`;
+        let finalProxyId = user.proxyId;
+        // if user.proxyId was null at start but activeProxy got assigned during the task, use it:
+        if (!finalProxyId && activeProxy) {
+            finalProxyId = activeProxy.id;
+        }
+
+        if (finalProxyId && redisConnection) {
+            const lockKey = `${PROXY_LOCK_PREFIX}${finalProxyId}`;
             // Set cooldown lock instead of just deleting
             await redisConnection.set(lockKey, 'COOLDOWN', 'EX', PROXY_COOLDOWN_SEC);
         }

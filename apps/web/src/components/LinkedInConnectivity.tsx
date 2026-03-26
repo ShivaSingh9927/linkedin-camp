@@ -255,7 +255,7 @@ export default function LinkedInConnectivity() {
                                     <motion.div key="debugger" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col space-y-4">
                                         <div className="bg-slate-900 rounded-2xl overflow-hidden aspect-video relative border-4 border-slate-800 shadow-2xl">
                                             <iframe 
-                                                src={`http://204.168.167.198:3000/debugger?launch=${encodeURIComponent(JSON.stringify({ args: ["--no-sandbox", "--disable-setuid-sandbox", `--user-data-dir=/sessions/${status?.userId || 'unknown'}`] }))}`}
+                                                src={`http://204.168.167.198:3000/?url=${encodeURIComponent('https://www.linkedin.com/login')}&launch=${encodeURIComponent(JSON.stringify({ args: ["--no-sandbox", "--disable-setuid-sandbox", `--user-data-dir=/sessions/${status?.userId || 'unknown'}`] }))}`}
                                                 className="w-full h-full border-none"
                                                 title="Cloud Control"
                                             />

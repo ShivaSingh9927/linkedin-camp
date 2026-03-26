@@ -8,6 +8,7 @@ import path from 'path';
 import fs from 'fs';
 import { getOrAssignProxy } from '../services/proxy.service';
 import axios from 'axios';
+import { LinkedInService } from '../services/linkedin.service';
 
 chromium.use(stealth);
 
@@ -240,9 +241,13 @@ export const getLinkedinStatus = async (req: any, res: Response) => {
 
         if (!user) return res.status(404).json({ error: 'User not found' });
 
+        // Check if the actual session (li_at) is still valid/active
+        const isValid = await LinkedInService.isSessionValid(user.linkedinCookie || '');
+
         res.json({
             userId: user.id,
             connected: !!user.linkedinCookie || !!user.persistentSessionPath,
+            isValid: isValid, // NEW: Real-time confirmation that the session works
             cookieLength: user.linkedinCookie ? user.linkedinCookie.length : 0,
             persistentPath: user.persistentSessionPath,
             profile: {
@@ -386,46 +391,34 @@ export const startLinkedinLogin = async (req: any, res: Response) => {
 
 export const cloudLogin = async (req: any, res: Response) => {
     const userId = req.user.id;
-    const browserlessHost = process.env.BROWSERLESS_HOST || 'browserless';
-    const browserlessPort = process.env.BROWSERLESS_PORT || '3000';
-    const token = process.env.BROWSERLESS_TOKEN || 'Raja_Security_2026';
+    const hetznerIp = '204.168.167.198'; 
+    const token = 'Raja_Security_2026';
 
-    try {
-        console.log(`[CLOUD-LOGIN] Launching interactive session for user ${userId}...`);
-        
-        // Use Browserless JSON API to start a session with a pre-loaded URL
-        // We'll use the management API to start a session that will persist in a data directory
-        const launchOptions = {
-            args: [
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                `--user-data-dir=/sessions/${userId}`
-            ]
-        };
+    // This script automatically navigates the remote browser to LinkedIn
+    const script = `
+      export default async ({ page }) => {
+        await page.goto('https://www.linkedin.com/login');
+      };
+    `.trim();
 
-        // Standard "Interactive Explorer" with Auto-Launch Script
-        // We encode the navigation code so it runs AUTOMATICALLY
-        const script = `
-            export default async ({ page }) => {
-            await page.goto('https://www.linkedin.com/login', { waitUntil: 'domcontentloaded' });
-            // Keep open for you for 15 minutes
-            await new Promise(r => setTimeout(r, 900000)); 
-            };`.trim();
-        
-        const encodedScript = Buffer.from(script).toString('base64');
-        const launch = encodeURIComponent(JSON.stringify({
-            args: ["--no-sandbox", "--disable-setuid-sandbox", `--user-data-dir=/sessions/${userId}`]
-        }));
-        
-        // This URL forces Browserless to open AND start running the sign-in code immediately
-        const debuggerUrl = `http://204.168.167.198:3000/debugger?launch=${launch}&script=${encodedScript}`;
-        
-        res.redirect(debuggerUrl);
+    const launchOptions = {
+        args: [
+            "--no-sandbox",
+            `--user-data-dir=/sessions/${userId}` // Persistent login
+        ]
+    };
 
-    } catch (error: any) {
-        console.error(`[CLOUD-LOGIN] Error:`, error.message);
-        res.status(500).send("Failed to launch cloud login session.");
-    }
+    const params = new URLSearchParams({
+        token: token,
+        launch: JSON.stringify(launchOptions),
+        // Encode the script so it runs on startup
+        script: Buffer.from(script).toString('base64')
+    });
+
+    // Final URL - Open source Browserless uses the root or /debugger/
+    const url = `http://${hetznerIp}:3000/debugger/?${params.toString()}`;
+    
+    res.redirect(url);
 };
 
 export const heartbeat = async (req: any, res: Response) => {

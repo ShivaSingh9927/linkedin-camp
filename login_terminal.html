@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <style>
+        /* The Viewport: This is your 'Window' */
+        .sync-window {
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden; /* Important: Clips the editor out of view */
+            position: relative;
+            background: #1e1e1e; /* Match Browserless dark mode */
+        }
+
+        .browserless-frame {
+            position: absolute;
+            
+            /* Increase width so the browser area is large enough to fill the screen */
+            width: 200%; 
+            height: 110%; /* Slightly taller to hide the top header bars */
+
+            /* ALIGNMENT FIX: 
+               Shift it left (-70% or more) to push the code editor off-screen.
+               Shift it up (-5%) to hide the 'File/Edit' top menu. 
+            */
+            left: -100%; 
+            top: -5%;
+
+            border: none;
+        }
+
+        .status-overlay {
+            position: absolute;
+            bottom: 20px;
+            right: 30px;
+            background: rgba(0, 115, 177, 0.9);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 4px;
+            font-family: system-ui, -apple-system, sans-serif;
+            pointer-events: none;
+            z-index: 10;
+        }
+    </style>
+</head>
+<body>
+    <div class="sync-window">
+        <div class="status-overlay">Secure LinkedIn Sync Active</div>
+        <iframe 
+            src="http://204.168.167.198:3000/debugger/?token=Raja_Security_2026" 
+            class="browserless-frame">
+        </iframe>
+    </div>
+</body>
+</html>
