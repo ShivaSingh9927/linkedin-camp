@@ -22,7 +22,8 @@ app.get('/health', (req, res) => {
 app.get('/ping', (req, res) => res.send('pong'));
 
 app.use(cors()); // Permissive for initial debug
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // --- 2. START SERVER IMMEDIATELY (Do not block on imports) ---
 const serverPort = parseInt(String(PORT), 10);

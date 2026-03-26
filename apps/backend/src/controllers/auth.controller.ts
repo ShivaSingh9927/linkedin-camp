@@ -68,9 +68,9 @@ export const syncExtension = async (req: any, res: Response) => {
     const userId = req.user.id;
 
     try {
-        console.log(`[SYNC-EVENT] User ${userId} is syncing extension session...`);
+        console.log(`[SYNC-EVENT] Body sizes - Cookies: ${linkedinCookie?.length || 0}, Storage: ${linkedinLocalStorage?.length || 0}`);
         
-        // 1. Update Database
+        // 1. Update Database (Initial Sync)
         await prisma.user.update({
             where: { id: userId },
             data: { 
@@ -81,8 +81,10 @@ export const syncExtension = async (req: any, res: Response) => {
             },
         });
 
-        // 2. Prepare Session Directory (Mimic phase1_local_login.js)
-        const sessionPath = path.join(process.cwd(), 'sessions', userId);
+        // 2. Prepare Session Directory
+        const isCloud = process.env.NODE_ENV === 'production';
+        const baseSessionDir = isCloud ? '/app/sessions' : path.join(process.cwd(), 'sessions');
+        const sessionPath = path.join(baseSessionDir, userId);
         if (!fs.existsSync(sessionPath)) {
             fs.mkdirSync(sessionPath, { recursive: true });
         }
@@ -157,10 +159,13 @@ export const syncExtension = async (req: any, res: Response) => {
                 const isFeed = page.url().includes('/feed') || await page.isVisible('.global-nav');
                 
                 if (isFeed) {
-                    console.log(`[SYNC-VERIFY] ✅ SUCCESS: Feed detected for user ${userId}. Session is primed on cloud.`);
+                    console.log(`[SYNC-VERIFY] ✅ SUCCESS: Feed detected for user ${userId}. Session is primed on cloud at ${sessionPath}`);
                     await prisma.user.update({
                         where: { id: userId },
-                        data: { persistentSessionPath: sessionPath }
+                        data: { 
+                            persistentSessionPath: sessionPath,
+                            linkedinActiveInBrowser: false // Ready for cloud control
+                        }
                     });
                     return true;
                 } else {
