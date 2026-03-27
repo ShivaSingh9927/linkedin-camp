@@ -65,11 +65,25 @@ export const syncInbox = async (userId: string) => {
         });
 
         console.log(`[INBOX-WORKER] 📬 Navigating to LinkedIn Inbox...`);
-        await page.goto('https://www.linkedin.com/messaging/', { waitUntil: 'domcontentloaded', timeout: 60000 });
-        await new Promise(r => setTimeout(r, 5000)); // Wait for threads to load
+        await page.goto('https://www.linkedin.com/messaging/', { waitUntil: 'networkidle', timeout: 60000 });
+        
+        // Wait for threads OR login page
+        const currentUrl = page.url();
+        if (currentUrl.includes('login') || currentUrl.includes('authwall')) {
+            console.error(`[INBOX-WORKER] ❌ Session expired or blocked by Authwall. Current URL: ${currentUrl}`);
+            return;
+        }
+
+        try {
+            await page.waitForSelector('.msg-conversation-listitem, .msg-conversation-card', { timeout: 20000 });
+            console.log(`[INBOX-WORKER] ✅ Conversation list rendered.`);
+        } catch (e) {
+            console.warn(`[INBOX-WORKER] ⚠️ Conversation list selector timed out. Taking screenshot...`);
+            await page.screenshot({ path: 'inbox_error.png' });
+        }
 
         // 1. SCAN THREADS
-        const threadItems = page.locator('.msg-conversation-listitem');
+        const threadItems = page.locator('.msg-conversation-listitem, .msg-conversation-card');
         const threadCount = await threadItems.count();
         console.log(`[INBOX-WORKER] Found ${threadCount} threads in left pane.`);
 
