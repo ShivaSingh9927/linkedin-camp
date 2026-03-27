@@ -98,7 +98,8 @@ export default function InboxPage() {
         headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
       });
       if (res.ok) {
-        setTimeout(fetchConversations, 8000);
+        // Background sync takes time — auto-refresh in 30s
+        setTimeout(fetchConversations, 30000);
       }
     } catch (err) {
       console.error('Sync failed:', err);
@@ -142,14 +143,23 @@ export default function InboxPage() {
         title="Inbox" 
         description="Manage your LinkedIn conversations in one place."
         action={
-          <button 
-            onClick={handleSync}
-            disabled={isSyncing}
-            className="flex items-center space-x-2 bg-primary text-white px-4 py-2 rounded-xl text-sm font-bold shadow-lg shadow-primary/20 hover:bg-primary/90 transition-all disabled:opacity-50"
-          >
-            <RefreshCw className={cn("w-4 h-4", isSyncing && "animate-spin")} />
-            <span>{isSyncing ? "Syncing..." : "Sync LinkedIn"}</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={() => { setIsLoading(true); fetchConversations(); }}
+              className="flex items-center space-x-2 bg-white border text-slate-700 px-4 py-2 rounded-xl text-sm font-bold hover:bg-slate-50 transition-all"
+            >
+              <RotateCcw className="w-4 h-4" />
+              <span>Refresh</span>
+            </button>
+            <button 
+              onClick={handleSync}
+              disabled={isSyncing}
+              className="flex items-center space-x-2 bg-primary text-white px-4 py-2 rounded-xl text-sm font-bold shadow-lg shadow-primary/20 hover:bg-primary/90 transition-all disabled:opacity-50"
+            >
+              <RefreshCw className={cn("w-4 h-4", isSyncing && "animate-spin")} />
+              <span>{isSyncing ? "Syncing..." : "Sync LinkedIn"}</span>
+            </button>
+          </div>
         }
       />
 

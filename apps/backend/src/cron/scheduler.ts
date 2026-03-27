@@ -128,8 +128,8 @@ export const initScheduler = () => {
     }
   });
 
-  // 2. Inbox Sync Scheduler (Every 15 mins)
-  cron.schedule('*/15 * * * *', async () => {
+  // 2. Inbox Sync Scheduler (Every 6 hours)
+  cron.schedule('0 */6 * * *', async () => {
     console.log('Running global inbox sync...');
     try {
       const usersWithCookies = await prisma.user.findMany({

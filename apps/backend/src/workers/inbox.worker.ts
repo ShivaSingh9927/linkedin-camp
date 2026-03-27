@@ -3,6 +3,8 @@ import { prisma } from '@repo/db';
 import { chromium } from 'playwright-extra';
 const stealth = require('puppeteer-extra-plugin-stealth')();
 import Redis from 'ioredis';
+import * as fs from 'fs';
+import * as path from 'path';
 
 chromium.use(stealth);
 
@@ -13,7 +15,8 @@ export const inboxQueue = redisConnection ? new Queue('inbox-sync', { connection
 
 export const syncInbox = async (userId: string) => {
     const user = await prisma.user.findUnique({
-        where: { id: userId }
+        where: { id: userId },
+        include: { proxy: true }
     });
 
     if (!user || !user.linkedinCookie) {
@@ -23,63 +26,135 @@ export const syncInbox = async (userId: string) => {
 
     console.log(`[INBOX-WORKER] Syncing inbox for user ${userId}...`);
 
-    let context;
-    let browser;
+    let context: any;
+    let browser: any;
 
     try {
+        // --- SESSION PATH (mirrors campaign worker) ---
+        const isCloud = process.env.RAILWAY_ENVIRONMENT || process.env.NODE_ENV === 'production';
+        const baseSessionDir = isCloud ? '/app/sessions' : path.join(process.cwd(), 'sessions');
+        const sessionPathToUse = user.persistentSessionPath || path.join(baseSessionDir, userId);
+
+        // --- LOAD FINGERPRINT (mirrors campaign worker) ---
+        let userAgentStr = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36';
+        let viewportSettings: any = { width: 1440, height: 900 };
+
+        try {
+            const fingerprintPath = path.join(sessionPathToUse, 'fingerprint.json');
+            if (fs.existsSync(fingerprintPath)) {
+                const fpData = JSON.parse(fs.readFileSync(fingerprintPath, 'utf-8'));
+                if (fpData.userAgent) {
+                    userAgentStr = fpData.userAgent;
+                    console.log(`[INBOX-WORKER] Loaded fingerprint UA: ${userAgentStr.substring(0, 50)}...`);
+                }
+                if (fpData.screen && fpData.screen.width && fpData.screen.height) {
+                    viewportSettings = { width: fpData.screen.width, height: fpData.screen.height };
+                }
+            }
+        } catch (e) {
+            console.error('[INBOX-WORKER] Error reading fingerprint:', e);
+        }
+
+        // --- LAUNCH (mirrors campaign worker: headed under xvfb) ---
         const launchOptions: any = {
-            headless: true, // Headless in production
-            args: ['--no-sandbox', '--disable-setuid-sandbox']
+            headless: false,
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-blink-features=AutomationControlled',
+                '--start-maximized',
+                '--disable-web-security'
+            ]
         };
 
+        // --- CONTEXT WITH PROXY (mirrors campaign worker) ---
+        const contextOptions: any = {
+            userAgent: userAgentStr,
+            viewport: null,
+            locale: 'en-IN',
+            timezoneId: 'Asia/Kolkata'
+        };
+
+        if (user.proxy) {
+            contextOptions.proxy = {
+                server: `http://${user.proxy.proxyHost}:${user.proxy.proxyPort}`,
+                username: user.proxy.proxyUsername || undefined,
+                password: user.proxy.proxyPassword || undefined
+            };
+            console.log(`[INBOX-WORKER] Using DB proxy: ${user.proxy.proxyHost}`);
+        } else {
+            contextOptions.proxy = {
+                server: 'http://disp.oxylabs.io:8001',
+                username: 'user-shivasingh_clgdY',
+                password: 'Iamironman_3'
+            };
+            console.log(`[INBOX-WORKER] Using Oxylabs ISP proxy fallback`);
+        }
+
         browser = await chromium.launch(launchOptions);
-        context = await browser.newContext({
-            ...launchOptions,
-            viewport: { width: 1920, height: 1080 }
-        });
-        
-        // --- INJECT SESSION ---
+        context = await browser.newContext(contextOptions);
+
+        // --- INJECT COOKIES (mirrors campaign worker) ---
         if (user.linkedinCookie) {
             try {
                 const cookies = JSON.parse(user.linkedinCookie);
-                await context.addCookies(cookies);
+                if (Array.isArray(cookies)) {
+                    console.log(`[INBOX-WORKER] Injecting ${cookies.length} cookies from DB`);
+                    await context.addCookies(cookies);
+                } else {
+                    await context.addCookies([{
+                        name: 'li_at', value: user.linkedinCookie,
+                        domain: '.linkedin.com', path: '/', secure: true, httpOnly: true, sameSite: 'Lax' as const
+                    }]);
+                }
             } catch (e) { console.error('[INBOX-WORKER] Cookie error:', e); }
         }
-        
+
+        // --- INJECT LOCALSTORAGE (mirrors campaign worker) ---
         if (user.linkedinLocalStorage) {
             try {
-                const storage = JSON.parse(user.linkedinLocalStorage);
-                await context.addInitScript((s: any) => {
-                    for (const k in s) window.localStorage.setItem(k, s[k]);
-                }, storage);
-            } catch (e) { }
+                const localStorageData = JSON.parse(user.linkedinLocalStorage);
+                console.log(`[INBOX-WORKER] Injecting localStorage identity`);
+                await context.addInitScript((data: any) => {
+                    const parsed = JSON.parse(data);
+                    for (const [k, v] of Object.entries(parsed)) {
+                        window.localStorage.setItem(k, v as string);
+                    }
+                }, JSON.stringify(localStorageData));
+            } catch (e) { console.error('[INBOX-WORKER] localStorage error:', e); }
         }
 
-        const page = await context.newPage();
-        
+        const page = context.pages()[0] || await context.newPage();
+
         // Block heavy assets
-        await page.route('**/*', (route) => {
+        await page.route('**/*', (route: any) => {
             const type = route.request().resourceType();
             if (['image', 'media', 'font'].includes(type)) return route.abort();
             return route.continue();
         });
 
+        // --- WARMUP on feed first (like test script) ---
+        console.log(`[INBOX-WORKER] 🔥 Warming up on Feed...`);
+        await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded', timeout: 60000 });
+        await new Promise(r => setTimeout(r, 5000));
+
         console.log(`[INBOX-WORKER] 📬 Navigating to LinkedIn Inbox...`);
-        await page.goto('https://www.linkedin.com/messaging/', { waitUntil: 'networkidle', timeout: 60000 });
-        
-        // Wait for threads OR login page
+        await page.goto('https://www.linkedin.com/messaging/', { waitUntil: 'domcontentloaded', timeout: 60000 });
+        await new Promise(r => setTimeout(r, 4000));
+
+        // Check for authwall
         const currentUrl = page.url();
         if (currentUrl.includes('login') || currentUrl.includes('authwall')) {
-            console.error(`[INBOX-WORKER] ❌ Session expired or blocked by Authwall. Current URL: ${currentUrl}`);
+            console.error(`[INBOX-WORKER] ❌ Session expired. URL: ${currentUrl}`);
             return;
         }
 
         try {
-            await page.waitForSelector('.msg-conversation-listitem, .msg-conversation-card', { timeout: 20000 });
+            await page.waitForSelector('.msg-conversation-listitem, .msg-conversation-card', { timeout: 15000 });
             console.log(`[INBOX-WORKER] ✅ Conversation list rendered.`);
         } catch (e) {
-            console.warn(`[INBOX-WORKER] ⚠️ Conversation list selector timed out. Taking screenshot...`);
-            await page.screenshot({ path: 'inbox_error.png' });
+            console.warn(`[INBOX-WORKER] ⚠️ Conversation list timed out. Taking screenshot...`);
+            await page.screenshot({ path: '/app/inbox_debug.png' });
         }
 
         // 1. SCAN THREADS
