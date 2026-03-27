@@ -27,7 +27,6 @@ export const syncInbox = async (userId: string) => {
     console.log(`[INBOX-WORKER] Syncing inbox for user ${userId}...`);
 
     let context: any;
-    let browser: any;
 
     try {
         // --- SESSION PATH (mirrors campaign worker) ---
@@ -55,8 +54,8 @@ export const syncInbox = async (userId: string) => {
             console.error('[INBOX-WORKER] Error reading fingerprint:', e);
         }
 
-        // --- LAUNCH (mirrors campaign worker: headed under xvfb) ---
-        const launchOptions: any = {
+        // --- LAUNCH WITH PERSISTENT CONTEXT (uses full saved browser state) ---
+        const persistentOptions: any = {
             headless: false,
             args: [
                 '--no-sandbox',
@@ -64,11 +63,7 @@ export const syncInbox = async (userId: string) => {
                 '--disable-blink-features=AutomationControlled',
                 '--start-maximized',
                 '--disable-web-security'
-            ]
-        };
-
-        // --- CONTEXT WITH PROXY (mirrors campaign worker) ---
-        const contextOptions: any = {
+            ],
             userAgent: userAgentStr,
             viewport: null,
             locale: 'en-IN',
@@ -76,14 +71,14 @@ export const syncInbox = async (userId: string) => {
         };
 
         if (user.proxy) {
-            contextOptions.proxy = {
+            persistentOptions.proxy = {
                 server: `http://${user.proxy.proxyHost}:${user.proxy.proxyPort}`,
                 username: user.proxy.proxyUsername || undefined,
                 password: user.proxy.proxyPassword || undefined
             };
             console.log(`[INBOX-WORKER] Using DB proxy: ${user.proxy.proxyHost}`);
         } else {
-            contextOptions.proxy = {
+            persistentOptions.proxy = {
                 server: 'http://disp.oxylabs.io:8001',
                 username: 'user-shivasingh_clgdY',
                 password: 'Iamironman_3'
@@ -91,38 +86,8 @@ export const syncInbox = async (userId: string) => {
             console.log(`[INBOX-WORKER] Using Oxylabs ISP proxy fallback`);
         }
 
-        browser = await chromium.launch(launchOptions);
-        context = await browser.newContext(contextOptions);
-
-        // --- INJECT COOKIES (mirrors campaign worker) ---
-        if (user.linkedinCookie) {
-            try {
-                const cookies = JSON.parse(user.linkedinCookie);
-                if (Array.isArray(cookies)) {
-                    console.log(`[INBOX-WORKER] Injecting ${cookies.length} cookies from DB`);
-                    await context.addCookies(cookies);
-                } else {
-                    await context.addCookies([{
-                        name: 'li_at', value: user.linkedinCookie,
-                        domain: '.linkedin.com', path: '/', secure: true, httpOnly: true, sameSite: 'Lax' as const
-                    }]);
-                }
-            } catch (e) { console.error('[INBOX-WORKER] Cookie error:', e); }
-        }
-
-        // --- INJECT LOCALSTORAGE (mirrors campaign worker) ---
-        if (user.linkedinLocalStorage) {
-            try {
-                const localStorageData = JSON.parse(user.linkedinLocalStorage);
-                console.log(`[INBOX-WORKER] Injecting localStorage identity`);
-                await context.addInitScript((data: any) => {
-                    const parsed = JSON.parse(data);
-                    for (const [k, v] of Object.entries(parsed)) {
-                        window.localStorage.setItem(k, v as string);
-                    }
-                }, JSON.stringify(localStorageData));
-            } catch (e) { console.error('[INBOX-WORKER] localStorage error:', e); }
-        }
+        console.log(`[INBOX-WORKER] Launching persistent context from: ${sessionPathToUse}`);
+        context = await chromium.launchPersistentContext(sessionPathToUse, persistentOptions);
 
         const page = context.pages()[0] || await context.newPage();
 
@@ -133,10 +98,17 @@ export const syncInbox = async (userId: string) => {
             return route.continue();
         });
 
-        // --- WARMUP on feed first (like test script) ---
+        // --- WARMUP on feed first ---
         console.log(`[INBOX-WORKER] 🔥 Warming up on Feed...`);
         await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded', timeout: 60000 });
         await new Promise(r => setTimeout(r, 5000));
+
+        const feedUrl = page.url();
+        console.log(`[INBOX-WORKER] Feed URL after warmup: ${feedUrl}`);
+        if (feedUrl.includes('login') || feedUrl.includes('authwall')) {
+            console.error(`[INBOX-WORKER] ❌ Session expired at feed warmup. URL: ${feedUrl}`);
+            return;
+        }
 
         console.log(`[INBOX-WORKER] 📬 Navigating to LinkedIn Inbox...`);
         await page.goto('https://www.linkedin.com/messaging/', { waitUntil: 'domcontentloaded', timeout: 60000 });
@@ -144,8 +116,9 @@ export const syncInbox = async (userId: string) => {
 
         // Check for authwall
         const currentUrl = page.url();
+        console.log(`[INBOX-WORKER] Messaging URL: ${currentUrl}`);
         if (currentUrl.includes('login') || currentUrl.includes('authwall')) {
-            console.error(`[INBOX-WORKER] ❌ Session expired. URL: ${currentUrl}`);
+            console.error(`[INBOX-WORKER] ❌ Session expired at messaging. URL: ${currentUrl}`);
             return;
         }
 
@@ -284,7 +257,6 @@ export const syncInbox = async (userId: string) => {
 
     } finally {
         if (context) await context.close().catch(() => {});
-        if (browser) await browser.close().catch(() => {});
     }
 };
 
