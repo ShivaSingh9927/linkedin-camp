@@ -4,7 +4,8 @@ console.error('[BACKEND-INIT-STDERR] Verification log to stderr');
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-dotenv.config();
+import path from 'path';
+dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 
 console.log('[BACKEND-ENV] PORT:', process.env.PORT);
 
@@ -48,6 +49,7 @@ app.listen(serverPort, '0.0.0.0', () => {
             const adminRoutes = (await import('./routes/admin.routes')).default;
             const notificationRoutes = (await import('./routes/notification.routes')).default;
             const integrationRoutes = (await import('./routes/integration.routes')).default;
+            const smartListRoutes = (await import('./routes/smart-list.routes')).default;
             const { initScheduler } = await import('./cron/scheduler');
             const { initWorker } = await import('./workers/linkedin.worker');
             const { initProxyHealthWorker } = await import('./workers/proxy.worker');
@@ -62,6 +64,7 @@ app.listen(serverPort, '0.0.0.0', () => {
             app.use('/api/v1/admin', adminRoutes);
             app.use('/api/v1/notifications', notificationRoutes);
             app.use('/api/v1/integrations', integrationRoutes);
+            app.use('/api/v1/smart-lists', smartListRoutes);
 
             initScheduler();
 
@@ -75,6 +78,8 @@ app.listen(serverPort, '0.0.0.0', () => {
             });
             initWorker();
             initProxyHealthWorker();
+            const { initInboxWorker } = await import('./workers/inbox.worker');
+            initInboxWorker();
             console.log('[BACKEND-COMPLETE] All background services ready');
         } catch (err) {
             console.error('[BACKEND-FATAL] Failed to load modules:', err);

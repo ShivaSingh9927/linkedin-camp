@@ -19,7 +19,7 @@ import {
 import '@xyflow/react/dist/style.css';
 
 import { TriggerNode, ActionNode, ConditionNode, DelayNode } from './WorkflowNodes';
-import { Plus, MousePointer2, Mail, UserPlus, Clock, Zap, GitBranch, X, Edit3 } from 'lucide-react';
+import { Plus, MousePointer2, Mail, UserPlus, Clock, Zap, GitBranch, X, Edit3, Heart, MessageCircle, Info, Database, AtSign, FileText } from 'lucide-react';
 import { toast } from 'sonner';
 
 const nodeTypes = {
@@ -82,7 +82,12 @@ function CampaignBuilderInner({
         type,
         // Default values for editable fields
         days: subType === 'WAIT' ? 1 : undefined,
-        message: subType === 'MESSAGE' ? 'Hi {firstName}, noticed your profile and wanted to connect!' : undefined
+        message: (subType === 'MESSAGE' || subType === 'COMMENT_POST') ? 'Hi {firstName}, noticed your profile and wanted to connect!' : undefined,
+        // Enrichment defaults for VISIT
+        enrichCompany: subType === 'VISIT' ? true : false,
+        enrichContact: subType === 'VISIT' ? false : false,
+        enrichAbout: subType === 'VISIT' ? true : false,
+        enrichPosts: subType === 'VISIT' ? false : false,
       },
     };
 
@@ -118,7 +123,7 @@ function CampaignBuilderInner({
               className="flex items-center gap-2 p-2 rounded-lg hover:bg-amber-50 text-slate-600 hover:text-amber-600 border border-transparent hover:border-amber-100 transition-all text-xs font-bold"
             >
               <div className="p-1 bg-amber-100 rounded text-amber-600"><MousePointer2 className="w-3 h-3" /></div>
-              Visit Profile
+              Profile Visit
             </button>
 
             <button
@@ -151,6 +156,33 @@ function CampaignBuilderInner({
             >
               <div className="p-1 bg-purple-100 rounded text-purple-600"><GitBranch className="w-3 h-3" /></div>
               Check Reply
+            </button>
+
+            <button
+              onClick={() => addNode('EMAIL', 'Send Email', 'ACTION')}
+              className="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-50 text-slate-600 hover:text-slate-900 border border-transparent hover:border-slate-200 transition-all text-xs font-bold"
+            >
+              <div className="p-1 bg-slate-200 rounded text-slate-600"><Mail className="w-3 h-3" /></div>
+              Send Email
+            </button>
+
+            <div className="h-px bg-slate-100 my-2" />
+            <div className="text-[9px] font-black text-slate-300 uppercase tracking-widest mb-1 px-1">Engagement</div>
+
+            <button
+              onClick={() => addNode('LIKE_POST', 'Like Post', 'ACTION')}
+              className="flex items-center gap-2 p-2 rounded-lg hover:bg-rose-50 text-slate-600 hover:text-rose-600 border border-transparent hover:border-rose-100 transition-all text-xs font-bold"
+            >
+              <div className="p-1 bg-rose-100 rounded text-rose-600"><Heart className="w-3 h-3" /></div>
+              Like Recent Post
+            </button>
+
+            <button
+              onClick={() => addNode('COMMENT_POST', 'Comment Post', 'ACTION')}
+              className="flex items-center gap-2 p-2 rounded-lg hover:bg-cyan-50 text-slate-600 hover:text-cyan-600 border border-transparent hover:border-cyan-100 transition-all text-xs font-bold"
+            >
+              <div className="p-1 bg-cyan-100 rounded text-cyan-600"><MessageCircle className="w-3 h-3" /></div>
+              Comment on Post
             </button>
           </div>
         </div>
@@ -200,25 +232,98 @@ function CampaignBuilderInner({
 
           <div className="p-6 flex-1 overflow-y-auto space-y-6">
             {(
-              ['MESSAGE', 'SEND MESSAGE'].includes((((selectedNode.data as any).subType || '') as string).toUpperCase()) ||
-              ((selectedNode.data as any).label || '').toUpperCase().includes('MESSAGE')
+              ['MESSAGE', 'SEND MESSAGE', 'COMMENT_POST', 'EMAIL', 'SEND EMAIL'].includes((((selectedNode.data as any).subType || '') as string).toUpperCase()) ||
+              ((selectedNode.data as any).label || '').toUpperCase().includes('MESSAGE') ||
+              ((selectedNode.data as any).label || '').toUpperCase().includes('COMMENT') ||
+              ((selectedNode.data as any).label || '').toUpperCase().includes('EMAIL')
             ) && (
                 <div className="space-y-3">
                   <label className="text-xs font-bold text-slate-600 flex items-center gap-2">
                     <Mail className="w-3 h-3 text-indigo-500" />
-                    Message Content
+                    {((selectedNode.data as any).subType === 'COMMENT_POST' ? 'Comment Content' : 
+                      (selectedNode.data as any).subType === 'EMAIL' ? 'Email Body' : 'Message Content')}
                   </label>
                   <textarea
                     value={(selectedNode.data as any).message || ''}
                     onChange={(e) => updateNodeData(selectedNode.id, { message: e.target.value })}
                     className="w-full h-40 p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all resize-none"
-                    placeholder="Type your message here..."
+                    placeholder="Type your content here..."
                   />
                   <div className="p-2 bg-indigo-50 rounded-lg border border-indigo-100 text-[10px] text-indigo-600 font-medium leading-relaxed">
-                    💡 Tip: You can use <span className="font-bold underline">{'{firstName}'}</span> to personalize your message.
+                    💡 Tip: You can use <span className="font-bold underline">{'{firstName}'}</span> to personalize your content.
                   </div>
                 </div>
               )}
+
+            {(selectedNode.data as any).subType === 'VISIT' && (
+              <div className="space-y-4">
+                <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b pb-2 mb-4">Enrichment Settings</div>
+                
+                <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
+                  <div className="flex items-center gap-3">
+                    <div className="p-1.5 bg-blue-100 rounded text-blue-600"><Database className="w-3 h-3" /></div>
+                    <div>
+                      <p className="text-xs font-bold text-slate-800">Company & Job Title</p>
+                      <p className="text-[9px] text-slate-400 uppercase font-bold">Recommended</p>
+                    </div>
+                  </div>
+                  <input 
+                    type="checkbox" 
+                    checked={(selectedNode.data as any).enrichCompany}
+                    onChange={(e) => updateNodeData(selectedNode.id, { enrichCompany: e.target.checked })}
+                    className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
+                  <div className="flex items-center gap-3">
+                    <div className="p-1.5 bg-emerald-100 rounded text-emerald-600"><AtSign className="w-3 h-3" /></div>
+                    <div>
+                      <p className="text-xs font-bold text-slate-800">Email & Phone</p>
+                      <p className="text-[9px] text-slate-400 uppercase font-bold text-rose-500">Requires Connection</p>
+                    </div>
+                  </div>
+                  <input 
+                    type="checkbox" 
+                    checked={(selectedNode.data as any).enrichContact}
+                    onChange={(e) => updateNodeData(selectedNode.id, { enrichContact: e.target.checked })}
+                    className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
+                  <div className="flex items-center gap-3">
+                    <div className="p-1.5 bg-amber-100 rounded text-amber-600"><Info className="w-3 h-3" /></div>
+                    <div>
+                      <p className="text-xs font-bold text-slate-800">About Section</p>
+                      <p className="text-[9px] text-slate-400 uppercase font-bold">Deep Persona</p>
+                    </div>
+                  </div>
+                  <input 
+                    type="checkbox" 
+                    checked={(selectedNode.data as any).enrichAbout}
+                    onChange={(e) => updateNodeData(selectedNode.id, { enrichAbout: e.target.checked })}
+                    className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
+                  <div className="flex items-center gap-3">
+                    <div className="p-1.5 bg-purple-100 rounded text-purple-600"><FileText className="w-3 h-3" /></div>
+                    <div>
+                      <p className="text-xs font-bold text-slate-800">Latest Posts</p>
+                      <p className="text-[9px] text-slate-400 uppercase font-bold">For smarter comments</p>
+                    </div>
+                  </div>
+                  <input 
+                    type="checkbox" 
+                    checked={(selectedNode.data as any).enrichPosts}
+                    onChange={(e) => updateNodeData(selectedNode.id, { enrichPosts: e.target.checked })}
+                    className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                  />
+                </div>
+              </div>
+            )}
 
             {(
               ['WAIT', 'DELAY'].includes((((selectedNode.data as any).subType || '') as string).toUpperCase()) ||

@@ -29,42 +29,104 @@ interface Conversation {
   status: 'PENDING' | 'CONNECTED' | 'REPLIED' | 'FAILED';
 }
 
-const mockConversations: Conversation[] = [
-  {
-    id: '1',
-    firstName: 'Alex',
-    lastName: 'Rivera',
-    headline: 'Senior Cloud Architect at AWS',
-    lastMessage: 'Hey! I saw your profile and would love to connect...',
-    timestamp: '10:45 AM',
-    isRead: false,
-    status: 'REPLIED'
-  },
-  {
-    id: '2',
-    firstName: 'Sarah',
-    lastName: 'Chen',
-    headline: 'Product Lead @ Google',
-    lastMessage: 'Thanks for reaching out. Let me check my schedule.',
-    timestamp: 'Yesterday',
-    isRead: true,
-    status: 'CONNECTED'
-  }
-];
+// (Removing mock data)
 
 export default function InboxPage() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConvo, setSelectedConvo] = useState<Conversation | null>(null);
+  const [messages, setMessages] = useState<any[]>([]);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<'all' | 'unread' | 'replied'>('all');
 
+  const fetchConversations = async () => {
+    try {
+      const res = await fetch('/api/v1/inbox/conversations', {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+      });
+      const data = await res.json();
+      const mapped = data.map((c: any) => ({
+        id: c.leadId,
+        firstName: c.firstName || 'Unknown',
+        lastName: c.lastName || '',
+        headline: c.jobTitle ? `${c.jobTitle} at ${c.company}` : (c.headline || 'LinkedIn Member'),
+        lastMessage: c.lastMessage?.content || 'No messages yet',
+        timestamp: c.lastMessage ? new Date(c.lastMessage.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
+        isRead: true,
+        status: c.status
+      }));
+      setConversations(mapped);
+    } catch (err) {
+      console.error('Failed to fetch:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const fetchMessages = async (leadId: string) => {
+    setIsLoadingMessages(true);
+    try {
+      const res = await fetch(`/api/v1/inbox/conversations/${leadId}`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+      });
+      const data = await res.json();
+      setMessages(data.messages || []);
+    } catch (err) {
+      console.error('Failed to fetch messages:', err);
+    } finally {
+      setIsLoadingMessages(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchConversations();
+  }, []);
+
+  useEffect(() => {
+    if (selectedConvo) {
+      fetchMessages(selectedConvo.id);
+    }
+  }, [selectedConvo]);
+
   const handleSync = async () => {
     setIsSyncing(true);
-    // Simulate API call
-    await new Promise(r => setTimeout(r, 2000));
-    setConversations(mockConversations);
-    setIsSyncing(false);
+    try {
+      const res = await fetch('/api/v1/inbox/sync', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+      });
+      if (res.ok) {
+        setTimeout(fetchConversations, 8000);
+      }
+    } catch (err) {
+      console.error('Sync failed:', err);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const [replyText, setReplyText] = useState('');
+
+  const handleSendMessage = async () => {
+    if (!selectedConvo || !replyText.trim()) return;
+    try {
+      const res = await fetch(`/api/v1/inbox/conversations/${selectedConvo.id}/messages`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}` 
+        },
+        body: JSON.stringify({ content: replyText })
+      });
+      if (res.ok) {
+        setReplyText('');
+        fetchMessages(selectedConvo.id);
+      }
+    } catch (err) {
+      console.error('Send failed:', err);
+    }
   };
 
   const filteredConversations = conversations.filter(c => {
@@ -219,28 +281,38 @@ export default function InboxPage() {
 
               {/* Messages Content */}
               <div className="flex-1 p-6 overflow-y-auto bg-slate-50/30">
-                <div className="space-y-6">
-                  <div className="flex justify-center">
-                    <span className="bg-slate-200/50 text-slate-500 text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider">
-                      Conversation Started
-                    </span>
+                {isLoadingMessages ? (
+                  <div className="h-full flex items-center justify-center">
+                    <RefreshCw className="w-6 h-6 animate-spin text-slate-300" />
                   </div>
-                  
-                  {/* Mock message bubble */}
-                  <div className="flex flex-col space-y-2">
-                    <div className="max-w-[80%] bg-white p-4 rounded-2xl rounded-tl-none border shadow-sm text-sm text-slate-700">
-                      {selectedConvo.lastMessage}
+                ) : (
+                  <div className="space-y-6">
+                    <div className="flex justify-center">
+                      <span className="bg-slate-200/50 text-slate-500 text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider">
+                        Conversation History
+                      </span>
                     </div>
-                    <span className="text-[10px] text-slate-400 font-medium ml-1">10:45 AM</span>
+                    
+                    {messages.map((msg, idx) => (
+                      <div 
+                        key={msg.id || idx} 
+                        className={cn("flex flex-col space-y-2", msg.direction === 'SENT' ? "items-end" : "items-start")}
+                      >
+                        <div className={cn(
+                          "max-w-[80%] p-4 rounded-2xl text-sm shadow-sm",
+                          msg.direction === 'SENT' 
+                            ? "bg-primary text-white rounded-tr-none shadow-lg shadow-primary/20 font-medium" 
+                            : "bg-white text-slate-700 rounded-tl-none border"
+                        )}>
+                          {msg.content}
+                        </div>
+                        <span className="text-[10px] text-slate-400 font-medium">
+                          {new Date(msg.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+                    ))}
                   </div>
-
-                  <div className="flex flex-col items-end space-y-2">
-                    <div className="max-w-[80%] bg-primary text-white p-4 rounded-2xl rounded-tr-none shadow-lg shadow-primary/20 text-sm font-medium">
-                      Hey {selectedConvo.firstName}, thanks for reaching out! I'd love to chat more about how we can help.
-                    </div>
-                    <span className="text-[10px] text-slate-400 font-medium mr-1">10:48 AM</span>
-                  </div>
-                </div>
+                )}
               </div>
 
               {/* Reply Box */}
@@ -248,9 +320,20 @@ export default function InboxPage() {
                 <div className="relative group">
                   <textarea 
                     placeholder="Type a message..."
+                    value={replyText}
+                    onChange={(e) => setReplyText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSendMessage();
+                      }
+                    }}
                     className="w-full p-4 pr-16 bg-slate-50 border-none rounded-3xl text-sm focus:ring-2 focus:ring-primary/20 min-h-[100px] resize-none transition-all group-focus-within:bg-white group-focus-within:shadow-xl"
                   />
-                  <button className="absolute bottom-4 right-4 bg-primary text-white p-3 rounded-2xl shadow-lg shadow-primary/30 hover:bg-primary/90 transition-all active:scale-95">
+                  <button 
+                    onClick={handleSendMessage}
+                    className="absolute bottom-4 right-4 bg-primary text-white p-3 rounded-2xl shadow-lg shadow-primary/30 hover:bg-primary/90 transition-all active:scale-95"
+                  >
                     <Sparkles className="w-5 h-5" />
                   </button>
                 </div>

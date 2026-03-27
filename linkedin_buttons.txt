@@ -1,0 +1,111 @@
+1.follow button:
+    <button class="d479502f abf9a459 b63c2012 eee373fa a880b7ba _4b26a9a7 c9b0cc68 e47919f0 _113f10cf b0071862 db7e3403 e20a027a _6ff53a83" type="button" componentkey="ee361bc5-af7b-4fef-b17e-e100c9fb142e" aria-label="Follow Vijay Sarathy"><span class="_7a214221 _39e29b78 f4e2409d e20a027a b63c2012 eee373fa db7e3403 e311863f _5fbe1e5d _4b26a9a7 c9b0cc68 _8c0079e4 _0ab5e095 _2e9eae9c _840123f0 _0c0abd8b be3cd208 _982f6da3 _99c2e8e3"><svg xmlns="http://www.w3.org/2000/svg" id="add-small" fill="currentColor" aria-hidden="true" data-supported-dps="16x16" viewBox="0 0 16 16" data-token-id="86" width="16" height="16" class="_1895856a f0a2e64d _2cd31129 _0ad6df90 _18d66a2d _3b23b8e9" role="img" aria-label=""><path d="M14 9H9v5H7V9H2V7h5V2h2v5h5z"></path></svg><div class="_3bd731c9 a880b7ba e7d21d8f"><span class="_5b8a0e03 _6e04278f _187b307a ef456906 _6baac719 _93c67489 d3e8c6ea _56de91f4 _08ff419b _76fb3600 fd2b750a c26de9dc _1103da34 d10904ee _9f815117 _35688590 a5d0b6b5 _8b2cdef7">Follow</span></div></span></button>
+2.like on recent post:
+    <button class="d479502f abf9a459 b63c2012 eee373fa a880b7ba _4b26a9a7 c9b0cc68 bf8e23c1 _113f10cf b0071862 db7e3403 e20a027a _6ff53a83" type="button" componentkey="172dad0b-c271-46e1-ae09-a527e8ea4178" aria-label="Reaction button state: no reaction"><span class="_7a214221 _39e29b78 f4e2409d e20a027a b63c2012 eee373fa db7e3403 e311863f _5fbe1e5d _4b26a9a7 c9b0cc68 _8c0079e4 _0ab5e095 _515c2557 b95f8fc0 _0c0abd8b be3cd208 _982f6da3 _5e40f127"><svg xmlns="http://www.w3.org/2000/svg" id="thumbs-up-outline-small" fill="currentColor" aria-hidden="true" data-supported-dps="16x16" viewBox="0 0 16 16" data-token-id="289" width="16" height="16" class="_1895856a f0a2e64d _2cd31129 _0ad6df90 _18d66a2d _3b23b8e9" role="img" aria-label=""><path d="m12.91 7-2.25-2.57a8.2 8.2 0 0 1-1.5-2.55L9 1.37A2.08 2.08 0 0 0 7 0a2.08 2.08 0 0 0-2.06 2.08v1.17a5.8 5.8 0 0 0 .31 1.89l.28.86H2.38A1.47 1.47 0 0 0 1 7.47a1.45 1.45 0 0 0 .64 1.21 1.48 1.48 0 0 0-.37 2.06 1.54 1.54 0 0 0 .62.51h.05a1.6 1.6 0 0 0-.19.71A1.47 1.47 0 0 0 3 13.42v.1A1.46 1.46 0 0 0 4.4 15h4.83a5.6 5.6 0 0 0 2.48-.58l1-.42H14V7zM12 12.11l-1.19.52a3.6 3.6 0 0 1-1.58.37H5.1a.55.55 0 0 1-.53-.4l-.14-.48-.49-.21a.56.56 0 0 1-.34-.6l.09-.56-.42-.42a.56.56 0 0 1-.09-.68L3.55 9l-.4-.61A.28.28 0 0 1 3.3 8h5L7.14 4.51a4.2 4.2 0 0 1-.2-1.26V2.08A.09.09 0 0 1 7 2a.1.1 0 0 1 .08 0l.18.51a10 10 0 0 0 1.9 3.24l2.84 3z"></path></svg><span class="_5b8a0e03 _6e04278f _187b307a ef456906 _6baac719 _93c67489 d3e8c6ea _56de91f4 _08ff419b _76fb3600 fd2b750a _3bd731c9 a880b7ba e7d21d8f _8b2cdef7">Like</span></span></button>
+3.comment on recent post:
+    <a class="d479502f abf9a459 b63c2012 eee373fa a880b7ba _4b26a9a7 c9b0cc68 e47919f0 _113f10cf b0071862 db7e3403 e20a027a _6ff53a83" aria-disabled="false" href="https://www.linkedin.com/feed/update/urn:li:activity:7441764306771230720/" componentkey="691259a7-2dc6-43a6-b5cb-acbf7fc0fb2f"><span class="_7a214221 _39e29b78 f4e2409d e20a027a b63c2012 eee373fa db7e3403 e311863f _5fbe1e5d _4b26a9a7 c9b0cc68 _8c0079e4 _0ab5e095 _515c2557 b95f8fc0 _0c0abd8b be3cd208 _982f6da3 _5e40f127"><svg xmlns="http://www.w3.org/2000/svg" id="comment-small" fill="currentColor" aria-hidden="true" data-supported-dps="16x16" viewBox="0 0 16 16" data-token-id="202" width="16" height="16" class="_1895856a f0a2e64d _2cd31129 _0ad6df90 _18d66a2d _3b23b8e9" role="img" aria-label=""><path d="M5 8h5v1H5zm11-.5v.08a6 6 0 0 1-2.75 5L8 16v-3H5.5A5.51 5.51 0 0 1 0 7.5 5.62 5.62 0 0 1 5.74 2h4.76A5.5 5.5 0 0 1 16 7.5m-2 0A3.5 3.5 0 0 0 10.5 4H5.74A3.62 3.62 0 0 0 2 7.5 3.53 3.53 0 0 0 5.5 11H10v1.33l2.17-1.39A4 4 0 0 0 14 7.58zM5 7h6V6H5z"></path></svg><div class="_3bd731c9 a880b7ba e7d21d8f"><span class="_5b8a0e03 _6e04278f _187b307a ef456906 _6baac719 _93c67489 d3e8c6ea _56de91f4 _08ff419b _76fb3600 fd2b750a c26de9dc _1103da34 d10904ee _9f815117 _35688590 a5d0b6b5 _8b2cdef7">Comment</span></div></span></a>
+
+
+4. connect button:
+    <a role="menuitem" tabindex="-1" class="cdbb21e5 _1b10fb6c fd148093 ebb9727e bb638a3d _1dd6b532 f12be072 cd578d87 b63c2012 a880b7ba _02e30b3a _83294f6e" href="https://www.linkedin.com/preload/custom-invite/?vanityName=vijay-sarathy" componentkey="f48b8d37-28fa-4ea4-8310-2dbbdb8b5421" data-tabindex="0"><div class="f4e2409d _4f8f032d _8e6232b6 c9c4f7f2 _6fdcbe02 _83294f6e fe83b6d1 _5cd56edd e20a027a f46ed440 b009c63c _25d3b36d" componentkey="f48b8d37-28fa-4ea4-8310-2dbbdb8b5421" aria-label="Invite Vijay Sarathy to connect"><svg xmlns="http://www.w3.org/2000/svg" id="connect-small" fill="currentColor" aria-hidden="true" data-supported-dps="16x16" viewBox="0 0 16 16" data-token-id="414" width="16" height="16" class="_1895856a ce03fb25 f0a2e64d _5ec0fa3d _06dca71e _827b3d15 _910ad947" role="img" aria-label=""><path d="M9 4a3 3 0 1 1-3-3 3 3 0 0 1 3 3M6.75 8h-1.5A2.25 2.25 0 0 0 3 10.25V15h6v-4.75A2.25 2.25 0 0 0 6.75 8M13 8V6h-1v2h-2v1h2v2h1V9h2V8z"></path></svg><div class="_7d202d4f f4e2409d _83294f6e _58360e01 _5cd56edd a6979c19 f46ed440 b009c63c"><p class="_5b8a0e03 _56de91f4 e824e5c9 _383c5e17 _3bd731c9 _4b26a9a7 _00ffa414 a02bc07e e7d21d8f">Connect</p></div></div></a>
+    <div class="f4e2409d _4f8f032d _8e6232b6 c9c4f7f2 _6fdcbe02 _83294f6e fe83b6d1 _5cd56edd e20a027a f46ed440 b009c63c _25d3b36d" componentkey="f48b8d37-28fa-4ea4-8310-2dbbdb8b5421" aria-label="Invite Vijay Sarathy to connect"><svg xmlns="http://www.w3.org/2000/svg" id="connect-small" fill="currentColor" aria-hidden="true" data-supported-dps="16x16" viewBox="0 0 16 16" data-token-id="414" width="16" height="16" class="_1895856a ce03fb25 f0a2e64d _5ec0fa3d _06dca71e _827b3d15 _910ad947" role="img" aria-label=""><path d="M9 4a3 3 0 1 1-3-3 3 3 0 0 1 3 3M6.75 8h-1.5A2.25 2.25 0 0 0 3 10.25V15h6v-4.75A2.25 2.25 0 0 0 6.75 8M13 8V6h-1v2h-2v1h2v2h1V9h2V8z"></path></svg><div class="_7d202d4f f4e2409d _83294f6e _58360e01 _5cd56edd a6979c19 f46ed440 b009c63c"><p class="_5b8a0e03 _56de91f4 e824e5c9 _383c5e17 _3bd731c9 _4b26a9a7 _00ffa414 a02bc07e e7d21d8f">Connect</p></div></div>
+
+5. contact info:
+    <a class="ac3decfd _3297b9e6 dd340d87 eea2efd0 _9daee16c _61e6ac60 _35afd163" href="https://www.linkedin.com/in/vijay-sarathy/overlay/contact-info/">Contact info</a>
+    #sometimes doesnot show contact details, when the user is not having premium account
+
+6. recent post content:
+    <span class="_3f5234ed _1103da34 d10904ee _9f815117 _35688590 a5d0b6b5 f0a2e64d _6ff53a83" tabindex="-1" data-testid="expandable-text-box">Dear Engineers,<br><br>I've put below an article on Sizing Restriction Orifices. It should be a good exercise for graduate engineers who are looking to pursue a career in Oil &amp; Gas Design and EPC companies.<br><br>You get to learn how to,<br><br>1. Estimate hydrocarbon mixture properties based on SRK equation of state (EoS)<br><br>2. Sizing a restriction orifice [RO] based on ISO 5167-2 design standard<br><br>3. Predicting exit temperatures in orifice flow<br><br>Once you get a hang of manually solving an EoS for mixtures by hand, then it should be a breeze setting up your own MS-Excel sheets for various other EoS, like Peng-Robinson, Lee-Kesler-Plocker, BWRS, Stryjek–Vera, etc.<br><br>Note:<br><br>SRK does not mean the Bollywood superstar, Shah Rukh Khan. It stands for "Soave-Redlich-Kwong" equation of state 😂<br><br>Btw... <br><br>In a few months, I'd be completing 10 years of writing on engineering matters, and I've lost track of what I've published on Linkedin, over the years. Nevertheless, with 40K+ followers now, the effort itself felt like Odysseus's journey to the Kingdom of Ithaca in Homer's epic! 😁<br><br>Exhausted &amp; Exasperatingly Yours,<br>Vijay 😄😄<br><br><a class="a880b7ba _35afd163" href="https://www.linkedin.com/search/results/all/?keywords=%23engineers&amp;origin=HASH_TAG_FROM_FEED" tabindex="-1"><span class="ac3decfd"><strong>#engineers</strong></span></a><span class="_0bc61ee0"> </span><a class="a880b7ba _35afd163" href="https://www.linkedin.com/search/results/all/?keywords=%23chemicalengineers&amp;origin=HASH_TAG_FROM_FEED" tabindex="-1"><span class="ac3decfd"><strong>#chemicalengineers</strong></span></a><span class="_0bc61ee0"> </span><a class="a880b7ba _35afd163" href="https://www.linkedin.com/search/results/all/?keywords=%23mechanicalengineers&amp;origin=HASH_TAG_FROM_FEED" tabindex="-1"><span class="ac3decfd"><strong>#mechanicalengineers</strong></span></a><button class="_35b59d4e _01b054de cddbc53a _4ddcac7a _5593e02a eda7de22 bb93cfcd _272640b2 _65b3ecb1 _003426a9 b63c2012 _93afae24 _0d6e34b3 _9f9cdcf0 _1acd459d" type="button" aria-hidden="true" data-testid="expandable-text-button" style="--d163fea6: var(--b824af3b); inset-inline-start: 170.422px; pointer-events: none;"><span style="pointer-events: auto;"><span><span class="c0b6e90e">…</span><span> more</span></span></span></button></span>
+
+
+**Strategies:**
+✅ 1. FOLLOW BUTTON
+🔍 Best selector strategy
+
+Use aria-label (most stable):
+
+const followBtn = page.locator('button[aria-label^="Follow"]').first();
+✅ Why it works
+aria-label="Follow Vijay Sarathy" → predictable prefix
+Independent of UI redesigns
+⚠️ Edge case
+
+If already followed:
+
+label becomes "Following ..."
+
+👉 handle it:
+
+if (await followBtn.isVisible()) {
+    await followBtn.click();
+}
+✅ 2. LIKE BUTTON (on post)
+🔍 Best selector
+const likeBtn = page.locator('button[aria-label*="Reaction button"]').first();
+💡 Better logic (avoid double-like)
+const likeBtn = page.locator('button[aria-label*="Reaction button"]').first();
+
+const label = await likeBtn.getAttribute('aria-label');
+
+if (label.includes('no reaction')) {
+    await likeBtn.click();
+}
+✅ Why
+LinkedIn encodes state in aria-label
+"no reaction" → not liked
+"Like" or "Celebrate" → already reacted
+✅ 3. COMMENT BUTTON
+🔍 Best approach (DON’T click this anchor directly)
+
+That <a> opens a new page, not inline comment.
+
+✅ Better strategy
+const commentBtn = page.locator('button:has-text("Comment")').first();
+await commentBtn.click();
+Then type:
+const commentBox = page.locator('[contenteditable="true"]').last();
+await commentBox.click();
+await page.keyboard.type("Nice post!", { delay: 50 });
+✅ 4. CONNECT BUTTON
+🔍 Best selector
+const connectBtn = page.locator('a[aria-label^="Invite"][href*="custom-invite"]').first();
+✅ Flow after click
+await connectBtn.click();
+
+// Wait for modal
+const sendBtn = page.locator('button:has-text("Send")').first();
+await sendBtn.click();
+⚠️ Edge cases
+Sometimes button is hidden inside "More"
+Sometimes already connected → button not present
+
+👉 fallback:
+
+const moreBtn = page.locator('button:has-text("More")').first();
+✅ 5. CONTACT INFO
+🔍 Selector
+const contactBtn = page.locator('a[href*="overlay/contact-info"]').first();
+⚠️ Important reality
+
+Even if you click:
+
+Email/phone may be hidden
+Depends on:
+connection level
+privacy settings
+NOT just premium
+
+👉 handle gracefully:
+
+if (await contactBtn.isVisible()) {
+    await contactBtn.click();
+}
+✅ 6. RECENT POST CONTENT
+🔍 Selector
+const postText = await page.locator('[data-testid="expandable-text-box"]').first().innerText();
+✅ Expand if needed
+const moreBtn = page.locator('[data-testid="expandable-text-button"]').first();
+
+if (await moreBtn.isVisible()) {
+    await moreBtn.click();
+}

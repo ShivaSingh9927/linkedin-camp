@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { prisma } from '@repo/db';
 import { parse } from 'csv-parse';
 import fs from 'fs';
+import { getActionQueue } from '../services/queue.service';
 
 // Helper to get team user ids
 const getTeamUserIds = async (userId: string) => {
@@ -379,6 +380,7 @@ export const getLeads = async (req: any, res: Response) => {
     }
 };
 
+
 export const deleteLead = async (req: any, res: Response) => {
     const { id } = req.params;
     const userId = req.user.id;
@@ -390,5 +392,186 @@ export const deleteLead = async (req: any, res: Response) => {
         res.status(204).send();
     } catch (error) {
         res.status(500).json({ error: 'Failed to delete lead' });
+    }
+};
+
+export const updateLeadTags = async (req: any, res: Response) => {
+    const { id } = req.params;
+    const { tags } = req.body;
+    const userId = req.user.id;
+
+    if (!Array.isArray(tags)) {
+        return res.status(400).json({ error: 'Tags must be an array' });
+    }
+
+    try {
+        const lead = await prisma.lead.update({
+            where: { id, userId },
+            data: { tags }
+        });
+        res.json(lead);
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to update tags' });
+    }
+};
+
+export const bulkUpdateLeadsTags = async (req: any, res: Response) => {
+    const { leadIds, tags, operation } = req.body; // operation: 'ADD', 'REMOVE', 'SET'
+    const userId = req.user.id;
+
+    if (!Array.isArray(leadIds) || !Array.isArray(tags)) {
+        return res.status(400).json({ error: 'leadIds and tags must be arrays' });
+    }
+
+    try {
+        if (operation === 'SET') {
+            await prisma.lead.updateMany({
+                where: { id: { in: leadIds }, userId },
+                data: { tags }
+            });
+        } else {
+            // Prisma doesn't support array push/pull in updateMany yet, 
+            // so we loop for individual leads in the background or use a raw query if performance is critical.
+            // For now, simpler looping logic:
+            for (const id of leadIds) {
+                const lead = await prisma.lead.findUnique({ where: { id, userId }, select: { tags: true } });
+                if (!lead) continue;
+
+                let newTags = [...lead.tags];
+                if (operation === 'ADD') {
+                    tags.forEach(t => { if (!newTags.includes(t)) newTags.push(t); });
+                } else if (operation === 'REMOVE') {
+                    newTags = newTags.filter(t => !tags.includes(t));
+                }
+
+                await prisma.lead.update({
+                    where: { id, userId },
+                    data: { tags: newTags }
+                });
+            }
+        }
+        res.json({ success: true, message: `Updated ${leadIds.length} leads` });
+    } catch (error) {
+        console.error('Bulk tag error:', error);
+        res.status(500).json({ error: 'Failed to bulk update tags' });
+    }
+};
+
+export const getCompanies = async (req: any, res: Response) => {
+    const userId = req.user.id;
+
+    try {
+        // Fetch leads that have a company associated
+        const leads = await prisma.lead.findMany({
+            where: { 
+                userId, 
+                company: { not: null } 
+            },
+            select: { 
+                id: true, 
+                company: true, 
+                status: true,
+                firstName: true,
+                lastName: true
+            }
+        });
+
+        const companyGroups: Record<string, any> = {};
+
+        leads.forEach(lead => {
+            const name = lead.company?.trim();
+            if (!name) return;
+
+            if (!companyGroups[name]) {
+                companyGroups[name] = {
+                    name,
+                    id: name, // We use name as ID for simplicity since it's our grouping key
+                    totalLeads: 0,
+                    statusCounts: {
+                        IMPORTED: 0,
+                        PENDING: 0,
+                        CONNECTED: 0,
+                        REPLIED: 0,
+                        BOUNCED: 0
+                    },
+                    sampleEmployees: []
+                };
+            }
+
+            const group = companyGroups[name];
+            group.totalLeads++;
+            group.statusCounts[lead.status] = (group.statusCounts[lead.status] || 0) + 1;
+            
+            if (group.sampleEmployees.length < 3) {
+                group.sampleEmployees.push(`${lead.firstName} ${lead.lastName}`);
+            }
+        });
+
+        // Convert to array and sort by volume
+        const result = Object.values(companyGroups).sort((a: any, b: any) => b.totalLeads - a.totalLeads);
+        
+        res.json(result);
+    } catch (error) {
+        console.error('Error fetching companies:', error);
+        res.status(500).json({ error: 'Failed to fetch companies' });
+    }
+};
+
+export const enrichLead = async (req: any, res: Response) => {
+    const { id: leadId } = req.params;
+    const userId = req.user.id;
+    const { force = false } = req.body;
+
+    try {
+        const lead = await prisma.lead.findFirst({
+            where: { id: leadId, userId }
+        });
+
+        if (!lead) {
+            return res.status(404).json({ error: 'Lead not found' });
+        }
+
+        // Check if data already exists and user is not forcing a refresh
+        if (!force && (lead.aboutInfo || lead.company || lead.email)) {
+             return res.json({ 
+                success: true, 
+                alreadyEnriched: true,
+                message: 'Lead already enriched. Use "force: true" if you want to re-scrape from LinkedIn.' 
+             });
+        }
+
+        const actionQueue = getActionQueue();
+        
+        // Push a manual enrichment job
+        await actionQueue.add(
+            'execute-workflow-step',
+            {
+                userId,
+                leadId,
+                currentStepId: `manual_enrichment_${Date.now()}`,
+                workflowJson: {
+                    nodes: [{
+                        id: `manual_enrichment_${Date.now()}`,
+                        type: 'ACTION',
+                        data: {
+                            subType: 'VISIT',
+                            enrichCompany: true,
+                            enrichContact: true,
+                            enrichAbout: true,
+                            enrichPosts: true,
+                        }
+                    }],
+                    edges: []
+                }
+            },
+            {
+                removeOnComplete: true,
+            }
+        );
+
+        res.json({ success: true, message: 'Enrichment task queued successfully.' });
+    } catch (error) {
+        console.error('Error queuing enrichment:', error);
+        res.status(500).json({ error: 'Failed to queue enrichment task' });
     }
 };

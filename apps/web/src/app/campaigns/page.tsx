@@ -132,7 +132,7 @@ export default function CampaignsPage() {
         }
     };
 
-    const startCreateCampaign = (type: 'linkedin' | 'email' | 'custom') => {
+    const startCreateCampaign = (type: 'linkedin' | 'email' | 'enrichment' | 'custom') => {
         setShowCreateMenu(false);
         let defaultName = 'New Campaign';
         let workflowJson: any = { nodes: [], edges: [] };
@@ -152,6 +152,29 @@ export default function CampaignsPage() {
                     { id: 'e2', source: 'n1', target: 'n2' },
                     { id: 'e3', source: 'n2', target: 'n3' },
                     { id: 'e4', source: 'n3', target: 'n4' },
+                ],
+            };
+        } else if (type === 'enrichment') {
+            defaultName = 'Lead Enrichment';
+            workflowJson = {
+                nodes: [
+                    { id: 'trigger', type: 'TRIGGER', subType: 'START', data: { label: 'Trigger: Lead Added' }, position: { x: 250, y: 0 } },
+                    { 
+                        id: 'n1', 
+                        type: 'ACTION', 
+                        subType: 'VISIT', 
+                        data: { 
+                            label: 'Profile Visit (Enrich)', 
+                            enrichCompany: true, 
+                            enrichAbout: true, 
+                            enrichContact: true, 
+                            enrichPosts: true 
+                        }, 
+                        position: { x: 250, y: 100 } 
+                    },
+                ],
+                edges: [
+                    { id: 'e1', source: 'trigger', target: 'n1' },
                 ],
             };
         } else if (type === 'email') {
@@ -240,6 +263,18 @@ export default function CampaignsPage() {
                                     <div>
                                         <p className="text-sm font-black text-foreground uppercase tracking-tight">LinkedIn</p>
                                         <p className="text-[10px] font-bold text-muted-foreground uppercase opacity-60">Growth Machine</p>
+                                    </div>
+                                </button>
+                                <button
+                                    onClick={() => startCreateCampaign('enrichment')}
+                                    className="w-full flex items-center space-x-4 px-5 py-4 rounded-3xl hover:bg-muted transition-all text-left group"
+                                >
+                                    <div className="w-10 h-10 bg-amber-500/10 rounded-2xl flex items-center justify-center group-hover:bg-amber-500/20 transition-colors">
+                                        <Wrench className="w-5 h-5 text-amber-500" />
+                                    </div>
+                                    <div>
+                                        <p className="text-sm font-black text-foreground uppercase tracking-tight">Lead Enrichment</p>
+                                        <p className="text-[10px] font-bold text-muted-foreground uppercase opacity-60">Scrape & Save</p>
                                     </div>
                                 </button>
                                 <button

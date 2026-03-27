@@ -16,7 +16,8 @@ import {
   ChevronRight,
   HelpCircle,
   Gem,
-  Plus
+  Plus,
+  Building2
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { motion } from 'framer-motion';
@@ -25,6 +26,7 @@ const menuItems = [
   { label: 'Workflows', icon: LayoutDashboard, href: '/' },
   { label: 'Campaigns', icon: Target, href: '/campaigns' },
   { label: 'Prospects', icon: Users, href: '/prospects' },
+  { label: 'Companies', icon: Building2, href: '/companies' },
   { label: 'Inbox', icon: Inbox, href: '/inbox' },
   { label: 'Queue', icon: Layers, href: '/queue' },
   { label: 'Analytics', icon: BarChart3, href: '/analytics' },

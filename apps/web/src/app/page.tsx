@@ -14,6 +14,7 @@ import {
   Pause,
   TrendingUp,
   Mail,
+  Send,
   Eye,
   UserPlus,
   Loader2,
@@ -43,6 +44,11 @@ export default function DashboardPage() {
     sentRequests: 0,
     replyRate: 0,
     dailyRemaining: 80,
+    today: {
+      invites: 0,
+      messages: 0,
+      visits: 0
+    }
   });
 
   useEffect(() => {
@@ -258,6 +264,46 @@ export default function DashboardPage() {
                       </button>
                     </Link>
                   </div>
+                </div>
+
+                <div className="bg-card rounded-[3rem] border border-border p-8 shadow-soft">
+                  <div className="flex items-center justify-between mb-6 px-2">
+                    <h4 className="font-black text-muted-foreground uppercase tracking-widest text-[10px]">Active Quotas</h4>
+                    <div className="flex items-center space-x-2">
+                        <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+                        <span className="text-[9px] font-black text-emerald-600 uppercase tracking-widest">Processing</span>
+                    </div>
+                  </div>
+                  <div className="space-y-5">
+                    {[
+                      { label: 'Invitations', value: stats.today?.invites || 0, total: 30, icon: UserPlus, color: 'text-amber-500', bg: 'bg-amber-500/10' },
+                      { label: 'Messages', value: stats.today?.messages || 0, total: 50, icon: Send, color: 'text-blue-500', bg: 'bg-blue-500/10' },
+                      { label: 'Direct Visits', value: stats.today?.visits || 0, total: 80, icon: Eye, color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
+                    ].map((q) => (
+                      <div key={q.label} className="group">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center space-x-2">
+                            <div className={cn("p-1.5 rounded-lg", q.bg)}>
+                              <q.icon className={cn("w-3.5 h-3.5", q.color)} />
+                            </div>
+                            <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">{q.label}</span>
+                          </div>
+                          <span className="text-[10px] font-black text-slate-400 tracking-widest">{q.value}/{q.total}</span>
+                        </div>
+                        <div className="w-full h-1 bg-muted rounded-xl overflow-hidden">
+                          <div 
+                            className={cn("h-full rounded-full transition-all duration-1000", q.color.replace('text', 'bg'))}
+                            style={{ width: `${(q.value / q.total) * 100}%` }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <Link href="/campaigns/queue">
+                    <button className="w-full mt-6 py-3 border border-border rounded-xl text-[9px] font-black uppercase tracking-widest text-muted-foreground hover:bg-muted hover:text-primary transition-all">
+                      Advanced Queue Manager
+                    </button>
+                  </Link>
                 </div>
 
                 <div className="bg-card rounded-[3rem] border border-border p-8 shadow-soft">

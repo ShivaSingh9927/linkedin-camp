@@ -1,4 +1,4 @@
-import { Worker, Job } from 'bullmq';
+import { Worker, Job, Queue } from 'bullmq';
 import { prisma } from '@repo/db';
 import { chromium } from 'playwright-extra';
 const stealth = require('puppeteer-extra-plugin-stealth')();
@@ -8,6 +8,8 @@ chromium.use(stealth);
 
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
 const redisConnection = REDIS_URL ? new Redis(REDIS_URL, { maxRetriesPerRequest: null }) : null;
+
+export const inboxQueue = redisConnection ? new Queue('inbox-sync', { connection: redisConnection as any }) : null;
 
 export const syncInbox = async (userId: string) => {
     const user = await prisma.user.findUnique({
@@ -21,112 +23,168 @@ export const syncInbox = async (userId: string) => {
 
     console.log(`[INBOX-WORKER] Syncing inbox for user ${userId}...`);
 
-    const sessionPath = `/app/sessions/${userId}`;
     let context;
     let browser;
 
     try {
         const launchOptions: any = {
-            headless: true,
+            headless: true, // Headless in production
             args: ['--no-sandbox', '--disable-setuid-sandbox']
         };
 
-        // Use the purely in-memory context fallback to avoid SingletonLock issues
-        console.log(`[INBOX-WORKER] Launching standard browser for user ${userId} to avoid SingletonLock`);
-        
-        launchOptions.locale = 'en-IN';
-        launchOptions.timezoneId = 'Asia/Kolkata';
-
         browser = await chromium.launch(launchOptions);
-        context = await browser.newContext(launchOptions);
+        context = await browser.newContext({
+            ...launchOptions,
+            viewport: { width: 1920, height: 1080 }
+        });
         
-        // --- INJECT COOKIES/STORAGE FOR SESSION PARITY ---
+        // --- INJECT SESSION ---
         if (user.linkedinCookie) {
             try {
                 const cookies = JSON.parse(user.linkedinCookie);
-                if (Array.isArray(cookies)) {
-                    await context.addCookies(cookies);
-                } else {
-                    await context.addCookies([{ 
-                        name: 'li_at', 
-                        value: user.linkedinCookie, 
-                        domain: '.linkedin.com', 
-                        path: '/',
-                        secure: true, 
-                        httpOnly: true, 
-                        sameSite: 'Lax' 
-                    }]);
-                }
-            } catch (e) {
-                console.error('[INBOX-WORKER] Error parsing cookies from DB:', e);
-            }
+                await context.addCookies(cookies);
+            } catch (e) { console.error('[INBOX-WORKER] Cookie error:', e); }
         }
         
         if (user.linkedinLocalStorage) {
             try {
-                const localStorageData = JSON.parse(user.linkedinLocalStorage);
-                await context.addInitScript((storage: any) => {
-                    for (const key in storage) {
-                        window.localStorage.setItem(key, storage[key]);
-                    }
-                }, localStorageData);
-            } catch (e) {
-                console.error('[INBOX-WORKER] Error injecting LocalStorage:', e);
-            }
+                const storage = JSON.parse(user.linkedinLocalStorage);
+                await context.addInitScript((s: any) => {
+                    for (const k in s) window.localStorage.setItem(k, s[k]);
+                }, storage);
+            } catch (e) { }
         }
 
         const page = await context.newPage();
-        await page.goto('https://www.linkedin.com/messaging/', { waitUntil: 'networkidle' });
-
-        // Basic message extraction logic
-        const conversations = await page.$$eval('.msg-conversations-container__convo-item', (items: any[]) => {
-            return items.slice(0, 10).map(item => {
-                const name = item.querySelector('.msg-conversation-card__participant-names')?.innerText.trim();
-                const lastMsg = item.querySelector('.msg-conversation-card__message-snippet-body')?.innerText.trim();
-                const link = item.querySelector('a')?.href;
-                return { name, lastMsg, link };
-            });
+        
+        // Block heavy assets
+        await page.route('**/*', (route) => {
+            const type = route.request().resourceType();
+            if (['image', 'media', 'font'].includes(type)) return route.abort();
+            return route.continue();
         });
 
-        console.log(`[INBOX-WORKER] Found ${conversations.length} recent conversations.`);
+        console.log(`[INBOX-WORKER] 📬 Navigating to LinkedIn Inbox...`);
+        await page.goto('https://www.linkedin.com/messaging/', { waitUntil: 'domcontentloaded', timeout: 60000 });
+        await new Promise(r => setTimeout(r, 5000)); // Wait for threads to load
 
-        for (const convo of conversations) {
-            // Find lead in database
-            const lead = await prisma.lead.findFirst({
+        // 1. SCAN THREADS
+        const threadItems = page.locator('.msg-conversation-listitem');
+        const threadCount = await threadItems.count();
+        console.log(`[INBOX-WORKER] Found ${threadCount} threads in left pane.`);
+
+        const syncLimit = Math.min(threadCount, 5); // Sync top 5 active conversations
+        
+        for (let i = 0; i < syncLimit; i++) {
+            const currentItem = threadItems.nth(i);
+            
+            // Extract participant name from left pane
+            const nameLoc = currentItem.locator('.msg-conversation-listitem__participant-names, .msg-conversation-card__participant-names').first();
+            let participantName = "Unknown";
+            if (await nameLoc.isVisible()) {
+                const rawName = await nameLoc.innerText();
+                participantName = rawName.split('\n')[0].trim();
+            }
+
+            console.log(`[INBOX-WORKER] 💬 Loading thread ${i + 1}/${syncLimit}: ${participantName}`);
+            await currentItem.click({ force: true });
+            await new Promise(r => setTimeout(r, 3000));
+
+            const threadUrl = page.url();
+
+            // 2. PARSE MESSAGES
+            const chatHistory = await page.evaluate(() => {
+                const msgs = [];
+                const eventNodes = Array.from(document.querySelectorAll('.msg-s-message-list__event, li.msg-s-message-list__event'));
+
+                for (let eventNode of eventNodes) {
+                    const bodyNode = eventNode.querySelector('.msg-s-event-listitem__body, .msg-s-event__content');
+                    if (!bodyNode) continue;
+
+                    const text = (bodyNode as HTMLElement).innerText.trim();
+                    if (!text) continue;
+
+                    let senderType: 'SENT' | 'RECEIVED' = 'RECEIVED';
+                    
+                    // Robust sender check using aria-labels
+                    const optionEl = eventNode.querySelector('[aria-label*="Options for"]');
+                    if (optionEl) {
+                        const ariaLabel = optionEl.getAttribute('aria-label') || '';
+                        if (ariaLabel.includes('your message')) {
+                            senderType = 'SENT';
+                        }
+                    } else if (eventNode.querySelector('.msg-s-event-with-indicator__sending-indicator')) {
+                        senderType = 'SENT';
+                    }
+
+                    msgs.push({ text, direction: senderType });
+                }
+                return msgs;
+            });
+
+            console.log(`[INBOX-WORKER] Extracted ${chatHistory.length} messages for ${participantName}`);
+
+            // 3. MATCH LEAD & SAVE
+            // Try matching by threadUrl (if we stored it before) or name
+            let lead = await prisma.lead.findFirst({
                 where: {
                     userId: userId,
                     OR: [
-                        { firstName: { contains: convo.name?.split(' ')[0] || '' } },
-                        { lastName: { contains: convo.name?.split(' ')[1] || convo.name || '' } }
+                        { firstName: { contains: participantName.split(' ')[0] || '' }, lastName: { contains: participantName.split(' ')[1] || '' } },
+                        { firstName: { contains: participantName } }
                     ]
                 }
             });
 
             if (lead) {
-                // If the user has replied, mark the lead status appropriately
-                // This is a naive check - in a real app we'd compare dates and message owners
-                if (convo.lastMsg && !convo.lastMsg.includes('You sent')) {
-                    console.log(`[INBOX-WORKER] Detected reply from lead: ${lead.firstName} ${lead.lastName}`);
+                let hasNewReply = false;
 
-                    // Update campaign lead status to REPLIED
-                    await prisma.campaignLead.updateMany({
-                        where: { leadId: lead.id, isCompleted: false },
-                        data: { status: 'REPLIED' }
+                for (const msg of chatHistory) {
+                    // Deduplicate by content check (simple version)
+                    const existing = await prisma.message.findFirst({
+                        where: {
+                            leadId: lead.id,
+                            content: msg.text,
+                            direction: msg.direction
+                        }
                     });
 
+                    if (!existing) {
+                        await prisma.message.create({
+                            data: {
+                                userId,
+                                leadId: lead.id,
+                                direction: msg.direction,
+                                content: msg.text,
+                                source: 'LINKEDIN_SYNC',
+                                sentAt: new Date()
+                            }
+                        });
+
+                        if (msg.direction === 'RECEIVED') hasNewReply = true;
+                    }
+                }
+
+                if (hasNewReply) {
+                    console.log(`[INBOX-WORKER] 🔔 New reply detected from ${participantName}`);
+                    
                     await prisma.lead.update({
                         where: { id: lead.id },
                         data: { status: 'REPLIED' }
                     });
 
-                    // Trigger "Reply" notification (Mock logic)
+                    await prisma.campaignLead.updateMany({
+                        where: { leadId: lead.id, isCompleted: false },
+                        data: { status: 'REPLIED' }
+                    });
+
                     await prisma.notification.create({
                         data: {
-                            userId: userId,
+                            userId,
                             title: 'New Reply Received',
-                            body: `${convo.name} just messaged you on LinkedIn.`,
+                            body: `${participantName} messaged you on LinkedIn.`,
                             type: 'REPLY',
-                            meta: { leadId: lead.id, snippet: convo.lastMsg }
+                            meta: { leadId: lead.id }
                         }
                     });
                 }
@@ -135,8 +193,6 @@ export const syncInbox = async (userId: string) => {
 
         console.log(`[INBOX-WORKER] Inbox sync completed for user ${userId}`);
 
-    } catch (error: any) {
-        console.error(`[INBOX-WORKER] Error syncing inbox for ${userId}:`, error.message);
     } finally {
         if (context) await context.close().catch(() => {});
         if (browser) await browser.close().catch(() => {});

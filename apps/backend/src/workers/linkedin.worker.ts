@@ -124,8 +124,8 @@ export const processWorkflowStep = async (data: any, job: Job) => {
         const launchOptions: any = {
             headless: false,
             args: [
-                '--no-sandbox', 
-                '--disable-setuid-sandbox', 
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
                 '--disable-blink-features=AutomationControlled',
                 '--start-maximized',
                 '--disable-web-security'
@@ -160,29 +160,29 @@ export const processWorkflowStep = async (data: any, job: Job) => {
         console.log(`[WORKER] Launching standard browser for ${userId} (Mirroring phase2.js behavior)`);
         browser = await chromium.launch(launchOptions);
         context = await browser.newContext(contextOptions);
-        
+
         // --- ALWAYS LOAD COOKIES FROM DB (Forces sync parity) ---
         if (user.linkedinCookie) {
             try {
                 const domainToInject = user.proxy ? '.linkedin.com' : 'linkedin.com'; // Adjust based on proxy env
                 const cookies = JSON.parse(user.linkedinCookie);
-                
+
                 // Basic sanity check: ensure we have an array
                 if (Array.isArray(cookies)) {
-                     console.log(`[WORKER] Forcing Injection of ${cookies.length} cookies from DB for user ${userId}`);
-                     await context.addCookies(cookies);
+                    console.log(`[WORKER] Forcing Injection of ${cookies.length} cookies from DB for user ${userId}`);
+                    await context.addCookies(cookies);
                 } else {
-                     // Fallback for single li_at string
-                     console.log(`[WORKER] Forcing Injection of li_at cookie for user ${userId}`);
-                     await context.addCookies([{ 
-                         name: 'li_at', 
-                         value: user.linkedinCookie, 
-                         domain: '.linkedin.com', 
-                         path: '/',
-                         secure: true, 
-                         httpOnly: true, 
-                         sameSite: 'Lax' 
-                     }]);
+                    // Fallback for single li_at string
+                    console.log(`[WORKER] Forcing Injection of li_at cookie for user ${userId}`);
+                    await context.addCookies([{
+                        name: 'li_at',
+                        value: user.linkedinCookie,
+                        domain: '.linkedin.com',
+                        path: '/',
+                        secure: true,
+                        httpOnly: true,
+                        sameSite: 'Lax'
+                    }]);
                 }
             } catch (e) {
                 console.error('[WORKER] Error parsing cookies from DB:', e);
@@ -276,31 +276,40 @@ export const processWorkflowStep = async (data: any, job: Job) => {
         await page.waitForTimeout(5000); // Wait for dynamic content
         const finalUrl = page.url();
         const pageTitle = await page.title();
-        const isLoggedIn = await page.isVisible('.global-nav') || 
-                           await page.isVisible('#global-nav') || 
-                           await page.isVisible('input[placeholder="Search"]') ||
-                           pageTitle.includes('Feed');
+        const isLoggedIn = await page.isVisible('.global-nav') ||
+            await page.isVisible('#global-nav') ||
+            await page.isVisible('input[placeholder="Search"]') ||
+            pageTitle.includes('Feed');
 
         const isAuthWall = finalUrl.includes('authwall') || finalUrl.includes('login') || finalUrl.includes('checkpoint');
 
         if (isAuthWall || !isLoggedIn) {
             console.log(`[WORKER] ⚠️ Session invalid. URL: ${finalUrl}, Title: ${pageTitle}, LoggedInMarker: ${isLoggedIn}`);
-            
+
             // Capture evidence for debug
             const screenshotPath = `/tmp/worker_fail_${userId}_${Date.now()}.png`;
-            await page.screenshot({ path: screenshotPath, fullPage: true }).catch(() => {});
+            await page.screenshot({ path: screenshotPath, fullPage: true }).catch(() => { });
             console.log(`[WORKER] Failure screenshot saved to: ${screenshotPath} (inside container)`);
-            
-            // NOTE: We no longer auto-clear the session path here immediately.
-            // A proxy timeout might trigger this page redirect. Let the user re-sync manually 
-            // without destructively wiping the database state yet.
+
+            // PAUSE THE CAMPAIGN
+            if (campaignId) {
+                try {
+                    await prisma.campaign.update({
+                        where: { id: campaignId },
+                        data: { status: 'PAUSED' }
+                    });
+                    console.log(`[WORKER] ⏸️ Campaign ${campaignId} PAUSED due to invalid session for user ${userId}.`);
+                } catch (e) {
+                    console.error('[WORKER] Error updating campaign status:', e);
+                }
+            }
 
             // Send notification to user
             await prisma.notification.create({
                 data: {
                     userId,
                     title: 'LinkedIn Session Expired',
-                    body: 'Your LinkedIn session has expired. Please go to Settings and click Sync LinkedIn to re-authenticate.',
+                    body: 'Your LinkedIn session has expired. The campaign has been paused. Please re-sync to resume.',
                     type: 'ERROR'
                 }
             });
@@ -310,34 +319,34 @@ export const processWorkflowStep = async (data: any, job: Job) => {
         // --- PHASE 2: HUMAN-STYLE SEARCH NAVIGATION ---
         console.log('[WORKER] Phase 2: Human-style Search for Profile...');
         const searchInput = page.locator('input[placeholder="Search"], #global-nav-typeahead input, .search-global-typeahead__input').first();
-        
+
         try {
             await searchInput.waitFor({ state: 'visible', timeout: 20000 });
             await wait(randomRange(1000, 3000));
             await searchInput.click();
-            
+
             const profileSlug = lead.linkedinUrl.split('/in/')[1]?.replace('/', '') || lead.firstName + ' ' + lead.lastName;
             await humanType(page, searchInput, profileSlug);
             await wait(randomRange(1200, 2500));
             await page.keyboard.press('Enter');
         } catch (e) {
-             console.log("[WORKER] ⚠️ Standard search bar selector failed. Trying fallback click...");
-             await page.click('.search-global-typeahead__collapsed-search-button', { timeout: 5000 }).catch(() => {});
-             await wait(2000);
-             const profileSlug = lead.linkedinUrl.split('/in/')[1]?.replace('/', '') || lead.firstName + ' ' + lead.lastName;
-             await humanType(page, searchInput, profileSlug);
-             await page.keyboard.press('Enter');
+            console.log("[WORKER] ⚠️ Standard search bar selector failed. Trying fallback click...");
+            await page.click('.search-global-typeahead__collapsed-search-button', { timeout: 5000 }).catch(() => { });
+            await wait(2000);
+            const profileSlug = lead.linkedinUrl.split('/in/')[1]?.replace('/', '') || lead.firstName + ' ' + lead.lastName;
+            await humanType(page, searchInput, profileSlug);
+            await page.keyboard.press('Enter');
         }
 
         console.log('✅ Search submitted. Waiting for results...');
         await wait(randomRange(6000, 10000));
 
         // Now move to the profile. This will now appear as a search-driven view in history.
-        await page.goto(lead.linkedinUrl, { 
-            waitUntil: 'domcontentloaded', 
-            timeout: 60000 
-        }); 
-        await wait(randomRange(5000, 10000)); 
+        await page.goto(lead.linkedinUrl, {
+            waitUntil: 'domcontentloaded',
+            timeout: 60000
+        });
+        await wait(randomRange(5000, 10000));
 
         console.log(`[WORKER] Profile loaded successfully: ${page.url()}`);
         await wait(randomRange(4000, 8000)); // Increased profile "observing" time
@@ -370,10 +379,10 @@ export const processWorkflowStep = async (data: any, job: Job) => {
                 await wait(2000);
                 await page.click('button[aria-label="Send now"]');
                 console.log(`[WORKER] Connection request sent to ${lead.firstName}.`);
-                
+
                 await prisma.lead.update({
                     where: { id: lead.id },
-                    data: { 
+                    data: {
                         status: 'PENDING',
                         tags: { push: 'bot:invite_sent' }
                     }
@@ -388,7 +397,7 @@ export const processWorkflowStep = async (data: any, job: Job) => {
 
             // --- MULTI-SELECTOR MESSAGE BUTTON DETECTION ---
             const messageButtonSelectors = [
-                '.pvs-profile-actions button:has-text("Message")', 
+                '.pvs-profile-actions button:has-text("Message")',
                 'button.artdeco-button:has-text("Message")',
                 'button:has-text("Message")',
                 'a:has-text("Message")',
@@ -396,7 +405,7 @@ export const processWorkflowStep = async (data: any, job: Job) => {
             ];
 
             const msgInputSelector = 'div.msg-form__contenteditable[contenteditable="true"], .msg-form__textarea, [role="textbox"]';
-            
+
             // --- DIRECT COMPOSE URL EXTRACTION (Phase 2 Strategy) ---
             console.log('[WORKER] Extracting compose URL...');
             const composeUrl = await page.evaluate(() => {
@@ -419,7 +428,7 @@ export const processWorkflowStep = async (data: any, job: Job) => {
                     try {
                         await btn.click({ force: true });
                         await wait(500);
-                    } catch (e) {}
+                    } catch (e) { }
                 }
 
                 let messageClicked = false;
@@ -431,27 +440,27 @@ export const processWorkflowStep = async (data: any, job: Job) => {
                             if (messageClicked) {
                                 console.log(`[WORKER] ✅ SUCCESS: Clicked Message button using selector: ${sel}`);
                                 // Critical: wait for modal to load network data
-                                await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
+                                await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => { });
                                 await wait(3000);
                                 break;
                             }
                         }
-                    } catch (e) { 
+                    } catch (e) {
                         console.log(`[WORKER] Skipping selector: ${sel}`);
                     }
                 }
 
                 if (!messageClicked) {
-                     await page.screenshot({ path: '/app/error_profile.png' });
-                     console.log(`[WORKER] Message button not found. Saved screenshot to /app/error_profile.png`);
-                     console.log(`[WORKER] Falling back to messaging link...`);
-                     await page.goto('https://www.linkedin.com/messaging/', { waitUntil: 'domcontentloaded' });
-                     await wait(randomRange(2000, 4000));
+                    await page.screenshot({ path: '/app/error_profile.png' });
+                    console.log(`[WORKER] Message button not found. Saved screenshot to /app/error_profile.png`);
+                    console.log(`[WORKER] Falling back to messaging link...`);
+                    await page.goto('https://www.linkedin.com/messaging/', { waitUntil: 'domcontentloaded' });
+                    await wait(randomRange(2000, 4000));
                 }
             }
 
             await wait(randomRange(1500, 3000));
-            
+
             // Ensure input is visible and focused
             const msgBox = page.locator(msgInputSelector).first();
             try {
@@ -490,7 +499,7 @@ export const processWorkflowStep = async (data: any, job: Job) => {
             // --- SEND BUTTON (Robust Multi-Phase) ---
             const sendBtnSelector = 'button.msg-form__send-button, button[type="submit"]:has-text("Send"), .msg-form__footer button:has-text("Send")';
             const sendBtn = page.locator(sendBtnSelector).filter({ visible: true }).first();
-            
+
             let sent = false;
             try {
                 if (await sendBtn.isVisible({ timeout: 10000 })) {
@@ -500,12 +509,12 @@ export const processWorkflowStep = async (data: any, job: Job) => {
 
                     // Phase 2: If box still there, Force Click (Ghost-Buster)
                     if (await page.locator(msgInputSelector).first().isVisible()) {
-                         console.log('[WORKER] Message box still visible. Attempting Force Click...');
-                         await sendBtn.click({ force: true });
-                         await wait(2000);
+                        console.log('[WORKER] Message box still visible. Attempting Force Click...');
+                        await sendBtn.click({ force: true });
+                        await wait(2000);
                     }
                 }
-            } catch (e: any) { 
+            } catch (e: any) {
                 console.warn(`[WORKER] Send sequence encountered issue: ${e.message}`);
             }
 
@@ -520,32 +529,218 @@ export const processWorkflowStep = async (data: any, job: Job) => {
             await wait(3000);
             const afterUrl = page.url();
             const boxRemaining = await page.locator(msgInputSelector).first().isVisible();
-            
+
             // Success Case 1: Thread UI detected (Transitioned from /compose/)
             // Success Case 2: Pop-up box closed (Standard Message Button mode)
             if (afterUrl.includes('/thread/') || !boxRemaining) {
-                 console.log(`[WORKER] ✅ SUCCESS: Message sent. URL transitioned to: ${afterUrl}`);
-                 await prisma.lead.update({
+                console.log(`[WORKER] ✅ SUCCESS: Message sent. URL transitioned to: ${afterUrl}`);
+                await prisma.lead.update({
                     where: { id: lead.id },
-                    data: { 
+                    data: {
                         status: 'CONNECTED',
                         tags: { push: 'bot:messaged' }
                     }
-                 });
+                });
             } else {
-                 // In full-page "Compose" mode, the input box might remain visible but empty.
-                 // We'll trust the send click but save a screenshot for debug investigation.
-                 console.log(`[WORKER] Tentative success. Box still visible. URL: ${afterUrl}`);
-                 const endScreenshot = `/tmp/send_final_${userId}_${Date.now()}.png`;
-                 await page.screenshot({ path: endScreenshot }).catch(() => {});
-                 
-                 await prisma.lead.update({
+                // In full-page "Compose" mode, the input box might remain visible but empty.
+                // We'll trust the send click but save a screenshot for debug investigation.
+                console.log(`[WORKER] Tentative success. Box still visible. URL: ${afterUrl}`);
+                const endScreenshot = `/tmp/send_final_${userId}_${Date.now()}.png`;
+                await page.screenshot({ path: endScreenshot }).catch(() => { });
+
+                await prisma.lead.update({
                     where: { id: lead.id },
                     data: { status: 'CONNECTED' } // Assume connected if we reached message box
-                 });
+                });
             }
         } else if (stepType === 'VISIT') {
+            console.log(`[WORKER] Initiating Enrichment Visit for ${lead.firstName}...`);
+            await page.mouse.wheel(0, 800);
+            await wait(2000);
+
+            let updateData: any = {};
+
+            // 1. ABOUT INFO ENRICHMENT
+            if (stepData.enrichAbout) {
+                console.log(`[WORKER] Extracting About info...`);
+                try {
+                    const aboutSection = page.locator('section:has(div[id="about"]), section:has(h2:has-text("About"))').first();
+                    if (await aboutSection.isVisible()) {
+                        const moreBtn = aboutSection.locator('button[data-testid="expandable-text-button"]').first();
+                        if (await moreBtn.isVisible()) {
+                            await moreBtn.evaluate((el: any) => el.click());
+                            await wait(1000);
+                        }
+                        const aboutBox = aboutSection.locator('[data-testid="expandable-text-box"]').first();
+                        if (await aboutBox.isVisible()) {
+                            updateData.aboutInfo = await aboutBox.evaluate((el: any) => (el as HTMLElement).innerText);
+                        }
+                    }
+                } catch (e) { }
+            }
+
+            // 2. COMPANY & JOB TITLE ENRICHMENT
+            if (stepData.enrichCompany) {
+                console.log(`[WORKER] Extracting Experience (Company/Job)...`);
+                try {
+                    // Force load experience section
+                    for (let i = 0; i < 4; i++) {
+                        await page.keyboard.press('PageDown');
+                        await wait(600);
+                    }
+                    const extracted = await page.evaluate(() => {
+                        const textNodes = Array.from(document.querySelectorAll('span[aria-hidden="true"], h2 span, h2'));
+                        const expNode = textNodes.find(node => (node as any).innerText?.trim() === 'Experience');
+                        if (!expNode) return null;
+                        const expSection = expNode.closest('section');
+                        if (!expSection) return null;
+
+                        const firstLogoImg = expSection.querySelector('a[href*="/company/"] img');
+                        const companyName = firstLogoImg?.getAttribute('alt')?.replace(/logo$/i, '').trim() || "Unknown";
+                        const firstCompanyLink = expSection.querySelector('a[href*="/company/"]');
+                        const companyUrl = firstCompanyLink ? (firstCompanyLink as HTMLAnchorElement).href.split('?')[0] : null;
+
+                        const firstJobItem = expSection.querySelector('ul > li') || expSection.querySelector('.pvs-list__paged-list-item');
+                        if (!firstJobItem) return { companyName, companyUrl };
+
+                        const details = (firstJobItem as HTMLElement).innerText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+                        let jobTitle = details[0] || "Unknown";
+                        if (companyName !== "Unknown" && details[0]?.toLowerCase().includes(companyName.toLowerCase())) {
+                            jobTitle = details.length > 3 ? details[3] : details[0];
+                        }
+                        return { companyName, jobTitle, companyUrl };
+                    });
+                    if (extracted) {
+                        if (extracted.companyName && extracted.companyName !== "Unknown") updateData.company = extracted.companyName;
+                        if (extracted.jobTitle && extracted.jobTitle !== "Unknown") updateData.jobTitle = extracted.jobTitle;
+                    }
+                } catch (e) { }
+            }
+
+            // 3. CONTACT INFO ENRICHMENT
+            if (stepData.enrichContact) {
+                console.log(`[WORKER] Checking connection degree...`);
+                const is1stDegree = await page.evaluate(() => {
+                    const text = document.querySelector('.pv-top-card, .pv-text-details__right-panel')?.textContent || '';
+                    return text.includes('1st');
+                });
+
+                if (!is1stDegree) {
+                    console.log(`[WORKER] Not a 1st degree connection. Skipping deep contact extraction.`);
+                } else {
+                    console.log(`[WORKER] Attempting Contact Info extraction for 1st degree...`);
+                    try {
+                        const contactBtn = page.locator('a[href*="/overlay/contact-info/"]').first();
+                        if (await contactBtn.isVisible()) {
+                            await contactBtn.evaluate((el: any) => el.click());
+                            await wait(2000);
+                            const contactData = await page.evaluate(() => {
+                                const data: any = { email: null, phone: null };
+                                const labels = Array.from(document.querySelectorAll('div[data-component-type="LazyColumn"] p:first-child'));
+                                for (let label of labels) {
+                                    const labelText = (label as HTMLElement).innerText?.trim();
+                                    const valueNode = label.nextElementSibling;
+                                    if (valueNode) {
+                                        if (labelText === 'Email') data.email = (valueNode as HTMLElement).innerText?.trim();
+                                        else if (labelText === 'Phone') {
+                                            const firstSpan = valueNode.querySelector('span');
+                                            data.phone = firstSpan ? (firstSpan as HTMLElement).innerText?.trim() : (valueNode as HTMLElement).innerText?.trim();
+                                        }
+                                    }
+                                }
+                                return data;
+                            });
+                            if (contactData.email) updateData.email = contactData.email;
+                            await page.keyboard.press('Escape');
+                        }
+                    } catch (e) { }
+                }
+            }
+
+            // 4. LATEST POST ENRICHMENT
+            if (stepData.enrichPosts) {
+                console.log(`[WORKER] Navigating to Posts for extraction...`);
+                const activityUrl = lead.linkedinUrl.replace(/\/$/, '') + '/recent-activity/shares/';
+                try {
+                    await page.goto(activityUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+                    await wait(3000);
+                    const postData = await page.evaluate(() => {
+                        const wrapper = document.querySelector('div[data-urn*="urn:li:activity"], div[data-urn*="urn:li:ugcPost"], div[data-urn*="urn:li:share"]');
+                        if (!wrapper) return null;
+                        const urn = wrapper.getAttribute('data-urn');
+                        const content = (wrapper as HTMLElement).innerText.substring(0, 1000);
+                        return { url: `https://www.linkedin.com/feed/update/${urn}/`, content };
+                    });
+                    if (postData) {
+                        updateData.latestPost = postData.content;
+                        updateData.latestPostUrl = postData.url;
+                    }
+                    // Navigate back to profile (safety)
+                    await page.goto(lead.linkedinUrl, { waitUntil: 'domcontentloaded' });
+                } catch (e) { }
+            }
+
+            if (Object.keys(updateData).length > 0) {
+                await prisma.lead.update({
+                    where: { id: lead.id },
+                    data: updateData
+                });
+                console.log(`[WORKER] Enrichment SUCCESS for ${lead.firstName}. Fields updated: ${Object.keys(updateData).join(', ')}`);
+            }
+
             console.log(`[WORKER] Profile visit completed for ${lead.firstName}.`);
+        } else if (stepType === 'LIKE_POST') {
+            const activityUrl = lead.linkedinUrl.replace(/\/$/, '') + '/recent-activity/shares/';
+            console.log(`[WORKER] Navigating to Activity to find post to Like...`);
+            await page.goto(activityUrl, { waitUntil: 'domcontentloaded' });
+            await wait(4000);
+
+            const postUrn = await page.evaluate(() => {
+                const wrapper = document.querySelector('div[data-urn*="urn:li:activity"], div[data-urn*="urn:li:ugcPost"]');
+                return wrapper?.getAttribute('data-urn');
+            });
+
+            if (postUrn) {
+                const postUrl = `https://www.linkedin.com/feed/update/${postUrn}/`;
+                await page.goto(postUrl, { waitUntil: 'domcontentloaded' });
+                await wait(3000);
+                const likeBtn = page.locator('button:has(span:text-is("Like"))').first();
+                if (await likeBtn.isVisible()) {
+                    const isPressed = await likeBtn.getAttribute('aria-pressed');
+                    if (isPressed !== 'true') {
+                        await humanMoveAndClick(page, likeBtn);
+                        console.log(`[WORKER] ✅ Liked post for ${lead.firstName}`);
+                    }
+                }
+            }
+        } else if (stepType === 'COMMENT_POST') {
+            const activityUrl = lead.linkedinUrl.replace(/\/$/, '') + '/recent-activity/shares/';
+            console.log(`[WORKER] Navigating to Activity to find post to Comment...`);
+            await page.goto(activityUrl, { waitUntil: 'domcontentloaded' });
+            await wait(4000);
+
+            const postUrn = await page.evaluate(() => {
+                const wrapper = document.querySelector('div[data-urn*="urn:li:activity"], div[data-urn*="urn:li:ugcPost"]');
+                return wrapper?.getAttribute('data-urn');
+            });
+
+            if (postUrn) {
+                const postUrl = `https://www.linkedin.com/feed/update/${postUrn}/`;
+                await page.goto(postUrl, { waitUntil: 'domcontentloaded' });
+                await wait(3000);
+
+                const commentSelector = 'div[role="textbox"][aria-label*="Add a comment"], div[data-placeholder="Add a comment…"]';
+                if (await page.isVisible(commentSelector)) {
+                    const content = stepData.message || 'Great insights! 🚀';
+                    const finalContent = content.replace(/\{firstName\}/g, lead.firstName || '');
+                    await page.click(commentSelector);
+                    await humanType(page, commentSelector, finalContent);
+                    await wait(1000);
+                    const submitBtn = page.locator('button.comments-comment-box__submit-button, button.artdeco-button--primary:has-text("Post")').first();
+                    await submitBtn.click({ force: true });
+                    console.log(`[WORKER] ✅ Commented on post for ${lead.firstName}`);
+                }
+            }
         }
 
         // --- UPDATE PROGRESS: Find next step ---

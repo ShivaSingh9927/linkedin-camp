@@ -2,7 +2,7 @@ import cron from 'node-cron';
 import { prisma } from '@repo/db';
 import { Queue } from 'bullmq';
 import Redis from 'ioredis';
-import { syncInbox } from '../workers/inbox.worker';
+import { syncInbox, inboxQueue } from '../workers/inbox.worker';
 import { withdrawOldInvites } from '../workers/withdraw.worker';
 
 let redisConnection: any;
@@ -138,8 +138,12 @@ export const initScheduler = () => {
       });
 
       for (const user of usersWithCookies) {
-        // Run sync sequentially to avoid parallel browser instances overload
-        await syncInbox(user.id);
+        if (inboxQueue) {
+          await inboxQueue.add('inbox-sync', { userId: user.id }, { removeOnComplete: true });
+        } else {
+          // Fallback if queue not ready (though it should be)
+          await syncInbox(user.id);
+        }
       }
     } catch (error) {
       console.error('Global inbox sync failed:', error);

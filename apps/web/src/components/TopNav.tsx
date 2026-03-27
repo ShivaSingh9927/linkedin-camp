@@ -21,7 +21,8 @@ import {
     Plus,
     Zap,
     Ghost,
-    Package
+    Package,
+    Building2
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from './ui/button';
@@ -37,10 +38,10 @@ const menuItems = [
         items: [
             { label: 'My Campaigns', href: '/campaigns', icon: Target },
             { label: 'Prebuilt Campaigns', href: '/campaigns', icon: Package },
-            { label: 'Execution Queue', href: '/queue', icon: Layers },
         ]
     },
     { label: 'Prospects', icon: Users, href: '/prospects' },
+    { label: 'Companies', icon: Building2, href: '/companies' },
     { label: 'Inbox', icon: InboxIcon, href: '/inbox' },
     { label: 'Crew', icon: Users, href: '/team' },
     { label: 'Pricing', icon: Sparkles, href: '/pricing' },

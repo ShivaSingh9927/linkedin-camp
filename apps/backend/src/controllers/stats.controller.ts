@@ -5,7 +5,9 @@ export const getStats = async (req: any, res: Response) => {
     const userId = req.user.id;
 
     try {
-        // Fetch all relevant metrics in parallel
+        const startOfToday = new Date();
+        startOfToday.setHours(0, 0, 0, 0);
+
         const [
             totalLeads,
             activeCampaignsCount,
@@ -13,7 +15,10 @@ export const getStats = async (req: any, res: Response) => {
             recentLogs,
             globalInvites,
             globalMessages,
-            globalConnected
+            globalConnected,
+            todayInvites,
+            todayMessages,
+            todayVisits
         ] = await Promise.all([
             prisma.lead.count({ where: { userId } }),
             prisma.campaign.count({ where: { userId, status: 'ACTIVE' } }),
@@ -39,7 +44,10 @@ export const getStats = async (req: any, res: Response) => {
             }),
             prisma.actionLog.count({ where: { userId, actionType: 'INVITE', status: 'SUCCESS' } }),
             prisma.actionLog.count({ where: { userId, actionType: 'MESSAGE', status: 'SUCCESS' } }),
-            prisma.lead.count({ where: { userId, status: { in: ['CONNECTED', 'REPLIED'] } } })
+            prisma.lead.count({ where: { userId, status: { in: ['CONNECTED', 'REPLIED'] } } }),
+            prisma.actionLog.count({ where: { userId, actionType: 'INVITE', executedAt: { gte: startOfToday } } }),
+            prisma.actionLog.count({ where: { userId, actionType: 'MESSAGE', executedAt: { gte: startOfToday } } }),
+            prisma.actionLog.count({ where: { userId, actionType: 'VISIT', executedAt: { gte: startOfToday } } })
         ]);
 
         // Process Campaign Stats
@@ -97,7 +105,12 @@ export const getStats = async (req: any, res: Response) => {
                 sentRequests: totalSent,
                 connectedLeads: globalConnected,
                 replyRate: totalSent > 0 ? Math.round((totalReplies / totalSent) * 100) : 0,
-                dailyRemaining: 80 // Hardcoded for now, could be dynamic
+                dailyRemaining: 80, // Legacy
+                today: {
+                    invites: todayInvites,
+                    messages: todayMessages,
+                    visits: todayVisits
+                }
             },
             campaignPerformance,
             recentLogs,

@@ -1,6 +1,6 @@
 import { Response } from 'express';
 import { prisma } from '@repo/db';
-import { syncInbox } from '../workers/inbox.worker';
+import { syncInbox, inboxQueue } from '../workers/inbox.worker';
 
 // ─── CONVERSATIONS (grouped messages by lead) ───
 
@@ -304,9 +304,13 @@ export const syncInboxManual = async (req: any, res: Response) => {
             return res.status(409).json({ error: 'Cloud worker is currently active with another task (Campaign/Sync). Please try again in a few minutes.' });
         }
 
-        // Run in background
-        syncInbox(userId).catch(err => console.error('Manual sync failed:', err));
-        res.json({ message: 'Sync started in background' });
+        // Run in background via Queue
+        if (inboxQueue) {
+            await inboxQueue.add('inbox-sync', { userId }, { removeOnComplete: true });
+            res.json({ message: 'Sync started in background' });
+        } else {
+            res.status(500).json({ error: 'Sync service currently unavailable' });
+        }
     } catch (error) {
         res.status(500).json({ error: 'Failed to start sync' });
     }

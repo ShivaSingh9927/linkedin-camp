@@ -63,6 +63,7 @@ model User {
   actionLogs            ActionLog[]
   messages              Message[]
   templates             MessageTemplate[]
+  smartLists            SmartList[]
   
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
@@ -124,6 +125,10 @@ model Lead {
   workerLogs    WorkerLog[]
   actionLogs    ActionLog[]
   messages      Message[]
+
+  aboutInfo     String?        @db.Text
+  latestPost    String?        @db.Text
+  latestPostUrl String?
 
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
@@ -325,4 +330,18 @@ model Integration {
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, provider])
+}
+
+model SmartList {
+  id        String   @id @default(uuid())
+  userId    String
+  name      String
+  filters   Json     // { status: 'CONNECTED', tags: ['vip'], ... }
+  
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, name])
 }
