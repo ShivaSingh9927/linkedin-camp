@@ -260,31 +260,23 @@ export const processWorkflowStep = async (data: any, job: Job) => {
         // Handle case where subType is stored as PROFILE_VISIT
         if (stepType === 'PROFILE_VISIT') stepType = 'VISIT';
 
-        // --- MASTER STEALTH WARMUP (v2 Strategy) ---
-        console.log('[WORKER] Step 1: Human Warmup (Feeding scrolling)...');
-        try {
-            await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded', timeout: 30000 });
-            for (let i = 0; i < 2; i++) {
-                await page.mouse.wheel(0, randomRange(300, 600));
-                await wait(randomRange(1500, 3000));
-            }
-        } catch (e) {
-            console.warn('[WORKER] Warmup delay, proceeding...');
-        }
+        // --- DIRECT PROFILE NAVIGATION (Phase 2 pattern — no /feed/ warmup) ---
+        // Phase 2 test script works because it goes directly to the target page.
+        // Navigating to /feed/ first causes LinkedIn to rotate session tokens
+        // in a new browser context, which invalidates the session.
+        console.log(`[WORKER] Navigating directly to lead profile: ${lead.linkedinUrl}`);
+        await page.goto(lead.linkedinUrl, {
+            waitUntil: 'domcontentloaded',
+            timeout: 60000
+        });
+        await wait(randomRange(8000, 15000));
 
-        // --- SESSION VALIDATION (ROBUST) ---
-        await page.waitForTimeout(5000); // Wait for dynamic content
+        // --- SESSION VALIDATION on the profile page ---
         const finalUrl = page.url();
-        const pageTitle = await page.title();
-        const isLoggedIn = await page.isVisible('.global-nav') ||
-            await page.isVisible('#global-nav') ||
-            await page.isVisible('input[placeholder="Search"]') ||
-            pageTitle.includes('Feed');
-
         const isAuthWall = finalUrl.includes('authwall') || finalUrl.includes('login') || finalUrl.includes('checkpoint');
 
-        if (isAuthWall || !isLoggedIn) {
-            console.log(`[WORKER] ⚠️ Session invalid. URL: ${finalUrl}, Title: ${pageTitle}, LoggedInMarker: ${isLoggedIn}`);
+        if (isAuthWall) {
+            console.log(`[WORKER] ⚠️ Session invalid. URL: ${finalUrl}`);
 
             // Capture evidence for debug
             const screenshotPath = `/tmp/worker_fail_${userId}_${Date.now()}.png`;
@@ -316,43 +308,8 @@ export const processWorkflowStep = async (data: any, job: Job) => {
             return;
         }
 
-        // --- PHASE 2: HUMAN-STYLE SEARCH NAVIGATION ---
-        console.log('[WORKER] Phase 2: Human-style Search for Profile...');
-        const searchInput = page.locator('input[placeholder="Search"], #global-nav-typeahead input, .search-global-typeahead__input').first();
-
-        try {
-            await searchInput.waitFor({ state: 'visible', timeout: 20000 });
-            await wait(randomRange(1000, 3000));
-            await searchInput.click();
-
-            const profileSlug = lead.linkedinUrl.split('/in/')[1]?.replace('/', '') || lead.firstName + ' ' + lead.lastName;
-            await humanType(page, searchInput, profileSlug);
-            await wait(randomRange(1200, 2500));
-            await page.keyboard.press('Enter');
-        } catch (e) {
-            console.log("[WORKER] ⚠️ Standard search bar selector failed. Trying fallback click...");
-            await page.click('.search-global-typeahead__collapsed-search-button', { timeout: 5000 }).catch(() => { });
-            await wait(2000);
-            const profileSlug = lead.linkedinUrl.split('/in/')[1]?.replace('/', '') || lead.firstName + ' ' + lead.lastName;
-            await humanType(page, searchInput, profileSlug);
-            await page.keyboard.press('Enter');
-        }
-
-        console.log('✅ Search submitted. Waiting for results...');
-        await wait(randomRange(6000, 10000));
-
-        // Now move to the profile. This will now appear as a search-driven view in history.
-        await page.goto(lead.linkedinUrl, {
-            waitUntil: 'domcontentloaded',
-            timeout: 60000
-        });
-        await wait(randomRange(5000, 10000));
-
-        console.log(`[WORKER] Profile loaded successfully: ${page.url()}`);
-        await wait(randomRange(4000, 8000)); // Increased profile "observing" time
-
-        // if (await checkInterrupt(userId)) throw new Error('INTERRUPTED: User active in browser');
-        await wait(randomRange(3000, 6000)); // "Observing" time from your script
+        console.log(`[WORKER] ✅ Profile loaded successfully: ${page.url()}`);
+        await wait(randomRange(4000, 8000)); // "Observing" time from Phase 2 script
 
 
         if (stepType === 'INVITE' || stepType === 'INVITATION') {

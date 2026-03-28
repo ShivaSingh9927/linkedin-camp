@@ -142,39 +142,22 @@ export const syncInbox = async (userId: string) => {
             }
         }
 
-        // Block heavy assets
-        await page.route('**/*', (route: any) => {
-            const type = route.request().resourceType();
-            if (['image', 'media', 'font'].includes(type)) return route.abort();
-            return route.continue();
-        });
-
-        // --- WARMUP on feed first (exact SYNC-VERIFY pattern) ---
-        console.log(`[INBOX-WORKER] 🔥 Warming up on Feed...`);
-        await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded', timeout: 60000 });
+        // --- GO DIRECTLY TO MESSAGING (no /feed/ warmup to avoid token rotation) ---
+        // Phase 2 test script works because it goes directly to the target page.
+        // Navigating to /feed/ first causes LinkedIn to rotate session tokens 
+        // in a new browser context, which invalidates the session.
+        console.log(`[INBOX-WORKER] 📬 Navigating directly to LinkedIn Inbox...`);
+        await page.goto('https://www.linkedin.com/messaging/', { waitUntil: 'domcontentloaded', timeout: 60000 });
         await page.waitForTimeout(5000);
 
-        const feedUrl = page.url();
-        const isFeed = feedUrl.includes('/feed') || await page.isVisible('.global-nav').catch(() => false);
-        console.log(`[INBOX-WORKER] Feed URL: ${feedUrl} | isFeed: ${isFeed}`);
-
-        if (!isFeed) {
-            console.error(`[INBOX-WORKER] ❌ Session expired at feed warmup. URL: ${feedUrl}`);
-            return;
-        }
-        console.log(`[INBOX-WORKER] ✅ Feed warmup successful`);
-
-        // --- NAVIGATE TO MESSAGING ---
-        console.log(`[INBOX-WORKER] 📬 Navigating to LinkedIn Inbox...`);
-        await page.goto('https://www.linkedin.com/messaging/', { waitUntil: 'domcontentloaded', timeout: 60000 });
-        await page.waitForTimeout(4000);
-
         const currentUrl = page.url();
-        console.log(`[INBOX-WORKER] Messaging URL: ${currentUrl}`);
-        if (currentUrl.includes('login') || currentUrl.includes('authwall')) {
-            console.error(`[INBOX-WORKER] ❌ Session expired at messaging. URL: ${currentUrl}`);
+        const isAuthWall = currentUrl.includes('login') || currentUrl.includes('authwall') || currentUrl.includes('checkpoint');
+        
+        if (isAuthWall) {
+            console.error(`[INBOX-WORKER] ❌ Session expired. URL: ${currentUrl}`);
             return;
         }
+        console.log(`[INBOX-WORKER] ✅ Messaging loaded successfully`);
 
         try {
             await page.waitForSelector('.msg-conversation-listitem, .msg-conversation-card', { timeout: 15000 });

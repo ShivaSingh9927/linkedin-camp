@@ -192,32 +192,36 @@ export const syncExtension = async (req: any, res: Response) => {
                     }
                 }
 
-                console.log(`[SYNC-VERIFY] Navigating to feed for verification...`);
-                await page.goto('https://www.linkedin.com/feed/', { 
+                // Lightweight verification: Use a LinkedIn API endpoint instead of /feed/
+                // /feed/ causes LinkedIn to rotate session tokens in new browser contexts,
+                // which invalidates the user's active browser session.
+                console.log(`[SYNC-VERIFY] Performing lightweight session check (no /feed/ navigation)...`);
+                await page.goto('https://www.linkedin.com/voyager/api/me', { 
                     waitUntil: 'domcontentloaded', 
-                    timeout: 60000 
+                    timeout: 30000 
                 });
 
-                await page.waitForTimeout(5000); // Wait for dynamic content
+                await page.waitForTimeout(2000);
 
-                const isFeed = page.url().includes('/feed') || await page.isVisible('.global-nav');
+                const pageContent = await page.content();
+                const pageUrl = page.url();
+                const isValid = !pageUrl.includes('login') && !pageUrl.includes('authwall') && 
+                                (pageContent.includes('miniProfile') || pageContent.includes('firstName') || pageUrl.includes('voyager'));
                 
-                if (isFeed) {
-                    console.log(`[SYNC-VERIFY] ✅ SUCCESS: Session verified for ${userId}. Keeping original cookies to avoid browser logout.`);
+                if (isValid) {
+                    console.log(`[SYNC-VERIFY] ✅ SUCCESS: Session verified for ${userId} (lightweight check). No token rotation.`);
                     
                     // Update state to active, but DO NOT overwrite cookies/localStorage
-                    // This prevents the "session theft" that causes browser logout.
                     await prisma.user.update({
                         where: { id: userId },
                         data: { 
                             persistentSessionPath: sessionPath,
                             linkedinActiveInBrowser: false,
-                            // We do NOT update linkedinCookie or linkedinLocalStorage here
                         }
                     });
                     return true;
                 } else {
-                    console.warn(`[SYNC-VERIFY] ❌ FAILED: Feed not detected for user ${userId}. URL: ${page.url()}`);
+                    console.warn(`[SYNC-VERIFY] ❌ FAILED: Session invalid for user ${userId}. URL: ${pageUrl}`);
                     return false;
                 }
             } catch (err: any) {
