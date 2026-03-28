@@ -118,25 +118,37 @@ export default function LinkedInConnectivity() {
         setLoading(true);
         setProgressMsg('Waiting for extension to capture session...');
         
+        // Ensure the user is actually on LinkedIn or at least has it open
+        window.open('https://www.linkedin.com/feed/', '_blank');
+        
         window.postMessage({ type: 'LINKEDIN_CAMP_FORCE_SYNC' }, '*');
-        toast.info('Opening secure sync window...');
+        toast.info('Opening secure sync window...', {
+            description: 'Please make sure you are logged into LinkedIn in this browser.'
+        });
         
         let attempts = 0;
         const interval = setInterval(async () => {
             attempts++;
             const statusData = await fetchStatus();
             
-            if (statusData?.persistentPath) {
+            if (statusData?.persistentPath || statusData?.connected) {
                 setStep('SUCCESS');
                 setLoading(false);
                 clearInterval(interval);
                 toast.success('Session synchronized & verified!');
             } else if (attempts > 30) {
-                 setProgressMsg('Waiting for manual login...');
+                 setProgressMsg('Still waiting... Please ensure LinkedIn is open and you are logged in.');
             }
-        }, 5000);
+        }, 3000);
         
-        setTimeout(() => clearInterval(interval), 300000);
+        setTimeout(() => {
+            clearInterval(interval);
+            if (step !== 'SUCCESS') {
+                setLoading(false);
+                setStep('CHOICE');
+                setError('Sync timed out. Please try again.');
+            }
+        }, 120000);
     };
 
     const handlePhase1Sync = () => {
@@ -218,67 +230,53 @@ export default function LinkedInConnectivity() {
                                 {step === 'CHOICE' && (
                                     <motion.div key="choice" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-6">
                                         <div className="space-y-2 text-center pb-4">
-                                            <h3 className="text-2xl font-black text-slate-900 italic">STALL DETECTED</h3>
-                                            <p className="text-sm text-slate-500 font-medium">Please establish a secure cloud session.</p>
+                                            <h3 className="text-2xl font-black text-slate-900 italic">SECURE SYNC</h3>
+                                            <p className="text-sm text-slate-500 font-medium">Capture your active LinkedIn session via extension.</p>
                                         </div>
                                         <div className="grid grid-cols-1 gap-4">
                                             <button 
                                                 onClick={handleOneClickSync}
-                                                className="group text-left p-6 bg-slate-900 rounded-[2rem] hover:bg-black transition-all"
+                                                className="group text-left p-8 bg-slate-900 rounded-[2.5rem] hover:bg-black transition-all shadow-xl hover:scale-[1.02] active:scale-[0.98]"
                                             >
-                                                <div className="flex justify-between mb-2">
-                                                    <div className="w-10 h-10 rounded-2xl bg-[#0077b5] flex items-center justify-center text-white">
-                                                        <Chrome className="w-5 h-5" />
+                                                <div className="flex justify-between items-center mb-4">
+                                                    <div className="w-14 h-14 rounded-2xl bg-[#0077b5] flex items-center justify-center text-white shadow-lg">
+                                                        <Chrome className="w-8 h-8" />
+                                                    </div>
+                                                    <div className="px-3 py-1 bg-emerald-500/10 rounded-full border border-emerald-500/20">
+                                                        <span className="text-[10px] text-emerald-500 font-black uppercase">Instant</span>
                                                     </div>
                                                 </div>
-                                                <h4 className="font-black text-white uppercase text-xs">Extension Sync</h4>
-                                                <p className="text-[10px] text-slate-400 font-bold mt-1 uppercase">Instant Capture</p>
+                                                <h4 className="font-black text-white uppercase text-lg italic">Start Sync</h4>
+                                                <p className="text-xs text-slate-400 font-bold mt-1 uppercase">Recommended Flow</p>
                                             </button>
-
-                                            <button 
-                                                onClick={handlePhase1Sync}
-                                                className="group text-left p-6 bg-amber-50 rounded-[2rem] hover:border-amber-200 transition-all"
-                                            >
-                                                <div className="flex justify-between mb-2">
-                                                    <div className="w-10 h-10 rounded-2xl bg-amber-500/10 flex items-center justify-center text-amber-600">
-                                                        <Globe className="w-5 h-5" />
-                                                    </div>
+                                            
+                                            {error && (
+                                                <div className="p-4 bg-red-50 text-red-600 rounded-2xl text-[10px] font-black uppercase text-center border border-red-100 italic">
+                                                    {error}
                                                 </div>
-                                                <h4 className="font-black text-amber-900 uppercase text-xs">Direct Cloud Login</h4>
-                                                <p className="text-[10px] text-amber-600/70 font-bold mt-1 uppercase">Login via remote screen</p>
-                                            </button>
+                                            )}
                                         </div>
                                     </motion.div>
                                 )}
 
-                                {step === 'DEBUGGER' && (
-                                    <motion.div key="debugger" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col space-y-4">
-                                        <div className="bg-slate-900 rounded-2xl overflow-hidden aspect-video relative border-4 border-slate-800 shadow-2xl">
-                                            <iframe 
-                                                src={`http://204.168.167.198:3000/?url=${encodeURIComponent('https://www.linkedin.com/login')}&launch=${encodeURIComponent(JSON.stringify({ args: ["--no-sandbox", "--disable-setuid-sandbox", `--user-data-dir=/sessions/${status?.userId || 'unknown'}`] }))}`}
-                                                className="w-full h-full border-none"
-                                                title="Cloud Control"
+                                {step === 'PROGRESS' && (
+                                    <motion.div key="progress" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="py-12 text-center space-y-8">
+                                        <div className="relative w-24 h-24 mx-auto">
+                                            <div className="absolute inset-0 border-4 border-[#0077b5]/20 rounded-full" />
+                                            <motion.div 
+                                                animate={{ rotate: 360 }}
+                                                transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
+                                                className="absolute inset-0 border-4 border-t-[#0077b5] rounded-full"
                                             />
+                                            <div className="absolute inset-0 flex items-center justify-center">
+                                                <RefreshCcw className="w-8 h-8 text-[#0077b5] animate-pulse" />
+                                            </div>
                                         </div>
-                                        <div className="p-4 bg-amber-50 rounded-xl border border-amber-100 italic">
-                                            <p className="text-[10px] text-amber-700 font-bold uppercase leading-tight">
-                                                Connecting to secure cloud node... LinkedIn will open automatically. Please log in when it appears.
+                                        <div className="space-y-3">
+                                            <h3 className="text-2xl font-black text-slate-900 italic uppercase">Syncing...</h3>
+                                            <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest leading-relaxed">
+                                                {progressMsg}
                                             </p>
-                                        </div>
-                                        <div className="px-4 py-2 bg-slate-50 border border-slate-100 rounded-xl flex items-center justify-between">
-                                            <span className="text-[10px] font-bold text-slate-500 uppercase">Window not loading?</span>
-                                            <a 
-                                                href={`${(process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/v1\/?$/, '')}/api/v1/auth/cloud-login?token=${localStorage.getItem('token')}`} 
-                                                target="_blank" 
-                                                rel="noopener noreferrer"
-                                                className="flex items-center gap-1 text-[10px] font-black text-[#0077b5] uppercase hover:underline"
-                                            >
-                                                Launch Cloud Login <ExternalLink className="w-3 h-3" />
-                                            </a>
-                                        </div>
-                                        <div className="flex gap-3">
-                                            <button onClick={() => setStep('CHOICE')} className="flex-1 h-12 bg-slate-100 rounded-xl font-black text-[10px] uppercase">Back</button>
-                                            <button onClick={() => { setStep('SUCCESS'); fetchStatus(); }} className="flex-[2] h-12 bg-emerald-500 text-white rounded-xl font-black text-[10px] uppercase">I Have Logged In</button>
                                         </div>
                                     </motion.div>
                                 )}
