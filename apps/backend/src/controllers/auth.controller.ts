@@ -76,6 +76,7 @@ export const syncExtension = async (req: any, res: Response) => {
             data: { 
                 linkedinCookie,
                 linkedinLocalStorage,
+                linkedinFingerprint: fingerprint ? JSON.stringify(fingerprint) : undefined,
                 linkedinActiveInBrowser: true,
                 lastBrowserActivityAt: new Date()
             },
@@ -200,14 +201,39 @@ export const syncExtension = async (req: any, res: Response) => {
                         const linkedinOnlyCookies = refreshedCookies.filter((c: any) => 
                             c.domain.includes('linkedin.com')
                         );
+                        
+                        // Also capture localStorage from the live page
+                        const page2 = context.pages()[0];
+                        let capturedStorage: string | null = null;
+                        if (page2) {
+                            try {
+                                capturedStorage = await page2.evaluate(() => {
+                                    const data: any = {};
+                                    for (let i = 0; i < window.localStorage.length; i++) {
+                                        const key = window.localStorage.key(i);
+                                        if (key) data[key] = window.localStorage.getItem(key);
+                                    }
+                                    return JSON.stringify(data);
+                                });
+                                console.log(`[SYNC-VERIFY] Captured ${capturedStorage?.length || 0} bytes of localStorage from live page`);
+                            } catch (e) {
+                                console.warn('[SYNC-VERIFY] Could not capture localStorage from page');
+                            }
+                        }
+                        
                         console.log(`[SYNC-VERIFY] Saving ${linkedinOnlyCookies.length} refreshed cookies to DB`);
+                        const updateData: any = { 
+                            persistentSessionPath: sessionPath,
+                            linkedinActiveInBrowser: false,
+                            linkedinCookie: JSON.stringify(linkedinOnlyCookies)
+                        };
+                        // Only overwrite localStorage if we captured real data
+                        if (capturedStorage && capturedStorage.length > 10) {
+                            updateData.linkedinLocalStorage = capturedStorage;
+                        }
                         await prisma.user.update({
                             where: { id: userId },
-                            data: { 
-                                persistentSessionPath: sessionPath,
-                                linkedinActiveInBrowser: false,
-                                linkedinCookie: JSON.stringify(linkedinOnlyCookies)
-                            }
+                            data: updateData
                         });
                     } catch (cookieErr: any) {
                         console.error(`[SYNC-VERIFY] Failed to save refreshed cookies:`, cookieErr.message);

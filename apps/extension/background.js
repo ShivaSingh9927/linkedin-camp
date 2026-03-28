@@ -182,17 +182,26 @@ async function autoSyncSession() {
                 if (tabs && tabs.length > 0) {
                     const scriptResults = await chrome.scripting.executeScript({
                         target: { tabId: tabs[0].id },
-                        func: () => ({
-                            localStorage: JSON.stringify(window.localStorage),
-                            userAgent: navigator.userAgent,
-                            platform: navigator.platform,
-                            screen: {
-                                width: window.screen.width,
-                                height: window.screen.height,
-                                availWidth: window.screen.availWidth,
-                                availHeight: window.screen.availHeight
+                        func: () => {
+                            // localStorage is a Storage object — JSON.stringify returns "{}".
+                            // Must iterate keys manually to capture all values.
+                            const lsData = {};
+                            for (let i = 0; i < window.localStorage.length; i++) {
+                                const key = window.localStorage.key(i);
+                                if (key) lsData[key] = window.localStorage.getItem(key);
                             }
-                        })
+                            return {
+                                localStorage: JSON.stringify(lsData),
+                                userAgent: navigator.userAgent,
+                                platform: navigator.platform,
+                                screen: {
+                                    width: window.screen.width,
+                                    height: window.screen.height,
+                                    availWidth: window.screen.availWidth,
+                                    availHeight: window.screen.availHeight
+                                }
+                            };
+                        }
                     });
                     
                     const res = scriptResults[0]?.result;

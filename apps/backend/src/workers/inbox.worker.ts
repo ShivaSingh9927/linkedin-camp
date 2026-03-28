@@ -35,24 +35,35 @@ export const syncInbox = async (userId: string) => {
         const baseSessionDir = isCloud ? '/app/sessions' : path.join(process.cwd(), 'sessions');
         const sessionPathToUse = user.persistentSessionPath || path.join(baseSessionDir, userId);
 
-        // --- LOAD FINGERPRINT (mirrors campaign worker) ---
+        // --- LOAD FINGERPRINT: file first, then DB fallback ---
         let userAgentStr = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36';
         let viewportSettings: any = { width: 1440, height: 900 };
 
+        let fpData: any = null;
         try {
             const fingerprintPath = path.join(sessionPathToUse, 'fingerprint.json');
             if (fs.existsSync(fingerprintPath)) {
-                const fpData = JSON.parse(fs.readFileSync(fingerprintPath, 'utf-8'));
-                if (fpData.userAgent) {
-                    userAgentStr = fpData.userAgent;
-                    console.log(`[INBOX-WORKER] Loaded fingerprint UA: ${userAgentStr.substring(0, 50)}...`);
-                }
-                if (fpData.screen && fpData.screen.width && fpData.screen.height) {
-                    viewportSettings = { width: fpData.screen.width, height: fpData.screen.height };
-                }
+                fpData = JSON.parse(fs.readFileSync(fingerprintPath, 'utf-8'));
+                console.log(`[INBOX-WORKER] Loaded fingerprint from file`);
             }
-        } catch (e) {
-            console.error('[INBOX-WORKER] Error reading fingerprint:', e);
+        } catch (e) {}
+
+        // DB fallback if file doesn't exist
+        if (!fpData && (user as any).linkedinFingerprint) {
+            try {
+                fpData = JSON.parse((user as any).linkedinFingerprint);
+                console.log(`[INBOX-WORKER] Loaded fingerprint from DB`);
+            } catch (e) {}
+        }
+
+        if (fpData) {
+            if (fpData.userAgent) {
+                userAgentStr = fpData.userAgent;
+                console.log(`[INBOX-WORKER] Fingerprint UA: ${userAgentStr.substring(0, 60)}...`);
+            }
+            if (fpData.screen && fpData.screen.width && fpData.screen.height) {
+                viewportSettings = { width: fpData.screen.width, height: fpData.screen.height };
+            }
         }
 
         // --- EXACT SYNC-VERIFY CLONE: launch + newContext + inject ---
