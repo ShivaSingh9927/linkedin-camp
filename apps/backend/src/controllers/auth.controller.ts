@@ -97,10 +97,20 @@ export const syncExtension = async (req: any, res: Response) => {
                 JSON.stringify(fingerprint, null, 2)
             );
         }
+        // 3. LAUNCH VERIFICATION LOOP (Read-Only Mode)
+        // Prevent concurrent verifications for the same user
+        if ((global as any).activeVerifications?.has(userId)) {
+            console.log(`[SYNC-VERIFY] Verification already in progress for user ${userId}. Skipping duplicate.`);
+            return res.json({ 
+                success: true, 
+                message: 'Verification already in progress...' 
+            });
+        }
 
-        // 3. LAUNCH VERIFICATION LOOP (As requested: "check if feed is loading")
-        // We do this asynchronously so we can return a "Processing" status or wait if it's fast
-        console.log(`[SYNC-VERIFY] Initiating cloud verification for user ${userId}...`);
+        if (!(global as any).activeVerifications) (global as any).activeVerifications = new Set();
+        (global as any).activeVerifications.add(userId);
+
+        console.log(`[SYNC-VERIFY] Initiating read-only cloud verification for user ${userId}...`);
         
         // Assign Proxy if not exists
         const userProxy = await getOrAssignProxy(userId);
@@ -193,59 +203,18 @@ export const syncExtension = async (req: any, res: Response) => {
                 const isFeed = page.url().includes('/feed') || await page.isVisible('.global-nav');
                 
                 if (isFeed) {
-                    console.log(`[SYNC-VERIFY] ✅ SUCCESS: Feed detected for user ${userId}. Session is primed on cloud at ${sessionPath}`);
+                    console.log(`[SYNC-VERIFY] ✅ SUCCESS: Session verified for ${userId}. Keeping original cookies to avoid browser logout.`);
                     
-                    // CRITICAL: Capture refreshed cookies after LinkedIn rotates session tokens
-                    try {
-                        const refreshedCookies = await context.cookies();
-                        const linkedinOnlyCookies = refreshedCookies.filter((c: any) => 
-                            c.domain.includes('linkedin.com')
-                        );
-                        
-                        // Also capture localStorage from the live page
-                        const page2 = context.pages()[0];
-                        let capturedStorage: string | null = null;
-                        if (page2) {
-                            try {
-                                capturedStorage = await page2.evaluate(() => {
-                                    const data: any = {};
-                                    for (let i = 0; i < window.localStorage.length; i++) {
-                                        const key = window.localStorage.key(i);
-                                        if (key) data[key] = window.localStorage.getItem(key);
-                                    }
-                                    return JSON.stringify(data);
-                                });
-                                console.log(`[SYNC-VERIFY] Captured ${capturedStorage?.length || 0} bytes of localStorage from live page`);
-                            } catch (e) {
-                                console.warn('[SYNC-VERIFY] Could not capture localStorage from page');
-                            }
-                        }
-                        
-                        console.log(`[SYNC-VERIFY] Saving ${linkedinOnlyCookies.length} refreshed cookies to DB`);
-                        const updateData: any = { 
+                    // Update state to active, but DO NOT overwrite cookies/localStorage
+                    // This prevents the "session theft" that causes browser logout.
+                    await prisma.user.update({
+                        where: { id: userId },
+                        data: { 
                             persistentSessionPath: sessionPath,
                             linkedinActiveInBrowser: false,
-                            linkedinCookie: JSON.stringify(linkedinOnlyCookies)
-                        };
-                        // Only overwrite localStorage if we captured real data
-                        if (capturedStorage && capturedStorage.length > 10) {
-                            updateData.linkedinLocalStorage = capturedStorage;
+                            // We do NOT update linkedinCookie or linkedinLocalStorage here
                         }
-                        await prisma.user.update({
-                            where: { id: userId },
-                            data: updateData
-                        });
-                    } catch (cookieErr: any) {
-                        console.error(`[SYNC-VERIFY] Failed to save refreshed cookies:`, cookieErr.message);
-                        // Still update the session path even if cookie save fails
-                        await prisma.user.update({
-                            where: { id: userId },
-                            data: { 
-                                persistentSessionPath: sessionPath,
-                                linkedinActiveInBrowser: false
-                            }
-                        });
-                    }
+                    });
                     return true;
                 } else {
                     console.warn(`[SYNC-VERIFY] ❌ FAILED: Feed not detected for user ${userId}. URL: ${page.url()}`);
@@ -257,6 +226,7 @@ export const syncExtension = async (req: any, res: Response) => {
             } finally {
                 if (context) await context.close().catch(() => {});
                 if (browser) await browser.close().catch(() => {});
+                (global as any).activeVerifications?.delete(userId);
             }
         })();
 
