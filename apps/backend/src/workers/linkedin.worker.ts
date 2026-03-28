@@ -38,13 +38,13 @@ export const processWorkflowStep = async (data: any, job: Job) => {
 
     if (!user || !campaign || !lead) return;
 
-    // 1. Safety Check: Working Hours
-    const now = new Date();
-    const currentHour = now.getHours();
-    if (currentHour < 8 || currentHour > 20) {
-        console.log(`[WORKER] Outside working hours for lead ${lead.id}. Delayed.`);
-        return; // Re-queueing handled by BullMQ backoff or 1-hour delay
-    }
+    // 1. Safety Check: Working Hours (Temporarily disabled for testing)
+    // const options = { timeZone: 'Asia/Kolkata', hour: 'numeric', hour12: false } as const;
+    // const currentHour = parseInt(new Intl.DateTimeFormat('en-US', options).format(new Date()), 10);
+    // if (currentHour < 8 || currentHour > 20) {
+    //     console.log(`[WORKER] Outside working hours (Hour: ${currentHour} IST) for lead ${lead.id}. Delayed.`);
+    //     return; // Re-queueing handled by BullMQ backoff or 1-hour delay
+    // }
 
     // 2. Safety Check: Plan Limits
     const dailyLimit = user.tier === 'PRO' ? 100 : user.tier === 'ADVANCED' ? 200 : 20;
@@ -207,6 +207,16 @@ export const processWorkflowStep = async (data: any, job: Job) => {
         }
 
         const page = context.pages()[0] || await context.newPage();
+
+        // --- RESOURCE BLOCKING (Mirroring phase2.js Performance) ---
+        await page.route('**/*', (route: any) => {
+            const type = route.request().resourceType();
+            const url = route.request().url();
+            if (['image', 'media', 'font'].includes(type) || url.includes('analytics') || url.includes('ads')) {
+                return route.abort();
+            }
+            return route.continue();
+        });
 
         console.log(`[WORKER] 🧬 IN-MEMORY CONTEXT MODE: Fresh session seeded from DB.`);
 
@@ -646,57 +656,133 @@ export const processWorkflowStep = async (data: any, job: Job) => {
             }
 
             console.log(`[WORKER] Profile visit completed for ${lead.firstName}.`);
-        } else if (stepType === 'LIKE_POST') {
-            const activityUrl = lead.linkedinUrl.replace(/\/$/, '') + '/recent-activity/shares/';
-            console.log(`[WORKER] Navigating to Activity to find post to Like...`);
-            await page.goto(activityUrl, { waitUntil: 'domcontentloaded' });
+        } else if (stepType === 'LIKE_POST' || stepType === 'COMMENT_POST') {
+            // 1. WARMUP (Mirroring phase2 test script)
+            console.log(`[WORKER] 🔥 Warming up...`);
+            await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
+            await wait(randomRange(3000, 5000));
+
+            // 2. PROFILE VISIT
+            console.log(`[WORKER] 👤 Opening profile: ${lead.linkedinUrl}`);
+            await page.goto(lead.linkedinUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
             await wait(4000);
 
-            const postUrn = await page.evaluate(() => {
-                const wrapper = document.querySelector('div[data-urn*="urn:li:activity"], div[data-urn*="urn:li:ugcPost"]');
-                return wrapper?.getAttribute('data-urn');
-            });
+            // 3. NAVIGATE TO ACTIVITY — retry up to 3 times with page reload
+            const cleanUrl = lead.linkedinUrl.split('?')[0].replace(/\/$/, '');
+            const activityUrl = cleanUrl + '/recent-activity/shares/';
+            console.log(`[WORKER] 🧭 Navigating to user's "Shares" feed...`);
 
-            if (postUrn) {
-                const postUrl = `https://www.linkedin.com/feed/update/${postUrn}/`;
-                await page.goto(postUrl, { waitUntil: 'domcontentloaded' });
-                await wait(3000);
-                const likeBtn = page.locator('button:has(span:text-is("Like"))').first();
-                if (await likeBtn.isVisible()) {
-                    const isPressed = await likeBtn.getAttribute('aria-pressed');
-                    if (isPressed !== 'true') {
-                        await humanMoveAndClick(page, likeBtn);
-                        console.log(`[WORKER] ✅ Liked post for ${lead.firstName}`);
+            const findPostLink = async (): Promise<string | null> => {
+                // METHOD 1: Universal data-urn wrapper
+                const postWrappers = Array.from(document.querySelectorAll('div[data-urn*="urn:li:activity"], div[data-urn*="urn:li:ugcPost"], div[data-urn*="urn:li:share"]'));
+                if (postWrappers.length > 0) {
+                    const urn = postWrappers[0].getAttribute('data-urn');
+                    return `https://www.linkedin.com/feed/update/${urn}/`;
+                }
+                // METHOD 2: Fallback anchor tag search
+                const links = Array.from(document.querySelectorAll('a[href*="/feed/update/urn:li:"]'));
+                const uniqueLinks: string[] = [];
+                for (let link of links) {
+                    if (!(link as HTMLAnchorElement).href.includes('?commentUrn=')) {
+                        const cleanLink = (link as HTMLAnchorElement).href.split('?')[0];
+                        if (!uniqueLinks.includes(cleanLink)) uniqueLinks.push(cleanLink);
                     }
                 }
-            }
-        } else if (stepType === 'COMMENT_POST') {
-            const activityUrl = lead.linkedinUrl.replace(/\/$/, '') + '/recent-activity/shares/';
-            console.log(`[WORKER] Navigating to Activity to find post to Comment...`);
-            await page.goto(activityUrl, { waitUntil: 'domcontentloaded' });
-            await wait(4000);
+                if (uniqueLinks.length > 0) return uniqueLinks[0];
+                return null;
+            };
 
-            const postUrn = await page.evaluate(() => {
-                const wrapper = document.querySelector('div[data-urn*="urn:li:activity"], div[data-urn*="urn:li:ugcPost"]');
-                return wrapper?.getAttribute('data-urn');
-            });
+            let postLink: string | null = null;
 
-            if (postUrn) {
-                const postUrl = `https://www.linkedin.com/feed/update/${postUrn}/`;
-                await page.goto(postUrl, { waitUntil: 'domcontentloaded' });
-                await wait(3000);
+            for (let attempt = 1; attempt <= 3; attempt++) {
+                await page.goto(activityUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
-                const commentSelector = 'div[role="textbox"][aria-label*="Add a comment"], div[data-placeholder="Add a comment…"]';
-                if (await page.isVisible(commentSelector)) {
-                    const content = stepData.message || 'Great insights! 🚀';
-                    const finalContent = content.replace(/\{firstName\}/g, lead.firstName || '');
-                    await page.click(commentSelector);
-                    await humanType(page, commentSelector, finalContent);
-                    await wait(1000);
-                    const submitBtn = page.locator('button.comments-comment-box__submit-button, button.artdeco-button--primary:has-text("Post")').first();
-                    await submitBtn.click({ force: true });
-                    console.log(`[WORKER] ✅ Commented on post for ${lead.firstName}`);
+                // Wait for post wrapper elements to appear in the DOM (LinkedIn loads them via JS)
+                try {
+                    await page.waitForSelector(
+                        'div[data-urn*="urn:li:activity"], div[data-urn*="urn:li:ugcPost"], div[data-urn*="urn:li:share"], a[href*="/feed/update/urn:li:"]',
+                        { timeout: 15000 }
+                    );
+                    console.log(`[WORKER] ✅ Post elements appeared in DOM (attempt ${attempt}).`);
+                } catch {
+                    console.log(`[WORKER] ⏳ Post elements not found on attempt ${attempt}, scrolling to trigger lazy load...`);
                 }
+
+                // Scroll to trigger any lazy-loaded content
+                for (let i = 0; i < 5; i++) {
+                    await page.mouse.wheel(0, 800);
+                    await wait(1500);
+                }
+
+                postLink = await page.evaluate(findPostLink);
+                if (postLink) break;
+
+                // Save debug screenshot on failure
+                try {
+                    const debugPath = path.join(baseSessionDir, userId, `debug_activity_${Date.now()}.png`);
+                    await page.screenshot({ path: debugPath, fullPage: false });
+                    console.log(`[WORKER] 📸 Debug screenshot saved: ${debugPath}`);
+                } catch {}
+
+                if (attempt < 3) {
+                    console.log(`[WORKER] 🔄 Reloading activity page (attempt ${attempt + 1}/3)...`);
+                    await wait(randomRange(3000, 5000));
+                }
+            }
+
+            if (postLink) {
+                console.log(`[WORKER] Found post! Navigating to: ${postLink}`);
+                await page.goto(postLink, { waitUntil: 'domcontentloaded', timeout: 60000 });
+                await wait(5000);
+
+                if (stepType === 'LIKE_POST') {
+                    const likeBtn = page.locator('button:has(span:text-is("Like"))').first();
+                    if (await likeBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
+                        const isPressed = await likeBtn.getAttribute('aria-pressed');
+                        if (isPressed !== 'true') {
+                            await likeBtn.evaluate((el: any) => el.click());
+                            console.log(`[WORKER] ✅ Liked post for ${lead.firstName}`);
+                        } else {
+                            console.log(`[WORKER] ⚠️ Post is already liked for ${lead.firstName}`);
+                        }
+                    } else {
+                        console.log(`[WORKER] ⚠️ Like button not visible for ${lead.firstName}`);
+                    }
+                } else if (stepType === 'COMMENT_POST') {
+                    const commentSelector = 'div[role="textbox"][aria-label*="Add a comment"], div[data-placeholder="Add a comment…"]';
+                    const commentBox = page.locator(commentSelector).first();
+                    if (await commentBox.isVisible({ timeout: 5000 }).catch(() => false)) {
+                        await commentBox.scrollIntoViewIfNeeded();
+                        await commentBox.click();
+                        await wait(1000);
+
+                        const content = stepData.message || 'Great insights! 🚀';
+                        const finalContent = content.replace(/\{firstName\}/g, lead.firstName || '').replace(/\{\{firstName\}\}/g, lead.firstName || '');
+
+                        await commentBox.type(finalContent, { delay: 40 });
+                        await wait(1500);
+
+                        const submitBtn = page.locator('button.comments-comment-box__submit-button, button.artdeco-button--primary:has-text("Comment"), button.artdeco-button--primary:has-text("Post")').first();
+
+                        if (await submitBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+                            const disabled = await submitBtn.getAttribute('disabled');
+                            if (disabled !== null) {
+                                await page.keyboard.press('Space');
+                                await page.keyboard.press('Backspace');
+                                await wait(1000);
+                            }
+                            await submitBtn.click({ force: true });
+                            console.log(`[WORKER] ✅ Commented on post for ${lead.firstName}`);
+                            await wait(4000);
+                        } else {
+                            console.log(`[WORKER] ⚠️ Submit button not found after typing.`);
+                        }
+                    } else {
+                        console.log(`[WORKER] ⚠️ Comment box not visible.`);
+                    }
+                }
+            } else {
+                console.log(`[WORKER] ⚠️ Could not find any post after 3 attempts. The user might not have posts.`);
             }
         }
 
@@ -751,8 +837,8 @@ export const processWorkflowStep = async (data: any, job: Job) => {
                         console.log(`[WORKER] Delay node is last in workflow, marking complete.`);
                     }
                 } else {
-                    // Non-delay step: add a small random gap (2-5 min) for human-like pacing
-                    const safetyGapMs = (Math.floor(Math.random() * 180) + 120) * 1000;
+                    // Non-delay step: add a small random gap (10-15 sec) for human-like pacing
+                    const safetyGapMs = (Math.floor(Math.random() * 6) + 10) * 1000;
                     nextActionDate = new Date(Date.now() + safetyGapMs);
                     console.log(`[WORKER] Next step is action node. Scheduling in ${Math.round(safetyGapMs / 1000)}s for lead ${lead.firstName}`);
                 }
