@@ -657,15 +657,35 @@ export const processWorkflowStep = async (data: any, job: Job) => {
 
             console.log(`[WORKER] Profile visit completed for ${lead.firstName}.`);
         } else if (stepType === 'LIKE_POST' || stepType === 'COMMENT_POST') {
+            // DEBUG: Log cookie info before starting
+            const debugCookies = await context.cookies();
+            const liAtCookie = debugCookies.find((c: any) => c.name === 'li_at');
+            console.log(`[WORKER] 🔍 DEBUG: Total cookies in context: ${debugCookies.length}`);
+            console.log(`[WORKER] 🔍 DEBUG: li_at present: ${!!liAtCookie}, domain: ${liAtCookie?.domain}, value length: ${liAtCookie?.value?.length || 0}`);
+
             // 1. WARMUP (Mirroring phase2 test script)
             console.log(`[WORKER] 🔥 Warming up...`);
             await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
             await wait(randomRange(3000, 5000));
 
+            // DEBUG: Screenshot after warmup to see if feed loads
+            try {
+                const warmupPath = path.join(baseSessionDir, userId, `debug_warmup_${Date.now()}.png`);
+                await page.screenshot({ path: warmupPath, fullPage: false });
+                console.log(`[WORKER] 📸 DEBUG warmup screenshot: ${warmupPath} | URL: ${page.url()}`);
+            } catch {}
+
             // 2. PROFILE VISIT
             console.log(`[WORKER] 👤 Opening profile: ${lead.linkedinUrl}`);
             await page.goto(lead.linkedinUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
             await wait(4000);
+
+            // DEBUG: Screenshot after profile visit
+            try {
+                const profilePath = path.join(baseSessionDir, userId, `debug_profile_${Date.now()}.png`);
+                await page.screenshot({ path: profilePath, fullPage: false });
+                console.log(`[WORKER] 📸 DEBUG profile screenshot: ${profilePath} | URL: ${page.url()}`);
+            } catch {}
 
             // 3. NAVIGATE TO ACTIVITY — retry up to 3 times with page reload
             const cleanUrl = lead.linkedinUrl.split('?')[0].replace(/\/$/, '');
@@ -696,6 +716,16 @@ export const processWorkflowStep = async (data: any, job: Job) => {
 
             for (let attempt = 1; attempt <= 3; attempt++) {
                 await page.goto(activityUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+                await wait(3000); // Let page settle before screenshot
+
+                // DEBUG: Screenshot and URL log at every attempt
+                try {
+                    const actPath = path.join(baseSessionDir, userId, `debug_activity_attempt${attempt}_${Date.now()}.png`);
+                    await page.screenshot({ path: actPath, fullPage: false });
+                    const currentUrl = page.url();
+                    const pageTitle = await page.title().catch(() => 'unknown');
+                    console.log(`[WORKER] 📸 DEBUG activity screenshot: ${actPath} | URL: ${currentUrl} | Title: ${pageTitle}`);
+                } catch {}
 
                 // Wait for post wrapper elements to appear in the DOM (LinkedIn loads them via JS)
                 try {
