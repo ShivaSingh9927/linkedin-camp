@@ -193,13 +193,33 @@ export const syncExtension = async (req: any, res: Response) => {
                 
                 if (isFeed) {
                     console.log(`[SYNC-VERIFY] ✅ SUCCESS: Feed detected for user ${userId}. Session is primed on cloud at ${sessionPath}`);
-                    await prisma.user.update({
-                        where: { id: userId },
-                        data: { 
-                            persistentSessionPath: sessionPath,
-                            linkedinActiveInBrowser: false // Ready for cloud control
-                        }
-                    });
+                    
+                    // CRITICAL: Capture refreshed cookies after LinkedIn rotates session tokens
+                    try {
+                        const refreshedCookies = await context.cookies();
+                        const linkedinOnlyCookies = refreshedCookies.filter((c: any) => 
+                            c.domain.includes('linkedin.com')
+                        );
+                        console.log(`[SYNC-VERIFY] Saving ${linkedinOnlyCookies.length} refreshed cookies to DB`);
+                        await prisma.user.update({
+                            where: { id: userId },
+                            data: { 
+                                persistentSessionPath: sessionPath,
+                                linkedinActiveInBrowser: false,
+                                linkedinCookie: JSON.stringify(linkedinOnlyCookies)
+                            }
+                        });
+                    } catch (cookieErr: any) {
+                        console.error(`[SYNC-VERIFY] Failed to save refreshed cookies:`, cookieErr.message);
+                        // Still update the session path even if cookie save fails
+                        await prisma.user.update({
+                            where: { id: userId },
+                            data: { 
+                                persistentSessionPath: sessionPath,
+                                linkedinActiveInBrowser: false
+                            }
+                        });
+                    }
                     return true;
                 } else {
                     console.warn(`[SYNC-VERIFY] ❌ FAILED: Feed not detected for user ${userId}. URL: ${page.url()}`);
