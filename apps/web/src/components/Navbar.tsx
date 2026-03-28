@@ -60,9 +60,9 @@ export function Navbar() {
         <Link href="/" className="flex items-center space-x-3 group">
           <div className="w-36 h-36 bg-primary/10 rounded-2xl flex items-center justify-center shadow-lg shadow-primary/10 group-hover:scale-105 transition-all duration-300 relative overflow-hidden">
             <img 
-              src="/leadmate.jpeg" 
-              alt="Leadmate" 
-              className="w-full h-full object-cover rounded-2xl p-0.5" 
+              src="/leadmate.png" 
+              alt="Logo" 
+              className="w-full h-full object-contain filter brightness-0 invert" 
             />
           </div>
           <div>

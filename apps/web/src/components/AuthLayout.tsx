@@ -61,9 +61,9 @@ export function AuthLayout({
                         <div className="flex items-center gap-4 mb-6 animate-element animate-delay-100">
                             <div className="w-14 h-14 bg-primary/10 rounded-[1.25rem] flex items-center justify-center shadow-xl shadow-primary/10">
                                 <img 
-                                    src="/leadmate.jpeg" 
-                                    alt="LEADMATE" 
-                                    className="w-full h-full rounded-[1.1rem] object-cover p-1" 
+                                    src="/leadmate_wbg.png" 
+                                    alt="Leadmate Logo" 
+                                    className="max-w-[140px] opacity-90 drop-shadow-2xl"
                                 />
                             </div>
                             <div>

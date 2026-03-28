@@ -49,9 +49,9 @@ export const syncInbox = async (userId: string) => {
         } catch (e) {}
 
         // DB fallback if file doesn't exist
-        if (!fpData && (user as any).linkedinFingerprint) {
+        if (!fpData && user.linkedinFingerprint) {
             try {
-                fpData = JSON.parse((user as any).linkedinFingerprint);
+                fpData = JSON.parse(user.linkedinFingerprint);
                 console.log(`[INBOX-WORKER] Loaded fingerprint from DB`);
             } catch (e) {}
         }
