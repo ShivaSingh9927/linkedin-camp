@@ -144,13 +144,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 // ─── Waalaxy-Style Automatic Session Sync ─────────────────────
 // Listen for changes to the critical LinkedIn session cookies
+let syncTimeout = null;
+
 chrome.cookies.onChanged.addListener((changeInfo) => {
+    // Only care about linkedin.com cookies
     if (changeInfo.cookie.domain.includes('linkedin.com')) {
-        if (changeInfo.cookie.name === 'li_at' || changeInfo.cookie.name === 'JSESSIONID') {
-            if (!changeInfo.removed) {
-                console.log(`[Session Sync] Detected change in ${changeInfo.cookie.name}. Auto-syncing...`);
+        // Critical: Only trigger on non-removed events to avoid loops
+        if (!changeInfo.removed) {
+            console.log(`[Session Sync] Detected change in ${changeInfo.cookie.name}. Debouncing...`);
+            
+            if (syncTimeout) clearTimeout(syncTimeout);
+            syncTimeout = setTimeout(() => {
                 autoSyncSession();
-            }
+            }, 3000); // 3 second debounce
         }
     }
 });
