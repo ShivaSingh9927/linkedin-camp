@@ -9,12 +9,9 @@ dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 
 console.log('[BACKEND-ENV] PORT:', process.env.PORT);
 
-// We delay Prisma and heavy imports until AFTER we bind the port
-// to ensure Railway considers us "HEALTHY" immediately
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// --- 1. EMERGENCY HEALTH CHECKS (Must be first) ---
 app.get('/health', (req, res) => {
     console.log('[BACKEND-REQ] /health hit');
     res.status(200).json({ status: 'ok', msg: 'Core process is alive' });
@@ -22,19 +19,21 @@ app.get('/health', (req, res) => {
 
 app.get('/ping', (req, res) => res.send('pong'));
 
-app.use(cors()); // Permissive for initial debug
+app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// --- 2. START SERVER IMMEDIATELY (Do not block on imports) ---
+app.use((req, res, next) => {
+    if (req.url !== '/health' && req.url !== '/ping') {
+        console.log(`[BACKEND-REQ] ${req.method} ${req.url}`);
+    }
+    next();
+});
+
 const serverPort = parseInt(String(PORT), 10);
 
 app.listen(serverPort, '0.0.0.0', () => {
     console.log(`[BACKEND-READY] Listening on 0.0.0.0:${serverPort}`);
-
-    // --- 3. DYNAMIC IMPORTS / BACKGROUND INIT ---
-    // We import routes and background services AFTER the server is ready
-    // to prevent any sync import logic from blocking the startup
     console.log('[BACKEND-BOOT] Proceeding with module loading...');
 
     const initializeApp = async () => {
@@ -54,6 +53,7 @@ app.listen(serverPort, '0.0.0.0', () => {
             const { initWorker } = await import('./workers/linkedin.worker');
             const { initProxyHealthWorker } = await import('./workers/proxy.worker');
             const { downgradeExpiredTrials } = await import('./services/trial.service');
+            const { initCampaignWorker, enqueueCampaign } = await import('./workers/campaign-worker');
 
             app.use('/api/v1/auth', authRoutes);
             app.use('/api/v1/leads', leadRoutes);
@@ -76,7 +76,21 @@ app.listen(serverPort, '0.0.0.0', () => {
                 });
                 res.json({ success: true, count });
             });
+
+            // Campaign engine route — enqueue a campaign to the new queue
+            app.post('/api/admin/enqueue-campaign', async (req, res) => {
+                const { campaignId, delayMs } = req.body;
+                if (!campaignId) return res.status(400).json({ error: 'campaignId required' });
+
+                const campaign = await prisma.campaign.findUnique({ where: { id: campaignId } });
+                if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+
+                await enqueueCampaign(campaign.userId, campaignId, delayMs || 0);
+                res.json({ success: true, campaignId, queued: true });
+            });
+
             initWorker();
+            initCampaignWorker();
             initProxyHealthWorker();
             const { initInboxWorker } = await import('./workers/inbox.worker');
             initInboxWorker();

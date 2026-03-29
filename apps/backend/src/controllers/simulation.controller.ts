@@ -51,18 +51,17 @@ export const startSimulationLogin = async (req: any, res: Response) => {
 
         // 3. Launch Persistent Context (Just like login_and_save.js)
         const launchOptions: any = {
-            headless: true, // MUST be headless on cloud
+            headless: true, // MUST be headless on cloud to avoid rendering errors
             args: [
                 '--disable-blink-features=AutomationControlled',
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
                 '--disable-infobars',
-                '--window-position=0,0',
-                '--ignore-certifcate-errors',
-                '--ignore-certifcate-errors-spki-list',
+                '--disable-gpu',
+                '--disable-dev-shm-usage',
             ],
+            viewport: { width: 1280, height: 800 },
             userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
-            viewport: { width: 1440, height: 900 },
             extraHTTPHeaders: {
                 'Accept-Language': 'en-US,en;q=0.9',
             }
@@ -291,14 +290,15 @@ export const startPhase1PersistentSync = async (req: any, res: Response) => {
             fs.mkdirSync(path.join(process.cwd(), 'sessions'), { recursive: true });
         }
 
-        // 2. Launch Persistent Context (HEADED)
+        // 2. Launch Persistent Context (STABLE HEADLESS on server)
         const context = await chromium.launchPersistentContext(sessionPath, {
-            headless: false, // User needs to see this!
+            headless: true, // Switched to Headless for stability in Docker
             args: [
                 '--disable-blink-features=AutomationControlled',
-                '--start-maximized'
+                '--disable-gpu',
+                '--disable-dev-shm-usage',
             ],
-            viewport: null
+            viewport: { width: 1280, height: 800 }
         });
 
         const page = context.pages().length > 0 ? context.pages()[0] : await context.newPage();

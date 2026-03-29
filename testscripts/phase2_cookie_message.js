@@ -39,7 +39,7 @@ async function startPhase2CookieAutomation() {
 
   // 2. LAUNCH BROWSER
   const browser = await chromium.launch({
-    headless: false,
+    headless: true,
     args: [
       '--disable-blink-features=AutomationControlled',
       '--start-maximized',

@@ -29,7 +29,12 @@ export const withdrawOldInvites = async (userId: string, olderThanDays: number =
         // 1. Initialise Headless Browser with Custom Settings
         const launchOptions: any = {
             headless: true,
-            args: ['--no-sandbox', '--disable-setuid-sandbox']
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-gpu',
+                '--disable-dev-shm-usage'
+            ]
         };
 
         // @ts-ignore

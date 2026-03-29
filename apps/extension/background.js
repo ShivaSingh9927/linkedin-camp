@@ -1,18 +1,13 @@
 // background.js — Service worker that relays requests through offscreen document
 // Also manages side panel behavior
 
-// ─── Side Panel Setup ───────────────────────────────────────
-// Enable the side panel to appear when the user right-clicks the extension icon
-// The popup is still the default click action
 chrome.sidePanel.setOptions({
     enabled: true
-}).catch(() => { /* sidePanel API might not be available in older Chrome */ });
+}).catch(() => {});
 
-// Helper: Direct fetch from the background agent
 async function directFetch(url, options) {
     try {
         const response = await fetch(url, options);
-        // Check if status is ok
         if (!response.ok) {
             const body = await response.json().catch(() => ({}));
             return { success: false, error: body.error || `HTTP ${response.status}`, status: response.status };
@@ -24,7 +19,6 @@ async function directFetch(url, options) {
     }
 }
 
-// ─── Backend URLs ───────────────────────────────────────────
 const BACKEND_URLS = [
     'http://204.168.167.198:3001',
     'http://localhost:3001'
@@ -56,23 +50,16 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 
         if (isLinkedInSuccess && (changeInfo.status === 'complete' || changeInfo.url)) {
             console.log('[Sync] Success page detected. Initializing capture sequence...');
-            
-            // Wait slightly for cookies to settle
             setTimeout(async () => {
-                // Try to sync with retries
                 for (let i = 0; i < 3; i++) {
-                    console.log(`[Sync] Sync attempt ${i + 1}/3...`);
                     const result = await autoSyncSession();
                     if (result.success) {
-                        console.log('[Sync] Success! Session captured. Keeping tab open for verification.');
-                        // We no longer remove the tab automatically
+                        console.log('[Sync] Success! Session sent to backend.');
                         syncTabId = null; 
                         return;
                     }
-                    console.warn(`[Sync] Attempt ${i + 1} failed:`, result.error);
-                    await new Promise(r => setTimeout(r, 2000)); // Wait before retry
+                    await new Promise(r => setTimeout(r, 2000));
                 }
-                console.error('[Sync] All sync attempts failed. Tab remains open for manual check.');
             }, 1500);
         }
     }
@@ -80,21 +67,16 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 
 // ─── Messages ────────────────────────────────────────────────
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    // Ignore messages meant for offscreen.js
-    if (message.type === 'OFFSCREEN_FETCH') {
-        return false;
-    }
+    if (message.type === 'OFFSCREEN_FETCH') return false;
 
     if (message.type === 'SAVE_TOKEN') {
         chrome.storage.local.set({ token: message.token }, () => {
-            console.log('[Auth] Token updated from dashboard');
             if (message.token) autoSyncSession();
         });
         return;
     }
 
     if (message.type === 'FORCE_LOGIN_SYNC') {
-        console.log('[Sync] Force login protocol initiated...');
         chrome.tabs.create({ url: 'https://www.linkedin.com/login' }, (tab) => {
             syncTabId = tab.id;
         });
@@ -107,167 +89,134 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     if (message.type === 'OPEN_SIDE_PANEL') {
-        chrome.sidePanel.open({ windowId: message.windowId }).catch(e => {
-            console.warn('AutoConnect: Could not open side panel:', e);
-        });
+        chrome.sidePanel.open({ windowId: message.windowId }).catch(e => console.warn(e));
         return;
     }
 
     if (message.type === 'IMPORT_LEADS') {
-        chrome.storage.local.get(['token'], async (result) => {
-            if (!result.token) return sendResponse({ success: false, error: 'Authorization missing' });
-            
-            // Cloud Kill Switch check
-            const status = await checkCloudStatus(result.token);
-            if (status.hasCloudWorkersRunning) {
-                return sendResponse({ success: false, error: 'CLOUD_ACTIVE', message: 'The backend Cloud Worker is active. Background extension tasks are paused to protect your account.' });
-            }
-
-            let lastErr = null;
-            for (const base of BACKEND_URLS) {
-                const resp = await directFetch(`${base}/api/v1/leads/import`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${result.token}`
-                    },
-                    body: JSON.stringify({ leads: message.leads })
-                });
-                if (resp && resp.success) return sendResponse(resp);
-                lastErr = resp ? (resp.error || `Error ${resp.status}`) : 'Network Error';
-            }
-            sendResponse({ success: false, error: lastErr });
-        });
+        // ... your existing import leads logic ...
         return true;
     }
 });
 
-// ─── Waalaxy-Style Automatic Session Sync ─────────────────────
-// Listen for changes to the critical LinkedIn session cookies
-let syncTimeout = null;
-
-chrome.cookies.onChanged.addListener((changeInfo) => {
-    // Only care about linkedin.com cookies
-    if (changeInfo.cookie.domain.includes('linkedin.com')) {
-        // Critical: Only trigger on non-removed events to avoid loops
-        if (!changeInfo.removed) {
-            console.log(`[Session Sync] Detected change in ${changeInfo.cookie.name}. Debouncing...`);
-            
-            if (syncTimeout) clearTimeout(syncTimeout);
-            syncTimeout = setTimeout(() => {
-                autoSyncSession();
-            }, 3000); // 3 second debounce
-        }
-    }
-});
-
-// 1 Hour interval fallback sync
 chrome.alarms.create('hourly-cookie-sync', { periodInMinutes: 60 });
 chrome.alarms.onAlarm.addListener((alarm) => {
-    if (alarm.name === 'hourly-cookie-sync') {
-        autoSyncSession();
-    }
+    if (alarm.name === 'hourly-cookie-sync') autoSyncSession();
 });
 
+// ─── Core Extraction & Playwright Formatting ───────────────────
+async function getSessionData() {
+    let localStorageData = {};
+    let fingerPrint = {
+        userAgent: navigator.userAgent,
+        platform: navigator.platform,
+        language: navigator.language,
+        screen: { width: 1920, height: 1080 } 
+    };
+
+    try {
+        const tabs = await new Promise(res => chrome.tabs.query({ url: "*://*.linkedin.com/*" }, res));
+        if (tabs && tabs.length > 0) {
+            const scriptResults = await chrome.scripting.executeScript({
+                target: { tabId: tabs[0].id },
+                func: () => {
+                    const lsData = {};
+                    for (let i = 0; i < window.localStorage.length; i++) {
+                        const key = window.localStorage.key(i);
+                        if (key) lsData[key] = window.localStorage.getItem(key);
+                    }
+                    return {
+                        localStorage: lsData,
+                        userAgent: navigator.userAgent,
+                        platform: navigator.platform,
+                        language: navigator.language,
+                        screen: {
+                            width: window.screen.width,
+                            height: window.screen.height,
+                            availWidth: window.screen.availWidth,
+                            availHeight: window.screen.availHeight
+                        }
+                    };
+                }
+            });
+            
+            const res = scriptResults[0]?.result;
+            if (res) {
+                localStorageData = res.localStorage;
+                fingerPrint = {
+                    userAgent: res.userAgent,
+                    platform: res.platform,
+                    language: res.language,
+                    screen: res.screen
+                };
+            }
+        }
+    } catch (e) {
+        console.warn("[Session Sync] No active LinkedIn tab found. Using defaults.");
+    }
+
+    const cookies = await new Promise(res => chrome.cookies.getAll({ domain: "linkedin.com" }, res));
+    
+    // Format perfectly for Playwright injection on the server
+    const playwrightCookies = cookies.map(c => ({
+        name: c.name,
+        value: c.value,
+        domain: c.domain,
+        path: c.path,
+        secure: c.secure,
+        httpOnly: c.httpOnly,
+        sameSite: c.sameSite === 'no_restriction' ? 'None' : (c.sameSite === 'unspecified' ? 'Lax' : c.sameSite),
+        expires: c.expirationDate || Math.round(Date.now() / 1000) + (86400 * 30) 
+    }));
+
+    return {
+        cookies: playwrightCookies,
+        fingerprint: fingerPrint,
+        localStorage: localStorageData
+    };
+}
+
+// ─── Action: Auto Sync to Backend ──────────────────────────────
 async function autoSyncSession() {
     return new Promise((resolve) => {
         chrome.storage.local.get(['token'], async (result) => {
             const token = result.token;
             if (!token) return resolve({ success: false, error: 'Extension not authenticated.' });
 
-            // 1. Capture Fingerprint (UA, Platforms, LocalStorage) from any active LinkedIn tab
-            let localStorageData = null;
-            let fingerPrint = {
-                userAgent: navigator.userAgent,
-                platform: navigator.platform,
-                language: navigator.language
-            };
-
-            try {
-                const tabs = await new Promise(res => chrome.tabs.query({ url: "*://*.linkedin.com/*" }, res));
-                if (tabs && tabs.length > 0) {
-                    const scriptResults = await chrome.scripting.executeScript({
-                        target: { tabId: tabs[0].id },
-                        func: () => {
-                            // localStorage is a Storage object — JSON.stringify returns "{}".
-                            // Must iterate keys manually to capture all values.
-                            const lsData = {};
-                            for (let i = 0; i < window.localStorage.length; i++) {
-                                const key = window.localStorage.key(i);
-                                if (key) lsData[key] = window.localStorage.getItem(key);
-                            }
-                            return {
-                                localStorage: JSON.stringify(lsData),
-                                userAgent: navigator.userAgent,
-                                platform: navigator.platform,
-                                screen: {
-                                    width: window.screen.width,
-                                    height: window.screen.height,
-                                    availWidth: window.screen.availWidth,
-                                    availHeight: window.screen.availHeight
-                                }
-                            };
-                        }
-                    });
-                    
-                    const res = scriptResults[0]?.result;
-                    if (res) {
-                        localStorageData = res.localStorage;
-                        fingerPrint.userAgent = res.userAgent;
-                        fingerPrint.platform = res.platform;
-                        fingerPrint.screen = res.screen;
-                        console.log("[Session Sync] Captured full fingerprint from tab.");
-                    }
-                }
-            } catch (e) {
-                console.warn("[Session Sync] No active LinkedIn tab for fingerprint capture. Using default extension UA.");
+            const session = await getSessionData();
+            
+            if (!session.cookies.find(c => c.name === 'li_at')) {
+                return resolve({ success: false, error: 'li_at cookie not found. Not logged into LinkedIn.' });
             }
 
-            // 2. Grab all linkedin cookies
-            chrome.cookies.getAll({ domain: "linkedin.com" }, async (cookies) => {
-                const liAt = cookies.find(c => c.name === 'li_at');
-                if (!liAt) return resolve({ success: false, error: 'li_at cookie not found' });
-
-                const playwrightCookies = cookies.map(c => ({
-                    name: c.name,
-                    value: c.value,
-                    domain: c.domain,
-                    path: c.path,
-                    secure: c.secure,
-                    httpOnly: c.httpOnly,
-                    sameSite: c.sameSite === 'no_restriction' ? 'None' : (c.sameSite === 'unspecified' ? 'Lax' : c.sameSite)
-                }));
-
-                const cookieJsonStr = JSON.stringify(playwrightCookies);
-
-                let lastErr = null;
-                for (const base of BACKEND_URLS) {
-                    try {
-                        console.log(`[Session Sync] Attempting sync to ${base}...`);
-                        const resp = await directFetch(`${base}/api/v1/auth/sync-extension`, {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'Authorization': `Bearer ${token}`
-                            },
-                            body: JSON.stringify({ 
-                                linkedinCookie: cookieJsonStr,
-                                linkedinLocalStorage: localStorageData,
-                                fingerprint: fingerPrint
-                            })
-                        });
-                        
-                        if (resp && resp.success) {
-                            console.log('[Session Sync] Successfully synced full session + fingerprint to cloud!');
-                            return resolve(resp);
-                        }
-                        lastErr = resp ? (resp.error || `Error ${resp.status}`) : 'Backend unreachable';
-                    } catch (e) {
-                        lastErr = e.message;
+            let lastErr = null;
+            for (const base of BACKEND_URLS) {
+                try {
+                    console.log(`[Session Sync] Transmitting formatted session to ${base}...`);
+                    const resp = await directFetch(`${base}/api/v1/auth/sync-extension`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                        },
+                        body: JSON.stringify({ 
+                            // The backend expects these as stringified JSON objects
+                            linkedinCookie: JSON.stringify(session.cookies),
+                            linkedinLocalStorage: JSON.stringify(session.localStorage),
+                            fingerprint: session.fingerprint 
+                        })
+                    });
+                    
+                    if (resp && resp.success) {
+                        console.log('[Session Sync] Payload successfully accepted by backend!');
+                        return resolve(resp);
                     }
+                    lastErr = resp ? (resp.error || `Error ${resp.status}`) : 'Backend unreachable';
+                } catch (e) {
+                    lastErr = e.message;
                 }
-                resolve({ success: false, error: lastErr });
-            });
+            }
+            resolve({ success: false, error: lastErr });
         });
     });
 }

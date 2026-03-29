@@ -70,33 +70,48 @@ export const syncExtension = async (req: any, res: Response) => {
     try {
         console.log(`[SYNC-EVENT] Body sizes - Cookies: ${linkedinCookie?.length || 0}, Storage: ${linkedinLocalStorage?.length || 0}`);
         
-        // 1. Update Database (Initial Sync)
+        // 1. Update Database (Initial Sync) & Prepare Session Directory
+        const sessionPath = path.join(process.cwd(), 'sessions', userId);
+        if (!fs.existsSync(path.dirname(sessionPath))) {
+            fs.mkdirSync(path.dirname(sessionPath), { recursive: true });
+        }
+        if (!fs.existsSync(sessionPath)) {
+            fs.mkdirSync(sessionPath, { recursive: true });
+        }
+
         await prisma.user.update({
             where: { id: userId },
             data: { 
                 linkedinCookie,
                 linkedinLocalStorage,
                 linkedinFingerprint: fingerprint ? JSON.stringify(fingerprint) : undefined,
+                persistentSessionPath: sessionPath,
                 linkedinActiveInBrowser: true,
                 lastBrowserActivityAt: new Date()
             },
         });
 
-        // 2. Prepare Session Directory
-        const isCloud = process.env.NODE_ENV === 'production';
-        const baseSessionDir = isCloud ? '/app/sessions' : path.join(process.cwd(), 'sessions');
-        const sessionPath = path.join(baseSessionDir, userId);
-        if (!fs.existsSync(sessionPath)) {
-            fs.mkdirSync(sessionPath, { recursive: true });
+        // Save session files for Phase 2 automation
+        if (linkedinCookie) {
+            try {
+                const cookies = JSON.parse(linkedinCookie);
+                fs.writeFileSync(path.join(sessionPath, 'cookies.json'), JSON.stringify(cookies, null, 2));
+            } catch (e) {
+                console.error("[SYNC] Failed to save cookies.json:", e);
+            }
+        }
+        if (linkedinLocalStorage) {
+            try {
+                const storage = JSON.parse(linkedinLocalStorage);
+                fs.writeFileSync(path.join(sessionPath, 'localStorage.json'), JSON.stringify(storage, null, 2));
+            } catch (e) {
+                console.error("[SYNC] Failed to save localStorage.json:", e);
+            }
+        }
+        if (fingerprint) {
+            fs.writeFileSync(path.join(sessionPath, 'fingerprint.json'), JSON.stringify(fingerprint, null, 2));
         }
 
-        // Save fingerprint for Phase 2 automation
-        if (fingerprint) {
-            fs.writeFileSync(
-                path.join(sessionPath, 'fingerprint.json'), 
-                JSON.stringify(fingerprint, null, 2)
-            );
-        }
         // 3. LAUNCH VERIFICATION LOOP (Read-Only Mode)
         // Prevent concurrent verifications for the same user
         if ((global as any).activeVerifications?.has(userId)) {
@@ -110,10 +125,11 @@ export const syncExtension = async (req: any, res: Response) => {
         if (!(global as any).activeVerifications) (global as any).activeVerifications = new Set();
         (global as any).activeVerifications.add(userId);
 
-        console.log(`[SYNC-VERIFY] Initiating read-only cloud verification for user ${userId}...`);
+        console.log(`[SYNC-VERIFY] Initiating cloud verification for user ${userId}...`);
         
         // Assign Proxy if not exists
         const userProxy = await getOrAssignProxy(userId);
+        console.log(`[SYNC-VERIFY] Proxy Assignment: ${userProxy ? 'SUCCESS' : 'FALLBACK TO OXYLABS'}`);
 
         const verificationPromise = (async () => {
             let browser;
@@ -192,36 +208,45 @@ export const syncExtension = async (req: any, res: Response) => {
                     }
                 }
 
-                // Lightweight verification: Use a LinkedIn API endpoint instead of /feed/
-                // /feed/ causes LinkedIn to rotate session tokens in new browser contexts,
-                // which invalidates the user's active browser session.
-                console.log(`[SYNC-VERIFY] Performing lightweight session check (no /feed/ navigation)...`);
+                console.log(`[SYNC-VERIFY] Performing session check...`);
                 await page.goto('https://www.linkedin.com/voyager/api/me', { 
                     waitUntil: 'domcontentloaded', 
-                    timeout: 30000 
+                    timeout: 45000 
                 });
 
-                await page.waitForTimeout(2000);
+                await page.waitForTimeout(3000);
 
                 const pageContent = await page.content();
-                const pageUrl = page.url();
-                const isValid = !pageUrl.includes('login') && !pageUrl.includes('authwall') && 
-                                (pageContent.includes('miniProfile') || pageContent.includes('firstName') || pageUrl.includes('voyager'));
+                const finalUrl = page.url();
+                
+                console.log(`[SYNC-VERIFY] Page reached: ${finalUrl}`);
+                const isLoggedOut = finalUrl.includes('login') || finalUrl.includes('authwall') || finalUrl.includes('checkpoint');
+                const hasProfileData = pageContent.includes('miniProfile') || pageContent.includes('firstName') || pageContent.includes('"publicIdentifier"');
+                
+                const isValid = !isLoggedOut && (hasProfileData || finalUrl.includes('voyager'));
                 
                 if (isValid) {
-                    console.log(`[SYNC-VERIFY] ✅ SUCCESS: Session verified for ${userId} (lightweight check). No token rotation.`);
+                    console.log(`[SYNC-VERIFY] ✅ SUCCESS: Session verified for ${userId}. Found MiniProfile data.`);
                     
-                    // Update state to active, but DO NOT overwrite cookies/localStorage
+                    // Update state to active, and set the persistentSessionPath
                     await prisma.user.update({
                         where: { id: userId },
                         data: { 
                             persistentSessionPath: sessionPath,
-                            linkedinActiveInBrowser: false,
+                            linkedinActiveInBrowser: true, // Mark as active now that it's verified
+                            lastBrowserActivityAt: new Date()
                         }
                     });
+                    console.log(`[SYNC-VERIFY] Database updated for ${userId}. Button should turn green on next poll.`);
                     return true;
                 } else {
-                    console.warn(`[SYNC-VERIFY] ❌ FAILED: Session invalid for user ${userId}. URL: ${pageUrl}`);
+                    console.warn(`[SYNC-VERIFY] ❌ FAILED: Session invalid for user ${userId}. Reason: ${isLoggedOut ? 'Logged Out/Authwall' : 'No Profile Data found'}. URL: ${finalUrl}`);
+                    
+                    // Optional: Take a screenshot for debugging
+                    const errorScreenshotPath = path.join(sessionPath, `error_verify_${Date.now()}.png`);
+                    await page.screenshot({ path: errorScreenshotPath }).catch(() => {});
+                    console.log(`[SYNC-VERIFY] Error screenshot saved to ${errorScreenshotPath}`);
+
                     return false;
                 }
             } catch (err: any) {
@@ -300,13 +325,14 @@ export const getLinkedinStatus = async (req: any, res: Response) => {
 
         if (!user) return res.status(404).json({ error: 'User not found' });
 
-        // Check if the actual session (li_at) is still valid/active
-        const isValid = await LinkedInService.isSessionValid(user.linkedinCookie || '');
+        // CRITICAL: DO NOT use LinkedInService.isSessionValid here.
+        // It's a polling endpoint; checking LinkedIn validity on every poll is session suicide.
+        const connected = !!user.linkedinCookie || !!user.persistentSessionPath;
 
         res.json({
             userId: user.id,
-            connected: !!user.linkedinCookie || !!user.persistentSessionPath,
-            isValid: isValid, // NEW: Real-time confirmation that the session works
+            connected: connected,
+            isValid: true, // Optimistically valid if connected; real check is in worker
             cookieLength: user.linkedinCookie ? user.linkedinCookie.length : 0,
             persistentPath: user.persistentSessionPath,
             profile: {
@@ -339,16 +365,14 @@ export const syncLinkedinProfile = async (req: any, res: Response) => {
 export const startLinkedinLogin = async (req: any, res: Response) => {
     const userId = req.user.id;
     await getOrAssignProxy(userId);
-    const isCloud = process.env.RAILWAY_ENVIRONMENT || process.env.NODE_ENV === 'production';
-    const baseSessionDir = isCloud ? '/app/sessions' : path.join(process.cwd(), 'sessions');
-    const sessionDir = path.join(baseSessionDir, userId);
+    const sessionDir = path.join(process.cwd(), 'sessions', userId);
 
-    // Ensure base sessions directory exists
-    if (!fs.existsSync(baseSessionDir)) {
+    // Ensure sessions directory exists
+    if (!fs.existsSync(path.dirname(sessionDir))) {
         try {
-            fs.mkdirSync(baseSessionDir, { recursive: true });
+            fs.mkdirSync(path.dirname(sessionDir), { recursive: true });
         } catch (e: any) {
-            console.error(`[LOGIN-BOT] Error creating session directory: ${e.message}`);
+            console.error(`[LOGIN-BOT] Error creating sessions parent directory: ${e.message}`);
         }
     }
 
