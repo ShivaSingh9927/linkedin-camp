@@ -289,9 +289,8 @@ export const processWorkflowStep = async (data: any, job: Job) => {
             console.log(`[WORKER] ⚠️ Session invalid. URL: ${finalUrl}`);
 
             // Capture evidence for debug
-            const screenshotPath = `/tmp/worker_fail_${userId}_${Date.now()}.png`;
-            await page.screenshot({ path: screenshotPath, fullPage: true }).catch(() => { });
-            console.log(`[WORKER] Failure screenshot saved to: ${screenshotPath} (inside container)`);
+            // const screenshotPath = `/tmp/worker_fail_${userId}_${Date.now()}.png`;
+            // await page.screenshot({ path: screenshotPath, fullPage: true }).catch(() => { });
 
             // PAUSE THE CAMPAIGN
             if (campaignId) {
@@ -418,8 +417,8 @@ export const processWorkflowStep = async (data: any, job: Job) => {
                 }
 
                 if (!messageClicked) {
-                    await page.screenshot({ path: '/app/error_profile.png' });
-                    console.log(`[WORKER] Message button not found. Saved screenshot to /app/error_profile.png`);
+                    // await page.screenshot({ path: '/app/error_profile.png' });
+                    console.log(`[WORKER] Message button not found.`);
                     console.log(`[WORKER] Falling back to messaging link...`);
                     await page.goto('https://www.linkedin.com/messaging/', { waitUntil: 'domcontentloaded' });
                     await wait(randomRange(2000, 4000));
@@ -434,8 +433,8 @@ export const processWorkflowStep = async (data: any, job: Job) => {
                 await msgBox.scrollIntoViewIfNeeded();
                 await msgBox.waitFor({ state: 'visible', timeout: 15000 });
             } catch (e) {
-                await page.screenshot({ path: '/app/error_modal.png' });
-                console.error(`[WORKER] ❌ FAILED: Message box did not appear after click. Saved screenshot to /app/error_modal.png`);
+                // await page.screenshot({ path: '/app/error_modal.png' });
+                console.error(`[WORKER] ❌ FAILED: Message box did not appear after click.`);
                 return;
             }
 
@@ -512,8 +511,8 @@ export const processWorkflowStep = async (data: any, job: Job) => {
                 // In full-page "Compose" mode, the input box might remain visible but empty.
                 // We'll trust the send click but save a screenshot for debug investigation.
                 console.log(`[WORKER] Tentative success. Box still visible. URL: ${afterUrl}`);
-                const endScreenshot = `/tmp/send_final_${userId}_${Date.now()}.png`;
-                await page.screenshot({ path: endScreenshot }).catch(() => { });
+                // const endScreenshot = `/tmp/send_final_${userId}_${Date.now()}.png`;
+                // await page.screenshot({ path: endScreenshot }).catch(() => { });
 
                 await prisma.lead.update({
                     where: { id: lead.id },
@@ -670,9 +669,8 @@ export const processWorkflowStep = async (data: any, job: Job) => {
 
             // DEBUG: Screenshot after warmup to see if feed loads
             try {
-                const warmupPath = path.join(baseSessionDir, userId, `debug_warmup_${Date.now()}.png`);
-                await page.screenshot({ path: warmupPath, fullPage: false });
-                console.log(`[WORKER] 📸 DEBUG warmup screenshot: ${warmupPath} | URL: ${page.url()}`);
+                // const warmupPath = path.join(baseSessionDir, userId, `debug_warmup_${Date.now()}.png`);
+                // await page.screenshot({ path: warmupPath, fullPage: false });
             } catch {}
 
             // 2. PROFILE VISIT
@@ -682,9 +680,8 @@ export const processWorkflowStep = async (data: any, job: Job) => {
 
             // DEBUG: Screenshot after profile visit
             try {
-                const profilePath = path.join(baseSessionDir, userId, `debug_profile_${Date.now()}.png`);
-                await page.screenshot({ path: profilePath, fullPage: false });
-                console.log(`[WORKER] 📸 DEBUG profile screenshot: ${profilePath} | URL: ${page.url()}`);
+                // const profilePath = path.join(baseSessionDir, userId, `debug_profile_${Date.now()}.png`);
+                // await page.screenshot({ path: profilePath, fullPage: false });
             } catch {}
 
             // 3. NAVIGATE TO ACTIVITY — retry up to 3 times with page reload
@@ -720,11 +717,10 @@ export const processWorkflowStep = async (data: any, job: Job) => {
 
                 // DEBUG: Screenshot and URL log at every attempt
                 try {
-                    const actPath = path.join(baseSessionDir, userId, `debug_activity_attempt${attempt}_${Date.now()}.png`);
-                    await page.screenshot({ path: actPath, fullPage: false });
-                    const currentUrl = page.url();
-                    const pageTitle = await page.title().catch(() => 'unknown');
-                    console.log(`[WORKER] 📸 DEBUG activity screenshot: ${actPath} | URL: ${currentUrl} | Title: ${pageTitle}`);
+                    // const actPath = path.join(baseSessionDir, userId, `debug_activity_attempt${attempt}_${Date.now()}.png`);
+                    // await page.screenshot({ path: actPath, fullPage: false });
+                    // const currentUrl = page.url();
+                    // const pageTitle = await page.title().catch(() => 'unknown');
                 } catch {}
 
                 // Wait for post wrapper elements to appear in the DOM (LinkedIn loads them via JS)
@@ -749,9 +745,8 @@ export const processWorkflowStep = async (data: any, job: Job) => {
 
                 // Save debug screenshot on failure
                 try {
-                    const debugPath = path.join(baseSessionDir, userId, `debug_activity_${Date.now()}.png`);
-                    await page.screenshot({ path: debugPath, fullPage: false });
-                    console.log(`[WORKER] 📸 Debug screenshot saved: ${debugPath}`);
+                    // const debugPath = path.join(baseSessionDir, userId, `debug_activity_${Date.now()}.png`);
+                    // await page.screenshot({ path: debugPath, fullPage: false });
                 } catch {}
 
                 if (attempt < 3) {

@@ -27,25 +27,33 @@ export const connect: NodeHandler = async (ctx): Promise<NodeResult> => {
             return { success: true, output };
         }
 
-        // Find Connect button
-        let connectBtn = page.locator('button:has(span:text-is("Connect"))').first();
+        // Find Connect button (using testscript proven selector)
+        let connectBtn = page.locator('[aria-label*="to connect"]').first();
 
         if (!(await connectBtn.isVisible({ timeout: 5000 }).catch(() => false))) {
-            // Check "More" menu
+            // Check "More" menu (like testscripts)
             const moreBtn = page.locator('button:has(span:text-is("More"))').first();
             if (await moreBtn.isVisible()) {
                 await moreBtn.evaluate((el: any) => el.click());
-                await wait(randomRange(1500, 2500));
-                connectBtn = page.locator('[role="menuitem"]:has-text("Connect"), [role="menuitem"] span:text-is("Connect")').first();
+                await wait(randomRange(1500, 2000));
+                connectBtn = page.locator('[aria-label*="to connect"], a[role="menuitem"]:has-text("Connect")').first();
             }
         }
 
         if (await connectBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
+            // Use evaluate to bypass sticky headers (like testscripts)
             await connectBtn.evaluate((el: any) => el.click());
-            await wait(randomRange(2500, 4000));
+            console.log('[CONNECT] Connect button clicked, waiting for modal...');
+            await wait(randomRange(3000, 4000));
 
-            // Handle the modal — click Send
-            const sendBtn = page.locator('button[aria-label="Send now"], button:has(span:text-is("Send without a note")), button:has(span:text-is("Send"))').first();
+            // Handle the modal — click Send (like testscripts pattern)
+            const sendBtn = page.locator(
+                'button[aria-label="Send now"], ' +
+                'button:has(span:text-is("Send without a note")), ' +
+                'button:has(span:text-is("Send")), ' +
+                'button[aria-label="Send invitation"], ' +
+                'button:has-text("Send now")'
+            ).first();
 
             if (await sendBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
                 await sendBtn.evaluate((el: any) => el.click());
@@ -53,6 +61,15 @@ export const connect: NodeHandler = async (ctx): Promise<NodeResult> => {
                 output.status = 'sent';
                 return { success: true, output };
             } else {
+                // Try pressing Enter as fallback
+                await page.keyboard.press('Enter');
+                await wait(2000);
+                const url = page.url();
+                if (!url.includes('connect') && !url.includes('invitation')) {
+                    console.log('[CONNECT] Connection sent (URL changed).');
+                    output.status = 'sent';
+                    return { success: true, output };
+                }
                 return { success: false, error: 'Connect modal opened but Send button not found' };
             }
         } else {

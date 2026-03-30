@@ -74,9 +74,9 @@ export function TopNav() {
                 <Link href="/" className="flex items-center space-x-4 flex-shrink-0 group">
                     <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center shadow-xl shadow-primary/10 group-hover:scale-105 transition-all duration-300">
                         <img 
-                            src="/leadmate.png" 
+                            src="/leadmate_wbg.png" 
                             alt="Leadmate" 
-                            className="w-full h-full object-cover" 
+                            className="w-full h-full object-cover rounded-2xl p-1" 
                         />
                     </div>
                     <div className="hidden sm:block">

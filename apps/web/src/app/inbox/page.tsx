@@ -73,6 +73,12 @@ export default function InboxPage() {
       });
       const data = await res.json();
       setMessages(data.messages || []);
+      
+      const receivedMessages = (data.messages || []).filter((m: any) => !m.isFromMe);
+      if (receivedMessages.length > 0) {
+        const lastReceived = receivedMessages[receivedMessages.length - 1];
+        setLastReceivedMessage(lastReceived.content || '');
+      }
     } catch (err) {
       console.error('Failed to fetch messages:', err);
     } finally {
@@ -109,6 +115,42 @@ export default function InboxPage() {
   };
 
   const [replyText, setReplyText] = useState('');
+  const [isEnhancing, setIsEnhancing] = useState(false);
+  const [lastReceivedMessage, setLastReceivedMessage] = useState('');
+
+  const handleEnhanceReply = async () => {
+    if (!selectedConvo || !lastReceivedMessage) return;
+    
+    setIsEnhancing(true);
+    try {
+      // Prepare the last 6 messages for context
+      const threadHistory = messages.slice(-6).map(m => ({
+        role: m.direction === 'SENT' ? 'assistant' : 'user',
+        content: m.content
+      }));
+
+      const res = await fetch('/api/v1/ai/enhance', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}` 
+        },
+        body: JSON.stringify({ 
+          original_message: lastReceivedMessage,
+          draft_reply: replyText || '',
+          thread_history: threadHistory
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setReplyText(data.enhanced);
+      }
+    } catch (err) {
+      console.error('Enhance failed:', err);
+    } finally {
+      setIsEnhancing(false);
+    }
+  };
 
   const handleSendMessage = async () => {
     if (!selectedConvo || !replyText.trim()) return;
@@ -338,14 +380,33 @@ export default function InboxPage() {
                         handleSendMessage();
                       }
                     }}
-                    className="w-full p-4 pr-16 bg-slate-50 border-none rounded-3xl text-sm focus:ring-2 focus:ring-primary/20 min-h-[100px] resize-none transition-all group-focus-within:bg-white group-focus-within:shadow-xl"
+                    className="w-full p-4 pr-32 bg-slate-50 border-none rounded-3xl text-sm focus:ring-2 focus:ring-primary/20 min-h-[100px] resize-none transition-all group-focus-within:bg-white group-focus-within:shadow-xl"
                   />
-                  <button 
-                    onClick={handleSendMessage}
-                    className="absolute bottom-4 right-4 bg-primary text-white p-3 rounded-2xl shadow-lg shadow-primary/30 hover:bg-primary/90 transition-all active:scale-95"
-                  >
-                    <Sparkles className="w-5 h-5" />
-                  </button>
+                  <div className="absolute bottom-4 right-4 flex items-center gap-2">
+                    <button 
+                      onClick={handleEnhanceReply}
+                      disabled={isEnhancing || !lastReceivedMessage}
+                      className="bg-purple-100 text-purple-600 p-2.5 rounded-2xl shadow-sm hover:bg-purple-200 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 text-xs font-bold"
+                    >
+                      {isEnhancing ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-purple-300 border-t-purple-600 rounded-full animate-spin" />
+                          <span>Thinking...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="w-4 h-4" />
+                          <span>{replyText ? 'Enhance' : 'Generate'}</span>
+                        </>
+                      )}
+                    </button>
+                    <button 
+                      onClick={handleSendMessage}
+                      className="bg-primary text-white p-3 rounded-2xl shadow-lg shadow-primary/30 hover:bg-primary/90 transition-all active:scale-95"
+                    >
+                      <Sparkles className="w-5 h-5" />
+                    </button>
+                  </div>
                 </div>
                 <div className="mt-3 flex items-center justify-between text-xs text-slate-400">
                   <div className="flex items-center space-x-4">

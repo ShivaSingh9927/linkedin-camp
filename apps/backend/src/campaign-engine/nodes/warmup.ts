@@ -8,13 +8,16 @@ export const warmup: NodeHandler = async (ctx): Promise<NodeResult> => {
 
     try {
         console.log('[WARMUP] Visiting LinkedIn feed...');
+        console.log('[WARMUP] Current URL before goto:', page.url());
 
         await page.goto('https://www.linkedin.com/feed/', {
             waitUntil: 'domcontentloaded',
             timeout: 60000
         });
 
+        console.log('[WARMUP] URL after goto:', page.url());
         await wait(randomRange(5000, 8000));
+        console.log('[WARMUP] URL after wait:', page.url());
 
         // Session validation
         const url = page.url();

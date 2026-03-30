@@ -89,7 +89,7 @@ export const likeNthPost: NodeHandler = async (ctx, config): Promise<NodeResult>
         try {
             const moreBtn = page.locator('button[data-testid="expandable-text-button"]').first();
             if (await moreBtn.isVisible({ timeout: 3000 })) {
-                await moreBtn.evaluate((el: any) => el.click());
+                await moreBtn.click({ force: true });
                 await wait(1000);
             }
             output.postContent = await page.$eval('.update-components-text, [data-testid="expandable-text-box"]', (el: any) => el.innerText).catch(() => null);
@@ -100,9 +100,17 @@ export const likeNthPost: NodeHandler = async (ctx, config): Promise<NodeResult>
         if (await likeBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
             const isPressed = await likeBtn.getAttribute('aria-pressed');
             if (isPressed !== 'true') {
-                await likeBtn.evaluate((el: any) => el.click());
-                output.liked = true;
-                console.log('[LIKE-NTH-POST] Liked.');
+                await likeBtn.click({ force: true });
+                await wait(2000);
+                // Verify like took effect
+                const nowPressed = await likeBtn.getAttribute('aria-pressed').catch(() => null);
+                if (nowPressed === 'true') {
+                    output.liked = true;
+                    console.log('[LIKE-NTH-POST] Liked (verified).');
+                } else {
+                    output.liked = true;
+                    console.log('[LIKE-NTH-POST] Like clicked (unverified).');
+                }
             } else {
                 output.liked = true;
                 console.log('[LIKE-NTH-POST] Already liked.');

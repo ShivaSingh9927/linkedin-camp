@@ -1,5 +1,7 @@
 import { chromium } from 'playwright-extra';
 import { prisma } from '@repo/db';
+import * as fs from 'fs';
+import * as path from 'path';
 
 import {
     CampaignConfig,
@@ -11,6 +13,7 @@ import {
     LeadExecutionResult,
     CampaignSummary,
     NodeType,
+    SessionContext,
 } from './types';
 import { warmup } from './nodes/warmup';
 import { profileVisit } from './nodes/profile-visit';
@@ -28,9 +31,86 @@ chromium.use(stealth);
 const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
 const randomRange = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1) + min);
 
+// ---- File-based session loading (like testscripts) ----
+
+interface SessionFiles {
+    cookies: any[];
+    userAgent: string;
+    localStorage: Record<string, string>;
+}
+
+function loadSessionFromFiles(userId?: string, basePath?: string): SessionFiles | null {
+    // Look in multiple locations for session files
+    // Priority: 1) sessions/{userId}/  2) testscripts/  3) custom basePath
+    const possiblePaths: string[] = [];
+    
+    if (userId) {
+        possiblePaths.push(`/app/sessions/${userId}`);
+        possiblePaths.push(path.join(__dirname, `../../sessions/${userId}`));
+        possiblePaths.push(path.join(__dirname, `../../../sessions/${userId}`));
+    }
+    
+    possiblePaths.push('/app/testscripts');
+    possiblePaths.push(path.join(__dirname, '../../testscripts'));
+    possiblePaths.push(path.join(__dirname, '../../../testscripts'));
+    
+    if (basePath) {
+        possiblePaths.unshift(basePath);
+    }
+    
+    let base: string | null = null;
+    for (const p of possiblePaths) {
+        const cookiesPath = path.join(p, 'cookies.json');
+        const fingerprintPath = path.join(p, 'fingerprint.json');
+        if (fs.existsSync(cookiesPath) && fs.existsSync(fingerprintPath)) {
+            base = p;
+            break;
+        }
+    }
+    
+    if (!base) {
+        console.log('[ENGINE] Session files not found in any location');
+        return null;
+    }
+    
+    try {
+        const cookiesPath = path.join(base, 'cookies.json');
+        const fingerprintPath = path.join(base, 'fingerprint.json');
+        const localStoragePath = path.join(base, 'localStorage.json');
+        
+        if (!fs.existsSync(cookiesPath) || !fs.existsSync(fingerprintPath)) {
+            console.log(`[ENGINE] Session files not found at ${base}`);
+            return null;
+        }
+        
+        const cookies = JSON.parse(fs.readFileSync(cookiesPath, 'utf-8'));
+        const fingerprint = JSON.parse(fs.readFileSync(fingerprintPath, 'utf-8'));
+        
+        let localStorage: Record<string, string> = {};
+        if (fs.existsSync(localStoragePath)) {
+            try {
+                localStorage = JSON.parse(fs.readFileSync(localStoragePath, 'utf-8'));
+            } catch {}
+        }
+        
+        console.log(`[ENGINE] Loaded session from files: ${cookies.length} cookies`);
+        console.log(`[ENGINE] UserAgent: ${fingerprint.userAgent}`);
+        
+        return {
+            cookies,
+            userAgent: fingerprint.userAgent,
+            localStorage,
+        };
+    } catch (err: any) {
+        console.log(`[ENGINE] Failed to load session files: ${err.message}`);
+        return null;
+    }
+}
+
 // ---- Node registry ----
 
 const NODE_HANDLERS: Record<NodeType, NodeHandler> = {
+    'warmup': warmup,
     'profile-visit': profileVisit,
     'connect': connect,
     'like-nth-post': likeNthPost,
@@ -68,7 +148,15 @@ async function runLead(
     userId: string,
     campaignId: string,
     lead: { id: string; linkedinUrl: string; firstName: string | null; lastName: string | null },
-    flow: CampaignFlowNode[]
+    flow: CampaignFlowNode[],
+    campaignData?: {
+        objective?: string;
+        cta?: string;
+        toneOverride?: string;
+        persona?: string;
+        valueProp?: string;
+    },
+    sessionContext?: SessionContext
 ): Promise<LeadExecutionResult> {
     const execResult: LeadExecutionResult = {
         leadId: lead.id,
@@ -99,22 +187,7 @@ async function runLead(
             return execResult;
         }
 
-        // ---- Build browser context ----
-        let userAgentStr = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36';
-        let viewportSettings = { width: 1440, height: 900 };
-
-        // Read fingerprint from DB (synced by extension)
-        if (user.linkedinFingerprint) {
-            try {
-                const fp = typeof user.linkedinFingerprint === 'string'
-                    ? JSON.parse(user.linkedinFingerprint)
-                    : user.linkedinFingerprint;
-                if (fp.userAgent) userAgentStr = fp.userAgent;
-                if (fp.screen?.width && fp.screen?.height) {
-                    viewportSettings = { width: fp.screen.width, height: fp.screen.height };
-                }
-            } catch {}
-        }
+        // ---- Build browser context (matching phase2_cookie_message.js strategy) ----
 
         const launchOptions: any = {
             headless: true,
@@ -128,14 +201,66 @@ async function runLead(
             ],
         };
 
+        // Determine session source: worker-provided context > files > DB
+        let activeCookies: any[] | null = null;
+        let activeUserAgent: string | null = null;
+        let activeLocalStorage: Record<string, string> | null = null;
+        let activeProxy: { server: string; username?: string; password?: string } | null = null;
+
+        if (sessionContext?.cookies) {
+            // PRIMARY: Session from worker (already parsed & normalized by campaign-worker)
+            console.log(`[ENGINE] Using session from worker context (${sessionContext.cookies.length} cookies)`);
+            activeCookies = sessionContext.cookies;
+            activeUserAgent = sessionContext.userAgent;
+            activeLocalStorage = sessionContext.localStorage;
+            activeProxy = sessionContext.proxy;
+        } else {
+            // FALLBACK: Try file-based session (like testscripts)
+            const sessionFiles = loadSessionFromFiles(userId);
+            if (sessionFiles) {
+                console.log(`[ENGINE] Using session from files (${sessionFiles.cookies.length} cookies)`);
+                activeCookies = sessionFiles.cookies;
+                activeUserAgent = sessionFiles.userAgent;
+                activeLocalStorage = sessionFiles.localStorage;
+            } else {
+                // LAST RESORT: Parse from DB directly
+                console.log('[ENGINE] No worker context or files. Falling back to DB session.');
+                try {
+                    if (user.linkedinCookie) {
+                        const raw = JSON.parse(user.linkedinCookie);
+                        activeCookies = Array.isArray(raw) ? raw.map((c: any) => ({
+                            ...c,
+                            expires: c.expires != null ? Math.round(Number(c.expires)) : Math.round(Date.now() / 1000) + 86400 * 30,
+                        })) : raw;
+                    }
+                } catch {}
+                try {
+                    if (user.linkedinFingerprint) {
+                        const fp = typeof user.linkedinFingerprint === 'string'
+                            ? JSON.parse(user.linkedinFingerprint) : user.linkedinFingerprint;
+                        activeUserAgent = fp?.userAgent || null;
+                    }
+                } catch {}
+                try {
+                    if (user.linkedinLocalStorage) {
+                        activeLocalStorage = typeof user.linkedinLocalStorage === 'string'
+                            ? JSON.parse(user.linkedinLocalStorage) : user.linkedinLocalStorage;
+                    }
+                } catch {}
+            }
+        }
+
         const contextOptions: any = {
-            userAgent: userAgentStr,
-            viewport: viewportSettings,
+            userAgent: activeUserAgent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36',
+            viewport: null,
             locale: 'en-IN',
             timezoneId: 'Asia/Kolkata',
         };
 
-        if (user.proxy) {
+        // Proxy: prefer worker-provided, then DB, then default
+        if (activeProxy) {
+            contextOptions.proxy = activeProxy;
+        } else if (user.proxy) {
             contextOptions.proxy = {
                 server: `http://${user.proxy.proxyHost}:${user.proxy.proxyPort}`,
                 username: user.proxy.proxyUsername || undefined,
@@ -143,40 +268,35 @@ async function runLead(
             };
         } else {
             contextOptions.proxy = {
-                server: 'http://disp.oxylabs.io:8001',
-                username: 'user-shivasingh_clgdY',
-                password: 'Iamironman_3',
+                server: 'http://82.41.252.111:46222',
+                username: 'xBVyYdUpx84nWx7',
+                password: 'dwwTxtvv5a10RXn',
             };
         }
+
+        console.log(`[ENGINE] Proxy: ${contextOptions.proxy.server} | UA: ${contextOptions.userAgent.slice(0, 60)}...`);
 
         browser = await chromium.launch(launchOptions);
         context = await browser.newContext(contextOptions);
 
-        // Inject cookies from DB
-        if (user.linkedinCookie) {
-            try {
-                const cookies = JSON.parse(user.linkedinCookie);
-                if (Array.isArray(cookies)) {
-                    const sanitized = cookies.map((c: any) => ({
-                        ...c,
-                        expires: c.expires ? Math.round(Number(c.expires)) : Math.round(Date.now() / 1000) + 86400 * 30,
-                    }));
-                    await context.addCookies(sanitized);
-                }
-            } catch {}
+        // Inject cookies (exactly like phase2_cookie_message.js line 62)
+        if (activeCookies && activeCookies.length > 0) {
+            await context.addCookies(activeCookies);
+            const verify = await context.cookies();
+            console.log(`[ENGINE] Injected ${activeCookies.length} cookies, verified ${verify.length} in context`);
+        } else {
+            console.warn('[ENGINE] ⚠️ No cookies available — session will likely fail');
         }
 
-        // Inject localStorage
-        if (user.linkedinLocalStorage) {
-            try {
-                const lsData = JSON.parse(user.linkedinLocalStorage);
-                await context.addInitScript((data: any) => {
-                    const parsed = JSON.parse(data);
-                    for (const [k, v] of Object.entries(parsed)) {
-                        window.localStorage.setItem(k, v as string);
-                    }
-                }, JSON.stringify(lsData));
-            } catch {}
+        // Inject localStorage (exactly like phase2_cookie_message.js lines 68-75)
+        if (activeLocalStorage && Object.keys(activeLocalStorage).length > 0) {
+            await context.addInitScript((data: any) => {
+                const parsed = JSON.parse(data);
+                for (const [k, v] of Object.entries(parsed)) {
+                    window.localStorage.setItem(k, v as string);
+                }
+            }, JSON.stringify(activeLocalStorage));
+            console.log(`[ENGINE] Injected ${Object.keys(activeLocalStorage).length} localStorage keys`);
         }
 
         page = context.pages()[0] || await context.newPage();
@@ -214,7 +334,7 @@ async function runLead(
                     execResult.nodesExecuted.push(warmupExec);
                     execResult.status = 'failed';
                     execResult.failedAt = 'warmup';
-                    console.log(`[ENGINE] Lead ${lead.firstName}: warmup FAILED. Skipping to next lead.`);
+                    console.log(`[ENGINE] Lead ${lead.firstName}: warmup FAILED. Error: ${warmupResult.error}. Skipping to next lead.`);
                     return execResult;
                 }
 
@@ -232,6 +352,7 @@ async function runLead(
 
             const nodeCtx: NodeContext = {
                 page, context, lead, userId, campaignId, storedOutputs,
+                campaign: campaignData,
             };
 
             console.log(`[ENGINE] Lead ${lead.firstName}: executing node ${i + 1}/${flow.length} → ${nodeType}`);
@@ -359,7 +480,13 @@ export async function runCampaign(
 
         console.log(`\n[CAMPAIGN] Processing lead: ${leadData.firstName || leadData.linkedinUrl}`);
 
-        const result = await runLead(userId, campaignId, leadData, config.flow);
+        const result = await runLead(userId, campaignId, leadData, config.flow, {
+            objective: config.objective,
+            cta: config.cta,
+            toneOverride: config.toneOverride,
+            persona: config.persona,
+            valueProp: config.valueProp,
+        }, config.sessionContext);
         summary.leadResults.push(result);
 
         if (result.status === 'completed') {

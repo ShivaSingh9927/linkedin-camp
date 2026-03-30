@@ -65,6 +65,7 @@ model User {
   messages              Message[]
   templates             MessageTemplate[]
   smartLists            SmartList[]
+  businessProfile       BusinessProfile?
   
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
@@ -88,6 +89,9 @@ model Campaign {
   // The sequence of actions (Node-based or Array)
   workflow      Json?          // Legacy array style
   workflowJson  Json?          // New node-based style
+  objective     String?        // Campaign goal: "Book 15-min demo calls"
+  cta           String?        // Call to action: "Are you open to a quick chat?"
+  toneOverride  String?        // Optional tone override: "Friendly and casual"
   
   user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   leads         CampaignLead[]
@@ -345,4 +349,22 @@ model SmartList {
   updatedAt DateTime @updatedAt
 
   @@unique([userId, name])
+}
+
+model BusinessProfile {
+  id              String   @id @default(uuid())
+  userId          String   @unique
+  name            String?  // "Shiva Singh"
+  company         String?  // "LeadMate"
+  persona         String?  // "AI Engineer & SaaS Founder"
+  valueProp       String?  // "Automating LinkedIn outreach with AI"
+  style           String?  // "Direct, insightful, slightly provocative"
+  keywords        String[] @default([]) // ["AI", "Automation", "Growth"]
+  targetAudience  String?  // "Sales leaders, SDR managers"
+  industry        String?  // "SaaS / B2B Sales"
+
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }

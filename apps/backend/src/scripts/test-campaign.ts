@@ -27,8 +27,8 @@ const TEST_CAMPAIGN_CONFIG: CampaignConfig = {
         { node: 'profile-visit' },
         { node: 'connect' },
         { node: 'like-nth-post', n: 1 },
-        { node: 'comment-nth-post', n: 1, text: 'Great insights at {{company}}, {{name}}!' },
-        { node: 'send-message', text: 'Hey {{name}}, loved your work at {{company}}!', requireConnection: false },
+        { node: 'comment-nth-post', n: 1, text: 'Great insights at {{company}}, {{name}}!', aiEnabled: true },
+        { node: 'send-message', text: 'Hey {{name}}, loved your work at {{company}}!', requireConnection: false, aiEnabled: true },
     ],
 };
 

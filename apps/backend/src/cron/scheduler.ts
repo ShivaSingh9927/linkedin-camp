@@ -11,7 +11,7 @@ let actionQueue: any;
 try {
   redisConnection = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', { maxRetriesPerRequest: null });
   redisConnection.on('error', (err: any) => console.log('Redis Scheduler Error:', err.message));
-  actionQueue = new Queue('linkedin-actions', { connection: redisConnection as any });
+  actionQueue = new Queue('campaign-actions', { connection: redisConnection as any });
 } catch (e) {
   console.error('Failed to init Redis in scheduler:', e);
 }

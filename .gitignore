@@ -34,6 +34,16 @@ doc_attachment_verify.png
 login_and_save.js
 stealth_*.js
 test-*.js
+check_db.js
+tmp_check_db.js
+proxy_check.js
+proxy_cheap.txt
+ai_service.pid
+apps/backend/src/scripts/check-campaigns.ts
+apps/backend/src/scripts/gen-token.ts
+apps/backend/src/scripts/test-message-campaign.ts
+apps/backend/src/workers/campaign-worker_old.ts
+apps/extension/background_old.js
 
 good_images_pred.zip
 **/proxy_fix_session/

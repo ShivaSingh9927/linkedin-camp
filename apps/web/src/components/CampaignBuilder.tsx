@@ -19,7 +19,7 @@ import {
 import '@xyflow/react/dist/style.css';
 
 import { TriggerNode, ActionNode, ConditionNode, DelayNode } from './WorkflowNodes';
-import { Plus, MousePointer2, Mail, UserPlus, Clock, Zap, GitBranch, X, Edit3, Heart, MessageCircle, Info, Database, AtSign, FileText } from 'lucide-react';
+import { Plus, MousePointer2, Mail, UserPlus, Clock, Zap, GitBranch, X, Edit3, Heart, MessageCircle, Info, Database, AtSign, FileText, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 
 const nodeTypes = {
@@ -80,14 +80,15 @@ function CampaignBuilderInner({
         label,
         subType,
         type,
-        // Default values for editable fields
         days: subType === 'WAIT' ? 1 : undefined,
         message: (subType === 'MESSAGE' || subType === 'COMMENT_POST') ? 'Hi {firstName}, noticed your profile and wanted to connect!' : undefined,
-        // Enrichment defaults for VISIT
         enrichCompany: subType === 'VISIT' ? true : false,
         enrichContact: subType === 'VISIT' ? false : false,
         enrichAbout: subType === 'VISIT' ? true : false,
         enrichPosts: subType === 'VISIT' ? false : false,
+        aiEnabled: false,
+        tone: 'professional',
+        cta: 'connect',
       },
     };
 
@@ -252,6 +253,61 @@ function CampaignBuilderInner({
                   <div className="p-2 bg-indigo-50 rounded-lg border border-indigo-100 text-[10px] text-indigo-600 font-medium leading-relaxed">
                     💡 Tip: You can use <span className="font-bold underline">{'{firstName}'}</span> to personalize your content.
                   </div>
+                </div>
+              )}
+
+            {(
+              ['MESSAGE', 'COMMENT_POST'].includes((((selectedNode.data as any).subType || '') as string).toUpperCase())
+            ) && (
+                <div className="space-y-3">
+                  <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b pb-2 mb-4">AI Settings</div>
+                  
+                  <div className="flex items-center justify-between p-3 bg-purple-50 rounded-xl border border-purple-100">
+                    <div className="flex items-center gap-3">
+                      <div className="p-1.5 bg-purple-100 rounded text-purple-600"><Sparkles className="w-3 h-3" /></div>
+                      <div>
+                        <p className="text-xs font-bold text-slate-800">AI Generate</p>
+                        <p className="text-[9px] text-slate-400 uppercase font-bold">Auto-write message</p>
+                      </div>
+                    </div>
+                    <input 
+                      type="checkbox" 
+                      checked={(selectedNode.data as any).aiEnabled || false}
+                      onChange={(e) => updateNodeData(selectedNode.id, { aiEnabled: e.target.checked })}
+                      className="w-4 h-4 rounded border-slate-300 text-purple-600 focus:ring-purple-500"
+                    />
+                  </div>
+
+                  {(selectedNode.data as any).aiEnabled && (
+                    <div className="p-3 bg-purple-50 rounded-xl border border-purple-100 space-y-3">
+                      <div>
+                        <label className="text-[10px] font-bold text-purple-600 uppercase">Tone</label>
+                        <select 
+                          value={(selectedNode.data as any).tone || 'professional'}
+                          onChange={(e) => updateNodeData(selectedNode.id, { tone: e.target.value })}
+                          className="w-full mt-1 p-2 bg-white border border-purple-200 rounded-lg text-xs font-medium"
+                        >
+                          <option value="professional">Professional</option>
+                          <option value="friendly">Friendly</option>
+                          <option value="casual">Casual</option>
+                          <option value="formal">Formal</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-purple-600 uppercase">Call to Action</label>
+                        <select 
+                          value={(selectedNode.data as any).cta || 'connect'}
+                          onChange={(e) => updateNodeData(selectedNode.id, { cta: e.target.value })}
+                          className="w-full mt-1 p-2 bg-white border border-purple-200 rounded-lg text-xs font-medium"
+                        >
+                          <option value="connect">Connect</option>
+                          <option value="reply">Reply</option>
+                          <option value="demo">Book Demo</option>
+                          <option value="learn_more">Learn More</option>
+                        </select>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 

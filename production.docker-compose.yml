@@ -85,6 +85,8 @@ services:
       - JWT_SECRET=Iamironman@3
       - PORT=3001
       - NODE_ENV=production
+      - AI_SERVICE_URL=http://ai-service:8001
+      - GROQ_API=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
     ports:
       - "3001:3001"
     depends_on:

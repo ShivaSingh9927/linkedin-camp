@@ -49,6 +49,8 @@ app.listen(serverPort, '0.0.0.0', () => {
             const notificationRoutes = (await import('./routes/notification.routes')).default;
             const integrationRoutes = (await import('./routes/integration.routes')).default;
             const smartListRoutes = (await import('./routes/smart-list.routes')).default;
+            const aiRoutes = (await import('./routes/ai.routes')).default;
+            const userRoutes = (await import('./routes/user.routes')).default;
             const { initScheduler } = await import('./cron/scheduler');
             const { initWorker } = await import('./workers/linkedin.worker');
             const { initProxyHealthWorker } = await import('./workers/proxy.worker');
@@ -65,6 +67,8 @@ app.listen(serverPort, '0.0.0.0', () => {
             app.use('/api/v1/notifications', notificationRoutes);
             app.use('/api/v1/integrations', integrationRoutes);
             app.use('/api/v1/smart-lists', smartListRoutes);
+            app.use('/api/v1/ai', aiRoutes);
+            app.use('/api/v1/users', userRoutes);
 
             initScheduler();
 
@@ -89,7 +93,7 @@ app.listen(serverPort, '0.0.0.0', () => {
                 res.json({ success: true, campaignId, queued: true });
             });
 
-            initWorker();
+            initWorker(); // Required for scheduler to work
             initCampaignWorker();
             initProxyHealthWorker();
             const { initInboxWorker } = await import('./workers/inbox.worker');

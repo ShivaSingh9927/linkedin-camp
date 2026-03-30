@@ -1,14 +1,10 @@
 /**
  * campaign-worker.ts
- *
- * New BullMQ worker that uses the campaign engine.
- * Drop-in replacement: update the import path in server.ts or wherever initWorker is called.
- *
- * Queues jobs on 'campaign-actions' queue.
- * Each job = run one campaign for all its pending leads.
+ * * Optimized to match the successful "Phase 2" browser strategy.
+ * This worker pulls session data from Prisma and passes it to the engine.
  */
 
-import { Worker, Job } from 'bullmq';
+import { Worker, Job, Queue } from 'bullmq';
 import { prisma } from '@repo/db';
 import Redis from 'ioredis';
 import { runCampaign } from '../campaign-engine';
@@ -25,33 +21,82 @@ interface CampaignJobData {
 const processCampaignJob = async (data: CampaignJobData, job: Job) => {
     const { userId, campaignId } = data;
 
-    console.log(`[CAMPAIGN-WORKER] Processing campaign ${campaignId} for user ${userId}`);
+    console.log(`\n[CAMPAIGN-WORKER] 🚀 Starting Campaign: ${campaignId}`);
 
-    const campaign = await prisma.campaign.findUnique({
-        where: { id: campaignId },
-    });
+    // 1. Fetch Campaign & Business Profile
+    const campaign = await prisma.campaign.findUnique({ where: { id: campaignId } });
+    const businessProfile = await prisma.businessProfile.findUnique({ where: { userId } });
 
-    if (!campaign) {
-        console.error(`[CAMPAIGN-WORKER] Campaign ${campaignId} not found.`);
+    if (!campaign || !businessProfile) {
+        console.error(`[CAMPAIGN-WORKER] Missing critical data for campaign ${campaignId}`);
         return;
     }
 
-    // Parse the campaign config
+    // 2. FETCH SESSION DATA (from User table)
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    
+    if (!user || (!user.linkedinCookie && !user.persistentSessionPath)) {
+        throw new Error(`No active LinkedIn session found for user ${userId}. Run Phase 1 first.`);
+    }
+
+    // 3. PARSE CONFIG & INJECT STEALTH ARGS
     const rawConfig = campaign.workflowJson || campaign.workflow;
-    if (!rawConfig) {
-        console.error(`[CAMPAIGN-WORKER] Campaign ${campaignId} has no workflow config.`);
-        return;
-    }
-
     const config: CampaignConfig = typeof rawConfig === 'string' ? JSON.parse(rawConfig) : rawConfig;
+    
+    // Inject AI Context & Session Security
+    config.campaignId = campaignId;
+    config.objective = campaign.objective || undefined;
+    config.persona = businessProfile.persona || undefined;
 
-    if (!config.flow || config.flow.length === 0) {
-        console.error(`[CAMPAIGN-WORKER] Campaign ${campaignId} has empty flow.`);
-        return;
+    // Build session context from DB (same data the extension synced via /sync-extension)
+    let parsedCookies = null;
+    let parsedUserAgent = null;
+    let parsedLocalStorage = null;
+
+    try {
+        if (user.linkedinCookie) {
+            const raw = JSON.parse(user.linkedinCookie);
+            // Normalize: ensure expires is a number (seconds), not string/ms
+            parsedCookies = Array.isArray(raw) ? raw.map((c: any) => ({
+                ...c,
+                expires: c.expires != null ? Math.round(Number(c.expires)) : Math.round(Date.now() / 1000) + 86400 * 30,
+                sameSite: c.sameSite === 'no_restriction' ? 'None' : (c.sameSite === 'unspecified' ? 'Lax' : c.sameSite),
+            })) : raw;
+        }
+    } catch (e: any) {
+        console.error(`[CAMPAIGN-WORKER] Cookie parse error: ${e.message}`);
     }
 
-    // Check for delayed leads — only process those whose nextActionDate has passed
-    const pendingLeads = await prisma.campaignLead.count({
+    try {
+        if (user.linkedinFingerprint) {
+            const fp = typeof user.linkedinFingerprint === 'string'
+                ? JSON.parse(user.linkedinFingerprint) : user.linkedinFingerprint;
+            parsedUserAgent = fp?.userAgent || null;
+        }
+    } catch {}
+
+    try {
+        if (user.linkedinLocalStorage) {
+            parsedLocalStorage = typeof user.linkedinLocalStorage === 'string'
+                ? JSON.parse(user.linkedinLocalStorage) : user.linkedinLocalStorage;
+        }
+    } catch {}
+
+    config.sessionContext = {
+        cookies: parsedCookies,
+        userAgent: parsedUserAgent,
+        localStorage: parsedLocalStorage,
+        proxy: {
+            server: 'http://82.41.252.111:46222',
+            username: 'xBVyYdUpx84nWx7',
+            password: 'dwwTxtvv5a10RXn',
+        }
+    };
+
+    console.log(`[CAMPAIGN-WORKER] Session ready — cookies: ${parsedCookies?.length || 0}, UA: ${parsedUserAgent ? 'yes' : 'no'}, localStorage keys: ${parsedLocalStorage ? Object.keys(parsedLocalStorage).length : 0}`);
+
+    // 4. CHECK LEAD AVAILABILITY
+    const readyLeadsCount = await prisma.campaignLead.count({
         where: {
             campaignId,
             isCompleted: false,
@@ -59,70 +104,61 @@ const processCampaignJob = async (data: CampaignJobData, job: Job) => {
         },
     });
 
-    if (pendingLeads === 0) {
-        console.log(`[CAMPAIGN-WORKER] No leads ready for processing in campaign ${campaignId}.`);
+    if (readyLeadsCount === 0) {
+        console.log(`[CAMPAIGN-WORKER] ⏸️ No leads ready for processing right now.`);
         return;
     }
 
-    // Mark campaign as active
-    await prisma.campaign.update({
-        where: { id: campaignId },
-        data: { status: 'ACTIVE' },
-    });
+    // 5. EXECUTION
+    await prisma.campaign.update({ where: { id: campaignId }, data: { status: 'ACTIVE' } });
 
     try {
+        // We pass the sessionContext directly so runCampaign can launch Playwright correctly
         const summary = await runCampaign(userId, campaignId, config);
 
-        console.log(`[CAMPAIGN-WORKER] Campaign ${campaignId} finished.`);
-        console.log(`  Succeeded: ${summary.succeeded}, Failed: ${summary.failed}`);
+        console.log(`[CAMPAIGN-WORKER] ✅ Campaign ${campaignId} finished.`);
+        console.log(`   Stats -> Succeeded: ${summary.succeeded}, Failed: ${summary.failed}`);
+        
     } catch (err: any) {
-        console.error(`[CAMPAIGN-WORKER] Campaign ${campaignId} crashed:`, err.message);
+        console.error(`[CAMPAIGN-WORKER] ❌ Critical Crash:`, err.message);
 
-        // Mark as paused so user can investigate
         await prisma.campaign.update({
             where: { id: campaignId },
             data: { status: 'PAUSED' },
-        }).catch(() => {});
+        });
 
         await prisma.notification.create({
             data: {
                 userId,
-                title: 'Campaign Paused',
-                body: `Campaign "${campaign.name}" encountered an error: ${err.message}`,
+                title: 'Campaign Error',
+                body: `Campaign "${campaign.name}" paused due to: ${err.message}`,
                 type: 'ERROR',
             },
-        }).catch(() => {});
+        });
     }
 };
 
+// ---- WORKER INITIALIZATION ----
+
 export const initCampaignWorker = () => {
-    if (!redisConnection) {
-        console.warn('[CAMPAIGN-WORKER] No Redis connection. Worker not started.');
-        return;
-    }
+    if (!redisConnection) return;
 
     const worker = new Worker('campaign-actions', async (job: Job) => {
         await processCampaignJob(job.data as CampaignJobData, job);
     }, {
         connection: redisConnection as any,
-        concurrency: 1, // One campaign at a time
-    });
-
-    worker.on('completed', (job) => {
-        console.log(`[CAMPAIGN-WORKER] Job ${job.id} completed.`);
+        concurrency: 1, // Stay safe: One campaign at a time to avoid IP flags
     });
 
     worker.on('failed', (job, err) => {
         console.error(`[CAMPAIGN-WORKER] Job ${job?.id} failed:`, err.message);
     });
 
-    console.log('[CAMPAIGN-WORKER] Worker started. Listening on queue: campaign-actions');
+    console.log('[CAMPAIGN-WORKER] 🛰️ Listening on queue: campaign-actions');
     return worker;
 };
 
-// ---- Queue helper to enqueue a campaign ----
-
-import { Queue } from 'bullmq';
+// ---- QUEUE HELPERS ----
 
 export const getCampaignQueue = () => {
     if (!redisConnection) return null;
@@ -131,15 +167,13 @@ export const getCampaignQueue = () => {
 
 export const enqueueCampaign = async (userId: string, campaignId: string, delayMs = 0) => {
     const queue = getCampaignQueue();
-    if (!queue) {
-        console.error('[CAMPAIGN-WORKER] Cannot enqueue. No Redis connection.');
-        return;
-    }
+    if (!queue) return;
 
     await queue.add(`campaign-${campaignId}`, { userId, campaignId }, {
         delay: delayMs,
         removeOnComplete: true,
+        attempts: 1, // Don't auto-retry LinkedIn actions to prevent bans
     });
 
-    console.log(`[CAMPAIGN-WORKER] Enqueued campaign ${campaignId} (delay: ${delayMs}ms)`);
+    console.log(`[CAMPAIGN-WORKER] 📥 Enqueued ${campaignId}`);
 };

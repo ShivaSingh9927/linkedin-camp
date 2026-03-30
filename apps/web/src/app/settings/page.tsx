@@ -16,12 +16,14 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import LinkedInConnection from '@/components/LinkedInConnection';
+import BusinessProfileForm from '@/components/BusinessProfileForm';
 import { cn } from '@/lib/utils';
 import { TopBar } from '@/components/TopBar';
 
 const settingsNav = [
     { label: 'Account', icon: User, key: 'account' },
     { label: 'LinkedIn', icon: Linkedin, key: 'linkedin' },
+    { label: 'Business Profile', icon: Sparkles, key: 'business' },
     { label: 'Safety & Limits', icon: Shield, key: 'safety' },
     { label: 'Notifications', icon: Bell, key: 'notifications' },
     { label: 'Subscription', icon: CreditCard, key: 'billing' },
@@ -180,7 +182,11 @@ export default function SettingsPage() {
                                 <LinkedInConnection />
                             )}
 
-                            {activeSection !== 'account' && activeSection !== 'linkedin' && (
+                            {activeSection === 'business' && (
+                                <BusinessProfileForm />
+                            )}
+
+                            {activeSection !== 'account' && activeSection !== 'linkedin' && activeSection !== 'business' && (
                                 <div className="bg-white rounded-[3rem] border shadow-xl shadow-slate-200/50 p-20 text-center">
                                     <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-8 border-4 border-white shadow-inner">
                                         <Sparkles className="w-10 h-10 text-slate-200" />

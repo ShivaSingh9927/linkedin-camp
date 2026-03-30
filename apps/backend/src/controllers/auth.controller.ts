@@ -243,9 +243,8 @@ export const syncExtension = async (req: any, res: Response) => {
                     console.warn(`[SYNC-VERIFY] ❌ FAILED: Session invalid for user ${userId}. Reason: ${isLoggedOut ? 'Logged Out/Authwall' : 'No Profile Data found'}. URL: ${finalUrl}`);
                     
                     // Optional: Take a screenshot for debugging
-                    const errorScreenshotPath = path.join(sessionPath, `error_verify_${Date.now()}.png`);
-                    await page.screenshot({ path: errorScreenshotPath }).catch(() => {});
-                    console.log(`[SYNC-VERIFY] Error screenshot saved to ${errorScreenshotPath}`);
+                    // const errorScreenshotPath = path.join(sessionPath, `error_verify_${Date.now()}.png`);
+                    // await page.screenshot({ path: errorScreenshotPath }).catch(() => {});
 
                     return false;
                 }

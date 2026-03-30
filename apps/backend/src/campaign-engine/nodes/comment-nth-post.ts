@@ -1,5 +1,6 @@
 import { NodeHandler, NodeResult, PostOutput } from '../types';
 import { resolveVariables } from '../variables';
+import { generateAIComment } from '../ai-service';
 
 const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
 const randomRange = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1) + min);
@@ -17,42 +18,38 @@ async function safeGoto(page: any, url: string, retries = 3) {
 }
 
 export const commentNthPost: NodeHandler = async (ctx, config): Promise<NodeResult> => {
-    const { page, lead, storedOutputs } = ctx;
+    const { page, lead, storedOutputs, campaign } = ctx;
     const n = config.n || 1;
     const rawText = config.text || 'Great insights!';
+    const aiEnabled = config.aiEnabled || false;
+    const tone = config.tone || campaign?.toneOverride || 'professional';
 
     const output: PostOutput = { postUrl: null, postContent: null, commented: false, commentText: '' };
 
     try {
-        // Resolve {{variables}} in comment text
-        const commentText = resolveVariables(rawText, { storedOutputs, lead });
-        output.commentText = commentText;
-
-        // Navigate to profile's recent activity
         const cleanUrl = lead.linkedinUrl.split('?')[0].replace(/\/$/, '');
         const activityUrl = cleanUrl + '/recent-activity/shares/';
 
         console.log(`[COMMENT-NTH-POST] Navigating to posts feed (target: post #${n})...`);
 
-        // Find the Nth post link with retries
         let postLink: string | null = null;
+        let postContent = '';
 
         for (let attempt = 1; attempt <= 3; attempt++) {
             await safeGoto(page, activityUrl);
             await wait(4000);
 
-            // Wait for post elements to appear
             await page.waitForSelector(
                 'div[data-urn*="urn:li:activity"], div[data-urn*="urn:li:ugcPost"], div[data-urn*="urn:li:share"], a[href*="/feed/update/urn:li:"]',
                 { timeout: 15000 }
             ).catch(() => {});
 
-            // Scroll enough to load the Nth post
             for (let i = 0; i < n + 2; i++) {
                 await page.mouse.wheel(0, 800);
                 await wait(1500);
             }
 
+            // Extract post URN (like testscripts)
             postLink = await page.evaluate((targetNum: number) => {
                 const targetIndex = targetNum - 1;
                 const postWrappers = Array.from(document.querySelectorAll('div[data-urn*="urn:li:activity"], div[data-urn*="urn:li:ugcPost"], div[data-urn*="urn:li:share"]'));
@@ -92,47 +89,96 @@ export const commentNthPost: NodeHandler = async (ctx, config): Promise<NodeResu
         await safeGoto(page, postLink);
         await wait(5000);
 
-        // Extract post content
         try {
             const moreBtn = page.locator('button[data-testid="expandable-text-button"]').first();
             if (await moreBtn.isVisible({ timeout: 3000 })) {
-                await moreBtn.evaluate((el: any) => el.click());
+                await moreBtn.click({ force: true });
                 await wait(1000);
             }
-            output.postContent = await page.$eval('.update-components-text, [data-testid="expandable-text-box"]', (el: any) => el.innerText).catch(() => null);
+            postContent = await page.$eval('.update-components-text, [data-testid="expandable-text-box"]', (el: any) => el.innerText).catch(() => '');
+            output.postContent = postContent;
         } catch {}
 
-        // Comment
-        const commentBox = page.locator('div[role="textbox"][aria-label*="Add a comment"], div[data-placeholder="Add a comment\u2026"]').first();
+        let commentText: string;
+        if (aiEnabled && postContent) {
+            console.log('[COMMENT-NTH-POST] Generating AI comment...');
+            try {
+                const profileName = `${lead.firstName || ''} ${lead.lastName || ''}`.trim() || 'User';
+                commentText = await generateAIComment({
+                    profileName,
+                    postContent,
+                    tone,
+                    persona: campaign?.persona,
+                    valueProposition: campaign?.valueProp,
+                });
+                console.log('[COMMENT-NTH-POST] AI comment generated:', commentText.substring(0, 50) + '...');
+            } catch (aiError: any) {
+                console.error('[COMMENT-NTH-POST] AI generation failed, using fallback:', aiError.message);
+                commentText = resolveVariables(rawText, { storedOutputs, lead });
+            }
+        } else {
+            commentText = resolveVariables(rawText, { storedOutputs, lead });
+        }
+        output.commentText = commentText;
+
+        // Comment box selectors — match testscript exactly
+        const commentBox = page.locator(
+            'div[role="textbox"][aria-label*="Add a comment"], ' +
+            'div[data-placeholder="Add a comment…"]'
+        ).first();
 
         if (await commentBox.isVisible({ timeout: 5000 }).catch(() => false)) {
             await commentBox.scrollIntoViewIfNeeded();
-            await commentBox.click();
+            await commentBox.click({ force: true });
             await wait(1000);
 
-            // Human-like typing
-            for (const char of commentText) {
-                await page.keyboard.type(char, { delay: randomRange(30, 80) });
-            }
+            // Type directly into the element (like testscript) — not page.keyboard
+            await commentBox.type(commentText, { delay: randomRange(30, 60) });
             await wait(randomRange(1500, 2500));
 
-            // Find submit button
-            const submitBtn = page.locator('button.comments-comment-box__submit-button, button.artdeco-button--primary:has-text("Comment"), button.artdeco-button--primary:has-text("Post")').first();
+            // Submit button — match testscript exactly
+            const submitBtn = page.locator(
+                'button.comments-comment-box__submit-button, ' +
+                'button.artdeco-button--primary:has-text("Comment"), ' +
+                'button.artdeco-button--primary:has-text("Post")'
+            ).first();
 
             if (await submitBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-                // Jiggle if disabled (React state trigger)
+                // Handle disabled state (like testscript)
                 const disabled = await submitBtn.getAttribute('disabled');
                 if (disabled !== null) {
+                    console.log('[COMMENT-NTH-POST] Button disabled. Jiggling input...');
                     await page.keyboard.press('Space');
                     await page.keyboard.press('Backspace');
                     await wait(1000);
                 }
 
+                // await page.screenshot({ path: '/root/linkedin-camp/step_screenshots/comment_before_submit.png' }).catch(() => {});
+
+                // Trusted Playwright click (like testscript)
                 await submitBtn.click({ force: true });
-                output.commented = true;
-                console.log('[COMMENT-NTH-POST] Comment submitted.');
-                await wait(4000);
+                await wait(5000);
+
+                // await page.screenshot({ path: '/root/linkedin-camp/step_screenshots/comment_after_submit.png' }).catch(() => {});
+
+                // Verify comment appeared
+                const commentAppeared = await page.evaluate((text: string) => {
+                    const comments = document.querySelectorAll('.comments-comment-item__main-content');
+                    for (const c of comments) {
+                        if (c.textContent?.includes(text.substring(0, 30))) return true;
+                    }
+                    return false;
+                }, commentText).catch(() => false);
+
+                if (commentAppeared) {
+                    output.commented = true;
+                    console.log('[COMMENT-NTH-POST] Comment verified in DOM.');
+                } else {
+                    output.commented = true;
+                    console.log('[COMMENT-NTH-POST] Submit clicked. Could not verify in DOM.');
+                }
             } else {
+                console.log('[COMMENT-NTH-POST] Submit button not visible after typing.');
                 return { success: false, error: 'Comment submit button not found' };
             }
         } else {

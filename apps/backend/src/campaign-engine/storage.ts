@@ -76,7 +76,7 @@ export async function updateCampaignLeadProgress(
         currentStepId?: string | null;
         nextActionDate?: Date;
         isCompleted?: boolean;
-        status?: string;
+        status?: 'IMPORTED' | 'PENDING' | 'CONNECTED' | 'REPLIED' | 'BOUNCED';
     }
 ): Promise<void> {
     await prisma.campaignLead.update({

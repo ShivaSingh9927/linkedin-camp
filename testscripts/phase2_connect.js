@@ -35,7 +35,7 @@ async function testFollowConnect() {
     return;
   }
 
-  const browser = await chromium.launch({ headless: false, args: ['--no-sandbox'] });
+  const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
   const context = await browser.newContext({
     userAgent,
     viewport: null,

@@ -1,4 +1,5 @@
 import { NodeHandler, NodeResult, ProfileVisitOutput } from '../types';
+import { prisma } from '@repo/db';
 
 const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
 const randomRange = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1) + min);
@@ -66,6 +67,22 @@ export const profileVisit: NodeHandler = async (ctx): Promise<NodeResult> => {
                 output.name = lead.firstName;
             }
         } catch {}
+
+        // --- Update lead in DB with extracted name ---
+        if (output.name && output.name !== lead.firstName) {
+            try {
+                const nameParts = output.name.split(' ').filter(n => n.length > 0);
+                const firstName = nameParts[0] || '';
+                const lastName = nameParts.slice(1).join(' ') || null;
+                await prisma.lead.update({
+                    where: { id: lead.id },
+                    data: { firstName, lastName },
+                });
+                console.log(`[PROFILE-VISIT] Updated lead with name: ${firstName} ${lastName || ''}`);
+            } catch (err) {
+                console.log(`[PROFILE-VISIT] Could not update lead name: ${err}`);
+            }
+        }
 
         // --- Check connection degree ---
         try {

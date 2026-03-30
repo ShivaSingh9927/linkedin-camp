@@ -173,8 +173,8 @@ export const startSimulationLogin = async (req: any, res: Response) => {
 
         // Fallback for unexpected states - take a screenshot for debugging
         console.log(`[SIMULATION] Unexpected state. URL: ${page.url()}`);
-        const screenshotPath = path.join(process.cwd(), 'sessions', `${userId}_error.png`);
-        await page.screenshot({ path: screenshotPath }).catch(() => {});
+        // const screenshotPath = path.join(process.cwd(), 'sessions', `${userId}_error.png`);
+        // await page.screenshot({ path: screenshotPath }).catch(() => {});
         
         const errorText = await page.innerText('.alert-content, #error-for-password').catch(() => null);
         await context.close();
@@ -263,8 +263,8 @@ export const submitSimulation2FA = async (req: any, res: Response) => {
         }
 
         console.log(`[SIMULATION] Post-2FA URL: ${page.url()}`);
-        const errorScreenshot = path.join(process.cwd(), 'sessions', `${userId}_2fa_error.png`);
-        await page.screenshot({ path: errorScreenshot }).catch(() => {});
+        // const errorScreenshot = path.join(process.cwd(), 'sessions', `${userId}_2fa_error.png`);
+        // await page.screenshot({ path: errorScreenshot }).catch(() => {});
         
         res.status(400).json({ error: 'Verification failed. The code may be incorrect or expired.' });
 

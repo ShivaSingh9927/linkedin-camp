@@ -18,6 +18,9 @@
         "typescript": "latest"
     },
     "dependencies": {
-        "@langchain/ollama": "^1.2.5"
+        "@ai-sdk/groq": "^3.0.31",
+        "@langchain/ollama": "^1.2.5",
+        "ai": "^6.0.141",
+        "dotenv": "^17.3.1"
     }
 }

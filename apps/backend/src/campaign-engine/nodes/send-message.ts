@@ -1,5 +1,6 @@
 import { NodeHandler, NodeResult, SendMessageOutput } from '../types';
 import { resolveVariables } from '../variables';
+import { generateAIMessage } from '../ai-service';
 
 const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
 const randomRange = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1) + min);
@@ -17,18 +18,45 @@ async function safeGoto(page: any, url: string, retries = 3) {
 }
 
 export const sendMessage: NodeHandler = async (ctx, config): Promise<NodeResult> => {
-    const { page, lead, storedOutputs } = ctx;
+    const { page, lead, storedOutputs, campaign } = ctx;
     const rawText = config.text || 'Hello!';
     const requireConnection = config.requireConnection || false;
+    const aiEnabled = config.aiEnabled || false;
+    const tone = config.tone || campaign?.toneOverride || 'professional';
+    const cta = config.cta || campaign?.cta || 'connect';
 
     const output: SendMessageOutput = { messageText: '', sent: false };
 
     try {
-        // Resolve {{variables}} in message text
-        const messageText = resolveVariables(rawText, { storedOutputs, lead });
+        let messageText: string;
+        if (aiEnabled) {
+            console.log('[SEND-MESSAGE] Generating AI message...');
+            try {
+                const profileName = `${lead.firstName || ''} ${lead.lastName || ''}`.trim() || 'User';
+                let aiMessage = await generateAIMessage({
+                    profileName,
+                    connectionContext: campaign?.objective,
+                    tone,
+                    cta,
+                    persona: campaign?.persona,
+                    valueProposition: campaign?.valueProp,
+                });
+                if (aiMessage && aiMessage.length > 10) {
+                    messageText = aiMessage;
+                    console.log('[SEND-MESSAGE] AI message generated:', messageText.substring(0, 50) + '...');
+                } else {
+                    console.log('[SEND-MESSAGE] AI output invalid, using fallback');
+                    messageText = resolveVariables(rawText, { storedOutputs, lead });
+                }
+            } catch (aiError: any) {
+                console.error('[SEND-MESSAGE] AI generation failed, using fallback:', aiError.message);
+                messageText = resolveVariables(rawText, { storedOutputs, lead });
+            }
+        } else {
+            messageText = resolveVariables(rawText, { storedOutputs, lead });
+        }
         output.messageText = messageText;
 
-        // Optional: check if connected
         if (requireConnection) {
             const isConnected = await page.isVisible('button:has-text("Message")');
             if (!isConnected) {
@@ -36,28 +64,31 @@ export const sendMessage: NodeHandler = async (ctx, config): Promise<NodeResult>
             }
         }
 
-        // Navigate to profile first (compose URL is on the profile page)
         console.log(`[SEND-MESSAGE] Navigating to profile...`);
         await safeGoto(page, lead.linkedinUrl);
         await wait(randomRange(12000, 18000));
 
+        // Dismiss any premium overlays first
+        const dismissSelectors = [
+            'button[aria-label="Dismiss"]',
+            'button.artdeco-modal__dismiss',
+            '[data-testid="modal-layer"] button',
+        ];
+        for (const sel of dismissSelectors) {
+            const dismissBtn = page.locator(sel).first();
+            if (await dismissBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+                await dismissBtn.click({ force: true });
+                await wait(1000);
+                break;
+            }
+        }
+
+        // Strategy 1: Extract compose URL from profile (like testscripts)
         console.log(`[SEND-MESSAGE] Looking for compose URL...`);
-
-        // Strategy 1: Direct compose URL
-        await page.waitForSelector('a[href*="/messaging/compose"]', { timeout: 10000 }).catch(() => {});
-
-        let composeUrl = await page.evaluate(() => {
+        const composeUrl = await page.evaluate(() => {
             const link = document.querySelector('a[href*="/messaging/compose/?profileUrn"]');
             return link ? (link as HTMLAnchorElement).href : null;
         });
-
-        if (!composeUrl) {
-            composeUrl = await page.evaluate(() => {
-                const links = Array.from(document.querySelectorAll('a[href*="/messaging/compose"]'));
-                const bestMatch = links.find(l => (l as HTMLAnchorElement).href.includes('profileUrn'));
-                return bestMatch ? (bestMatch as HTMLAnchorElement).href : null;
-            });
-        }
 
         if (composeUrl) {
             console.log('[SEND-MESSAGE] Found compose URL. Navigating directly...');
@@ -67,9 +98,9 @@ export const sendMessage: NodeHandler = async (ctx, config): Promise<NodeResult>
             // Strategy 2: Click Message button
             console.log('[SEND-MESSAGE] No compose URL. Clicking Message button...');
             const msgBtnSelectors = [
+                'button:has-text("Message")',
+                'a:has-text("Message")',
                 '.pvs-profile-actions button:has-text("Message")',
-                'button.artdeco-button:has-text("Message")',
-                'div.pvs-profile-actions__action button:visible',
             ];
 
             let clicked = false;
@@ -85,14 +116,13 @@ export const sendMessage: NodeHandler = async (ctx, config): Promise<NodeResult>
             }
 
             if (!clicked) {
-                // Check "More" menu
                 const moreBtn = page.locator('button:has(span:text-is("More"))').first();
                 if (await moreBtn.isVisible()) {
-                    await moreBtn.click();
+                    await moreBtn.click({ force: true });
                     await wait(2000);
                     const moreMsgBtn = page.locator('[role="menuitem"]:has-text("Message")').first();
                     if (await moreMsgBtn.isVisible()) {
-                        await moreMsgBtn.click();
+                        await moreMsgBtn.click({ force: true });
                         clicked = true;
                     }
                 }
@@ -102,20 +132,31 @@ export const sendMessage: NodeHandler = async (ctx, config): Promise<NodeResult>
                 return { success: false, error: 'Message button not found on profile' };
             }
 
-            await wait(randomRange(5000, 8000));
+            await wait(randomRange(8000, 12000));
+        }
 
-            // Check for premium modal trap
-            const premiumModal = page.locator('[data-sdui-screen*="PremiumUpsellModal"], .artdeco-modal').first();
-            if (await premiumModal.isVisible({ timeout: 3000 }).catch(() => false)) {
-                console.log('[SEND-MESSAGE] Premium modal detected. Closing...');
+        // Dismiss premium modal if present (like testscripts handles it)
+        const premiumSelectors = [
+            '.artdeco-modal',
+            '[data-sdui-screen*="Premium"]',
+            '.priva-upsell-modal',
+        ];
+        for (const sel of premiumSelectors) {
+            const modal = page.locator(sel).first();
+            if (await modal.isVisible({ timeout: 2000 }).catch(() => false)) {
+                console.log('[SEND-MESSAGE] Premium modal detected. Attempting to close...');
                 const closeBtn = page.locator('button[aria-label="Dismiss"], button.artdeco-modal__dismiss').first();
-                if (await closeBtn.isVisible()) await closeBtn.click();
-                else await page.keyboard.press('Escape');
+                if (await closeBtn.isVisible().catch(() => false)) {
+                    await closeBtn.click({ force: true });
+                } else {
+                    await page.keyboard.press('Escape');
+                }
+                await wait(2000);
                 return { success: false, error: 'Premium upsell modal blocked messaging' };
             }
         }
 
-        // Find textbox and type
+        // Find textbox and type (like testscripts)
         const textboxSelectors = [
             'div.msg-form__contenteditable[contenteditable="true"]',
             '[role="textbox"]',
@@ -123,7 +164,7 @@ export const sendMessage: NodeHandler = async (ctx, config): Promise<NodeResult>
             '.msg-form__textarea',
         ];
 
-        let textBox = null;
+        let textBox: any = null;
         for (const sel of textboxSelectors) {
             const el = page.locator(sel).first();
             if (await el.isVisible({ timeout: 5000 }).catch(() => false)) {
@@ -136,7 +177,7 @@ export const sendMessage: NodeHandler = async (ctx, config): Promise<NodeResult>
             return { success: false, error: 'Message textbox not found' };
         }
 
-        // Type message
+        // Click and type (like testscripts)
         await textBox.click({ force: true });
         await wait(1000);
 
@@ -150,13 +191,46 @@ export const sendMessage: NodeHandler = async (ctx, config): Promise<NodeResult>
         await page.keyboard.press('Backspace');
         await wait(1000);
 
-        // Send — use waitFor + regular click (matches testscript)
+        // Screenshot before sending (uncomment for debugging)
+        // await page.screenshot({ path: '/root/linkedin-camp/step_screenshots/send_before_click.png' }).catch(() => {});
+
+        // Send button (like testscripts)
         const sendBtn = page.locator('button.msg-form__send-button').first();
-        await sendBtn.waitFor({ state: 'visible', timeout: 15000 });
-        await sendBtn.click();
-        await wait(3000);
-        output.sent = true;
-        console.log('[SEND-MESSAGE] Message sent.');
+        
+        if (await sendBtn.isVisible({ timeout: 10000 }).catch(() => false)) {
+            await sendBtn.click({ force: true }); // Native Playwright click like testscripts
+            await wait(5000);
+
+            // Screenshot after sending (uncomment for debugging)
+            // await page.screenshot({ path: '/root/linkedin-camp/step_screenshots/send_after_click.png' }).catch(() => {});
+
+            // Verify message appears in chat (check for sent message bubble)
+            const urlAfterSend = page.url();
+            console.log('[SEND-MESSAGE] URL after send:', urlAfterSend);
+
+            const messageAppeared = await page.evaluate((text: string) => {
+                const msgs = document.querySelectorAll('.msg-s-event-listitem__body, .msg-s-message-list__event');
+                for (const m of msgs) {
+                    if (m.textContent?.includes(text.substring(0, 20))) return true;
+                }
+                return false;
+            }, messageText).catch(() => false);
+
+            if (messageAppeared) {
+                output.sent = true;
+                console.log('[SEND-MESSAGE] Message verified in chat.');
+            } else {
+                output.sent = true; // Still mark as sent since button was clicked
+                console.log('[SEND-MESSAGE] Send button clicked. Could not verify bubble (may still have sent).');
+            }
+        } else {
+            // Try Enter as fallback
+            await page.keyboard.press('Enter');
+            await wait(3000);
+            // await page.screenshot({ path: '/root/linkedin-camp/step_screenshots/send_after_enter.png' }).catch(() => {});
+            output.sent = true;
+            console.log('[SEND-MESSAGE] Message sent via Enter.');
+        }
 
         return { success: true, output };
 

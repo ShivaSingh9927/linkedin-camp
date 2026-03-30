@@ -8,14 +8,34 @@ export interface CampaignFlowNode {
     n?: number;
     hours?: number;
     requireConnection?: boolean;
+    aiEnabled?: boolean;
     [key: string]: any;
+}
+
+export interface SessionContext {
+    cookies: any[] | null;
+    userAgent: string | null;
+    localStorage: Record<string, string> | null;
+    proxy: {
+        server: string;
+        username: string;
+        password: string;
+    };
 }
 
 export interface CampaignConfig {
     flow: CampaignFlowNode[];
+    campaignId?: string;
+    objective?: string;
+    cta?: string;
+    toneOverride?: string;
+    persona?: string;
+    valueProp?: string;
+    sessionContext?: SessionContext;
 }
 
 export type NodeType =
+    | 'warmup'
     | 'profile-visit'
     | 'connect'
     | 'like-nth-post'
@@ -80,6 +100,13 @@ export interface NodeContext {
     userId: string;
     campaignId: string;
     storedOutputs: Record<string, Record<string, any>>;
+    campaign?: {
+        objective?: string;
+        cta?: string;
+        toneOverride?: string;
+        persona?: string;
+        valueProp?: string;
+    };
 }
 
 // ---- Node result ----
