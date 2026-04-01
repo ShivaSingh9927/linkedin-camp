@@ -4,6 +4,7 @@ import "./globals.css";
 import { SidebarWrapper } from "@/components/SidebarWrapper";
 import { AuthWrapper } from "@/components/AuthWrapper";
 import { Toaster } from 'sonner';
+import { GoogleOAuthProvider } from '@react-oauth/google';
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -25,14 +26,18 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '';
+
   return (
     <html lang="en" className="h-full">
       <body className={`${inter.className} antialiased h-full`}>
-        <AuthWrapper>
-          <SidebarWrapper>
-            {children}
-          </SidebarWrapper>
-        </AuthWrapper>
+        <GoogleOAuthProvider clientId={googleClientId}>
+          <AuthWrapper>
+            <SidebarWrapper>
+              {children}
+            </SidebarWrapper>
+          </AuthWrapper>
+        </GoogleOAuthProvider>
         <Toaster position="bottom-right" richColors />
       </body>
     </html>

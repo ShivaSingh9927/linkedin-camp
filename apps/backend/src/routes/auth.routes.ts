@@ -3,6 +3,7 @@ import { Router } from 'express';
 import { 
   register, 
   login, 
+  googleLogin,
   syncExtension, 
   getCloudStatus, 
   getLinkedinStatus, 
@@ -26,6 +27,7 @@ const router = Router();
 
 router.post('/register', register);
 router.post('/login', login);
+router.post('/google', googleLogin);
 router.post('/sync-extension', authMiddleware, syncExtension);
 router.get('/cloud-status', authMiddleware, getCloudStatus);
 router.get('/linkedin-status', authMiddleware, getLinkedinStatus);

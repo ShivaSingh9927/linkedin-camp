@@ -168,4 +168,39 @@ export const initScheduler = () => {
     }
   });
 
+  // 4. Onboarding Reminder Scheduler (Every 12 hours)
+  cron.schedule('0 0,12 * * *', async () => {
+    console.log('[Scheduler] Running onboarding reminder check...');
+    try {
+      const { mailService } = await import('../services/mail.service');
+      
+      const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000);
+      
+      const abandonedUsers = await prisma.user.findMany({
+        where: {
+          registrationStep: { not: 'COMPLETED' },
+          lastOnboardingEmailAt: null,
+          createdAt: { lte: twelveHoursAgo }
+        }
+      });
+
+      console.log(`[Scheduler] Found ${abandonedUsers.length} abandoned signups.`);
+
+      for (const user of abandonedUsers) {
+        try {
+          await mailService.sendOnboardingReminder(user.email, user.firstName || 'there');
+          
+          // Mark as sent so we never nudge again
+          await prisma.user.update({
+            where: { id: user.id },
+            data: { lastOnboardingEmailAt: new Date() }
+          });
+        } catch (mailError) {
+          console.error(`[Scheduler] Failed to send reminder to ${user.email}:`, mailError);
+        }
+      }
+    } catch (error) {
+      console.error('[Scheduler] Onboarding reminder process failed:', error);
+    }
+  });
 };

@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
+import { OAuth2Client } from 'google-auth-library';
 import jwt from 'jsonwebtoken';
 import { prisma } from '@repo/db';
 import { chromium } from 'playwright-extra';
@@ -9,10 +10,77 @@ import fs from 'fs';
 import { getOrAssignProxy } from '../services/proxy.service';
 import axios from 'axios';
 import { LinkedInService } from '../services/linkedin.service';
+import { mailService } from '../services/mail.service';
 
 chromium.use(stealth);
 
 const JWT_SECRET = process.env.JWT_SECRET || 'supersecretkey';
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+
+export const googleLogin = async (req: Request, res: Response) => {
+    const { credential } = req.body;
+
+    try {
+        const ticket = await googleClient.verifyIdToken({
+            idToken: credential,
+            audience: process.env.GOOGLE_CLIENT_ID,
+        });
+
+        const payload = ticket.getPayload();
+        if (!payload || !payload.email) {
+            return res.status(400).json({ error: 'Invalid Google token' });
+        }
+
+        const { email, sub: googleId, given_name, family_name, picture } = payload;
+
+        let user = await prisma.user.findUnique({ where: { googleId } });
+
+        if (!user) {
+            // Try finding by email and link
+            user = await prisma.user.findUnique({ where: { email } });
+            
+            if (user) {
+                user = await prisma.user.update({
+                    where: { id: user.id },
+                    data: { googleId, avatarUrl: picture || user.avatarUrl }
+                });
+            } else {
+                // Create new user
+                user = await prisma.user.create({
+                    data: {
+                        email,
+                        googleId,
+                        firstName: given_name,
+                        lastName: family_name,
+                        avatarUrl: picture,
+                        registrationStep: 'STARTED'
+                    }
+                });
+
+                // Send Welcome Email for new Google user
+                await mailService.sendWelcomeEmail(user.email, user.firstName || 'User');
+            }
+        }
+
+        const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
+
+        res.json({ 
+            user: { 
+                id: user.id, 
+                email: user.email, 
+                firstName: user.firstName, 
+                lastName: user.lastName, 
+                avatarUrl: user.avatarUrl,
+                registrationStep: user.registrationStep,
+                tier: user.tier 
+            }, 
+            token 
+        });
+    } catch (error) {
+        console.error('Google login error:', error);
+        res.status(500).json({ error: 'Internal server error during Google login' });
+    }
+};
 
 
 export const register = async (req: Request, res: Response) => {
@@ -31,6 +99,9 @@ export const register = async (req: Request, res: Response) => {
                 passwordHash,
             },
         });
+
+        // Send Welcome Email for new manual registration
+        await mailService.sendWelcomeEmail(user.email, user.firstName || 'User');
 
         const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
 

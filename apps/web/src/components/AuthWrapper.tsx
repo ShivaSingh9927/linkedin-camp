@@ -10,17 +10,40 @@ export function AuthWrapper({ children }: { children: React.ReactNode }) {
     const [loading, setLoading] = useState(true);
 
     const authRoutes = ['/login', '/register'];
+    const onboardingRoute = '/onboarding';
 
     useEffect(() => {
         const token = localStorage.getItem('token');
+        const userStr = localStorage.getItem('user');
+        const user = userStr ? JSON.parse(userStr) : null;
 
-        if (!token && !authRoutes.includes(pathname)) {
-            router.push('/login');
-        } else if (token && authRoutes.includes(pathname)) {
-            router.push('/');
-        } else {
+        if (!token) {
+            if (!authRoutes.includes(pathname)) {
+                router.push('/login');
+            }
             setLoading(false);
+            return;
         }
+
+        // If logged in
+        if (authRoutes.includes(pathname)) {
+            router.push('/');
+            return;
+        }
+
+        // Check onboarding status
+        if (user && user.registrationStep !== 'COMPLETED' && pathname !== onboardingRoute) {
+            router.push(onboardingRoute);
+            return;
+        }
+
+        // If completed onboarding but trying to access onboarding page
+        if (user && user.registrationStep === 'COMPLETED' && pathname === onboardingRoute) {
+            router.push('/');
+            return;
+        }
+
+        setLoading(false);
     }, [pathname, router]);
 
     if (loading && !authRoutes.includes(pathname)) {
