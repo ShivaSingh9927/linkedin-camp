@@ -3,6 +3,10 @@
 import React, { useState } from 'react';
 import { Eye, EyeOff, Loader2 } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { GoogleLogin } from '@react-oauth/google';
+import { toast } from 'sonner';
+import api from '@/lib/api';
 import { cn } from '@/lib/utils';
 
 export interface Testimonial {
