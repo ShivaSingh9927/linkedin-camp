@@ -5,10 +5,18 @@ chrome.sidePanel.setOptions({
     enabled: true
 }).catch(() => {});
 
-const BACKEND_URLS = [
-    'http://204.168.167.198:3001',
-    'http://localhost:3001'
-];
+const BACKEND_URLS = (() => {
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    // Replace any existing port with the backend port (3001)
+    const devUrl = origin ? origin.replace(/:\d+$/, ':3001') : '';
+    const urls = [];
+    if (devUrl) urls.push(devUrl);
+    // Fallback to known production IP
+    urls.push('http://204.168.167.198:3001');
+    // Also include explicit localhost for manual debugging
+    urls.push('http://localhost:3001');
+    return urls;
+})();
 
 let syncTabId = null;
 

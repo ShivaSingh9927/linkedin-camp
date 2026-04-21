@@ -86,7 +86,12 @@ services:
       - PORT=3001
       - NODE_ENV=production
       - AI_SERVICE_URL=http://ai-service:8001
-      - GROQ_API=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
+      - GROQ_API=${GROQ_API}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - OUTLOOK_EMAIL=${OUTLOOK_EMAIL}
+      - OUTLOOK_APP_PASSWORD=${OUTLOOK_APP_PASSWORD}
+      - NEXT_PUBLIC_APP_URL=https://linkedin-camp-web.vercel.app
     ports:
       - "3001:3001"
     depends_on:
