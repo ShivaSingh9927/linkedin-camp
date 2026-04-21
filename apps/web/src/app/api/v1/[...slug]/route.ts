@@ -1,9 +1,10 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 
 const BACKEND_URL = 'http://204.168.167.198:3001';
 
-export async function GET(request: Request, { params }: { params: { slug: string[] } }) {
-  const path = params.slug.join('/');
+export async function GET(request: NextRequest, { params }: { params: Promise<{ slug: string[] }> }) {
+  const { slug } = await params;
+  const path = slug.join('/');
   const url = `${BACKEND_URL}/api/v1/${path}`;
 
   const res = await fetch(url, {
@@ -17,8 +18,9 @@ export async function GET(request: Request, { params }: { params: { slug: string
   return NextResponse.json(data);
 }
 
-export async function POST(request: Request, { params }: { params: { slug: string[] } }) {
-  const path = params.slug.join('/');
+export async function POST(request: NextRequest, { params }: { params: Promise<{ slug: string[] }> }) {
+  const { slug } = await params;
+  const path = slug.join('/');
   const url = `${BACKEND_URL}/api/v1/${path}`;
   const body = await request.json();
 
