@@ -46,7 +46,12 @@ const processCampaignJob = async (data: CampaignJobData, job: Job) => {
     // Convert React Flow graph (nodes/edges) into a linear flow array for the engine
     if (config.nodes && config.edges && !config.flow) {
         const orderedNodes = [];
-        let currentNodeId = config.nodes.find((n: any) => n.type === 'TRIGGER' || n.id === 'trigger' || n.subType === 'START')?.id;
+        let currentNodeId = config.nodes.find((n: any) => 
+            n.type === 'TRIGGER' || 
+            n.id === 'trigger' || 
+            n.data?.subType === 'START' ||
+            n.subType === 'START'
+        )?.id;
         
         while (currentNodeId) {
             const edge = config.edges.find((e: any) => e.source === currentNodeId);
@@ -65,8 +70,12 @@ const processCampaignJob = async (data: CampaignJobData, job: Job) => {
             let mappedNodeType = rawSubType;
             
             switch(rawSubType) {
-                case 'VISIT': mappedNodeType = 'profile-visit'; break;
-                case 'MESSAGE': mappedNodeType = 'send-message'; break;
+                case 'VISIT':
+                case 'PROFILE_VISIT':
+                    mappedNodeType = 'profile-visit'; 
+                    break;
+                case 'MESSAGE': 
+                    mappedNodeType = 'send-message'; break;
                 case 'LIKE_POST': mappedNodeType = 'like-nth-post'; break;
                 case 'COMMENT_POST': mappedNodeType = 'comment-nth-post'; break;
                 case 'CONNECT': mappedNodeType = 'connect'; break;
