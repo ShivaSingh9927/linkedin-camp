@@ -306,6 +306,9 @@ async function runLead(
         const storedOutputs = await readNodeOutputs(campaignId, lead.id);
 
         // ---- Execute flow ----
+        console.log(`[ENGINE] Flow received: ${JSON.stringify(flow)}`);
+        console.log(`[ENGINE] Flow length: ${flow?.length}`);
+        
         let needsWarmup = true; // First node always needs warmup
         let profileVisitRan = false;
 

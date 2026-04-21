@@ -13,7 +13,7 @@ class MailService {
                 pass: process.env.OUTLOOK_APP_PASSWORD,
             },
             tls: {
-                ciphers: 'SSLv3',
+                ciphers: 'TLSv1.2',
                 rejectUnauthorized: false
             }
         });

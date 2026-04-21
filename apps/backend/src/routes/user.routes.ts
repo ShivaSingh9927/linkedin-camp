@@ -121,8 +121,12 @@ router.put('/onboarding', async (req: AuthRequest, res) => {
             },
         });
 
-        // 3. Send Onboarding Success Email
-        await mailService.sendOnboardingSuccessEmail(req.user!.email);
+        // 3. Send Onboarding Success Email (Optional, don't fail if mail server is down)
+        try {
+            await mailService.sendOnboardingSuccessEmail(req.user!.email);
+        } catch (mailError: any) {
+            console.error('[USER-ROUTES] Failed to send onboarding success email:', mailError.message);
+        }
 
         res.json({ success: true, profile: businessProfile });
     } catch (error: any) {

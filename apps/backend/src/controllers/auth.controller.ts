@@ -19,32 +19,49 @@ const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 export const googleLogin = async (req: Request, res: Response) => {
     const { credential } = req.body;
+    
+    console.log('[AUTH/GOOGLE] Received Google login request.');
+    console.log(`[AUTH/GOOGLE] Request Origin: ${req.headers.origin}`);
+    console.log(`[AUTH/GOOGLE] Configured Client ID: ${process.env.GOOGLE_CLIENT_ID}`);
+
+    if (!credential) {
+        console.error('[AUTH/GOOGLE] No credential provided in request body.');
+        return res.status(400).json({ error: 'No Google credential provided' });
+    }
 
     try {
+        console.log('[AUTH/GOOGLE] Attempting to verify token with Google...');
         const ticket = await googleClient.verifyIdToken({
             idToken: credential,
             audience: process.env.GOOGLE_CLIENT_ID,
         });
 
         const payload = ticket.getPayload();
+        console.log('[AUTH/GOOGLE] Token successfully verified! Payload:', payload ? `email: ${payload.email}` : 'undefined');
+
         if (!payload || !payload.email) {
-            return res.status(400).json({ error: 'Invalid Google token' });
+            console.error('[AUTH/GOOGLE] Token payload missing email.');
+            return res.status(400).json({ error: 'Invalid Google token structure' });
         }
 
         const { email, sub: googleId, given_name, family_name, picture } = payload;
+        console.log(`[AUTH/GOOGLE] Processing user: ${email} (Google ID: ${googleId})`);
 
         let user = await prisma.user.findUnique({ where: { googleId } });
 
         if (!user) {
+            console.log(`[AUTH/GOOGLE] User not found by Google ID. Looking up by email: ${email}`);
             // Try finding by email and link
             user = await prisma.user.findUnique({ where: { email } });
             
             if (user) {
+                console.log(`[AUTH/GOOGLE] Found existing user by email. Linking Google ID...`);
                 user = await prisma.user.update({
                     where: { id: user.id },
                     data: { googleId, avatarUrl: picture || user.avatarUrl }
                 });
             } else {
+                console.log(`[AUTH/GOOGLE] No existing user. Creating new user account...`);
                 // Create new user
                 user = await prisma.user.create({
                     data: {
@@ -57,13 +74,22 @@ export const googleLogin = async (req: Request, res: Response) => {
                     }
                 });
 
+                console.log(`[AUTH/GOOGLE] Sending welcome email to ${email}...`);
                 // Send Welcome Email for new Google user
-                await mailService.sendWelcomeEmail(user.email, user.firstName || 'User');
+                try {
+                    await mailService.sendWelcomeEmail(user.email, user.firstName || 'User');
+                } catch (emailErr: any) {
+                    console.error('[AUTH/GOOGLE] Non-fatal: Failed to send welcome email:', emailErr.message);
+                }
             }
+        } else {
+            console.log(`[AUTH/GOOGLE] Found existing user by Google ID: ${user.id}`);
         }
 
+        console.log(`[AUTH/GOOGLE] Generating JWT token...`);
         const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
 
+        console.log(`[AUTH/GOOGLE] Login successful. Returning user data.`);
         res.json({ 
             user: { 
                 id: user.id, 
@@ -76,9 +102,13 @@ export const googleLogin = async (req: Request, res: Response) => {
             }, 
             token 
         });
-    } catch (error) {
-        console.error('Google login error:', error);
-        res.status(500).json({ error: 'Internal server error during Google login' });
+    } catch (error: any) {
+        console.error('[AUTH/GOOGLE] ❌ FATAL ERROR during token verification or processing:', error.message);
+        console.error(error.stack);
+        // Return the actual error message to the frontend for debugging
+        res.status(500).json({ 
+            error: `Login failed: ${error.message || 'Internal server error'}`
+        });
     }
 };
 

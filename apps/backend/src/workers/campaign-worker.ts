@@ -41,8 +41,45 @@ const processCampaignJob = async (data: CampaignJobData, job: Job) => {
 
     // 3. PARSE CONFIG & INJECT STEALTH ARGS
     const rawConfig = campaign.workflowJson || campaign.workflow;
-    const config: CampaignConfig = typeof rawConfig === 'string' ? JSON.parse(rawConfig) : rawConfig;
+    const config: any = typeof rawConfig === 'string' ? JSON.parse(rawConfig) : rawConfig;
     
+    // Convert React Flow graph (nodes/edges) into a linear flow array for the engine
+    if (config.nodes && config.edges && !config.flow) {
+        const orderedNodes = [];
+        let currentNodeId = config.nodes.find((n: any) => n.type === 'TRIGGER' || n.id === 'trigger' || n.subType === 'START')?.id;
+        
+        while (currentNodeId) {
+            const edge = config.edges.find((e: any) => e.source === currentNodeId);
+            if (!edge) break;
+            
+            currentNodeId = edge.target;
+            const targetNode = config.nodes.find((n: any) => n.id === currentNodeId);
+            if (targetNode) orderedNodes.push(targetNode);
+        }
+
+        console.log(`[CAMPAIGN-WORKER] Converting nodes to flow. orderedNodes length: ${orderedNodes.length}, orderedNodes:`, JSON.stringify(orderedNodes));
+        
+        config.flow = orderedNodes.map((node: any) => {
+            const data = node.data || {};
+            const rawSubType = (data.subType || node.subType || node.type || '').toUpperCase();
+            let mappedNodeType = rawSubType;
+            
+            switch(rawSubType) {
+                case 'VISIT': mappedNodeType = 'profile-visit'; break;
+                case 'MESSAGE': mappedNodeType = 'send-message'; break;
+                case 'LIKE_POST': mappedNodeType = 'like-nth-post'; break;
+                case 'COMMENT_POST': mappedNodeType = 'comment-nth-post'; break;
+                case 'CONNECT': mappedNodeType = 'connect'; break;
+                case 'DELAY': mappedNodeType = 'delay'; break;
+            }
+
+            return {
+                ...data,
+                node: mappedNodeType
+            };
+        });
+    }
+
     // Inject AI Context & Session Security
     config.campaignId = campaignId;
     config.objective = campaign.objective || undefined;
