@@ -26,6 +26,10 @@ interface AuthLayoutProps {
     setEmail: (val: string) => void;
     password?: string;
     setPassword?: (val: string) => void;
+    firstName?: string;
+    setFirstName?: (val: string) => void;
+    lastName?: string;
+    setLastName?: (val: string) => void;
 }
 
 const testimonials: Testimonial[] = [
@@ -52,7 +56,11 @@ export function AuthLayout({
     email,
     setEmail,
     password,
-    setPassword
+    setPassword,
+    firstName,
+    setFirstName,
+    lastName,
+    setLastName
 }: AuthLayoutProps) {
     const [showPassword, setShowPassword] = useState(false);
     const router = useRouter();
@@ -101,6 +109,39 @@ export function AuthLayout({
                         <p className="animate-element animate-delay-200 text-muted-foreground font-medium">{description}</p>
 
                         <form className="space-y-5" onSubmit={onSubmit}>
+                            {type === 'register' && setFirstName && setLastName && (
+                                <div className="grid grid-cols-2 gap-4 animate-element animate-delay-100">
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-bold text-muted-foreground ml-1">First Name</label>
+                                        <div className="mt-1 rounded-2xl border border-border bg-muted/30 backdrop-blur-sm transition-all focus-within:border-primary/50 focus-within:bg-background focus-within:ring-4 focus-within:ring-primary/5">
+                                            <input
+                                                name="firstName"
+                                                type="text"
+                                                value={firstName}
+                                                onChange={(e) => setFirstName(e.target.value)}
+                                                required
+                                                placeholder="John"
+                                                className="w-full bg-transparent text-sm p-4 rounded-2xl focus:outline-none font-medium"
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-bold text-muted-foreground ml-1">Last Name</label>
+                                        <div className="mt-1 rounded-2xl border border-border bg-muted/30 backdrop-blur-sm transition-all focus-within:border-primary/50 focus-within:bg-background focus-within:ring-4 focus-within:ring-primary/5">
+                                            <input
+                                                name="lastName"
+                                                type="text"
+                                                value={lastName}
+                                                onChange={(e) => setLastName(e.target.value)}
+                                                required
+                                                placeholder="Doe"
+                                                className="w-full bg-transparent text-sm p-4 rounded-2xl focus:outline-none font-medium"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
                             <div className="animate-element animate-delay-300">
                                 <label className="text-sm font-bold text-muted-foreground ml-1">Email Address</label>
                                 <div className="mt-1 rounded-2xl border border-border bg-muted/30 backdrop-blur-sm transition-all focus-within:border-primary/50 focus-within:bg-background focus-within:ring-4 focus-within:ring-primary/5">

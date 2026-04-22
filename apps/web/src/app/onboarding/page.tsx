@@ -81,9 +81,15 @@ export default function OnboardingPage() {
     };
 
     const handleNext = () => {
-        if (step === 1 && !formData.jobTitle) {
-            toast.error('Please enter your job title');
-            return;
+        if (step === 1) {
+            if (!formData.firstName || !formData.lastName) {
+                toast.error('First and Last name are required');
+                return;
+            }
+            if (!formData.jobTitle) {
+                toast.error('Please enter your job title');
+                return;
+            }
         }
         setStep(2);
     };
@@ -187,8 +193,8 @@ export default function OnboardingPage() {
                                                     name="firstName"
                                                     value={formData.firstName}
                                                     onChange={handleChange}
-                                                    readOnly
-                                                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 text-sm font-bold focus:outline-none focus:ring-4 focus:ring-primary/5 transition-all text-slate-500 cursor-not-allowed"
+                                                    placeholder="First Name"
+                                                    className="w-full bg-white border border-slate-200 rounded-2xl p-4 text-sm font-bold focus:outline-none focus:ring-4 focus:ring-primary/5 transition-all shadow-sm"
                                                 />
                                             </div>
                                         </div>
@@ -199,8 +205,8 @@ export default function OnboardingPage() {
                                                     name="lastName"
                                                     value={formData.lastName}
                                                     onChange={handleChange}
-                                                    readOnly
-                                                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 text-sm font-bold focus:outline-none focus:ring-4 focus:ring-primary/5 transition-all text-slate-500 cursor-not-allowed"
+                                                    placeholder="Last Name"
+                                                    className="w-full bg-white border border-slate-200 rounded-2xl p-4 text-sm font-bold focus:outline-none focus:ring-4 focus:ring-primary/5 transition-all shadow-sm"
                                                 />
                                             </div>
                                         </div>

@@ -114,7 +114,7 @@ export const googleLogin = async (req: Request, res: Response) => {
 
 
 export const register = async (req: Request, res: Response) => {
-    const { email, password } = req.body;
+    const { email, password, firstName, lastName } = req.body;
 
     try {
         const existingUser = await prisma.user.findUnique({ where: { email } });
@@ -127,6 +127,8 @@ export const register = async (req: Request, res: Response) => {
             data: {
                 email,
                 passwordHash,
+                firstName,
+                lastName,
             },
         });
 

@@ -9,6 +9,8 @@ import api from '@/lib/api';
 export default function RegisterPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
@@ -17,7 +19,12 @@ export default function RegisterPage() {
     setLoading(true);
 
     try {
-      const res = await api.post('/auth/register', { email, password });
+      const res = await api.post('/auth/register', { 
+        email, 
+        password,
+        firstName,
+        lastName
+      });
       const data = res.data;
 
       localStorage.setItem('token', data.token);
@@ -43,6 +50,10 @@ export default function RegisterPage() {
       setEmail={setEmail}
       password={password}
       setPassword={setPassword}
+      firstName={firstName}
+      setFirstName={setFirstName}
+      lastName={lastName}
+      setLastName={setLastName}
       onSubmit={handleSubmit}
     />
   );
