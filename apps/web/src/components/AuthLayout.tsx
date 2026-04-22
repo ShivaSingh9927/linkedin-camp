@@ -85,14 +85,12 @@ export function AuthLayout({
             <section className="flex-1 flex items-center justify-center p-8 lg:p-16">
                 <div className="w-full max-w-md">
                     <div className="flex flex-col gap-6">
-                        <div className="flex items-center gap-4 mb-6 animate-element animate-delay-100">
-                            <div className="w-14 h-14 bg-primary/10 rounded-[1.25rem] flex items-center justify-center shadow-xl shadow-primary/10">
-                                <img 
-                                    src="/leadmate_wbg.png" 
-                                    alt="Leadmate Logo" 
-                                    className="max-w-[140px] opacity-90 drop-shadow-2xl"
-                                />
-                            </div>
+                        <div className="flex items-center gap-4 mb-8 animate-element animate-delay-100">
+                            <img 
+                                src="/leadmate_wbg.png" 
+                                alt="Leadmate Logo" 
+                                className="w-12 h-12 object-contain opacity-95 drop-shadow-lg"
+                            />
                             <div>
                                 <span className="text-3xl font-black text-foreground tracking-tight leading-none block">LEADMATE</span>
                                 <span className="text-[12px] font-black text-primary tracking-[0.3em] uppercase mt-1 block">LinkedIn Hero</span>

@@ -47,17 +47,15 @@ export function Sidebar() {
     <div className="w-72 bg-white border-r border-slate-100 flex flex-col h-full sticky top-0 overflow-y-auto custom-scrollbar">
       {/* Brand */}
       <div className="p-8 mb-4">
-        <Link href="/" className="flex items-center space-x-4 group">
-          <div className="w-12 h-12 flex items-center justify-center group-hover:rotate-[-4deg] transition-all duration-300 relative overflow-hidden">
-            <img 
-              src="/leadmate_wbg.png" 
-              alt="Leadmate" 
-              className="w-full h-full object-contain" 
-            />
-          </div>
+        <Link href="/" className="flex items-center space-x-3 group">
+          <img 
+            src="/leadmate_wbg.png" 
+            alt="Leadmate" 
+            className="w-10 h-10 object-contain group-hover:scale-105 transition-all duration-300" 
+          />
           <div>
-            <span className="text-2xl font-black text-slate-900 tracking-tight leading-none block">LEADMATE</span>
-            <span className="text-[10px] font-black text-primary tracking-[0.3em] uppercase mt-1.5 block">AI Outreach</span>
+            <span className="text-xl font-black text-slate-900 tracking-tight leading-none block">LEADMATE</span>
+            <span className="text-[9px] font-black text-primary tracking-[0.3em] uppercase mt-1 block">LinkedIn Hero</span>
           </div>
         </Link>
       </div>

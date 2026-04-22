@@ -356,9 +356,10 @@ export default function CampaignsPage() {
                 })}
             </div>
 
-            {/* Table / Grid */}
-            <div className="bg-card border border-border rounded-[3rem] shadow-soft overflow-hidden">
-                <div className="overflow-x-auto">
+            {/* Workflow List (Table on Desktop, Cards on Mobile) */}
+            <div className="bg-card border border-border rounded-[2.5rem] sm:rounded-[3rem] shadow-soft overflow-hidden">
+                {/* Desktop view */}
+                <div className="hidden md:block overflow-x-auto">
                     <table className="w-full text-left">
                         <thead className="bg-muted/50 text-[10px] font-black border-b border-border text-muted-foreground uppercase tracking-[0.2em]">
                             <tr>
@@ -475,6 +476,68 @@ export default function CampaignsPage() {
                             ))}
                         </tbody>
                     </table>
+                </div>
+
+                {/* Mobile view */}
+                <div className="md:hidden divide-y divide-border">
+                    {filteredCampaigns.length === 0 ? (
+                        <div className="p-10 text-center">
+                            <h3 className="text-lg font-black text-foreground uppercase tracking-tight">Empty Ecosystem</h3>
+                            <p className="text-muted-foreground text-xs mt-1">No iterations found.</p>
+                            <Link href="/campaigns/new/builder" className="inline-flex mt-6 bg-primary text-primary-foreground px-6 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest">
+                                Start Campaign
+                            </Link>
+                        </div>
+                    ) : filteredCampaigns.map((campaign) => (
+                        <div key={campaign.id} className="p-6 space-y-6">
+                            <div className="flex justify-between items-start">
+                                <Link href={`/campaigns/${campaign.id}/builder`} className="min-w-0 flex-1">
+                                    <h4 className="text-base font-black text-foreground uppercase truncate tracking-tight">{campaign.name}</h4>
+                                    <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mt-0.5">ID: {campaign.id.slice(0, 8)}</p>
+                                </Link>
+                                <span className={cn(
+                                    "text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-widest border shrink-0",
+                                    campaign.status === 'ACTIVE' ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20' : 'bg-muted text-muted-foreground'
+                                )}>
+                                    {campaign.status}
+                                </span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                                <div className="space-y-1">
+                                    <p className="text-[9px] font-black text-muted-foreground uppercase opacity-50">Engine Status</p>
+                                    <div className="flex items-center space-x-2">
+                                        <div className="w-20 h-1 bg-muted rounded-full">
+                                            <div className="h-full bg-emerald-500 w-full" />
+                                        </div>
+                                        <span className="text-[9px] font-black text-emerald-500 uppercase">100%</span>
+                                    </div>
+                                </div>
+                                <div className="flex items-center space-x-2">
+                                    <button
+                                        onClick={() => fetchStatus(campaign.id)}
+                                        className="w-10 h-10 flex items-center justify-center bg-muted/50 text-muted-foreground rounded-xl"
+                                    >
+                                        <Info className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                        onClick={() => toggleStatus(campaign.id, campaign.status)}
+                                        className={cn(
+                                            "w-10 h-10 flex items-center justify-center rounded-xl",
+                                            campaign.status === 'ACTIVE' ? "bg-amber-500/10 text-amber-600" : "bg-emerald-500/10 text-emerald-600"
+                                        )}
+                                    >
+                                        {campaign.status === 'ACTIVE' ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current ml-0.5" />}
+                                    </button>
+                                    <button
+                                        onClick={() => deleteCampaign(campaign.id)}
+                                        className="w-10 h-10 flex items-center justify-center bg-muted/50 text-muted-foreground rounded-xl"
+                                    >
+                                        <Trash2 className="w-4 h-4" />
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
                 </div>
             </div>
 

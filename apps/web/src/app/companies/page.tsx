@@ -82,26 +82,26 @@ export default function CompaniesPage() {
   return (
     <div className="space-y-10 animate-in fade-in duration-500">
       {/* Header & Stats Summary */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
-        <div className="space-y-2">
+      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 sm:gap-8">
+        <div className="space-y-3 sm:space-y-4">
           <div className="flex items-center space-x-3 text-primary">
-            <div className="p-3 bg-primary/10 rounded-2xl">
-              <Building2 className="w-6 h-6" />
+            <div className="p-2 sm:p-3 bg-primary/10 rounded-xl sm:rounded-2xl">
+              <Building2 className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
-            <span className="text-xs font-black uppercase tracking-[0.3em]">Account Intelligence</span>
+            <span className="text-[9px] sm:text-xs font-black uppercase tracking-[0.2em] sm:tracking-[0.3em]">Account Intelligence</span>
           </div>
-          <h1 className="text-4xl font-black text-slate-900 tracking-tight leading-none uppercase">Market Ecosystem</h1>
-          <p className="text-slate-500 font-bold max-w-lg text-sm uppercase tracking-widest leading-relaxed opacity-60">
-            Strategic grouping of {companies.length} target organizations across your outreach landscape.
+          <h1 className="text-3xl sm:text-5xl font-black text-slate-900 tracking-tight leading-none uppercase italic">Market Hub</h1>
+          <p className="text-slate-500 font-bold max-w-lg text-[10px] sm:text-sm uppercase tracking-widest leading-relaxed opacity-60">
+            Strategic grouping of {companies.length} target organizations.
           </p>
         </div>
 
-        <div className="relative w-full md:w-96 group">
-          <Search className="absolute left-6 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-primary transition-colors" />
+        <div className="relative w-full lg:w-96 group">
+          <Search className="absolute left-6 top-1/2 -translate-y-1/2 w-4 h-4 sm:w-5 sm:h-5 text-slate-400 group-focus-within:text-primary transition-colors" />
           <input 
             type="text" 
-            placeholder="Search Organizations..." 
-            className="w-full pl-14 pr-6 py-5 bg-white border border-slate-100 rounded-[2rem] shadow-soft focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all font-bold text-sm"
+            placeholder="Search Accounts..." 
+            className="w-full pl-14 sm:pl-16 pr-6 py-4 sm:py-5 bg-white border border-slate-100 rounded-2xl sm:rounded-[2.5rem] shadow-premium focus:ring-4 focus:ring-primary/5 focus:border-primary transition-all font-bold text-xs sm:text-sm"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />

@@ -470,23 +470,23 @@ export default function LeadsPage() {
             <div className="max-w-[1600px] mx-auto space-y-10">
                 {/* ─── Ecosystem Navigator (Horizontal Chips) ─── */}
                 {smartLists.length > 0 && (
-                    <div className="flex items-center space-x-2 overflow-x-auto pb-6 scrollbar-hide">
+                    <div className="flex items-center space-x-2 overflow-x-auto pb-4 sm:pb-6 scrollbar-hide -mx-4 px-4 sm:mx-0 sm:px-0">
                         {/* Smart Lists Chips */}
                         {smartLists.map(list => (
                             <button
                                 key={list.id}
                                 onClick={() => { setFilters(list.filters); setActiveList(null); setSelectedLeads(new Set()); }}
                                 className={cn(
-                                    "px-8 py-4 rounded-[1.5rem] text-[11px] font-black uppercase tracking-widest transition-all flex items-center space-x-3 whitespace-nowrap border-2 group shadow-soft",
+                                    "px-4 sm:px-8 py-3 sm:py-4 rounded-2xl sm:rounded-[1.5rem] text-[10px] sm:text-[11px] font-black uppercase tracking-widest transition-all flex items-center space-x-2 sm:space-x-3 whitespace-nowrap border-2 group shadow-soft flex-shrink-0",
                                     JSON.stringify(filters) === JSON.stringify(list.filters)
-                                        ? "bg-primary/10 text-primary border-primary/20 scale-[1.05] z-10"
+                                        ? "bg-primary/10 text-primary border-primary/20 scale-[1.02] sm:scale-[1.05] z-10"
                                         : "bg-white text-muted-foreground hover:bg-muted border-transparent"
                                 )}
                             >
-                                <Zap className="w-4 h-4" />
+                                <Zap className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                                 <span>{list.name}</span>
                                 <Trash2 
-                                    className="w-3.5 h-3.5 ml-2 opacity-0 group-hover:opacity-100 hover:text-red-500 transition-all" 
+                                    className="w-3 h-3 sm:w-3.5 sm:h-3.5 ml-1 sm:ml-2 opacity-0 group-hover:opacity-100 hover:text-red-500 transition-all" 
                                     onClick={(e) => deleteSmartList(list.id, e)}
                                 />
                             </button>
@@ -495,28 +495,28 @@ export default function LeadsPage() {
                 )}
 
                 {/* ─── Main Interface Container ─── */}
-                <div className="bg-white rounded-[4rem] shadow-premium border border-border/40 overflow-hidden flex flex-col min-h-[800px]">
+                <div className="bg-white rounded-[2rem] sm:rounded-[4rem] shadow-premium border border-border/40 overflow-hidden flex flex-col min-h-[600px] sm:min-h-[800px]">
                 {/* Header Section */}
-                <div className="p-8 lg:p-10 border-b border-border bg-white/50 backdrop-blur-sm">
-                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-10">
-                        <div>
-                            <div className="flex items-center space-x-3 mb-2">
-                                <span className="bg-primary/10 text-primary px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-[0.2em]">Live Database</span>
+                <div className="p-6 sm:p-8 lg:p-10 border-b border-border bg-white/50 backdrop-blur-sm">
+                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-8 sm:mb-10">
+                        <div className="space-y-1">
+                            <div className="flex items-center space-x-3 mb-1">
+                                <span className="bg-primary/10 text-primary px-2 sm:px-3 py-1 rounded-full text-[9px] sm:text-[10px] font-black uppercase tracking-[0.2em]">Live Database</span>
                                 {activeList && <span className="text-muted-foreground">/</span>}
-                                {activeList && <span className="bg-emerald-500/10 text-emerald-600 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-[0.2em]">{activeList}</span>}
+                                {activeList && <span className="bg-emerald-500/10 text-emerald-600 px-2 sm:px-3 py-1 rounded-full text-[9px] sm:text-[10px] font-black uppercase tracking-[0.2em]">{activeList}</span>}
                             </div>
-                            <h2 className="text-4xl font-black text-foreground uppercase tracking-tight italic leading-none">
+                            <h2 className="text-2xl sm:text-4xl font-black text-foreground uppercase tracking-tight italic leading-none">
                                 {activeList ? activeList : 'Global Prospects'}
                             </h2>
                         </div>
 
-                        <div className="flex items-center space-x-3">
+                        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
                             <button
                                 onClick={() => { fetchLeads(); fetchCampaigns(); fetchSmartLists(); toast.success('Ecosystem updated'); }}
-                                className="flex items-center space-x-2 bg-white border border-border px-6 py-3 rounded-2xl font-black text-muted-foreground hover:text-primary hover:border-primary/30 transition-all shadow-soft text-[10px] uppercase tracking-widest group"
+                                className="flex items-center space-x-2 bg-white border border-border px-4 sm:px-6 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl font-black text-muted-foreground hover:text-primary hover:border-primary/30 transition-all shadow-soft text-[9px] sm:text-[10px] uppercase tracking-widest group"
                             >
-                                <Zap className={cn("w-4 h-4", actionLoading && "animate-spin")} />
-                                <span>Refresh</span>
+                                <Zap className={cn("w-3.5 h-3.5 sm:w-4 sm:h-4", actionLoading && "animate-spin")} />
+                                <span className="hidden xs:inline">Refresh</span>
                             </button>
 
                             <input
@@ -528,66 +528,64 @@ export default function LeadsPage() {
                             />
                             <button
                                 onClick={() => setShowManualModal(true)}
-                                className="flex items-center space-x-2 bg-indigo-50 border border-indigo-100 px-6 py-3 rounded-2xl font-black text-indigo-600 hover:bg-indigo-100 transition-all shadow-soft text-[10px] uppercase tracking-widest"
+                                className="flex items-center space-x-2 bg-indigo-50 border border-indigo-100 px-4 sm:px-6 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl font-black text-indigo-600 hover:bg-indigo-100 transition-all shadow-soft text-[9px] sm:text-[10px] uppercase tracking-widest"
                             >
-                                <Plus className="w-4 h-4" />
+                                <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                                 <span>Add Lead</span>
                             </button>
 
                             <button
                                 onClick={() => fileInputRef.current?.click()}
-                                className="flex items-center space-x-2 bg-white border border-border px-6 py-3 rounded-2xl font-black text-muted-foreground hover:text-foreground hover:border-primary/30 transition-all shadow-soft text-[10px] uppercase tracking-widest"
+                                className="flex items-center space-x-2 bg-white border border-border px-4 sm:px-6 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl font-black text-muted-foreground hover:text-foreground hover:border-primary/30 transition-all shadow-soft text-[9px] sm:text-[10px] uppercase tracking-widest"
                             >
-                                {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-                                <span>Import Data</span>
+                                {actionLoading ? <Loader2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-spin" /> : <Upload className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
+                                <span className="hidden xs:inline">Import Data</span>
                                 <ChevronDown className="w-3 h-3 opacity-50" />
                             </button>
 
-                            {selectedLeads.size > 0 ? (
-                                <div className="flex items-center space-x-3 animate-in fade-in slide-in-from-right-4 duration-300">
+                            {selectedLeads.size > 0 && (
+                                <div className="flex items-center gap-2 sm:gap-3 animate-in fade-in slide-in-from-right-4 duration-300 w-full xs:w-auto mt-2 xs:mt-0">
                                     <button
                                         onClick={() => setShowBulkTagModal(true)}
-                                        className="flex items-center space-x-3 bg-indigo-50 border border-indigo-200 text-indigo-700 px-6 py-3.5 rounded-2xl font-black hover:bg-indigo-100 transition-all shadow-soft text-[10px] uppercase tracking-[0.1em] group"
+                                        className="flex-1 xs:flex-none flex items-center justify-center space-x-2 bg-indigo-50 border border-indigo-200 text-indigo-700 px-4 sm:px-6 py-2.5 sm:py-3.5 rounded-xl sm:rounded-2xl font-black hover:bg-indigo-100 transition-all shadow-soft text-[9px] sm:text-[10px] uppercase tracking-[0.1em] group"
                                     >
-                                        <Tag className="w-4 h-4 group-hover:scale-110 transition-transform" />
-                                        <span>Segment {selectedLeads.size} Units</span>
+                                        <Tag className="w-3.5 h-3.5 sm:w-4 sm:h-4 group-hover:scale-110 transition-transform" />
+                                        <span>Segment {selectedLeads.size}</span>
                                     </button>
 
                                     <button
                                         onClick={() => setShowAssignModal(true)}
-                                        className="flex items-center space-x-3 bg-primary text-primary-foreground px-8 py-3.5 rounded-2xl font-black hover:bg-primary/90 transition-all shadow-xl shadow-primary/20 text-[10px] uppercase tracking-[0.1em] group"
+                                        className="flex-1 xs:flex-none flex items-center justify-center space-x-2 bg-primary text-primary-foreground px-4 sm:px-8 py-2.5 sm:py-3.5 rounded-xl sm:rounded-2xl font-black hover:bg-primary/90 transition-all shadow-xl shadow-primary/20 text-[9px] sm:text-[10px] uppercase tracking-[0.1em] group"
                                     >
-                                        <Layers className="w-4 h-4 group-hover:rotate-12 transition-transform" />
-                                        <span>Sync {selectedLeads.size} Units</span>
+                                        <Layers className="w-3.5 h-3.5 sm:w-4 sm:h-4 group-hover:rotate-12 transition-transform" />
+                                        <span>Sync {selectedLeads.size}</span>
                                     </button>
                                 </div>
-                            ) : (
-                                <div className="flex items-center space-x-3 group">
-                                    {leads.length === 0 && !loading && (
-                                        <button
-                                            onClick={generateDemo}
-                                            disabled={actionLoading}
-                                            className="flex items-center space-x-3 bg-slate-100 text-slate-900 border border-slate-200 px-8 py-3 rounded-2xl font-black hover:bg-slate-200 transition-all shadow-soft text-[10px] uppercase tracking-widest"
-                                        >
-                                            {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
-                                            <span>Bootstrap Demo</span>
-                                        </button>
-                                    )}
-                                </div>
+                            )}
+
+                            {selectedLeads.size === 0 && leads.length === 0 && !loading && (
+                                <button
+                                    onClick={generateDemo}
+                                    disabled={actionLoading}
+                                    className="flex items-center space-x-3 bg-slate-100 text-slate-900 border border-slate-200 px-6 py-3 rounded-2xl font-black hover:bg-slate-200 transition-all shadow-soft text-[10px] uppercase tracking-widest"
+                                >
+                                    {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+                                    <span>Bootstrap Demo</span>
+                                </button>
                             )}
                         </div>
                     </div>
-
+                    
                     {/* Search & Global Controls */}
                     <div className="flex flex-col md:flex-row gap-4">
                         <div className="flex-1 relative group">
-                            <Search className="absolute left-6 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
+                            <Search className="absolute left-6 top-1/2 -translate-y-1/2 w-4 h-4 sm:w-5 sm:h-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
                             <input
                                 type="text"
-                                placeholder="Universal identifier search (Name, Company, LinkedIn...)"
+                                placeholder="Search Name, Company, LinkedIn..."
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
-                                className="w-full pl-14 pr-6 py-4.5 border border-border bg-muted/20 rounded-[1.5rem] focus:outline-none focus:ring-4 focus:ring-primary/5 focus:border-primary/30 transition-all font-bold text-sm"
+                                className="w-full pl-12 sm:pl-14 pr-6 py-3 sm:py-4.5 border border-border bg-muted/20 rounded-xl sm:rounded-[1.5rem] focus:outline-none focus:ring-4 focus:ring-primary/5 focus:border-primary/30 transition-all font-bold text-xs sm:text-sm"
                             />
                         </div>
                     </div>
@@ -596,16 +594,16 @@ export default function LeadsPage() {
                 {/* Main Table Interface */}
                 <div className="flex-1 overflow-hidden flex flex-col">
                     {/* Control Bar */}
-                    <div className="px-8 py-4 border-b border-border bg-muted/10 flex items-center justify-between">
-                        <div className="flex items-center space-x-3 flex-wrap gap-y-2">
+                    <div className="px-4 sm:px-8 py-4 border-b border-border bg-muted/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div className="flex items-center space-x-2 sm:space-x-3 overflow-x-auto pb-2 sm:pb-0 scrollbar-hide -mx-2 px-2 sm:mx-0 sm:px-0">
                             {FILTER_PILLS.map((fp) => {
                                 const isActive = !!filters[fp.key];
                                 return (
-                                    <div key={fp.key} className="relative filter-dropdown-container">
+                                    <div key={fp.key} className="relative filter-dropdown-container flex-shrink-0">
                                         <button
                                             onClick={() => setActiveFilter(activeFilter === fp.key ? null : fp.key)}
                                             className={cn(
-                                                "px-4 py-2 rounded-full border text-[9px] font-black uppercase tracking-widest transition-all flex items-center space-x-2",
+                                                "px-3 sm:px-4 py-1.5 sm:py-2 rounded-full border text-[8px] sm:text-[9px] font-black uppercase tracking-widest transition-all flex items-center space-x-1.5 sm:space-x-2",
                                                 isActive
                                                     ? "bg-primary text-primary-foreground border-primary shadow-lg shadow-primary/10"
                                                     : "bg-white text-muted-foreground border-border hover:border-primary/40"
@@ -613,15 +611,15 @@ export default function LeadsPage() {
                                         >
                                             <span>{fp.label}</span>
                                             {isActive && (
-                                                <span className="bg-white/20 px-2 py-0.5 rounded-full ml-1">
+                                                <span className="bg-white/20 px-1.5 sm:px-2 py-0.5 rounded-full ml-1">
                                                     {filterDisplayValue(fp.key, filters[fp.key])}
                                                 </span>
                                             )}
-                                            {!isActive && <ChevronDown className="w-3 h-3 opacity-50" />}
+                                            {!isActive && <ChevronDown className="w-2.5 h-2.5 sm:w-3 sm:h-3 opacity-50" />}
                                         </button>
 
                                         {activeFilter === fp.key && (
-                                            <div className="absolute top-full left-0 mt-2 bg-background border border-border rounded-[2rem] shadow-2xl z-50 p-3 min-w-[200px] animate-in fade-in slide-in-from-top-2 duration-200">
+                                            <div className="absolute top-full left-0 mt-2 bg-background border border-border rounded-[1.5rem] sm:rounded-[2rem] shadow-2xl z-50 p-2 sm:p-3 min-w-[180px] sm:min-w-[200px] animate-in fade-in slide-in-from-top-2 duration-200">
                                                 {fp.key === 'status' && STATUS_OPTIONS.map(s => {
                                                     const count = listFilteredLeads.filter(l => l.status === s).length;
                                                     return (
@@ -629,7 +627,7 @@ export default function LeadsPage() {
                                                             key={s}
                                                             onClick={() => setFilter('status', s)}
                                                             className={cn(
-                                                                "w-full flex items-center justify-between text-left px-5 py-3 text-[10px] font-black uppercase tracking-widest rounded-2xl transition-all mb-1",
+                                                                "w-full flex items-center justify-between text-left px-4 py-2.5 sm:px-5 sm:py-3 text-[9px] sm:text-[10px] font-black uppercase tracking-widest rounded-xl sm:rounded-2xl transition-all mb-1",
                                                                 filters.status === s ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"
                                                             )}
                                                         >
@@ -638,6 +636,7 @@ export default function LeadsPage() {
                                                         </button>
                                                     );
                                                 })}
+                                                {/* Other filter options simplified for mobile if needed, but keeping logic */}
                                                 {fp.key === 'campaignId' && campaigns.map(c => {
                                                     const count = listFilteredLeads.filter(l => l.campaignLeads?.some(cl => (cl.campaign as any).id === c.id)).length;
                                                     return (
@@ -680,21 +679,6 @@ export default function LeadsPage() {
                                                         {g}
                                                     </button>
                                                 ))}
-                                                {fp.key === 'campaignId' && campaigns.map(c => (
-                                                    <button key={c.id} onClick={() => setFilter('campaignId', c.id)} className={cn("w-full text-left px-5 py-3 text-[10px] font-black uppercase tracking-widest rounded-2xl transition-all mb-1", filters.campaignId === c.id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted")}>
-                                                        {c.name}
-                                                    </button>
-                                                ))}
-                                                {fp.key === 'tags' && uniqueTags.map(t => (
-                                                    <button key={t} onClick={() => setFilter('tags', t)} className={cn("w-full text-left px-5 py-3 text-[10px] font-black uppercase tracking-widest rounded-2xl transition-all mb-1", filters.tags === t ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted")}>
-                                                        {t}
-                                                    </button>
-                                                ))}
-                                                {fp.key === 'country' && uniqueCountries.map(c => (
-                                                    <button key={c} onClick={() => setFilter('country', c)} className={cn("w-full text-left px-5 py-3 text-[10px] font-black uppercase tracking-widest rounded-2xl transition-all mb-1", filters.country === c ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted")}>
-                                                        {c}
-                                                    </button>
-                                                ))}
                                                 {fp.key === 'hasEmail' && ['yes', 'no'].map(v => (
                                                     <button key={v} onClick={() => setFilter('hasEmail', v)} className={cn("w-full text-left px-5 py-3 text-[10px] font-black uppercase tracking-widest rounded-2xl transition-all mb-1", filters.hasEmail === v ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted")}>
                                                         {v === 'yes' ? 'Verified Email' : 'No Email'}
@@ -705,29 +689,21 @@ export default function LeadsPage() {
                                     </div>
                                 );
                             })}
-
-                            {Object.keys(filters).length > 0 && (
-                                <div className="flex items-center space-x-2">
-                                    <button
-                                        onClick={clearFilters}
-                                        className="px-4 py-2 rounded-full text-[9px] font-black text-red-500 hover:bg-red-50 transition-colors uppercase tracking-[0.15em] flex items-center space-x-2"
-                                    >
-                                        <X className="w-3 h-3" />
-                                        <span>Reset</span>
-                                    </button>
-                                    <button
-                                        onClick={() => setShowSaveSmartListModal(true)}
-                                        className="px-4 py-2 rounded-full text-[9px] font-black text-primary bg-primary/5 hover:bg-primary/10 transition-colors uppercase tracking-[0.15em] flex items-center space-x-2 border border-primary/20"
-                                    >
-                                        <Zap className="w-3 h-3" />
-                                        <span>Save as Smart List</span>
-                                    </button>
-                                </div>
-                            )}
                         </div>
 
-                        <div className="text-[10px] font-black text-muted-foreground uppercase tracking-widest opacity-50 px-4">
-                            Matching {filteredLeads.length} Identified Units
+                        <div className="flex items-center justify-between sm:justify-end gap-3">
+                            <div className="text-[9px] sm:text-[10px] font-black text-muted-foreground uppercase tracking-widest opacity-50 px-2">
+                                {filteredLeads.length} Ident Units
+                            </div>
+                            {Object.keys(filters).length > 0 && (
+                                <button
+                                    onClick={clearFilters}
+                                    className="px-3 py-1.5 rounded-full text-[8px] sm:text-[9px] font-black text-red-500 hover:bg-red-50 transition-colors uppercase tracking-widest flex items-center space-x-1"
+                                >
+                                    <X className="w-2.5 h-2.5" />
+                                    <span>Reset</span>
+                                </button>
+                            )}
                         </div>
                     </div>
 
@@ -892,6 +868,8 @@ export default function LeadsPage() {
                         </table>
                     </div>
                 </div>
+            </div>
+        </div>
 
             {/* MODAL: Save Smart List */}
             {showSaveSmartListModal && (
@@ -1074,8 +1052,6 @@ export default function LeadsPage() {
                     </form>
                 </div>
             )}
-                </div>
-            </div>
             {/* LEAD DETAIL DRAWER */}
             {selectedLead && (
                 <div 

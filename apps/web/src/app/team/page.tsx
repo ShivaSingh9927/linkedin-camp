@@ -8,11 +8,14 @@ import {
     User,
     Trash2,
     ExternalLink,
+    PlusCircle,
+    CheckCircle2,
     Crown,
-    Settings,
-    PlusCircle
+    Zap
 } from 'lucide-react';
 import api from '@/lib/api';
+import { cn } from '@/lib/utils';
+import { motion, AnimatePresence } from 'framer-motion';
 
 // --- Types ---
 interface TeamMember {
@@ -181,274 +184,259 @@ export default function TeamPage() {
     const totalReplies = team.members.reduce((acc, m) => acc + (m.stats?.totalReplies || 0), 0);
 
     return (
-        <div className="max-w-7xl mx-auto space-y-10 p-8 pt-12 animate-in fade-in duration-500">
+        <div className="max-w-7xl mx-auto space-y-8 sm:space-y-12 p-4 sm:p-8 lg:p-12 animate-in fade-in duration-500">
             {/* Header */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-                <div>
-                    <div className="flex items-center space-x-4">
-                        <h1 className="text-5xl font-black text-slate-900 uppercase tracking-tighter italic">{team.name}</h1>
-                        <div className="flex items-center space-x-2 px-4 py-1.5 bg-indigo-600 text-white text-[10px] font-black uppercase tracking-[0.2em] rounded-full shadow-lg shadow-indigo-200">
-                            <Shield className="w-3 h-3" />
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 sm:gap-10">
+                <div className="space-y-4">
+                    <div className="flex flex-wrap items-center gap-4">
+                        <h1 className="text-4xl sm:text-6xl font-black text-slate-900 uppercase tracking-tighter italic leading-none">{team.name}</h1>
+                        <div className="flex items-center space-x-2 px-3 sm:px-4 py-1 sm:py-1.5 bg-primary text-white text-[9px] sm:text-[10px] font-black uppercase tracking-[0.2em] rounded-full shadow-lg shadow-primary/20">
+                            <Shield className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
                             <span>{myRole}</span>
                         </div>
                     </div>
-                    <p className="text-slate-500 text-base mt-2 font-semibold">Workspace for consolidated prospecting and member management.</p>
+                    <p className="text-slate-500 text-sm sm:text-base font-semibold max-w-2xl leading-relaxed lg:opacity-70 uppercase tracking-wide">Workspace for consolidated prospecting and workforce orchestration.</p>
                 </div>
 
                 {myRole === 'ADMIN' && (
                     <button
                         onClick={() => { setIsInviting(!isInviting); setInviteMeta(null); }}
                         disabled={team.members.length + (team.invites?.length || 0) >= 10}
-                        className={`flex items-center space-x-3 border-2 px-8 py-4 rounded-3xl font-black uppercase text-xs tracking-[0.15em] transition-all shadow-xl active:scale-95 group ${team.members.length + (team.invites?.length || 0) >= 10 ? 'bg-slate-100 text-slate-400 border-slate-100 cursor-not-allowed' : 'bg-white text-slate-900 border-slate-900 hover:bg-slate-900 hover:text-white'}`}
-                        title={team.members.length + (team.invites?.length || 0) >= 10 ? 'Capacity Reached' : 'Invite Member'}
+                        className={cn(
+                            "flex items-center justify-center space-x-3 border-2 px-6 sm:px-10 py-4 sm:py-5 rounded-2xl sm:rounded-3xl font-black uppercase text-[10px] sm:text-xs tracking-[0.15em] transition-all shadow-premium active:scale-95 group",
+                            team.members.length + (team.invites?.length || 0) >= 10 
+                                ? 'bg-slate-50 text-slate-400 border-slate-100 cursor-not-allowed' 
+                                : 'bg-background text-foreground border-foreground hover:bg-foreground hover:text-background'
+                        )}
                     >
-                        <UserPlus className="w-5 h-5 group-hover:rotate-12 transition-transform" />
+                        <UserPlus className="w-4 h-4 sm:w-5 sm:h-5 group-hover:rotate-12 transition-transform" />
                         <span>Invite Operator</span>
                     </button>
                 )}
             </div>
 
-            {/* Quick Stats */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+            {/* Quick Stats Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
                 {[
                     { label: 'Total Members', value: team.members?.length || 0, icon: Users, color: 'text-blue-600', bg: 'bg-blue-50' },
-                    { label: 'Network Invites', value: `${totalInvitesToday} / ${totalDailyLimit}`, icon: ExternalLink, color: 'text-indigo-600', bg: 'bg-indigo-50' },
+                    { label: 'Network Invites', value: `${totalInvitesToday}/${totalDailyLimit}`, icon: ExternalLink, color: 'text-primary', bg: 'bg-primary/5' },
                     { label: 'Total Leads Won', value: totalReplies, icon: Crown, color: 'text-amber-600', bg: 'bg-amber-50' },
                     { label: 'Cloud Status', value: 'Protected', icon: Shield, color: 'text-emerald-600', bg: 'bg-emerald-50' },
                 ].map((stat) => (
-                    <div key={stat.label} className="bg-white p-6 rounded-[35px] border-2 border-slate-50 shadow-sm flex items-center space-x-4 hover:border-slate-200 transition-colors">
-                        <div className={`p-4 rounded-2xl ${stat.bg} ${stat.color} shadow-inner`}>
-                            <stat.icon className="w-6 h-6" />
+                    <div key={stat.label} className="bg-white p-6 sm:p-8 rounded-[2rem] sm:rounded-[3rem] border border-slate-100 shadow-premium flex items-center space-x-5 hover:border-primary/20 transition-all group">
+                        <div className={cn("p-4 sm:p-5 rounded-2xl transition-all group-hover:scale-110", stat.bg, stat.color)}>
+                            <stat.icon className="w-6 h-6 sm:w-7 sm:h-7" />
                         </div>
                         <div>
-                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{stat.label}</p>
-                            <p className="text-2xl font-black text-slate-900 tracking-tight">{stat.value}</p>
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">{stat.label}</p>
+                            <p className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight uppercase">{stat.value}</p>
                         </div>
                     </div>
                 ))}
             </div>
 
-            {/* Main Content Sections */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
-
-                {/* Invite Panel (Conditional) */}
-                {isInviting && myRole === 'ADMIN' && (
-                    <div className="lg:col-span-4 bg-white rounded-[40px] border-4 border-indigo-50 shadow-2xl p-10 h-fit animate-in slide-in-from-left-8 duration-500 relative overflow-hidden">
-                        <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-50 rounded-full -mr-16 -mt-16 opacity-50" />
-
-                        <div className="relative">
-                            <div className="flex items-center justify-between mb-8">
-                                <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tight italic">New Invitation</h2>
-                                <button onClick={() => setIsInviting(false)} className="bg-slate-100 p-2 rounded-full text-slate-400 hover:text-slate-600 transition-colors">
-                                    <PlusCircle className="w-5 h-5 rotate-45" />
-                                </button>
-                            </div>
-
-                            <form onSubmit={handleInvite} className="space-y-6">
-                                <div>
-                                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-3 block">Member Email</label>
-                                    <input
-                                        type="email"
-                                        className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 font-bold text-sm transition-all"
-                                        placeholder="colleague@company.com"
-                                        value={inviteEmail}
-                                        onChange={(e) => setInviteEmail(e.target.value)}
-                                        required
-                                    />
-                                </div>
-                                <div>
-                                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-3 block">Select Role</label>
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <button
-                                            type="button"
-                                            onClick={() => setInviteRole('MEMBER')}
-                                            className={`py-3 text-[11px] font-black uppercase tracking-widest rounded-2xl border-2 transition-all ${inviteRole === 'MEMBER' ? 'bg-indigo-600 text-white border-indigo-600 shadow-lg shadow-indigo-100' : 'bg-white text-slate-400 border-slate-100 hover:border-slate-300'}`}
-                                        >
-                                            Member
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => setInviteRole('ADMIN')}
-                                            className={`py-3 text-[11px] font-black uppercase tracking-widest rounded-2xl border-2 transition-all ${inviteRole === 'ADMIN' ? 'bg-indigo-600 text-white border-indigo-600 shadow-lg shadow-indigo-100' : 'bg-white text-slate-400 border-slate-100 hover:border-slate-300'}`}
-                                        >
-                                            Admin
+            {/* Main Content Grid */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12">
+                {/* Invite Panel Sidebar */}
+                <AnimatePresence>
+                    {isInviting && myRole === 'ADMIN' && (
+                        <motion.div 
+                            initial={{ opacity: 0, x: -20 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            exit={{ opacity: 0, x: -20 }}
+                            className="lg:col-span-4 space-y-6"
+                        >
+                            <div className="bg-white rounded-[3rem] border border-primary/20 shadow-premium p-8 sm:p-10 relative overflow-hidden">
+                                <div className="absolute top-0 right-0 w-40 h-40 bg-primary/5 rounded-full -mr-20 -mt-20 blur-3xl" />
+                                <div className="relative">
+                                    <div className="flex items-center justify-between mb-8 sm:mb-10">
+                                        <h2 className="text-2xl sm:text-3xl font-black text-slate-900 uppercase tracking-tight italic">New Key</h2>
+                                        <button onClick={() => setIsInviting(false)} className="bg-slate-100 p-2 sm:p-3 rounded-full text-slate-400 hover:text-slate-900 transition-colors">
+                                            <PlusCircle className="w-4 h-4 sm:w-5 sm:h-5 rotate-45" />
                                         </button>
                                     </div>
-                                </div>
-                                <button
-                                    className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black uppercase text-xs tracking-[0.2em] hover:bg-black transition-all shadow-xl active:scale-95"
-                                >
-                                    Send Access Key
-                                </button>
-                            </form>
 
-                            {inviteMeta && (
-                                <div className="mt-10 p-6 bg-emerald-50 rounded-[28px] border-2 border-emerald-100 animate-in bounce-in duration-500">
-                                    <p className="text-[11px] font-black text-emerald-700 uppercase tracking-[0.15em] mb-3 flex items-center">
-                                        <Shield className="w-4 h-4 mr-2" />
-                                        Access Token Ready
-                                    </p>
-                                    <div className="bg-white p-3 rounded-xl border-2 border-emerald-100 relative group cursor-pointer" onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/team/join?token=${inviteMeta.token}`); alert("Link copied!"); }}>
-                                        <p className="text-[10px] text-emerald-600 break-all font-mono leading-relaxed">
-                                            {window.location.origin}/team/join?token={inviteMeta.token}
-                                        </p>
-                                        <div className="absolute inset-0 bg-emerald-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity rounded-xl">
-                                            <p className="text-[10px] font-black uppercase">Copy URL</p>
+                                    <form onSubmit={handleInvite} className="space-y-6 sm:space-y-8">
+                                        <div className="space-y-3">
+                                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] px-2">Identification Email</label>
+                                            <input
+                                                type="email"
+                                                className="w-full px-6 py-4 sm:py-5 bg-slate-50 border border-slate-100 rounded-2xl focus:outline-none focus:ring-4 focus:ring-primary/10 focus:border-primary transition-all font-bold text-sm sm:text-base"
+                                                placeholder="operator@nexus.com"
+                                                value={inviteEmail}
+                                                onChange={(e) => setInviteEmail(e.target.value)}
+                                                required
+                                            />
                                         </div>
-                                    </div>
-                                    <p className="text-[9px] text-emerald-500 mt-3 font-bold italic leading-tight">
-                                        Share this temporary link directly with your teammate to grant access.
-                                    </p>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                )}
+                                        <div className="space-y-3">
+                                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] px-2">Access Level</label>
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setInviteRole('MEMBER')}
+                                                    className={cn(
+                                                        "py-4 sm:py-5 text-[10px] sm:text-[11px] font-black uppercase tracking-widest rounded-2xl border transition-all",
+                                                        inviteRole === 'MEMBER' 
+                                                            ? 'bg-primary text-white border-primary shadow-lg shadow-primary/20' 
+                                                            : 'bg-background text-slate-500 border-slate-200 hover:border-primary/40'
+                                                    )}
+                                                >
+                                                    Agent
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setInviteRole('ADMIN')}
+                                                    className={cn(
+                                                        "py-4 sm:py-5 text-[10px] sm:text-[11px] font-black uppercase tracking-widest rounded-2xl border transition-all",
+                                                        inviteRole === 'ADMIN' 
+                                                            ? 'bg-primary text-white border-primary shadow-lg shadow-primary/20' 
+                                                            : 'bg-background text-slate-500 border-slate-200 hover:border-primary/40'
+                                                    )}
+                                                >
+                                                    Admin
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <button className="w-full bg-slate-900 text-white py-5 sm:py-6 rounded-2xl sm:rounded-3xl font-black uppercase text-[10px] sm:text-xs tracking-[0.25em] hover:bg-black transition-all shadow-xl active:scale-95">
+                                            Generate Access Key
+                                        </button>
+                                    </form>
 
-                {/* Members Table */}
-                <div className={`${isInviting ? 'lg:col-span-8' : 'lg:col-span-12'} bg-white rounded-[40px] border-2 border-slate-50 shadow-xl overflow-hidden animate-in slide-in-from-right-8 duration-500`}>
-                    <div className="px-10 py-8 border-b flex items-center justify-between bg-slate-50/30">
-                        <div className="flex items-center space-x-3">
-                            <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tight italic">Workforce</h2>
-                            <span className="bg-indigo-600 text-white px-3 py-1 rounded-full text-[10px] font-black tracking-widest">
-                                {team.members.length} / 10 SEATS
+                                    {inviteMeta && (
+                                        <motion.div 
+                                            initial={{ opacity: 0, y: 20 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            className="mt-8 sm:mt-10 p-6 sm:p-8 bg-emerald-50 rounded-[2.5rem] border border-emerald-100"
+                                        >
+                                            <p className="text-[10px] font-black text-emerald-700 uppercase tracking-[0.2em] mb-4 flex items-center">
+                                                <Shield className="w-4 h-4 mr-2" />
+                                                Cloud Link Active
+                                            </p>
+                                            <div 
+                                                className="bg-white p-4 rounded-2xl border border-emerald-100 flex items-center justify-between cursor-pointer group"
+                                                onClick={() => {
+                                                    navigator.clipboard.writeText(`${window.location.origin}/team/join?token=${inviteMeta.token}`);
+                                                    alert("Link Encrypted & Copied!");
+                                                }}
+                                            >
+                                                <p className="text-[9px] text-emerald-600 truncate font-mono font-bold pr-4">
+                                                    {window.location.origin.replace(/(^\w+:|^)\/\//, '')}/...{inviteMeta.token?.slice(-8)}
+                                                </p>
+                                                <PlusCircle className="w-4 h-4 text-emerald-400 group-hover:scale-110 group-hover:text-emerald-600 transition-all flex-shrink-0" />
+                                            </div>
+                                        </motion.div>
+                                    )}
+                                </div>
+                            </div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+
+                {/* Workforce Display */}
+                <div className={cn(
+                    "bg-white rounded-[3rem] sm:rounded-[4rem] border border-slate-100 shadow-premium overflow-hidden transition-all duration-500",
+                    isInviting && myRole === 'ADMIN' ? 'lg:col-span-8' : 'lg:col-span-12'
+                )}>
+                    <div className="px-8 sm:px-12 py-8 sm:py-10 border-b border-slate-50 flex flex-wrap items-center justify-between gap-6 bg-slate-50/20">
+                        <div className="flex items-center space-x-4">
+                            <h2 className="text-2xl sm:text-3xl font-black text-slate-900 uppercase tracking-tight italic">Division Units</h2>
+                            <span className="bg-primary/10 text-primary px-3 sm:px-4 py-1 sm:py-1.5 rounded-full text-[9px] sm:text-[10px] font-black tracking-[0.2em] uppercase">
+                                {team.members.length}/10 Operational
                             </span>
                         </div>
                     </div>
 
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-left">
-                            <thead>
-                                <tr className="bg-slate-50/70 text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] border-b">
-                                    <th className="px-10 py-6">Operator</th>
-                                    <th className="px-10 py-6">Authority</th>
-                                    <th className="px-10 py-6 text-center">Network Setup</th>
-                                    <th className="px-10 py-6 text-center">Cloud Limits (Today)</th>
-                                    <th className="px-10 py-6 text-right">Activity</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100">
-                                {team.members.map((m) => (
-                                    <tr key={m.id} className="hover:bg-indigo-50/20 transition-all group">
-                                        <td className="px-10 py-7">
-                                            <div className="flex items-center space-x-5">
-                                                <div className="w-14 h-14 bg-slate-900 rounded-[22px] flex items-center justify-center text-white font-black text-lg shadow-xl group-hover:bg-indigo-600 transition-all group-hover:rotate-12">
-                                                    {m.user.email[0].toUpperCase()}
-                                                </div>
-                                                <div>
-                                                    <p className="text-lg font-black text-slate-900 tracking-tight">{m.user.email}</p>
-                                                    <div className="flex items-center mt-1">
-                                                        <span className="w-2 h-2 rounded-full bg-emerald-500 mr-2 shadow-sm shadow-emerald-200" />
-                                                        <p className="text-[11px] font-black text-emerald-600 uppercase tracking-widest">Secured & Active</p>
-                                                    </div>
-                                                </div>
+                    <div className="p-4 sm:p-8">
+                        {/* Mobile List View */}
+                        <div className="grid grid-cols-1 gap-4 lg:hidden">
+                            {team.members.map((m) => (
+                                <div key={m.id} className="p-6 rounded-[2rem] border border-slate-100 bg-white hover:border-primary/20 transition-all space-y-6">
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center space-x-4">
+                                            <div className="w-12 h-12 bg-slate-900 rounded-2xl flex items-center justify-center text-white font-black">
+                                                {m.user.email[0].toUpperCase()}
                                             </div>
-                                        </td>
-                                        <td className="px-10 py-7">
-                                            {m.role === 'ADMIN' ? (
-                                                <div className="inline-flex items-center bg-amber-50 text-amber-700 px-4 py-2 rounded-2xl border border-amber-100 space-x-2">
-                                                    <Crown className="w-4 h-4" />
-                                                    <span className="text-[11px] font-black uppercase tracking-widest">Administrator</span>
-                                                </div>
-                                            ) : (
-                                                <div className="inline-flex items-center bg-slate-50 text-slate-600 px-4 py-2 rounded-2xl border border-slate-100 space-x-2">
-                                                    <User className="w-4 h-4" />
-                                                    <span className="text-[11px] font-black uppercase tracking-widest">Agent</span>
-                                                </div>
-                                            )}
-                                        </td>
-                                        <td className="px-10 py-7 text-center">
-                                            {m.stats?.hasProxy ? (
-                                                <div className="inline-flex items-center text-emerald-600 space-x-2">
-                                                    <Shield className="w-4 h-4" />
-                                                    <span className="text-[11px] font-black uppercase tracking-widest">Dedicated IP</span>
-                                                </div>
-                                            ) : (
-                                                <div className="inline-flex items-center text-slate-400 space-x-2 opacity-50">
-                                                    <Shield className="w-4 h-4" />
-                                                    <span className="text-[11px] font-black uppercase tracking-widest">Shared IP</span>
-                                                </div>
-                                            )}
-                                        </td>
-                                        <td className="px-10 py-7 text-center">
-                                            <div className="flex items-center justify-center space-x-6">
-                                                <div className="text-center">
-                                                    <p className="text-xl font-black text-slate-900">{m.stats?.invitesToday || 0} <span className="text-xs text-slate-400">/ {m.stats?.dailyInviteLimit || 30}</span></p>
-                                                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Invites</p>
-                                                </div>
-                                                <div className="w-px h-8 bg-slate-100"></div>
-                                                <div className="text-center">
-                                                    <p className="text-xl font-black text-slate-900">{m.stats?.messagesToday || 0}</p>
-                                                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Messages</p>
-                                                </div>
-                                                <div className="w-px h-8 bg-slate-100"></div>
-                                                <div className="text-center">
-                                                    <p className="text-xl font-black text-emerald-600">{m.stats?.totalReplies || 0}</p>
-                                                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Total Replies</p>
-                                                </div>
+                                            <div className="min-w-0">
+                                                <p className="text-sm font-black text-slate-900 truncate">{m.user.email}</p>
+                                                <p className="text-[9px] font-bold text-primary uppercase tracking-[0.15em]">{m.role}</p>
                                             </div>
-                                        </td>
-                                        <td className="px-10 py-7 text-right">
-                                            {myRole === 'ADMIN' && m.user.id !== team.ownerId ? (
-                                                <button
-                                                    onClick={() => handleRemoveMember(m.user.id)}
-                                                    className="p-3 bg-red-50 text-red-500 hover:bg-red-500 hover:text-white rounded-2xl transition-all shadow-sm opacity-0 group-hover:opacity-100"
-                                                >
-                                                    <Trash2 className="w-5 h-5 transition-transform hover:rotate-12" />
-                                                </button>
-                                            ) : (
-                                                <div className="bg-slate-50 text-slate-400 p-3 rounded-2xl inline-block">
-                                                    <Shield className="w-5 h-5 opacity-30" />
-                                                </div>
-                                            )}
-                                        </td>
-                                    </tr>
-                                ))}
-
-                                {/* Active Invites */}
-                                {(team.invites || []).filter(i => i.status === 'PENDING').map((i) => (
-                                    <tr key={i.id} className="bg-amber-50/10 border-l-4 border-l-amber-400 opacity-80">
-                                        <td className="px-10 py-7">
-                                            <div className="flex items-center space-x-5">
-                                                <div className="w-14 h-14 bg-slate-100 border-2 border-dashed border-slate-300 rounded-[22px] flex items-center justify-center text-slate-300 font-black">
-                                                    <UserPlus className="w-6 h-6" />
-                                                </div>
-                                                <div>
-                                                    <p className="text-lg font-black text-slate-400 tracking-tight italic">{i.email}</p>
-                                                    <div className="flex items-center mt-1">
-                                                        <span className="w-2 h-2 rounded-full bg-amber-400 mr-2 animate-pulse" />
-                                                        <p className="text-[11px] font-black text-amber-600 uppercase tracking-widest italic">Awaiting Acceptance</p>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </td>
-                                        <td className="px-10 py-7">
-                                            <div className="inline-flex items-center bg-white text-slate-400 px-4 py-2 rounded-2xl border border-slate-100 space-x-2 italic">
-                                                <span className="text-[11px] font-black uppercase tracking-widest">{i.role} (PENDING)</span>
-                                            </div>
-                                        </td>
-                                        <td className="px-10 py-7 text-center">
-                                            <span className="text-[10px] text-slate-300 italic font-medium tracking-tight">Offline</span>
-                                        </td>
-                                        <td className="px-10 py-7 text-center">
-                                            <span className="text-[10px] text-slate-300 italic font-medium tracking-tight">Data unavailable</span>
-                                        </td>
-                                        <td className="px-10 py-7 text-right">
-                                            <button className="p-3 text-slate-300 hover:text-slate-600 transition-all">
-                                                <Settings className="w-5 h-5" />
+                                        </div>
+                                        {myRole === 'ADMIN' && m.user.id !== team.ownerId && (
+                                            <button onClick={() => handleRemoveMember(m.user.id)} className="p-2.5 bg-red-50 text-red-500 rounded-xl">
+                                                <Trash2 className="w-4 h-4" />
                                             </button>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                    {team.members?.length === 0 && (!team.invites || team.invites.length === 0) && (
-                        <div className="p-20 text-center space-y-4">
-                            <Users className="w-16 h-16 text-slate-100 mx-auto" />
-                            <p className="font-black text-slate-300 uppercase tracking-[0.3em]">No operators detected</p>
+                                        )}
+                                    </div>
+                                    <div className="grid grid-cols-3 gap-2 py-4 border-y border-slate-50">
+                                        <div className="text-center">
+                                            <p className="text-xs font-black text-slate-900">{m.stats?.invitesToday || 0}</p>
+                                            <p className="text-[8px] font-bold text-slate-400 uppercase">Invites</p>
+                                        </div>
+                                        <div className="text-center border-x border-slate-100">
+                                            <p className="text-xs font-black text-slate-900">{m.stats?.messagesToday || 0}</p>
+                                            <p className="text-[8px] font-bold text-slate-400 uppercase">Msg</p>
+                                        </div>
+                                        <div className="text-center">
+                                            <p className="text-xs font-black text-emerald-600">{m.stats?.totalReplies || 0}</p>
+                                            <p className="text-[8px] font-bold text-slate-400 uppercase">Leads</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
                         </div>
-                    )}
+
+                        {/* Desktop View */}
+                        <div className="hidden lg:block overflow-x-auto">
+                            <table className="w-full text-left">
+                                <thead>
+                                    <tr className="text-[10px] font-black text-slate-400 uppercase tracking-[0.25em] border-b border-slate-50">
+                                        <th className="px-4 py-8">Operator</th>
+                                        <th className="px-4 py-8">Status</th>
+                                        <th className="px-4 py-8 text-center">Load</th>
+                                        <th className="px-4 py-8 text-right">Shield</th>
+                                        <th className="px-4 py-8 text-right"></th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-50">
+                                    {team.members.map((m) => (
+                                        <tr key={m.id} className="hover:bg-slate-50/50 transition-all group">
+                                            <td className="px-4 py-8">
+                                                <div className="flex items-center space-x-5">
+                                                    <div className="w-14 h-14 bg-slate-900 rounded-[1.5rem] flex items-center justify-center text-white font-black text-lg">
+                                                        {m.user.email[0].toUpperCase()}
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-lg font-black text-slate-900 tracking-tight">{m.user.email}</p>
+                                                        <p className="text-[10px] font-black uppercase text-slate-400">{m.role}</p>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td className="px-4 py-8">
+                                                <div className="inline-flex items-center space-x-2 px-4 py-2 bg-emerald-50 text-emerald-600 rounded-2xl text-[10px] font-black uppercase">
+                                                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                                    <span>Active</span>
+                                                </div>
+                                            </td>
+                                            <td className="px-4 py-8 text-center">
+                                                <p className="text-xl font-black text-slate-900">{m.stats?.totalReplies || 0}</p>
+                                                <p className="text-[9px] font-bold text-slate-400 uppercase">Leads</p>
+                                            </td>
+                                            <td className="px-4 py-8 text-right">
+                                                <Shield className={cn("w-5 h-5 ml-auto", m.stats?.hasProxy ? "text-primary" : "text-slate-200")} />
+                                            </td>
+                                            <td className="px-4 py-8 text-right">
+                                                {myRole === 'ADMIN' && m.user.id !== team.ownerId && (
+                                                    <button onClick={() => handleRemoveMember(m.user.id)} className="p-3 text-red-500 hover:bg-red-50 rounded-2xl transition-all">
+                                                        <Trash2 className="w-5 h-5" />
+                                                    </button>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>

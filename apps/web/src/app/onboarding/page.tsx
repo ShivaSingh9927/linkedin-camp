@@ -123,9 +123,7 @@ export default function OnboardingPage() {
                 {/* Header */}
                 <div className="text-center mb-10">
                     <div className="flex justify-center mb-6">
-                        <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center shadow-xl shadow-primary/5 border border-primary/10 transition-transform hover:scale-105 duration-500">
-                             <img src="/leadmate_wbg.png" alt="Logo" className="w-12 h-12" />
-                        </div>
+                         <img src="/leadmate_wbg.png" alt="Logo" className="w-14 h-14 object-contain animate-in zoom-in duration-1000" />
                     </div>
                     <h1 className="text-3xl font-black text-foreground tracking-tight sm:text-4xl">Setup Your Success</h1>
                     <p className="text-muted-foreground font-medium mt-2">Just a few details to get your LinkedIn automation running perfectly.</p>
