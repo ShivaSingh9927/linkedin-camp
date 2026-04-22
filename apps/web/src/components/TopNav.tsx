@@ -72,11 +72,11 @@ export function TopNav() {
             <div className="w-full px-6 lg:px-10 h-20 flex items-center justify-between relative">
                 {/* Left Side: Brand */}
                 <Link href="/" className="flex items-center space-x-4 flex-shrink-0 group">
-                    <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center shadow-xl shadow-primary/10 group-hover:scale-105 transition-all duration-300">
+                    <div className="w-12 h-12 flex items-center justify-center group-hover:scale-105 transition-all duration-300">
                         <img 
                             src="/leadmate_wbg.png" 
                             alt="Leadmate" 
-                            className="w-full h-full object-cover rounded-2xl p-1" 
+                            className="w-full h-full object-contain" 
                         />
                     </div>
                     <div className="hidden sm:block">

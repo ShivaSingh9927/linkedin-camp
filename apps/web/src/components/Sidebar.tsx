@@ -48,11 +48,11 @@ export function Sidebar() {
       {/* Brand */}
       <div className="p-8 mb-4">
         <Link href="/" className="flex items-center space-x-4 group">
-          <div className="w-16 h-16 bg-primary/10 rounded-3xl flex items-center justify-center shadow-xl shadow-primary/10 group-hover:rotate-[-4deg] transition-all duration-300 relative overflow-hidden">
+          <div className="w-12 h-12 flex items-center justify-center group-hover:rotate-[-4deg] transition-all duration-300 relative overflow-hidden">
             <img 
               src="/leadmate_wbg.png" 
               alt="Leadmate" 
-              className="w-full h-full object-cover rounded-3xl p-1" 
+              className="w-full h-full object-contain" 
             />
           </div>
           <div>
