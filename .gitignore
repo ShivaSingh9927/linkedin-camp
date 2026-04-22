@@ -27,6 +27,10 @@ linkedin_session/
 # screenshots and temporary files
 *.png
 *.webp
+!apps/web/public/**/*.png
+!apps/web/public/**/*.webp
+!apps/web/public/**/*.jpeg
+!apps/extension/public/**/*.png
 sync_error_*.png
 doc_attachment_verify.png
 

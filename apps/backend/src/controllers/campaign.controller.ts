@@ -227,45 +227,50 @@ export const getCampaignStatus = async (req: any, res: Response) => {
 
         if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
 
-        // Fetch all relevant action logs for these leads in this campaign in one go
+        // Fetch all relevant action logs for these leads
         const leadIds = campaign.leads.map(cl => cl.leadId);
         const allLogs = await prisma.actionLog.findMany({
             where: {
-                campaignId: id,
                 leadId: { in: leadIds }
             },
             orderBy: { executedAt: 'desc' }
         });
 
-        // Group logs by leadId
+        // Group logs by leadId and optionally filter by campaignId if the field exists
         const logsMap: Record<string, any[]> = {};
         allLogs.forEach(log => {
-            if (!logsMap[log.leadId!]) logsMap[log.leadId!] = [];
-            if (logsMap[log.leadId!].length < 5) logsMap[log.leadId!].push(log);
+            const logAsAny = log as any;
+            // Only include logs for this campaign if the field exists, otherwise include all for these leads
+            if (!('campaignId' in logAsAny) || !logAsAny.campaignId || logAsAny.campaignId === id) {
+                if (!logsMap[log.leadId!]) logsMap[log.leadId!] = [];
+                if (logsMap[log.leadId!].length < 5) logsMap[log.leadId!].push(log);
+            }
         });
 
         const leadsWithLogs = campaign.leads.map(cl => ({
             campaignLeadId: cl.id,
             lead: {
                 id: cl.lead.id,
-                firstName: cl.lead.firstName,
-                lastName: cl.lead.lastName,
+                firstName: cl.lead.firstName || '',
+                lastName: cl.lead.lastName || '',
                 linkedinUrl: cl.lead.linkedinUrl,
+                status: cl.lead.status || 'UNCONNECTED',
             },
-            status: cl.status,
-            currentStepId: cl.currentStepId,
+            status: cl.lead.status || 'UNCONNECTED',
+            currentStepId: cl.currentStepId || '',
             nextActionDate: cl.nextActionDate,
-            isCompleted: cl.isCompleted,
-            personalization: cl.personalization,
+            isCompleted: cl.isCompleted || false,
+            personalization: (cl as any).personalization?.nodeOutputs?.['send-message']?.messageText || 
+                            (typeof (cl as any).personalization === 'string' ? (cl as any).personalization : ''),
             recentLogs: logsMap[cl.leadId] || []
         }));
 
-        // Calculate stats for this specific campaign
+        // Calculate stats for this specific campaign using lead status
         const stats = {
             total: campaign.leads.length,
-            pending: campaign.leads.filter(l => l.status === 'PENDING').length,
-            connected: campaign.leads.filter(l => l.status === 'CONNECTED' || l.status === 'REPLIED').length,
-            replied: campaign.leads.filter(l => l.status === 'REPLIED').length,
+            pending: campaign.leads.filter(l => l.lead.status === 'UNCONNECTED' || l.lead.status === 'INVITE_PENDING').length,
+            connected: campaign.leads.filter(l => l.lead.status === 'CONNECTED' || l.lead.status === 'REPLIED').length,
+            replied: campaign.leads.filter(l => l.lead.status === 'REPLIED').length,
         };
 
         res.json({
