@@ -7,7 +7,8 @@ from dotenv import load_dotenv
 
 # Setup env and client
 load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
-client = instructor.patch(Groq(api_key=os.environ.get("GROQ_API")))
+# Use JSON mode for stable structured output with Llama 3.1
+client = instructor.patch(Groq(api_key=os.environ.get("GROQ_API")), mode=instructor.Mode.JSON)
 
 class OutreachMessageAgent(BaseModel):
     """Schema for guaranteed high-conversion outreach messages."""

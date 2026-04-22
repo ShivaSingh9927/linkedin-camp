@@ -130,8 +130,12 @@ export const register = async (req: Request, res: Response) => {
             },
         });
 
-        // Send Welcome Email for new manual registration
-        await mailService.sendWelcomeEmail(user.email, user.firstName || 'User');
+        // Send Welcome Email for new manual registration (Non-blocking or at least non-fatal)
+        try {
+            await mailService.sendWelcomeEmail(user.email, user.firstName || 'User');
+        } catch (emailErr: any) {
+            console.error('[AUTH/REGISTER] Non-fatal: Failed to send welcome email:', emailErr.message);
+        }
 
         const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
 
@@ -237,7 +241,8 @@ export const syncExtension = async (req: any, res: Response) => {
             let context;
             try {
                 const launchOptions: any = {
-                    headless: false,
+                    headless: true,
+                    executablePath: '/root/.cache/ms-playwright/chromium-1217/chrome-linux64/chrome',
                     args: [
                         '--no-sandbox', 
                         '--disable-setuid-sandbox', 

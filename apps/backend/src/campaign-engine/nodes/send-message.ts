@@ -5,6 +5,15 @@ import { generateAIMessage } from '../ai-service';
 const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
 const randomRange = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1) + min);
 
+/**
+ * Converts single-brace {variable} to double-brace {{variable}} for resolveVariables.
+ * The campaign builder UI uses {firstName} syntax but the resolver expects {{firstName}}.
+ */
+function normalizeBraces(text: string): string {
+    // Convert {var} to {{var}} but don't double-convert {{var}}
+    return text.replace(/\{([^{}]+)\}/g, '{{$1}}');
+}
+
 async function safeGoto(page: any, url: string, retries = 3) {
     for (let i = 0; i < retries; i++) {
         try {
@@ -19,7 +28,7 @@ async function safeGoto(page: any, url: string, retries = 3) {
 
 export const sendMessage: NodeHandler = async (ctx, config): Promise<NodeResult> => {
     const { page, lead, storedOutputs, campaign } = ctx;
-    const rawText = config.text || 'Hello!';
+    const rawText = config.message || config.text || 'Hello!';
     const requireConnection = config.requireConnection || false;
     const aiEnabled = config.aiEnabled || false;
     const tone = config.tone || campaign?.toneOverride || 'professional';
@@ -46,14 +55,14 @@ export const sendMessage: NodeHandler = async (ctx, config): Promise<NodeResult>
                     console.log('[SEND-MESSAGE] AI message generated:', messageText.substring(0, 50) + '...');
                 } else {
                     console.log('[SEND-MESSAGE] AI output invalid, using fallback');
-                    messageText = resolveVariables(rawText, { storedOutputs, lead });
+                    messageText = resolveVariables(normalizeBraces(rawText), { storedOutputs, lead });
                 }
             } catch (aiError: any) {
                 console.error('[SEND-MESSAGE] AI generation failed, using fallback:', aiError.message);
-                messageText = resolveVariables(rawText, { storedOutputs, lead });
+                messageText = resolveVariables(normalizeBraces(rawText), { storedOutputs, lead });
             }
         } else {
-            messageText = resolveVariables(rawText, { storedOutputs, lead });
+            messageText = resolveVariables(normalizeBraces(rawText), { storedOutputs, lead });
         }
         output.messageText = messageText;
 
@@ -83,12 +92,29 @@ export const sendMessage: NodeHandler = async (ctx, config): Promise<NodeResult>
             }
         }
 
-        // Strategy 1: Extract compose URL from profile (like testscripts)
-        console.log(`[SEND-MESSAGE] Looking for compose URL...`);
-        const composeUrl = await page.evaluate(() => {
-            const link = document.querySelector('a[href*="/messaging/compose/?profileUrn"]');
-            return link ? (link as HTMLAnchorElement).href : null;
-        });
+        // Strategy 1: Extract compose URL from profile (like testscripts/phase2_cookie_message.js)
+        console.log(`[SEND-MESSAGE] Looking for compose URL on: ${page.url()}`);
+        
+        // Try extracting compose URL, with a retry after extra wait
+        let composeUrl: string | null = null;
+        for (let attempt = 0; attempt < 2; attempt++) {
+            composeUrl = await page.evaluate(() => {
+                // Log all links that contain 'messaging' for debugging
+                const allMsgLinks = Array.from(document.querySelectorAll('a[href*="messaging"]'));
+                if (allMsgLinks.length > 0) {
+                    console.log('[SEND-MESSAGE-EVAL] Found messaging links:', allMsgLinks.map((l: any) => l.href));
+                }
+                const link = document.querySelector('a[href*="/messaging/compose/?profileUrn"]');
+                return link ? (link as HTMLAnchorElement).href : null;
+            });
+
+            if (composeUrl) break;
+            
+            if (attempt === 0) {
+                console.log('[SEND-MESSAGE] Compose URL not found on first try. Waiting for async render...');
+                await wait(randomRange(5000, 8000));
+            }
+        }
 
         if (composeUrl) {
             console.log('[SEND-MESSAGE] Found compose URL. Navigating directly...');
@@ -96,19 +122,21 @@ export const sendMessage: NodeHandler = async (ctx, config): Promise<NodeResult>
             await wait(randomRange(15000, 20000));
         } else {
             // Strategy 2: Click Message button
-            console.log('[SEND-MESSAGE] No compose URL. Clicking Message button...');
+            console.log('[SEND-MESSAGE] No compose URL found. Attempting button clicks...');
             const msgBtnSelectors = [
                 'button:has-text("Message")',
                 'a:has-text("Message")',
                 '.pvs-profile-actions button:has-text("Message")',
+                'button[aria-label^="Message"]',
             ];
 
             let clicked = false;
             for (const sel of msgBtnSelectors) {
                 const btn = page.locator(sel).first();
-                if (await btn.isVisible({ timeout: 3000 }).catch(() => false)) {
+                if (await btn.isVisible({ timeout: 5000 }).catch(() => false)) {
+                    console.log(`[SEND-MESSAGE] Clicking message button: ${sel}`);
                     await btn.evaluate((node: any) => node.scrollIntoView({ block: 'center' }));
-                    await wait(1000);
+                    await wait(2000);
                     await btn.click({ force: true });
                     clicked = true;
                     break;
@@ -116,12 +144,13 @@ export const sendMessage: NodeHandler = async (ctx, config): Promise<NodeResult>
             }
 
             if (!clicked) {
-                const moreBtn = page.locator('button:has(span:text-is("More"))').first();
-                if (await moreBtn.isVisible()) {
+                console.log('[SEND-MESSAGE] Checking "More" menu for Message...');
+                const moreBtn = page.locator('button:has(span:text-is("More")), button[aria-label^="More"]').first();
+                if (await moreBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
                     await moreBtn.click({ force: true });
                     await wait(2000);
-                    const moreMsgBtn = page.locator('[role="menuitem"]:has-text("Message")').first();
-                    if (await moreMsgBtn.isVisible()) {
+                    const moreMsgBtn = page.locator('[role="menuitem"]:has-text("Message"), .artdeco-dropdown__item:has-text("Message")').first();
+                    if (await moreMsgBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
                         await moreMsgBtn.click({ force: true });
                         clicked = true;
                     }
@@ -132,49 +161,72 @@ export const sendMessage: NodeHandler = async (ctx, config): Promise<NodeResult>
                 return { success: false, error: 'Message button not found on profile' };
             }
 
-            await wait(randomRange(8000, 12000));
+            await wait(randomRange(10000, 15000));
         }
 
-        // Dismiss premium modal if present (like testscripts handles it)
+        // Dismiss premium modal if present
         const premiumSelectors = [
             '.artdeco-modal',
             '[data-sdui-screen*="Premium"]',
             '.priva-upsell-modal',
+            '.msg-overlay-bubble-header:has-text("Premium")'
         ];
         for (const sel of premiumSelectors) {
             const modal = page.locator(sel).first();
-            if (await modal.isVisible({ timeout: 2000 }).catch(() => false)) {
-                console.log('[SEND-MESSAGE] Premium modal detected. Attempting to close...');
-                const closeBtn = page.locator('button[aria-label="Dismiss"], button.artdeco-modal__dismiss').first();
-                if (await closeBtn.isVisible().catch(() => false)) {
-                    await closeBtn.click({ force: true });
-                } else {
+            if (await modal.isVisible({ timeout: 3000 }).catch(() => false)) {
+                console.log('[SEND-MESSAGE] Potential blocking modal detected. Attempting to dismiss...');
+                const closeBtnList = [
+                    'button[aria-label="Dismiss"]',
+                    'button.artdeco-modal__dismiss',
+                    'button[aria-label="Close"]',
+                    '.msg-overlay-bubble-header__control--close'
+                ];
+                let modalClosed = false;
+                for (const closeSel of closeBtnList) {
+                    const closeBtn = page.locator(closeSel).first();
+                    if (await closeBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+                        await closeBtn.click({ force: true });
+                        modalClosed = true;
+                        break;
+                    }
+                }
+                if (!modalClosed) {
                     await page.keyboard.press('Escape');
                 }
                 await wait(2000);
-                return { success: false, error: 'Premium upsell modal blocked messaging' };
+                // We DON'T return failure here anymore, we try to proceed
             }
         }
 
         // Find textbox and type (like testscripts)
         const textboxSelectors = [
             'div.msg-form__contenteditable[contenteditable="true"]',
+            'div[role="textbox"][aria-label^="Write a message"]',
             '[role="textbox"]',
             '.msg-form__contenteditable',
             '.msg-form__textarea',
+            'textarea[name="message"]'
         ];
 
         let textBox: any = null;
         for (const sel of textboxSelectors) {
             const el = page.locator(sel).first();
-            if (await el.isVisible({ timeout: 5000 }).catch(() => false)) {
+            if (await el.isVisible({ timeout: 10000 }).catch(() => false)) {
                 textBox = el;
+                console.log(`[SEND-MESSAGE] Textbox found using: ${sel}`);
                 break;
             }
         }
 
         if (!textBox) {
-            return { success: false, error: 'Message textbox not found' };
+            // Debug: capture screenshot and page state
+            const debugUrl = page.url();
+            console.log(`[SEND-MESSAGE] ❌ Textbox not found. Current URL: ${debugUrl}`);
+            try {
+                await page.screenshot({ path: '/app/step_screenshots/send_msg_textbox_not_found.png' }).catch(() => {});
+                console.log('[SEND-MESSAGE] Debug screenshot saved to /app/step_screenshots/send_msg_textbox_not_found.png');
+            } catch {}
+            return { success: false, error: `Message textbox not found. Page URL: ${debugUrl}` };
         }
 
         // Click and type (like testscripts)

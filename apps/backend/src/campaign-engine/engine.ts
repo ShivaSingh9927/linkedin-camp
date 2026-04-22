@@ -1,4 +1,7 @@
 import { chromium } from 'playwright-extra';
+const stealth = require('puppeteer-extra-plugin-stealth')();
+chromium.use(stealth);
+
 import { prisma } from '@repo/db';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -24,9 +27,6 @@ import { sendMessage } from './nodes/send-message';
 import { inboxSync } from './nodes/inbox-sync';
 import { delay } from './nodes/delay';
 import { readNodeOutputs, writeNodeOutput, updateLeadEnrichment } from './storage';
-
-const stealth = require('puppeteer-extra-plugin-stealth')();
-chromium.use(stealth);
 
 const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
 const randomRange = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1) + min);
@@ -191,6 +191,7 @@ async function runLead(
 
         const launchOptions: any = {
             headless: true,
+            executablePath: '/root/.cache/ms-playwright/chromium-1217/chrome-linux64/chrome',
             args: [
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
@@ -201,53 +202,58 @@ async function runLead(
             ],
         };
 
-        // Determine session source: worker-provided context > files > DB
+        // Determine session source: files > worker-provided context > DB
+        // File-based session (testscripts/phase1) is the proven working source.
+        // DB cookies can be overwritten by extension sync with stale data.
         let activeCookies: any[] | null = null;
         let activeUserAgent: string | null = null;
         let activeLocalStorage: Record<string, string> | null = null;
         let activeProxy: { server: string; username?: string; password?: string } | null = null;
 
-        if (sessionContext?.cookies) {
-            // PRIMARY: Session from worker (already parsed & normalized by campaign-worker)
+        // Always take proxy from worker context if available
+        if (sessionContext?.proxy) {
+            activeProxy = sessionContext.proxy;
+        }
+
+        // PRIMARY: Try file-based session (like testscripts) — proven working
+        const sessionFiles = loadSessionFromFiles(userId);
+        if (sessionFiles) {
+            console.log(`[ENGINE] Using session from FILES (${sessionFiles.cookies.length} cookies) — proven working source`);
+            activeCookies = sessionFiles.cookies;
+            activeUserAgent = sessionFiles.userAgent;
+            activeLocalStorage = sessionFiles.localStorage;
+        } else if (sessionContext?.cookies) {
+            // FALLBACK 1: Session from worker (parsed from DB by campaign-worker)
             console.log(`[ENGINE] Using session from worker context (${sessionContext.cookies.length} cookies)`);
             activeCookies = sessionContext.cookies;
             activeUserAgent = sessionContext.userAgent;
             activeLocalStorage = sessionContext.localStorage;
-            activeProxy = sessionContext.proxy;
+            if (!activeProxy) activeProxy = sessionContext.proxy;
         } else {
-            // FALLBACK: Try file-based session (like testscripts)
-            const sessionFiles = loadSessionFromFiles(userId);
-            if (sessionFiles) {
-                console.log(`[ENGINE] Using session from files (${sessionFiles.cookies.length} cookies)`);
-                activeCookies = sessionFiles.cookies;
-                activeUserAgent = sessionFiles.userAgent;
-                activeLocalStorage = sessionFiles.localStorage;
-            } else {
-                // LAST RESORT: Parse from DB directly
-                console.log('[ENGINE] No worker context or files. Falling back to DB session.');
-                try {
-                    if (user.linkedinCookie) {
-                        const raw = JSON.parse(user.linkedinCookie);
-                        activeCookies = Array.isArray(raw) ? raw.map((c: any) => ({
-                            ...c,
-                            expires: c.expires != null ? Math.round(Number(c.expires)) : Math.round(Date.now() / 1000) + 86400 * 30,
-                        })) : raw;
-                    }
-                } catch {}
-                try {
-                    if (user.linkedinFingerprint) {
-                        const fp = typeof user.linkedinFingerprint === 'string'
-                            ? JSON.parse(user.linkedinFingerprint) : user.linkedinFingerprint;
-                        activeUserAgent = fp?.userAgent || null;
-                    }
-                } catch {}
-                try {
-                    if (user.linkedinLocalStorage) {
-                        activeLocalStorage = typeof user.linkedinLocalStorage === 'string'
-                            ? JSON.parse(user.linkedinLocalStorage) : user.linkedinLocalStorage;
-                    }
-                } catch {}
-            }
+            // LAST RESORT: Parse from DB directly
+            console.log('[ENGINE] No files or worker context. Falling back to DB session.');
+            try {
+                if (user.linkedinCookie) {
+                    const raw = JSON.parse(user.linkedinCookie);
+                    activeCookies = Array.isArray(raw) ? raw.map((c: any) => ({
+                        ...c,
+                        expires: c.expires != null ? Math.round(Number(c.expires)) : Math.round(Date.now() / 1000) + 86400 * 30,
+                    })) : raw;
+                }
+            } catch {}
+            try {
+                if (user.linkedinFingerprint) {
+                    const fp = typeof user.linkedinFingerprint === 'string'
+                        ? JSON.parse(user.linkedinFingerprint) : user.linkedinFingerprint;
+                    activeUserAgent = fp?.userAgent || null;
+                }
+            } catch {}
+            try {
+                if (user.linkedinLocalStorage) {
+                    activeLocalStorage = typeof user.linkedinLocalStorage === 'string'
+                        ? JSON.parse(user.linkedinLocalStorage) : user.linkedinLocalStorage;
+                }
+            } catch {}
         }
 
         const contextOptions: any = {
@@ -300,7 +306,9 @@ async function runLead(
         }
 
         page = context.pages()[0] || await context.newPage();
-        await blockResources(page);
+        // NOTE: Resource blocking disabled to match working testscript behavior.
+        // LinkedIn's messaging components require full JS/CSS loading.
+        // await blockResources(page);
 
         // ---- Load previously stored outputs ----
         const storedOutputs = await readNodeOutputs(campaignId, lead.id);

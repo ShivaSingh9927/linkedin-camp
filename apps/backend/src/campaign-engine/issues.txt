@@ -1,0 +1,28 @@
+1. 🔴 No Stealth Plugin (Bot Detection)
+File: engine.ts line 1
+
+The campaign engine imported plain playwright while your working testscripts used playwright-extra + stealth plugin. Without stealth, LinkedIn's bot detection flagged the browser instantly and invalidated the session → login redirect.
+
+diff
+- import { chromium } from 'playwright';
++ import { chromium } from 'playwright-extra';
++ const stealth = require('puppeteer-extra-plugin-stealth')();
++ chromium.use(stealth);
+2. 🔴 Wrong Cookies (Extension Overwriting DB)
+File: engine.ts session priority
+
+Your Chrome extension was syncing a different, stale LinkedIn session (34 cookies) into the database, overwriting the working session. The campaign engine read from DB first, so it always got the bad cookies.
+
+Extension cookies (DB): li_at = ...FhmxAAAABnbPvT... → ❌ expired/wrong session
+Testscript cookies (file): li_at = ...EraaSAAABnatbq1... → ✅ working session
+Fix: Changed priority from DB → files to files → DB, so the proven working session files always win.
+
+3. 🟡 Wrong Message Field + Resource Blocking
+File: send-message.ts
+
+config.text was read but the workflow sends config.message → always sent "Hello!"
+{firstName} (single brace) wasn't converted to {{firstName}} (double brace) for the variable resolver
+blockResources() in the engine was killing LinkedIn's JS that renders the messaging compose link
+Bonus Fixes
+Doubled API path (/api/v1/api/v1/) — Added middleware in server.ts to rewrite the extension's broken URL
+Chromium path in auth.controller.ts — sync verification was looking for chromium-1208 but Docker has chromium-1217

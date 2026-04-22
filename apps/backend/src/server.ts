@@ -23,6 +23,15 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+// Fix doubled /api/v1/api/v1/ prefix from Chrome extension bug
+app.use((req, res, next) => {
+    if (req.url.startsWith('/api/v1/api/v1/')) {
+        req.url = req.url.replace('/api/v1/api/v1/', '/api/v1/');
+        console.log(`[URL-FIX] Rewrote doubled prefix → ${req.url}`);
+    }
+    next();
+});
+
 app.use((req, res, next) => {
     if (req.url !== '/health' && req.url !== '/ping') {
         console.log(`[BACKEND-REQ] ${req.method} ${req.url}`);

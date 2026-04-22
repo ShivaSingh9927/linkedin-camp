@@ -120,6 +120,15 @@ services:
     networks:
       - linkedin-network
 
+  ai-service:
+    build: 
+      context: ./apps/ai-service
+    restart: always
+    environment:
+      - GROQ_API=${GROQ_API}
+    networks:
+      - linkedin-network
+
 networks:
   linkedin-network:
     driver: bridge

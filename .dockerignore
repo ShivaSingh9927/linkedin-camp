@@ -10,3 +10,10 @@ apps/*/.next
 apps/*/dist
 packages/*/node_modules
 packages/*/dist
+local_raja_session
+linkedin_session
+google_test_session
+proxy_fix_session
+*.png
+*.zip
+*.log
