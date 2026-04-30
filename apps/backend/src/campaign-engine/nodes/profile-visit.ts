@@ -38,7 +38,6 @@ export const profileVisit: NodeHandler = async (ctx): Promise<NodeResult> => {
 
         // --- Extract name ---
         try {
-            // Try h1 with common LinkedIn selectors
             const selectors = [
                 'h1.text-heading-xlarge',
                 'h1.break-words',
@@ -55,60 +54,59 @@ export const profileVisit: NodeHandler = async (ctx): Promise<NodeResult> => {
                     }
                 }
             }
-            // Fallback: extract from page text
             if (!output.name) {
                 output.name = await page.evaluate(() => {
                     const h1 = document.querySelector('h1');
                     return h1 ? h1.textContent?.trim() || null : null;
                 });
             }
-            // Final fallback: use lead's firstName from DB
             if (!output.name && lead.firstName) {
                 output.name = lead.firstName;
             }
         } catch {}
 
-        // --- Update lead in DB with extracted name ---
-        if (output.name && output.name !== lead.firstName) {
-            try {
-                const nameParts = output.name.split(' ').filter(n => n.length > 0);
-                const firstName = nameParts[0] || '';
-                const lastName = nameParts.slice(1).join(' ') || null;
-                await prisma.lead.update({
-                    where: { id: lead.id },
-                    data: { firstName, lastName },
-                });
-                console.log(`[PROFILE-VISIT] Updated lead with name: ${firstName} ${lastName || ''}`);
-            } catch (err) {
-                console.log(`[PROFILE-VISIT] Could not update lead name: ${err}`);
-            }
-        }
-
         // --- Check connection degree ---
         try {
-            const isConnected = await page.isVisible('button:has-text("Message")');
-            output.connected = isConnected;
+            output.connected = await page.isVisible('button:has-text("Message")');
         } catch {}
 
         // --- Extract About ---
         try {
             console.log('[PROFILE-VISIT] Extracting About...');
-            await page.mouse.wheel(0, 800);
-            await wait(1500);
+            await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+            await wait(2000);
 
-            const aboutSection = page.locator('section:has(div[id="about"]), section:has(h2:has-text("About"))').first();
-            if (await aboutSection.isVisible({ timeout: 5000 })) {
-                const moreBtn = aboutSection.locator('button[data-testid="expandable-text-button"]').first();
-                if (await moreBtn.isVisible({ timeout: 3000 })) {
-                    await moreBtn.evaluate((el: any) => el.click());
-                    await wait(1000);
-                }
+            const aboutSection = page.locator('section:has(span:text("About"))').first();
+            const isAboutVisible = await aboutSection.isVisible({ timeout: 5000 }).catch(() => false);
+            console.log('[PROFILE-VISIT] About section visible:', isAboutVisible);
+            
+            if (isAboutVisible) {
+                // Try multiple ways to get About text
                 const aboutBox = aboutSection.locator('[data-testid="expandable-text-box"]').first();
-                if (await aboutBox.isVisible({ timeout: 3000 })) {
+                const isBoxVisible = await aboutBox.isVisible({ timeout: 3000 }).catch(() => false);
+                console.log('[PROFILE-VISIT] About box visible:', isBoxVisible);
+                
+                if (isBoxVisible) {
                     output.about = await aboutBox.innerText();
+                    console.log('[PROFILE-VISIT] About extracted (box):', output.about?.substring(0, 50) + '...');
+                } else {
+                    // Try getting text directly from the section
+                    const sectionText = await aboutSection.innerText().catch(() => '');
+                    console.log('[PROFILE-VISIT] Section text length:', sectionText.length);
+                    if (sectionText && sectionText.length > 10) {
+                        // Extract just the About portion (after "About" heading)
+                        const lines = sectionText.split('\n').filter(l => l.trim());
+                        const aboutIndex = lines.findIndex(l => l.toLowerCase().includes('about'));
+                        if (aboutIndex >= 0 && aboutIndex + 1 < lines.length) {
+                            output.about = lines.slice(aboutIndex + 1).join('\n').trim();
+                            console.log('[PROFILE-VISIT] About extracted (innerText):', output.about?.substring(0, 50) + '...');
+                        }
+                    }
                 }
             }
-        } catch {}
+        } catch (e: any) {
+            console.log('[PROFILE-VISIT] About extraction error:', e?.message);
+        }
 
         // --- Extract Experience (company, job title, company URL) ---
         try {
@@ -193,7 +191,30 @@ export const profileVisit: NodeHandler = async (ctx): Promise<NodeResult> => {
             } catch {}
         }
 
-        console.log(`[PROFILE-VISIT] Done. Name: ${output.name}, Company: ${output.company}, Connected: ${output.connected}`);
+        // --- Update lead in DB with extracted data ---
+        if (output.name || output.company || output.jobTitle || output.about) {
+            try {
+                const nameParts = (output.name || '').split(' ').filter(n => n.length > 0);
+                const firstName = nameParts[0] || '';
+                const lastName = nameParts.slice(1).join(' ') || null;
+                
+                await prisma.lead.update({
+                    where: { id: lead.id },
+                    data: { 
+                        firstName, 
+                        lastName,
+                        company: output.company || undefined,
+                        jobTitle: output.jobTitle || undefined,
+                        aboutInfo: output.about || undefined,
+                    },
+                });
+                console.log(`[PROFILE-VISIT] Updated lead: ${firstName} ${lastName || ''}, Company: ${output.company}, Job: ${output.jobTitle}, About: ${output.about ? 'Yes' : 'No'}`);
+            } catch (err) {
+                console.log(`[PROFILE-VISIT] Could not update lead: ${err}`);
+            }
+        }
+
+        console.log(`[PROFILE-VISIT] Done. Name: ${output.name}, Company: ${output.company}, Job: ${output.jobTitle}, Connected: ${output.connected}`);
         return { success: true, output };
 
     } catch (err: any) {

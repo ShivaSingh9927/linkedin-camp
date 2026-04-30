@@ -25,10 +25,6 @@ const HARDCODED_PROFILE_URL = 'https://www.linkedin.com/in/shiva-singh-genai-llm
 const TEST_CAMPAIGN_CONFIG: CampaignConfig = {
     flow: [
         { node: 'profile-visit' },
-        { node: 'connect' },
-        { node: 'like-nth-post', n: 1 },
-        { node: 'comment-nth-post', n: 1, text: 'Great insights at {{company}}, {{name}}!', aiEnabled: true },
-        { node: 'send-message', text: 'Hey {{name}}, loved your work at {{company}}!', requireConnection: false, aiEnabled: true },
     ],
 };
 

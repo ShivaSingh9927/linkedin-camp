@@ -40,23 +40,31 @@ interface SessionFiles {
 }
 
 function loadSessionFromFiles(userId?: string, basePath?: string): SessionFiles | null {
-    // Look in multiple locations for session files
-    // Priority: 1) sessions/{userId}/  2) testscripts/  3) custom basePath
+    const sessionBase = process.env.SESSION_STORAGE_PATH || path.join(process.cwd(), 'sessions');
+    
     const possiblePaths: string[] = [];
     
     if (userId) {
-        possiblePaths.push(`/app/sessions/${userId}`);
-        possiblePaths.push(path.join(__dirname, `../../sessions/${userId}`));
-        possiblePaths.push(path.join(__dirname, `../../../sessions/${userId}`));
+        possiblePaths.push(path.join(sessionBase, userId));
     }
-    
-    possiblePaths.push('/app/testscripts');
-    possiblePaths.push(path.join(__dirname, '../../testscripts'));
-    possiblePaths.push(path.join(__dirname, '../../../testscripts'));
     
     if (basePath) {
         possiblePaths.unshift(basePath);
     }
+    
+    // Check relative to project root (for ts-node execution)
+    possiblePaths.push(path.join(process.cwd(), '../testscripts'));
+    possiblePaths.push(path.join(process.cwd(), 'testscripts'));
+    
+    // Check absolute paths
+    possiblePaths.push('/home/shiva/Documents/linkedin-camp/testscripts');
+    possiblePaths.push('/app/testscripts');
+    
+    // Check relative to this file's location
+    possiblePaths.push(path.join(__dirname, '../../testscripts'));
+    possiblePaths.push(path.join(__dirname, '../../../testscripts'));
+    
+    console.log('[ENGINE] Checking session paths:', possiblePaths);
     
     let base: string | null = null;
     for (const p of possiblePaths) {
@@ -173,7 +181,6 @@ async function runLead(
         // ---- Load user session data ----
         const user = await prisma.user.findUnique({
             where: { id: userId },
-            include: { proxy: true },
         });
 
         if (!user) {
@@ -189,9 +196,21 @@ async function runLead(
 
         // ---- Build browser context (matching phase2_cookie_message.js strategy) ----
 
+        // Determine executable path based on environment
+        const getChromiumPath = () => {
+            const candidates = [
+                '/root/.cache/ms-playwright/chromium-1217/chrome-linux64/chrome',
+                '/home/shiva/.cache/ms-playwright/chromium-1217/chrome-linux64/chrome',
+                '/home/shiva/.cache/ms-playwright/chromium-1208/chrome-linux64/chrome',
+            ];
+            for (const p of candidates) {
+                if (require('fs').existsSync(p)) return p;
+            }
+            return undefined; // Let Playwright auto-detect
+        };
+
         const launchOptions: any = {
             headless: true,
-            executablePath: '/root/.cache/ms-playwright/chromium-1217/chrome-linux64/chrome',
             args: [
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
@@ -201,6 +220,11 @@ async function runLead(
                 '--disable-dev-shm-usage',
             ],
         };
+
+        const chromiumPath = getChromiumPath();
+        if (chromiumPath) {
+            launchOptions.executablePath = chromiumPath;
+        }
 
         // Determine session source: files > worker-provided context > DB
         // File-based session (testscripts/phase1) is the proven working source.
@@ -263,24 +287,13 @@ async function runLead(
             timezoneId: 'Asia/Kolkata',
         };
 
-        // Proxy: prefer worker-provided, then DB, then default
-        if (activeProxy) {
-            contextOptions.proxy = activeProxy;
-        } else if (user.proxy) {
-            contextOptions.proxy = {
-                server: `http://${user.proxy.proxyHost}:${user.proxy.proxyPort}`,
-                username: user.proxy.proxyUsername || undefined,
-                password: user.proxy.proxyPassword || undefined,
-            };
-        } else {
-            contextOptions.proxy = {
-                server: 'http://82.41.252.111:46222',
-                username: 'xBVyYdUpx84nWx7',
-                password: 'dwwTxtvv5a10RXn',
-            };
-        }
-
-        console.log(`[ENGINE] Proxy: ${contextOptions.proxy.server} | UA: ${contextOptions.userAgent.slice(0, 60)}...`);
+        // Using cheap proxy
+        contextOptions.proxy = {
+            server: 'http://82.41.252.111:46222',
+            username: 'xBVyYdUpx84nWx7',
+            password: 'dwwTxtvv5a10RXn'
+        };
+        console.log('[ENGINE] Using cheap proxy 82.41.252.111:46222');
 
         browser = await chromium.launch(launchOptions);
         context = await browser.newContext(contextOptions);
@@ -305,10 +318,28 @@ async function runLead(
             console.log(`[ENGINE] Injected ${Object.keys(activeLocalStorage).length} localStorage keys`);
         }
 
+        // If no localStorage from files, inject from worker context
+        if ((!activeLocalStorage || Object.keys(activeLocalStorage).length === 0) && sessionContext?.localStorage && Object.keys(sessionContext.localStorage).length > 0) {
+            await context.addInitScript((data: any) => {
+                const parsed = JSON.parse(data);
+                for (const [k, v] of Object.entries(parsed)) {
+                    window.localStorage.setItem(k, v as string);
+                }
+            }, JSON.stringify(sessionContext.localStorage));
+            console.log(`[ENGINE] Injected ${Object.keys(sessionContext.localStorage).length} localStorage keys from worker context`);
+        }
+
         page = context.pages()[0] || await context.newPage();
-        // NOTE: Resource blocking disabled to match working testscript behavior.
-        // LinkedIn's messaging components require full JS/CSS loading.
-        // await blockResources(page);
+
+        // Block heavy resources for speed and stealth (matching testscripts)
+        await page.route('**/*', (route: any) => {
+            const type = route.request().resourceType();
+            const url = route.request().url();
+            if (['image', 'media', 'font'].includes(type) || url.includes('analytics') || url.includes('ads')) {
+                return route.abort();
+            }
+            return route.continue();
+        });
 
         // ---- Load previously stored outputs ----
         const storedOutputs = await readNodeOutputs(campaignId, lead.id);
@@ -468,7 +499,6 @@ export async function runCampaign(
     // Get all leads for this campaign
     const campaignLeads = await prisma.campaignLead.findMany({
         where: { campaignId, isCompleted: false },
-        include: { lead: true },
     });
 
     const summary: CampaignSummary = {
@@ -482,11 +512,16 @@ export async function runCampaign(
     };
 
     for (const cl of campaignLeads) {
+        // Fetch lead separately since relation is not available
+        const leadRecord = await prisma.lead.findUnique({
+            where: { id: cl.leadId }
+        });
+        
         const leadData = {
-            id: cl.lead.id,
-            linkedinUrl: cl.lead.linkedinUrl,
-            firstName: cl.lead.firstName,
-            lastName: cl.lead.lastName,
+            id: cl.leadId,
+            linkedinUrl: leadRecord?.linkedinUrl || '',
+            firstName: leadRecord?.firstName || '',
+            lastName: leadRecord?.lastName || '',
         };
 
         console.log(`\n[CAMPAIGN] Processing lead: ${leadData.firstName || leadData.linkedinUrl}`);
