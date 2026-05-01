@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { prisma } from '@repo/db';
 import { getOrAssignProxy } from '../services/proxy.service';
+import { enqueueCampaign } from '../workers/campaign-worker';
 
 export const createCampaign = async (req: any, res: Response) => {
     const { name, workflowJson } = req.body;
@@ -147,22 +148,38 @@ export const startCampaign = async (req: any, res: Response) => {
 
                     // Use a transaction or bulk operation where possible, but upsert is fine for small tests
                     for (const leadId of safeLeadIdsToStart) {
-                        await prisma.campaignLead.upsert({
-                            where: { campaignId_leadId: { campaignId: id, leadId } },
-                            update: {
-                                currentStepId: firstStepId,
-                                nextActionDate: new Date(),
-                                isCompleted: false,
-                            },
-                            create: {
-                                campaignId: id,
-                                leadId,
-                                currentStepId: firstStepId,
-                                nextActionDate: new Date(),
-                                isCompleted: false,
-                            }
+                        const leadIdRecord = await prisma.campaignLead.findUnique({
+                            where: { campaignId_leadId: { campaignId: id, leadId } }
                         });
+                        
+                        if (leadIdRecord) {
+                            await prisma.campaignLead.update({
+                                where: { campaignId_leadId: { campaignId: id, leadId } },
+                                data: {
+                                    currentStepId: firstStepId,
+                                    nextActionDate: new Date(),
+                                    isCompleted: false,
+                                }
+                            });
+                        } else {
+                            await prisma.campaignLead.create({
+                                data: {
+                                    id: require('crypto').randomUUID(),
+                                    campaignId: id,
+                                    leadId,
+                                    currentStepId: firstStepId,
+                                    nextActionDate: new Date(),
+                                    isCompleted: false,
+                                    status: 'PENDING'
+                                }
+                            });
+                        }
                     }
+                    
+                    if (safeLeadIdsToStart.length > 0) {
+                        await enqueueCampaign(userId, id);
+                    }
+                    
                     console.log(`[Campaign] Successfully started/enrolled ${safeLeadIdsToStart.length} leads.`);
                 }
             } else {
@@ -255,11 +272,18 @@ export const getCampaignStatus = async (req: any, res: Response) => {
                 lastName: cl.lead.lastName || '',
                 linkedinUrl: cl.lead.linkedinUrl,
                 status: cl.lead.status || 'UNCONNECTED',
+                company: cl.lead.company,
+                jobTitle: cl.lead.jobTitle,
+                aboutInfo: cl.lead.aboutInfo,
             },
             status: cl.lead.status || 'UNCONNECTED',
             currentStepId: cl.currentStepId || '',
             nextActionDate: cl.nextActionDate,
             isCompleted: cl.isCompleted || false,
+            // Include full execution log from personalization
+            execLog: (cl as any).personalization?.execLog || [],
+            // Include extracted data
+            nodeOutputs: (cl as any).personalization?.nodeOutputs || {},
             personalization: (cl as any).personalization?.nodeOutputs?.['send-message']?.messageText || 
                             (typeof (cl as any).personalization === 'string' ? (cl as any).personalization : ''),
             recentLogs: logsMap[cl.leadId] || []
@@ -268,9 +292,15 @@ export const getCampaignStatus = async (req: any, res: Response) => {
         // Calculate stats for this specific campaign using lead status
         const stats = {
             total: campaign.leads.length,
-            pending: campaign.leads.filter(l => l.lead.status === 'UNCONNECTED' || l.lead.status === 'INVITE_PENDING').length,
+            pending: campaign.leads.filter(l => l.lead.status === 'IMPORTED' || l.lead.status === 'PENDING').length,
             connected: campaign.leads.filter(l => l.lead.status === 'CONNECTED' || l.lead.status === 'REPLIED').length,
             replied: campaign.leads.filter(l => l.lead.status === 'REPLIED').length,
+            // Calculate from execLog
+            completed: campaign.leads.filter(l => l.isCompleted).length,
+            failed: campaign.leads.filter(l => {
+                const pl = l as any;
+                return pl.personalization?.execLog?.some((e: any) => e.status === 'failed');
+            }).length,
         };
 
         res.json({

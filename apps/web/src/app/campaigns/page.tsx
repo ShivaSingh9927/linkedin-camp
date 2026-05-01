@@ -726,9 +726,13 @@ export default function CampaignsPage() {
 
                             <div className="bg-primary/5 px-10 py-6 border-b border-border flex items-center justify-between">
                                 <span className="text-[10px] font-black text-primary uppercase tracking-widest">Lead Management Control</span>
-                                <div className="flex gap-2">
-                                    {/* Additional controls could go here */}
-                                </div>
+                                {statusPanel.data?.stats && (
+                                    <div className="flex gap-4 text-[10px] font-bold">
+                                        <span className="text-muted-foreground">Total: {statusPanel.data.stats.total}</span>
+                                        <span className="text-emerald-600">✓ {statusPanel.data.stats.completed || 0}</span>
+                                        <span className="text-red-500">✗ {statusPanel.data.stats.failed || 0}</span>
+                                    </div>
+                                )}
                             </div>
 
                             <div className="flex-1 overflow-y-auto p-10 scrollbar-hide">
@@ -771,6 +775,27 @@ export default function CampaignsPage() {
                                                         </div>
                                                     </div>
 
+                                                    {/* Enriched Data */}
+                                                    {(lead.lead.company || lead.lead.jobTitle || lead.nodeOutputs?.['profile-visit']?.company) && (
+                                                        <div className="mt-4 flex flex-wrap gap-2">
+                                                            {lead.lead.company || lead.nodeOutputs?.['profile-visit']?.company ? (
+                                                                <span className="text-[10px] font-bold px-3 py-1 bg-blue-500/10 text-blue-600 rounded-full">
+                                                                    {lead.lead.company || lead.nodeOutputs?.['profile-visit']?.company}
+                                                                </span>
+                                                            ) : null}
+                                                            {lead.lead.jobTitle || lead.nodeOutputs?.['profile-visit']?.jobTitle ? (
+                                                                <span className="text-[10px] font-bold px-3 py-1 bg-purple-500/10 text-purple-600 rounded-full">
+                                                                    {lead.lead.jobTitle || lead.nodeOutputs?.['profile-visit']?.jobTitle}
+                                                                </span>
+                                                            ) : null}
+                                                            {(lead.lead.aboutInfo || lead.nodeOutputs?.['profile-visit']?.about) && (
+                                                                <span className="text-[10px] font-bold px-3 py-1 bg-amber-500/10 text-amber-600 rounded-full">
+                                                                    About extracted
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    )}
+
                                                     <div className="grid grid-cols-2 gap-4 mt-8">
                                                         <div className="bg-muted p-5 rounded-3xl border border-border/50">
                                                             <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">Execution Point</span>
@@ -783,6 +808,18 @@ export default function CampaignsPage() {
                                                             </p>
                                                         </div>
                                                     </div>
+
+                                                    {/* Execution Log - Show failed steps */}
+                                                    {lead.execLog?.some((e: any) => e.status === 'failed') && (
+                                                        <div className="mt-6 p-4 bg-red-500/5 rounded-2xl border border-red-500/20">
+                                                            <span className="text-[10px] font-bold text-red-600 uppercase tracking-widest">Failed Steps</span>
+                                                            {lead.execLog?.filter((e: any) => e.status === 'failed').map((e: any, idx: number) => (
+                                                                <div key={idx} className="text-xs text-red-500 mt-2">
+                                                                    {e.node}: {e.error || 'Unknown error'}
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
 
                                                     {lead.personalization && (
                                                         <div className="mt-6 p-6 bg-primary/5 rounded-[2rem] border border-primary/10 italic">
