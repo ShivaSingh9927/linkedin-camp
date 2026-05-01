@@ -6,6 +6,17 @@ import { prisma } from '@repo/db';
 import * as fs from 'fs';
 import * as path from 'path';
 
+let io: any = null;
+const getSocketIO = async () => {
+    if (!io) {
+        try {
+            const socketModule = await import('../socket');
+            io = socketModule.io;
+        } catch {}
+    }
+    return io;
+};
+
 import {
     CampaignConfig,
     CampaignFlowNode,
@@ -369,6 +380,21 @@ async function runLead(
 
                 const warmupResult = await warmup(warmupCtx, { node: 'warmup' });
 
+                // Emit socket event for warmup
+                const socketIO = await getSocketIO();
+                if (socketIO) {
+                    socketIO.to(`user_${userId}`).emit('campaign_activity', {
+                        campaignId,
+                        leadId: lead.id,
+                        leadName: lead.firstName || lead.linkedinUrl,
+                        node: 'warmup',
+                        action: warmupResult.success ? 'success' : 'failed',
+                        details: { warmed: warmupResult.output?.warmed },
+                        error: warmupResult.error,
+                        timestamp: new Date().toISOString(),
+                    });
+                }
+
                 if (!warmupResult.success) {
                     // Warmup is fatal
                     warmupExec.status = 'failed';
@@ -399,6 +425,22 @@ async function runLead(
 
             console.log(`[ENGINE] Lead ${lead.firstName}: executing node ${i + 1}/${flow.length} → ${nodeType}`);
 
+            // Get socket once for this node execution
+            const socket = await getSocketIO();
+
+            // Emit socket event: node started
+            if (socket) {
+                socket.to(`user_${userId}`).emit('campaign_activity', {
+                    campaignId,
+                    leadId: lead.id,
+                    leadName: lead.firstName || lead.linkedinUrl,
+                    node: nodeType,
+                    action: 'executing',
+                    details: {},
+                    timestamp: new Date().toISOString(),
+                });
+            }
+
             const handler = NODE_HANDLERS[nodeType];
             if (!handler) {
                 nodeExec.status = 'failed';
@@ -408,6 +450,30 @@ async function runLead(
             }
 
             const result: NodeResult = await handler(nodeCtx, nodeConfig);
+
+            // Emit socket event for real-time activity
+            if (socket) {
+                socket.to(`user_${userId}`).emit('campaign_activity', {
+                    campaignId,
+                    leadId: lead.id,
+                    leadName: lead.firstName || lead.linkedinUrl,
+                    node: nodeType,
+                    action: result.success ? 'success' : 'failed',
+                    details: {
+                        // Extract key info for display
+                        name: result.output?.name,
+                        company: result.output?.company,
+                        connected: result.output?.connected,
+                        status: result.output?.status,
+                        message: result.output?.messageText || result.output?.postContent,
+                        sent: result.output?.sent,
+                        liked: result.output?.liked,
+                        commented: result.output?.commented,
+                    },
+                    error: result.error,
+                    timestamp: new Date().toISOString(),
+                });
+            }
 
             if (result.success) {
                 nodeExec.output = result.output;

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
@@ -22,12 +22,20 @@ import {
     Zap,
     Ghost,
     Package,
-    Building2
+    Building2,
+    CheckCircle2,
+    AlertCircle,
+    Loader2,
+    Send,
+    ThumbsUp,
+    MessageSquare,
+    UserPlus,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from './ui/button';
 import { motion, AnimatePresence } from 'framer-motion';
 import LinkedInConnectivity from './LinkedInConnectivity';
+import { io, Socket } from 'socket.io-client';
 
 const menuItems = [
     { label: 'Dashboard', icon: LayoutDashboard, href: '/' },
@@ -55,10 +63,35 @@ export function TopNav() {
     const [showUserMenu, setShowUserMenu] = useState(false);
     const [showNotifications, setShowNotifications] = useState(false);
     const [user, setUser] = useState<any>(null);
+    const [socket, setSocket] = useState<Socket | null>(null);
+    const [activities, setActivities] = useState<any[]>([]);
+    const [unreadCount, setUnreadCount] = useState(0);
 
     useEffect(() => {
         const userData = localStorage.getItem('user');
         if (userData) setUser(JSON.parse(userData));
+    }, []);
+
+    // Real-time campaign notifications via Socket.IO
+    useEffect(() => {
+        const apiBase = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/v1\/?$/, '');
+        const newSocket = io(apiBase);
+        setSocket(newSocket);
+
+        const token = localStorage.getItem('token');
+        if (token) {
+            newSocket.emit('join_room', { token });
+        }
+
+        newSocket.on('campaign_activity', (data: any) => {
+            console.log('[SOCKET] Campaign activity in nav:', data);
+            setActivities(prev => [data, ...prev].slice(0, 20));
+            setUnreadCount(prev => prev + 1);
+        });
+
+        return () => {
+            newSocket.disconnect();
+        };
     }, []);
 
     const handleLogout = () => {
@@ -175,14 +208,19 @@ export function TopNav() {
                     <div className="flex items-center space-x-1">
                         <div className="relative">
                             <button
-                                onClick={() => setShowNotifications(!showNotifications)}
+                                onClick={() => {
+                                    setShowNotifications(!showNotifications);
+                                    setUnreadCount(0);
+                                }}
                                 className={cn(
                                     "p-2 rounded-xl transition-all relative",
                                     showNotifications ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-primary hover:bg-primary/5"
                                 )}
                             >
                                 <Bell className="w-5 h-5" />
-                                <span className="absolute top-2 right-2 w-2 h-2 bg-primary rounded-full border-2 border-background" />
+                                {unreadCount > 0 && (
+                                    <span className="absolute top-2 right-2 w-2 h-2 bg-emerald-500 rounded-full border-2 border-background animate-pulse" />
+                                )}
                             </button>
 
                             <AnimatePresence>
@@ -195,22 +233,61 @@ export function TopNav() {
                                             exit={{ opacity: 0, scale: 0.95, y: 10 }}
                                             className="absolute top-full right-0 mt-3 w-80 bg-background border border-border rounded-[2rem] shadow-2xl z-50 overflow-hidden"
                                         >
-                                            <div className="p-6 border-b border-border bg-muted/5">
+                                            <div className="p-6 border-b border-border bg-muted/5 flex items-center justify-between">
                                                 <h3 className="font-black text-foreground">Notifications</h3>
+                                                {unreadCount > 0 && (
+                                                    <span className="text-[10px] font-bold text-emerald-600 bg-emerald-500/10 px-2 py-1 rounded-full">
+                                                        {unreadCount} new
+                                                    </span>
+                                                )}
                                             </div>
                                             <div className="max-h-96 overflow-y-auto p-2">
-                                                {[1, 2, 3].map((i) => (
-                                                    <div key={i} className="flex items-start space-x-4 p-4 hover:bg-muted rounded-2xl transition-all cursor-pointer group">
-                                                        <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary shrink-0 group-hover:scale-110 transition-transform">
-                                                            <Users className="w-5 h-5" />
-                                                        </div>
-                                                        <div>
-                                                            <p className="text-sm font-bold text-foreground">Campaign Update</p>
-                                                            <p className="text-xs text-muted-foreground mt-0.5">32 new prospects were synced to your campaign.</p>
-                                                            <p className="text-[10px] font-black text-primary uppercase mt-2 tracking-wider">2 hours ago</p>
-                                                        </div>
+                                                {activities.length === 0 ? (
+                                                    <div className="text-center py-12 opacity-50">
+                                                        <Bell className="w-8 h-8 mx-auto mb-2" />
+                                                        <p className="text-xs font-bold">No activity yet</p>
+                                                        <p className="text-[10px] mt-1">Start a campaign to see updates</p>
                                                     </div>
-                                                ))}
+                                                ) : activities.slice(0, 10).map((activity: any, idx: number) => {
+                                                    const isSuccess = activity.action === 'success';
+                                                    const isFailed = activity.action === 'failed';
+                                                    return (
+                                                        <div key={idx} className="flex items-start space-x-4 p-4 hover:bg-muted rounded-2xl transition-all cursor-pointer group">
+                                                            <div className={cn(
+                                                                "w-10 h-10 rounded-xl flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform",
+                                                                isSuccess ? "bg-emerald-500/10 text-emerald-600" :
+                                                                isFailed ? "bg-red-500/10 text-red-600" :
+                                                                "bg-primary/10 text-primary"
+                                                            )}>
+                                                                {activity.action === 'executing' ? (
+                                                                    <Loader2 className="w-5 h-5 animate-spin" />
+                                                                ) : isSuccess ? (
+                                                                    <CheckCircle2 className="w-5 h-5" />
+                                                                ) : isFailed ? (
+                                                                    <AlertCircle className="w-5 h-5" />
+                                                                ) : (
+                                                                    <Bell className="w-5 h-5" />
+                                                                )}
+                                                            </div>
+                                                            <div className="flex-1 min-w-0">
+                                                                <p className="text-sm font-bold text-foreground truncate">
+                                                                    {activity.node === 'profile-visit' ? 'Profile visited' :
+                                                                     activity.node === 'connect' ? 'Connection sent' :
+                                                                     activity.node === 'send-message' ? 'Message sent' :
+                                                                     activity.node === 'like-nth-post' ? 'Post liked' :
+                                                                     activity.node === 'comment-nth-post' ? 'Comment added' :
+                                                                     activity.node}
+                                                                </p>
+                                                                <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                                                                    {activity.leadName}
+                                                                </p>
+                                                                <p className="text-[10px] font-black text-primary uppercase mt-2 tracking-wider">
+                                                                    {new Date(activity.timestamp).toLocaleTimeString()}
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
                                             </div>
                                             <div className="p-4 bg-muted/30 border-t border-border">
                                                 <button className="w-full py-3 bg-white border border-border rounded-xl text-[10px] font-black uppercase tracking-widest text-muted-foreground hover:text-primary transition-colors">

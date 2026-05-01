@@ -21,11 +21,49 @@ import {
     Wrench,
     LayoutTemplate,
     Target,
+    User,
+    Send,
+    ThumbsUp,
+    MessageSquare,
+    Eye,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import api from '@/lib/api';
 import { CampaignNameModal } from '@/components/CampaignNameModal';
+import { io, Socket } from 'socket.io-client';
+import { toast } from 'sonner';
+
+interface CampaignActivity {
+    campaignId: string;
+    leadId: string;
+    leadName: string;
+    node: string;
+    action: 'executing' | 'success' | 'failed';
+    details: Record<string, any>;
+    error?: string;
+    timestamp: string;
+}
+
+const nodeIcons: Record<string, any> = {
+    'warmup': Eye,
+    'profile-visit': User,
+    'connect': User,
+    'like-nth-post': ThumbsUp,
+    'comment-nth-post': MessageSquare,
+    'send-message': Send,
+    'delay': Clock,
+};
+
+const nodeLabels: Record<string, string> = {
+    'warmup': 'Warmup',
+    'profile-visit': 'Profile Visit',
+    'connect': 'Connect',
+    'like-nth-post': 'Like Post',
+    'comment-nth-post': 'Comment',
+    'send-message': 'Send Message',
+    'delay': 'Delay',
+};
 
 export default function CampaignsPage() {
     const [campaigns, setCampaigns] = useState<any[]>([]);
@@ -36,10 +74,48 @@ export default function CampaignsPage() {
     const [showCreateMenu, setShowCreateMenu] = useState(false);
     const createMenuRef = useRef<HTMLDivElement>(null);
     const [pendingCreate, setPendingCreate] = useState<{ defaultName: string; workflowJson: any } | null>(null);
+    const [activities, setActivities] = useState<CampaignActivity[]>([]);
+    const [socket, setSocket] = useState<Socket | null>(null);
     const router = useRouter();
 
     useEffect(() => {
         fetchCampaigns();
+    }, []);
+
+    // Real-time campaign activity via Socket.IO
+    useEffect(() => {
+        const apiBase = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/v1\/?$/, '');
+        const newSocket = io(apiBase);
+        setSocket(newSocket);
+
+        const token = localStorage.getItem('token');
+        if (token) {
+            newSocket.emit('join_room', { token });
+        }
+
+        newSocket.on('campaign_activity', (data: CampaignActivity) => {
+            console.log('[SOCKET] Campaign activity:', data);
+            setActivities(prev => [data, ...prev].slice(0, 50));
+            
+            // Show toast for completed actions
+            if (data.action === 'success') {
+                const nodeLabel = nodeLabels[data.node] || data.node;
+                toast.success(`${nodeLabel} completed for ${data.leadName}`, {
+                    description: data.details?.company ? `Company: ${data.details.company}` : undefined,
+                    duration: 2,
+                });
+            } else if (data.action === 'failed') {
+                const nodeLabel = nodeLabels[data.node] || data.node;
+                toast.error(`${nodeLabel} failed for ${data.leadName}`, {
+                    description: data.error || undefined,
+                    duration: 3,
+                });
+            }
+        });
+
+        return () => {
+            newSocket.disconnect();
+        };
     }, []);
 
     useEffect(() => {
@@ -432,6 +508,27 @@ export default function CampaignsPage() {
                                                 <div className="h-full bg-emerald-500 w-full opacity-80" />
                                             </div>
                                         </div>
+                                        {/* Live activity count for this campaign */}
+                                        {campaign.status === 'ACTIVE' && (() => {
+                                            const campaignActivities = activities.filter(a => a.campaignId === campaign.id);
+                                            const completed = campaignActivities.filter(a => a.action === 'success').length;
+                                            const failed = campaignActivities.filter(a => a.action === 'failed').length;
+                                            if (completed > 0 || failed > 0) {
+                                                return (
+                                                    <div className="mt-2 flex items-center gap-2 text-[10px]">
+                                                        <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+                                                        <span className="font-bold text-emerald-600">{completed}</span>
+                                                        {failed > 0 && (
+                                                            <>
+                                                                <AlertCircle className="w-3 h-3 text-red-500 ml-2" />
+                                                                <span className="font-bold text-red-600">{failed}</span>
+                                                            </>
+                                                        )}
+                                                    </div>
+                                                );
+                                            }
+                                            return null;
+                                        })()}
                                     </td>
                                     <td className="px-10 py-8 text-right">
                                         <div className="flex items-center justify-end space-x-2">
@@ -583,6 +680,49 @@ export default function CampaignsPage() {
                                     </button>
                                 </div>
                             </div>
+
+                            {/* Live Activity Feed */}
+                            {activities.length > 0 && (
+                                <div className="bg-gradient-to-r from-emerald-500/5 to-primary/5 px-10 py-6 border-b border-border">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest flex items-center gap-2">
+                                            <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+                                            Live Activity
+                                        </span>
+                                        <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">
+                                            {activities.filter(a => a.action === 'success').length} completed
+                                        </span>
+                                    </div>
+                                    <div className="space-y-2 max-h-32 overflow-y-auto">
+                                        {activities.slice(0, 5).map((activity, idx) => {
+                                            const Icon = nodeIcons[activity.node] || Loader2;
+                                            const isSuccess = activity.action === 'success';
+                                            const isFailed = activity.action === 'failed';
+                                            return (
+                                                <div key={idx} className={cn(
+                                                    "flex items-center gap-3 px-3 py-2 rounded-lg text-xs",
+                                                    isSuccess && "bg-emerald-500/10 text-emerald-700",
+                                                    isFailed && "bg-red-500/10 text-red-700",
+                                                    activity.action === 'executing' && "bg-primary/10 text-primary"
+                                                )}>
+                                                    {activity.action === 'executing' ? (
+                                                        <Loader2 className="w-3 h-3 animate-spin" />
+                                                    ) : isSuccess ? (
+                                                        <CheckCircle2 className="w-3 h-3" />
+                                                    ) : (
+                                                        <AlertCircle className="w-3 h-3" />
+                                                    )}
+                                                    <span className="font-bold">{nodeLabels[activity.node] || activity.node}</span>
+                                                    <span className="truncate flex-1">{activity.leadName}</span>
+                                                    <span className="opacity-60">
+                                                        {new Date(activity.timestamp).toLocaleTimeString()}
+                                                    </span>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
 
                             <div className="bg-primary/5 px-10 py-6 border-b border-border flex items-center justify-between">
                                 <span className="text-[10px] font-black text-primary uppercase tracking-widest">Lead Management Control</span>
