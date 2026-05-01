@@ -8,7 +8,8 @@ import {
     startCampaign,
     pauseCampaign,
     getCampaignStatus,
-    removeLeadFromCampaign
+    removeLeadFromCampaign,
+    exportCampaign,
 } from '../controllers/campaign.controller';
 import { authMiddleware } from '../middleware/auth.middleware';
 
@@ -26,5 +27,6 @@ router.post('/:id/start', startCampaign);
 router.post('/:id/pause', pauseCampaign);
 router.get('/:id/status', getCampaignStatus);
 router.delete('/:id/leads/:leadId', removeLeadFromCampaign);
+router.get('/:id/export', exportCampaign);
 
 export default router;

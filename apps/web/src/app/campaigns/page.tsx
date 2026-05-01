@@ -26,6 +26,7 @@ import {
     ThumbsUp,
     MessageSquare,
     Eye,
+    Download,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
@@ -189,13 +190,40 @@ export default function CampaignsPage() {
         }
     };
 
-    const removeLeadFromCampaign = async (campaignId: string, leadId: string) => {
-        if (!confirm('Remove this lead from campaign?')) return;
+const removeLeadFromCampaign = async (campaignId: string, leadId: string) => {
         try {
             await api.delete(`/campaigns/${campaignId}/leads/${leadId}`);
             fetchStatus(campaignId);
         } catch (error) {
-            alert('Failed to remove lead.');
+            console.error('Failed to remove lead:', error);
+        }
+    };
+
+    const exportCampaign = async (campaignId: string, format: 'json' | 'csv' = 'csv') => {
+        try {
+            const response = await api.get(`/campaigns/${campaignId}/export?format=${format}`);
+            
+            // For CSV, create download
+            if (format === 'csv') {
+                const blob = new Blob([response.data], { type: 'text/csv' });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `campaign-export-${campaignId.slice(0, 8)}.csv`;
+                a.click();
+                window.URL.revokeObjectURL(url);
+            } else {
+                // JSON - show in new tab
+                const blob = new Blob([JSON.stringify(response.data, null, 2)], { type: 'application/json' });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `campaign-export-${campaignId.slice(0, 8)}.json`;
+                a.click();
+                window.URL.revokeObjectURL(url);
+            }
+        } catch (error) {
+            console.error('Failed to export:', error);
         }
     };
 
@@ -665,6 +693,13 @@ export default function CampaignsPage() {
                                     )}
                                 </div>
                                 <div className="flex items-center space-x-3">
+                                    <button
+                                        onClick={() => exportCampaign(statusPanel.campaignId, 'csv')}
+                                        className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center hover:bg-emerald-500/20 transition-all"
+                                        title="Export CSV"
+                                    >
+                                        <Download className="w-4 h-4 text-emerald-600" />
+                                    </button>
                                     <button
                                         onClick={() => fetchStatus(statusPanel.campaignId)}
                                         className="w-10 h-10 rounded-xl bg-white border border-border flex items-center justify-center hover:bg-muted transition-all"

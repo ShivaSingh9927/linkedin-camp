@@ -333,3 +333,102 @@ export const removeLeadFromCampaign = async (req: any, res: Response) => {
         res.status(500).json({ error: 'Failed to remove lead from campaign' });
     }
 };
+
+// ---- Export Campaign Data ----
+export const exportCampaign = async (req: any, res: Response) => {
+    const { id: campaignId } = req.params;
+    const { format = 'json' } = req.query; // json or csv
+    const userId = req.user.id;
+
+    try {
+        const campaign = await prisma.campaign.findUnique({
+            where: { id: campaignId, userId },
+            include: {
+                leads: {
+                    include: { lead: true }
+                }
+            }
+        });
+
+        if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+
+        // Build export data
+        const exportData = campaign.leads.map(cl => {
+            const pl = cl as any;
+            const nodeOutputs = pl.personalization?.nodeOutputs || {};
+            const execLog = pl.personalization?.execLog || [];
+            
+            // Get profile-visit output
+            const pv = nodeOutputs['profile-visit'] || {};
+            
+            // Get message output
+            const msg = nodeOutputs['send-message'] || {};
+            
+            // Get connect output
+            const conn = nodeOutputs['connect'] || {};
+
+            return {
+                // Lead Info
+                firstName: cl.lead.firstName,
+                lastName: cl.lead.lastName,
+                email: cl.lead.email || pv.email,
+                linkedinUrl: cl.lead.linkedinUrl,
+                
+                // Enrichment
+                company: cl.lead.company || pv.company,
+                jobTitle: cl.lead.jobTitle || pv.jobTitle,
+                about: cl.lead.aboutInfo || pv.about,
+                
+                // Campaign Status
+                status: cl.status,
+                isCompleted: cl.isCompleted,
+                currentStep: cl.currentStepId,
+                lastAction: cl.lastActionAt,
+                
+                // Action Results
+                connectionStatus: conn.status || '',
+                messageSent: msg.sent || false,
+                messageText: msg.messageText || '',
+                likedPost: nodeOutputs['like-nth-post']?.liked || false,
+                commentedPost: nodeOutputs['comment-nth-post']?.commented || false,
+                
+                // Execution Log Summary
+                totalSteps: execLog.length,
+                successSteps: execLog.filter((e: any) => e.status === 'success').length,
+                failedSteps: execLog.filter((e: any) => e.status === 'failed').length,
+                lastExecuted: execLog.length > 0 ? execLog[execLog.length - 1].at : null,
+            };
+        });
+
+        if (format === 'csv') {
+            // Convert to CSV
+            const headers = Object.keys(exportData[0] || {});
+            const csvRows = exportData.map((row: any) => 
+                headers.map(h => {
+                    const val = row[h];
+                    if (val === null || val === undefined) return '';
+                    if (typeof val === 'object') return JSON.stringify(val);
+                    // Escape commas
+                    const str = String(val);
+                    return str.includes(',') ? `"${str}"` : str;
+                }).join(',')
+            );
+            
+            const csv = [headers.join(','), ...csvRows].join('\n');
+            
+            res.setHeader('Content-Type', 'text/csv');
+            res.setHeader('Content-Disposition', `attachment; filename="${campaign.name}-export.csv"`);
+            return res.send(csv);
+        }
+
+        res.json({
+            campaign: { id: campaign.id, name: campaign.name, status: campaign.status },
+            exportedAt: new Date().toISOString(),
+            totalLeads: exportData.length,
+            data: exportData,
+        });
+    } catch (error) {
+        console.error('Export campaign error:', error);
+        res.status(500).json({ error: 'Failed to export campaign' });
+    }
+};
