@@ -9,6 +9,8 @@ export const profileVisit: NodeHandler = async (ctx): Promise<NodeResult> => {
 
     const output: ProfileVisitOutput = {
         name: null,
+        headline: null,
+        location: null,
         company: null,
         jobTitle: null,
         companyUrl: null,
@@ -16,6 +18,9 @@ export const profileVisit: NodeHandler = async (ctx): Promise<NodeResult> => {
         email: null,
         phone: null,
         connected: false,
+        connectedDate: null,
+        experience: [],
+        education: [],
     };
 
     try {
@@ -27,194 +32,222 @@ export const profileVisit: NodeHandler = async (ctx): Promise<NodeResult> => {
         });
         await wait(randomRange(12000, 18000));
 
-        await page.mouse.wheel(0, 600);
-        await wait(2000);
-
-        // Session validation
         const url = page.url();
         if (url.includes('authwall') || url.includes('login') || url.includes('checkpoint')) {
             return { success: false, error: `Session invalid. Redirected to: ${url}` };
         }
 
-        // --- Extract name ---
-        try {
-            const selectors = [
-                'h1.text-heading-xlarge',
-                'h1.break-words',
-                '.pv-text-details__left-panel h1',
-                'h1',
-            ];
-            for (const sel of selectors) {
-                const nameEl = page.locator(sel).first();
-                if (await nameEl.isVisible({ timeout: 3000 }).catch(() => false)) {
-                    const text = (await nameEl.innerText()).trim();
-                    if (text && text.length > 1 && text.length < 100) {
-                        output.name = text;
-                        break;
-                    }
-                }
-            }
-            if (!output.name) {
-                output.name = await page.evaluate(() => {
-                    const h1 = document.querySelector('h1');
-                    return h1 ? h1.textContent?.trim() || null : null;
-                });
-            }
-            if (!output.name && lead.firstName) {
-                output.name = lead.firstName;
-            }
-        } catch {}
+        // --- SCROLL AGGRESSIVELY (exact copy from working testscript) ---
+        console.log('[PROFILE-VISIT] Aggressive scrolling...');
+        await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+        await wait(3000);
+        
+        for (let i = 0; i < 5; i++) {
+            await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+            await wait(1500);
+        }
+        
+        await page.evaluate(() => window.scrollTo(0, 0));
+        await wait(1000);
 
-        // --- Check connection degree ---
+        // Ensure Experience loaded
+        for (let i = 0; i < 6; i++) {
+            const found = await page.evaluate(() => {
+                const hs = document.querySelectorAll('h2');
+                return Array.from(hs).some((h: any) => h.innerText?.trim()?.toLowerCase() === 'experience');
+            });
+            if (found) break;
+            await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+            await wait(1200 * (i + 1));
+        }
+        
+        // Scroll to Experience section
+        await page.evaluate(() => {
+            const h2s = document.querySelectorAll('h2');
+            const expH2 = Array.from(h2s).find((h: any) => h.innerText?.trim()?.toLowerCase() === 'experience');
+            if (expH2) expH2.scrollIntoView({ behavior: 'instant', block: 'start' });
+        });
+        await wait(2000);
+
+        // Final scroll
+        await page.evaluate(() => {
+            for (let i = 0; i < 3; i++) window.scrollBy(0, 800);
+        });
+        await wait(3000);
+
+        // --- CHECK CONNECTED ---
         try {
             output.connected = await page.isVisible('button:has-text("Message")');
         } catch {}
 
-        // --- Extract About ---
+        // --- EXTRACT TOP CARD (exact from testscript) ---
         try {
-            console.log('[PROFILE-VISIT] Extracting About...');
-            await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-            await wait(2000);
-
-            const aboutSection = page.locator('section:has(span:text("About"))').first();
-            const isAboutVisible = await aboutSection.isVisible({ timeout: 5000 }).catch(() => false);
-            console.log('[PROFILE-VISIT] About section visible:', isAboutVisible);
-            
-            if (isAboutVisible) {
-                // Try multiple ways to get About text
-                const aboutBox = aboutSection.locator('[data-testid="expandable-text-box"]').first();
-                const isBoxVisible = await aboutBox.isVisible({ timeout: 3000 }).catch(() => false);
-                console.log('[PROFILE-VISIT] About box visible:', isBoxVisible);
+            const topCardData = await page.evaluate(() => {
+                const data: any = { name: null, headline: null, location: null };
                 
-                if (isBoxVisible) {
-                    output.about = await aboutBox.innerText();
-                    console.log('[PROFILE-VISIT] About extracted (box):', output.about?.substring(0, 50) + '...');
-                } else {
-                    // Try getting text directly from the section
-                    const sectionText = await aboutSection.innerText().catch(() => '');
-                    console.log('[PROFILE-VISIT] Section text length:', sectionText.length);
-                    if (sectionText && sectionText.length > 10) {
-                        // Extract just the About portion (after "About" heading)
-                        const lines = sectionText.split('\n').filter(l => l.trim());
-                        const aboutIndex = lines.findIndex(l => l.toLowerCase().includes('about'));
-                        if (aboutIndex >= 0 && aboutIndex + 1 < lines.length) {
-                            output.about = lines.slice(aboutIndex + 1).join('\n').trim();
-                            console.log('[PROFILE-VISIT] About extracted (innerText):', output.about?.substring(0, 50) + '...');
+                const contactLinks = Array.from(document.querySelectorAll('a')).filter((a: any) => 
+                    a.innerText?.toLowerCase().includes('contact info') || (a.id && a.id.includes('contact-info'))
+                );
+                
+                if (contactLinks.length > 0) {
+                    const section = contactLinks[0].closest('section');
+                    if (section) {
+                        const rawText = section.innerText.split('\n')
+                            .map((t: string) => t.trim())
+                            .filter((t: string) => t.length > 0 && !t.includes('connections') && !t.includes('Message'));
+                        
+                        const uniqueDetails = [...new Set(rawText)];
+                        
+                        if (uniqueDetails.length > 0) {
+                            data.name = uniqueDetails[0];
+                            ['He/Him', 'She/Her', 'They/Them'].forEach((p: string) => {
+                                if (data.name?.endsWith(p)) data.name = data.name.replace(p, '').trim();
+                            });
                         }
+                        
+                        const potentialHeadlines = uniqueDetails.filter((t: string) => 
+                            t.length > 15 && t !== data.name && !t.includes(',')
+                        );
+                        if (potentialHeadlines.length > 0) data.headline = potentialHeadlines[0];
+                        
+                        data.location = uniqueDetails.find((t: string) => 
+                            t.includes(',') && !t.includes('Mutual')
+                        );
                     }
                 }
+                return data;
+            });
+            
+            output.name = topCardData.name;
+            output.headline = topCardData.headline;
+            output.location = topCardData.location;
+            console.log(`[PROFILE-VISIT] Name: ${output.name}, Headline: ${output.headline}`);
+        } catch (e: any) {
+            console.log(`[PROFILE-VISIT] Top card error: ${e?.message}`);
+        }
+
+        // --- EXTRACT ABOUT (exact from testscript) ---
+        try {
+            const aboutText = await page.evaluate(() => {
+                const h2s = Array.from(document.querySelectorAll('h2'));
+                const aboutH2 = h2s.find((h: any) => h.innerText?.trim()?.toLowerCase() === 'about');
+                if (!aboutH2) return null;
+
+                const section = aboutH2.closest('section');
+                if (!section) return null;
+
+                const textBox = section.querySelector('.display-flex.ph5.pv3, [data-testid="expandable-text-box"]') || section;
+                return (textBox as HTMLElement).innerText?.replace('About\n', '').trim();
+            });
+            output.about = aboutText;
+            console.log(`[PROFILE-VISIT] About: ${aboutText?.substring(0, 50)}...`);
+        } catch (e: any) {
+            console.log(`[PROFILE-VISIT] About error: ${e?.message}`);
+        }
+
+        // --- EXTRACT EXPERIENCE (exact from testscript) ---
+        try {
+            const expData = await page.evaluate(() => {
+                const data: any = { company: null, jobTitle: null, companyUrl: null };
+                
+                const h2s = Array.from(document.querySelectorAll('h2'));
+                const header = h2s.find((h: any) => h.innerText?.trim()?.toLowerCase() === 'experience');
+                if (!header) return data;
+
+                const section = header.closest('section');
+                if (!section) return data;
+
+                const logoImg = section.querySelector('a[href*="/company/"] img');
+                data.company = logoImg?.getAttribute('alt')?.replace(/logo$/i, '').trim() || null;
+
+                const companyLink = section.querySelector('a[href*="/company/"]');
+                data.companyUrl = companyLink ? (companyLink as HTMLAnchorElement).href?.split('?')[0] : null;
+
+                const firstJob = section.querySelector('ul > li') || section.querySelector('.pvs-list__paged-list-item');
+                if (!firstJob) return data;
+
+                const lines = (firstJob as HTMLElement).innerText.split('\n').map((l: string) => l.trim()).filter((l: string) => l.length > 0);
+                data.jobTitle = lines[0] || null;
+
+                return data;
+            });
+            
+            output.company = expData.company;
+            output.jobTitle = expData.jobTitle;
+            output.companyUrl = expData.companyUrl;
+            console.log(`[PROFILE-VISIT] Company: ${output.company}, Job: ${output.jobTitle}`);
+        } catch (e: any) {
+            console.log(`[PROFILE-VISIT] Experience error: ${e?.message}`);
+        }
+
+        // --- EXTRACT CONTACT INFO (exact from testscript) ---
+        try {
+            console.log('[PROFILE-VISIT] Opening Contact Info modal...');
+            const contactBtn = page.locator('a:has-text("Contact info"), a#top-card-text-details-contact-info').first();
+            
+            if (await contactBtn.isVisible()) {
+                await contactBtn.click();
+                await wait(2000);
+                
+                const contactData = await page.evaluate(() => {
+                    const data: any = { email: null, phone: null, connectedDate: null };
+                    
+                    let container = document.body;
+                    const h2s = Array.from(document.querySelectorAll('h2'));
+                    const contactH2 = h2s.find((h: any) => h.innerText?.toLowerCase().includes('contact info') && h.closest('section'));
+                    if (contactH2) {
+                        container = contactH2.closest('section') || contactH2.parentElement?.parentElement || document.body;
+                    }
+
+                    const fullText = container.innerText;
+                    
+                    const emailMatch = fullText.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+                    if (emailMatch) data.email = emailMatch[0];
+
+                    if (fullText.includes('Phone')) {
+                        const afterPhone = fullText.split('Phone')[1]?.trim() || '';
+                        data.phone = afterPhone.split('\n')[0]?.replace(/[a-zA-Z()]/g, '').trim();
+                    }
+
+                    if (fullText.includes('Connected since')) {
+                        const afterConnected = fullText.split('Connected since')[1]?.trim() || '';
+                        data.connectedDate = afterConnected.split('\n')[0]?.trim();
+                    }
+
+                    return data;
+                });
+                
+                output.email = contactData.email;
+                output.phone = contactData.phone;
+                output.connectedDate = contactData.connectedDate;
+                console.log(`[PROFILE-VISIT] Email: ${output.email}, Phone: ${output.phone}`);
+                
+                await page.keyboard.press('Escape');
+                await wait(1000);
+            } else {
+                console.log('[PROFILE-VISIT] Contact info button not visible');
             }
         } catch (e: any) {
-            console.log('[PROFILE-VISIT] About extraction error:', e?.message);
+            console.log(`[PROFILE-VISIT] Contact error: ${e?.message}`);
         }
 
-        // --- Extract Experience (company, job title, company URL) ---
-        try {
-            console.log('[PROFILE-VISIT] Extracting Experience...');
-            for (let i = 0; i < 4; i++) {
-                await page.keyboard.press('PageDown');
-                await wait(600);
-            }
-
-            const extracted = await page.evaluate(() => {
-                const textNodes = Array.from(document.querySelectorAll('span[aria-hidden="true"], h2 span, h2'));
-                const expNode = textNodes.find(node => (node as any).innerText?.trim() === 'Experience');
-                if (!expNode) return null;
-                const expSection = expNode.closest('section');
-                if (!expSection) return null;
-
-                const firstLogoImg = expSection.querySelector('a[href*="/company/"] img');
-                const companyName = firstLogoImg?.getAttribute('alt')?.replace(/logo$/i, '').trim() || 'Unknown';
-                const firstCompanyLink = expSection.querySelector('a[href*="/company/"]');
-                const companyUrl = firstCompanyLink ? (firstCompanyLink as HTMLAnchorElement).href.split('?')[0] : null;
-
-                const firstJobItem = expSection.querySelector('ul > li') || expSection.querySelector('.pvs-list__paged-list-item');
-                if (!firstJobItem) return { companyName, companyUrl, jobTitle: 'Unknown' };
-
-                const rawLines = (firstJobItem as HTMLElement).innerText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-                const details: string[] = [];
-                for (let i = 0; i < rawLines.length; i++) {
-                    if (i === 0 || rawLines[i] !== rawLines[i - 1]) details.push(rawLines[i]);
-                }
-
-                let jobTitle = 'Unknown';
-                if (details.length > 0) {
-                    if (companyName !== 'Unknown' && details[0].toLowerCase().includes(companyName.toLowerCase())) {
-                        jobTitle = details.length > 3 ? details[3] : details[0];
-                    } else {
-                        jobTitle = details[0];
-                    }
-                }
-                return { companyName, jobTitle, companyUrl };
-            });
-
-            if (extracted) {
-                if (extracted.companyName && extracted.companyName !== 'Unknown') output.company = extracted.companyName;
-                if (extracted.jobTitle && extracted.jobTitle !== 'Unknown') output.jobTitle = extracted.jobTitle;
-                output.companyUrl = extracted.companyUrl;
-            }
-        } catch {}
-
-        // --- Extract Contact Info (only if connected) ---
-        if (output.connected) {
-            try {
-                console.log('[PROFILE-VISIT] Extracting Contact Info (1st degree)...');
-                const contactBtn = page.locator('a[href*="/overlay/contact-info/"]').first();
-                if (await contactBtn.isVisible({ timeout: 5000 })) {
-                    await contactBtn.evaluate((el: any) => el.click());
-                    await wait(2000);
-
-                    const contactData = await page.evaluate(() => {
-                        const data: any = { email: null, phone: null };
-                        const labels = Array.from(document.querySelectorAll('div[data-component-type="LazyColumn"] p:first-child'));
-                        for (const label of labels) {
-                            const labelText = (label as HTMLElement).innerText?.trim();
-                            const valueNode = label.nextElementSibling;
-                            if (valueNode) {
-                                if (labelText === 'Email') {
-                                    data.email = (valueNode as HTMLElement).innerText?.trim();
-                                } else if (labelText === 'Phone') {
-                                    const firstSpan = valueNode.querySelector('span');
-                                    data.phone = firstSpan ? (firstSpan as HTMLElement).innerText?.trim() : (valueNode as HTMLElement).innerText?.trim();
-                                }
-                            }
-                        }
-                        return data;
-                    });
-
-                    if (contactData.email) output.email = contactData.email;
-                    if (contactData.phone) output.phone = contactData.phone;
-
-                    await page.keyboard.press('Escape');
-                    await wait(1000);
-                }
-            } catch {}
-        }
-
-        // --- Update lead in DB with extracted data ---
+        // --- UPDATE LEAD IN DB ---
         if (output.name || output.company || output.jobTitle || output.about) {
             try {
-                const nameParts = (output.name || '').split(' ').filter(n => n.length > 0);
+                const nameParts = (output.name || '').split(' ').filter((n: string) => n.length > 0);
                 const firstName = nameParts[0] || '';
                 const lastName = nameParts.slice(1).join(' ') || null;
-                
                 await prisma.lead.update({
                     where: { id: lead.id },
-                    data: { 
-                        firstName, 
-                        lastName,
-                        company: output.company || undefined,
-                        jobTitle: output.jobTitle || undefined,
-                        aboutInfo: output.about || undefined,
-                    },
+                    data: { firstName, lastName, company: output.company || undefined, jobTitle: output.jobTitle || undefined, aboutInfo: output.about || undefined },
                 });
-                console.log(`[PROFILE-VISIT] Updated lead: ${firstName} ${lastName || ''}, Company: ${output.company}, Job: ${output.jobTitle}, About: ${output.about ? 'Yes' : 'No'}`);
-            } catch (err) {
-                console.log(`[PROFILE-VISIT] Could not update lead: ${err}`);
+                console.log(`[PROFILE-VISIT] Updated lead: ${firstName} ${lastName || ''}`);
+            } catch (e: any) {
+                console.log(`[PROFILE-VISIT] Update error: ${e?.message}`);
             }
         }
 
-        console.log(`[PROFILE-VISIT] Done. Name: ${output.name}, Company: ${output.company}, Job: ${output.jobTitle}, Connected: ${output.connected}`);
+        console.log(`[PROFILE-VISIT] Done. Name: ${output.name}, Company: ${output.company}, Connected: ${output.connected}`);
         return { success: true, output };
 
     } catch (err: any) {

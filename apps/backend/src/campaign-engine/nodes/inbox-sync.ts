@@ -38,6 +38,11 @@ export const inboxSync: NodeHandler = async (ctx, config): Promise<NodeResult> =
     const output: InboxSyncOutput = { syncedThreads: 0, threads: [] };
 
     try {
+        // Warmup: Visit feed first to initialize WebSockets (matching testscripts)
+        console.log('[INBOX-SYNC] Warming up on feed...');
+        await safeGoto(page, 'https://www.linkedin.com/feed/');
+        await wait(randomRange(4000, 6000));
+
         // Navigate to inbox
         console.log('[INBOX-SYNC] Navigating to messaging inbox...');
         await safeGoto(page, 'https://www.linkedin.com/messaging/');

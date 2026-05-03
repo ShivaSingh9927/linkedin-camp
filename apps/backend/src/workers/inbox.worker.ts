@@ -47,8 +47,7 @@ async function blockResources(page: any) {
 
 export const syncInbox = async (userId: string) => {
     const user = await prisma.user.findUnique({
-        where: { id: userId },
-        include: { proxy: true }
+        where: { id: userId }
     });
 
     if (!user || !user.linkedinCookie) {
@@ -97,21 +96,6 @@ export const syncInbox = async (userId: string) => {
             locale: 'en-IN',
             timezoneId: 'Asia/Kolkata',
         };
-
-        // Proxy — dedicated ISP (Oxylabs) fallback
-        if (user.proxy) {
-            contextOptions.proxy = {
-                server: `http://${user.proxy.proxyHost}:${user.proxy.proxyPort}`,
-                username: user.proxy.proxyUsername || undefined,
-                password: user.proxy.proxyPassword || undefined,
-            };
-        } else {
-            contextOptions.proxy = {
-                server: 'http://disp.oxylabs.io:8001',
-                username: 'user-shivasingh_clgdY',
-                password: 'Iamironman_3',
-            };
-        }
 
         browser = await chromium.launch(launchOptions);
         context = await browser.newContext(contextOptions);

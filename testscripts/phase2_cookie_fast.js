@@ -62,9 +62,9 @@
 //     locale: 'en-IN',
 //     timezoneId: 'Asia/Kolkata',
 //     proxy: {
-//       server: 'http://disp.oxylabs.io:8001',
-//       username: 'user-shivasingh_clgdY',
-//       password: 'Iamironman_3'
+//       server: 'http://82.41.252.111:46222',
+//       username: 'xBVyYdUpx84nWx7',
+//       password: 'dwwTxtvv5a10RXn'
 //     }
 //   });
 

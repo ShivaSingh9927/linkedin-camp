@@ -1,10 +1,11 @@
 import { NodeHandler, NodeResult, ConnectOutput } from '../types';
+import { prisma } from '@repo/db';
 
 const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
 const randomRange = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1) + min);
 
 export const connect: NodeHandler = async (ctx): Promise<NodeResult> => {
-    const { page, lead } = ctx;
+    const { page, lead, campaignId } = ctx;
 
     const output: ConnectOutput = { status: 'failed' };
 
@@ -16,6 +17,10 @@ export const connect: NodeHandler = async (ctx): Promise<NodeResult> => {
         if (isPending) {
             console.log('[CONNECT] Connection already pending.');
             output.status = 'pending';
+            
+            if (campaignId) {
+                await updateConnectionStatus(campaignId, lead.id, 'pending');
+            }
             return { success: true, output };
         }
 
@@ -24,6 +29,10 @@ export const connect: NodeHandler = async (ctx): Promise<NodeResult> => {
         if (isConnected) {
             console.log('[CONNECT] Already a 1st degree connection.');
             output.status = 'already_connected';
+            
+            if (campaignId) {
+                await updateConnectionStatus(campaignId, lead.id, 'connected');
+            }
             return { success: true, output };
         }
 
@@ -59,6 +68,10 @@ export const connect: NodeHandler = async (ctx): Promise<NodeResult> => {
                 await sendBtn.evaluate((el: any) => el.click());
                 console.log('[CONNECT] Connection request sent.');
                 output.status = 'sent';
+                
+                if (campaignId) {
+                    await updateConnectionStatus(campaignId, lead.id, 'pending');
+                }
                 return { success: true, output };
             } else {
                 // Try pressing Enter as fallback
@@ -68,6 +81,10 @@ export const connect: NodeHandler = async (ctx): Promise<NodeResult> => {
                 if (!url.includes('connect') && !url.includes('invitation')) {
                     console.log('[CONNECT] Connection sent (URL changed).');
                     output.status = 'sent';
+                    
+                    if (campaignId) {
+                        await updateConnectionStatus(campaignId, lead.id, 'pending');
+                    }
                     return { success: true, output };
                 }
                 return { success: false, error: 'Connect modal opened but Send button not found' };
@@ -80,3 +97,32 @@ export const connect: NodeHandler = async (ctx): Promise<NodeResult> => {
         return { success: false, error: err.message };
     }
 };
+
+async function updateConnectionStatus(campaignId: string, leadId: string, status: 'connected' | 'pending' | 'not_connected') {
+    try {
+        await prisma.campaignLeadProgress.upsert({
+            where: {
+                campaignId_leadId: {
+                    campaignId,
+                    leadId
+                }
+            },
+            create: {
+                campaignId,
+                leadId,
+                connectionStatus: status,
+                currentNodeIndex: 0,
+                needsRetry: status === 'not_connected'
+            },
+            update: {
+                connectionStatus: status,
+                lastConnectionCheck: new Date(),
+                needsRetry: status === 'not_connected',
+                updatedAt: new Date()
+            }
+        });
+        console.log(`[CONNECT] Updated connection status to: ${status}`);
+    } catch (err) {
+        console.log(`[CONNECT] Could not update progress: ${err}`);
+    }
+}

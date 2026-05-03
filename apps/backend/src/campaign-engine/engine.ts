@@ -37,6 +37,8 @@ import { commentNthPost } from './nodes/comment-nth-post';
 import { sendMessage } from './nodes/send-message';
 import { inboxSync } from './nodes/inbox-sync';
 import { delay } from './nodes/delay';
+import { ifElse } from './nodes/if-else';
+import { checkConnection } from './nodes/check-connection';
 import { readNodeOutputs, writeNodeOutput, updateLeadEnrichment } from './storage';
 
 const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
@@ -137,7 +139,27 @@ const NODE_HANDLERS: Record<NodeType, NodeHandler> = {
     'send-message': sendMessage,
     'delay': delay,
     'inbox-sync': inboxSync,
+    'if-else': ifElse,
+    'check-connection': checkConnection,
 };
+
+// ---- Execute single node (exported for if-else node) ----
+export async function executeNode(ctx: NodeContext, config: CampaignFlowNode): Promise<NodeResult> {
+    const { page, context, lead, userId, campaignId, storedOutputs, campaign, connectionStatus } = ctx;
+    
+    const nodeType = config.node;
+    const handler = NODE_HANDLERS[nodeType];
+    
+    if (!handler) {
+        return { success: false, error: `Unknown node type: ${nodeType}` };
+    }
+    
+    const nodeCtx: NodeContext = {
+        page, context, lead, userId, campaignId, storedOutputs, campaign, connectionStatus
+    };
+    
+    return await handler(nodeCtx, config);
+}
 
 // Nodes that are fatal if they fail (skip to next lead)
 const FATAL_NODES: Set<string> = new Set(['profile-visit']);
@@ -170,6 +192,7 @@ async function runLead(
     flow: CampaignFlowNode[],
     campaignData?: {
         objective?: string;
+        campaignDescription?: string;
         cta?: string;
         toneOverride?: string;
         persona?: string;
@@ -238,8 +261,7 @@ async function runLead(
         }
 
         // Determine session source: files > worker-provided context > DB
-        // File-based session (testscripts/phase1) is the proven working source.
-        // DB cookies can be overwritten by extension sync with stale data.
+        // File-based session is the proven working source.
         let activeCookies: any[] | null = null;
         let activeUserAgent: string | null = null;
         let activeLocalStorage: Record<string, string> | null = null;
@@ -263,7 +285,7 @@ async function runLead(
             activeCookies = sessionContext.cookies;
             activeUserAgent = sessionContext.userAgent;
             activeLocalStorage = sessionContext.localStorage;
-            if (!activeProxy) activeProxy = sessionContext.proxy;
+            if (!activeProxy && sessionContext?.proxy) activeProxy = sessionContext.proxy;
         } else {
             // LAST RESORT: Parse from DB directly
             console.log('[ENGINE] No files or worker context. Falling back to DB session.');
@@ -518,9 +540,40 @@ async function runLead(
                 console.log(`[ENGINE] Lead ${lead.firstName}: ${nodeType} FAILED (non-fatal). Continuing to next node.`);
             }
 
-            // If delay node, set warmup needed for next node
+            // If delay node, set warmup needed for next node and mark lead for retry
             if (nodeType === 'delay') {
                 needsWarmup = true;
+                
+                const hours = nodeConfig.hours || 24;
+                const nextRetryAt = new Date(Date.now() + hours * 60 * 60 * 1000);
+                
+                try {
+                    await prisma.campaignLeadProgress.upsert({
+                        where: {
+                            campaignId_leadId: {
+                                campaignId,
+                                leadId: lead.id
+                            }
+                        },
+                        create: {
+                            campaignId,
+                            leadId: lead.id,
+                            connectionStatus: 'not_connected',
+                            currentNodeIndex: i + 1,
+                            needsRetry: true,
+                            nextRetryAt,
+                        },
+                        update: {
+                            currentNodeIndex: i + 1,
+                            needsRetry: true,
+                            nextRetryAt,
+                            updatedAt: new Date()
+                        }
+                    });
+                    console.log(`[ENGINE] Lead marked for retry at ${nextRetryAt.toISOString()}`);
+                } catch (err) {
+                    console.log(`[ENGINE] Could not update progress for delay: ${err}`);
+                }
             }
 
             // Safety gap between nodes
@@ -594,6 +647,7 @@ export async function runCampaign(
 
         const result = await runLead(userId, campaignId, leadData, config.flow, {
             objective: config.objective,
+            campaignDescription: config.campaignDescription,
             cta: config.cta,
             toneOverride: config.toneOverride,
             persona: config.persona,

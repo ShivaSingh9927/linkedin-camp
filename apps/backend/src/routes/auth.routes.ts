@@ -19,6 +19,7 @@ import {
   startPhase1PersistentSync
 } from '../controllers/simulation.controller';
 import { uploadSessionZip } from '../controllers/sync.controller';
+import sessionRouter from './session.routes';
 import { authMiddleware } from '../middleware/auth.middleware';
 import multer from 'multer';
 
@@ -28,7 +29,6 @@ const router = Router();
 router.post('/register', register);
 router.post('/login', login);
 router.post('/google', googleLogin);
-router.post('/sync-extension', authMiddleware, syncExtension);
 router.get('/cloud-status', authMiddleware, getCloudStatus);
 router.get('/linkedin-status', authMiddleware, getLinkedinStatus);
 router.post('/sync-profile', authMiddleware, syncLinkedinProfile);
@@ -44,5 +44,8 @@ router.post('/start-phase1-sync', authMiddleware, startPhase1PersistentSync);
 
 // Local-Sync Upload Route
 router.post('/upload-session', authMiddleware, upload.single('sessionZip'), uploadSessionZip);
+
+// Session Management Routes (socket login, validation)
+router.use('/', sessionRouter);
 
 export default router;

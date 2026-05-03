@@ -60,6 +60,7 @@ app.listen(serverPort, '0.0.0.0', () => {
             const smartListRoutes = (await import('./routes/smart-list.routes')).default;
             const aiRoutes = (await import('./routes/ai.routes')).default;
             const userRoutes = (await import('./routes/user.routes')).default;
+            const sessionRoutes = (await import('./routes/session.routes')).default;
             const { initScheduler } = await import('./cron/scheduler');
             const { initWorker } = await import('./workers/linkedin.worker');
             const { initProxyHealthWorker } = await import('./workers/proxy.worker');
@@ -78,6 +79,7 @@ app.listen(serverPort, '0.0.0.0', () => {
             app.use('/api/v1/smart-lists', smartListRoutes);
             app.use('/api/v1/ai', aiRoutes);
             app.use('/api/v1/users', userRoutes);
+            app.use('/api/v1/session', sessionRoutes);
 
             initScheduler();
 

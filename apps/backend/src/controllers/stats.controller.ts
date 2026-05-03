@@ -28,7 +28,7 @@ export const getStats = async (req: any, res: Response) => {
                     id: true,
                     name: true,
                     status: true,
-                    leads: {
+                    CampaignLead: {
                         select: {
                             status: true
                         }
@@ -40,7 +40,7 @@ export const getStats = async (req: any, res: Response) => {
                 where: { userId },
                 orderBy: { executedAt: 'desc' },
                 take: 10,
-                include: { lead: true }
+                include: { Lead: true }
             }),
             prisma.actionLog.count({ where: { userId, actionType: 'INVITE', status: 'SUCCESS' } }),
             prisma.actionLog.count({ where: { userId, actionType: 'MESSAGE', status: 'SUCCESS' } }),

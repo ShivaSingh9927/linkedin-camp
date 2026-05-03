@@ -1,338 +1,237 @@
-// const { chromium } = require('playwright-extra');
-// const stealth = require('puppeteer-extra-plugin-stealth')();
-// const fs = require('fs');
-
-// chromium.use(stealth);
-
-// const wait = (ms) => new Promise(res => setTimeout(res, ms));
-
-// // ---------------- SAFE NAVIGATION ----------------
-// async function safeGoto(page, url, retries = 3) {
-//   for (let i = 0; i < retries; i++) {
-//     try {
-//       console.log(`🌐 Navigating (${i + 1}/${retries}) → ${url}`);
-//       await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
-//       return true;
-//     } catch (err) {
-//       console.log(`⚠️ Retry ${i + 1} failed: ${err.message}`);
-//       if (i === retries - 1) throw err;
-//       await wait(3000);
-//     }
-//   }
-// }
-
-// // ---------------- MAIN SCRIPT ----------------
-// async function testContactExtraction() {
-//   let cookies, userAgent;
-
-//   try {
-//     cookies = JSON.parse(fs.readFileSync('./cookies.json'));
-//     const fp = JSON.parse(fs.readFileSync('./fingerprint.json'));
-//     userAgent = fp.userAgent;
-//   } catch {
-//     console.log('❌ Missing session files (cookies.json / fingerprint.json).');
-//     return;
-//   }
-
-//   const browser = await chromium.launch({ headless: false, args: ['--no-sandbox'] });
-//   const context = await browser.newContext({
-//     userAgent,
-//     viewport: null,
-//     locale: 'en-IN',
-//     timezoneId: 'Asia/Kolkata',
-//     proxy: {
-//       server: 'http://disp.oxylabs.io:8001',
-//       username: 'user-shivasingh_clgdY',
-//       password: 'Iamironman_3'
-//     }
-//   });
-
-//   await context.addCookies(cookies);
-//   const page = await context.newPage();
-
-//   page.setDefaultTimeout(30000);
-//   page.setDefaultNavigationTimeout(60000);
-
-//   // Block heavy resources
-//   await page.route('**/*', (route) => {
-//     const type = route.request().resourceType();
-//     const url = route.request().url();
-//     if (['image', 'media', 'font'].includes(type) || url.includes('analytics') || url.includes('ads')) {
-//       return route.abort();
-//     }
-//     return route.continue();
-//   });
-
-//   const profileUrl = "https://www.linkedin.com/in/shiva-singh-genai-llm/";
-
-//   const result = {
-//     profile: profileUrl,
-//     contactDetails: {
-//       email: null,
-//       phone: null,
-//       connectedDate: null,
-//       profileLink: null
-//     }
-//   };
-
-//   try {
-//     // ---------------- WARMUP ----------------
-//     console.log('\n🔥 Warming up...');
-//     await safeGoto(page, 'https://www.linkedin.com/feed/');
-//     await wait(3000);
-
-//     // ---------------- OPEN PROFILE ----------------
-//     console.log(`\n👤 Opening profile: ${profileUrl}`);
-//     await safeGoto(page, profileUrl);
-//     await wait(4000);
-
-//     // ---------------- EXTRACT CONTACT INFO ----------------
-//     console.log('\n📇 Opening Contact Info modal...');
-//     try {
-//       const contactBtn = page.locator('a[href*="/overlay/contact-info/"]').first();
-      
-//       if (await contactBtn.isVisible()) {
-//         await contactBtn.evaluate(el => el.click());
-//         await wait(2000); // Wait for modal to fully animate in
-        
-//         console.log('🔍 Parsing structured data based on new HTML...');
-        
-//         const extractedData = await page.evaluate(() => {
-//             const data = { email: null, phone: null, connectedDate: null, profileLink: null };
-            
-//             // Get all the labels in the modal (e.g., "Email", "Phone", "Shiva's profile")
-//             const labels = Array.from(document.querySelectorAll('div[data-component-type="LazyColumn"] p:first-child'));
-
-//             for (let label of labels) {
-//                 const labelText = label.innerText.trim();
-//                 // The actual value is usually in the next sibling <p> element
-//                 const valueNode = label.nextElementSibling;
-                
-//                 if (valueNode) {
-//                     if (labelText === 'Email') {
-//                         data.email = valueNode.innerText.trim();
-//                     } else if (labelText === 'Phone') {
-//                         // For phones, LinkedIn often puts the number and "(Mobile)" in separate spans
-//                         // e.g., <span class="_312d08bc">9368084140</span>
-//                         const firstSpan = valueNode.querySelector('span');
-//                         data.phone = firstSpan ? firstSpan.innerText.trim() : valueNode.innerText.trim();
-//                     } else if (labelText === 'Connected since') {
-//                         data.connectedDate = valueNode.innerText.trim();
-//                     } else if (labelText.includes('profile')) {
-//                         // E.g., "Shiva's profile"
-//                         data.profileLink = valueNode.innerText.trim();
-//                     }
-//                 }
-//             }
-
-//             return data;
-//         });
-
-//         result.contactDetails = extractedData;
-
-//         // Close the modal cleanly
-//         const closeBtn = page.locator('button[aria-label="Dismiss"]').first();
-//         if (await closeBtn.isVisible()) {
-//             await closeBtn.evaluate(el => el.click());
-//         } else {
-//             await page.keyboard.press('Escape');
-//         }
-//         await wait(1000);
-
-//       } else {
-//         console.log('⚠️ Contact info button not visible.');
-//       }
-//     } catch (e) {
-//       console.log(`⚠️ Failed to extract contact info: ${e.message}`);
-//     }
-
-//   } catch (err) {
-//     console.log('\n❌ FATAL ERROR:', err.message);
-//   }
-
-//   console.log('\n========== FINAL RESULT ==========\n');
-//   console.log(JSON.stringify(result, null, 2));
-
-//   await wait(4000); 
-//   await browser.close();
-// }
-
-// testContactExtraction();
-
 const { chromium } = require('playwright-extra');
 const stealth = require('puppeteer-extra-plugin-stealth')();
 const fs = require('fs');
+const path = require('path');
 
 chromium.use(stealth);
 
 const wait = (ms) => new Promise(res => setTimeout(res, ms));
 
-// ---------------- SAFE NAVIGATION ----------------
-async function safeGoto(page, url, retries = 3) {
-  for (let i = 0; i < retries; i++) {
-    try {
-      console.log(`🌐 Navigating (${i + 1}/${retries}) → ${url}`);
-      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
-      return true;
-    } catch (err) {
-      console.log(`⚠️ Retry ${i + 1} failed: ${err.message}`);
-      if (i === retries - 1) throw err;
-      await wait(3000);
-    }
-  }
-}
-
-// ---------------- MAIN SCRIPT ----------------
-async function testContactAndAboutExtraction() {
-  let cookies, userAgent;
+async function extractLinkedInDataDesktop() {
+  let cookies;
 
   try {
-    cookies = JSON.parse(fs.readFileSync('./cookies.json'));
-    const fp = JSON.parse(fs.readFileSync('./fingerprint.json'));
-    userAgent = fp.userAgent;
-  } catch {
-    console.log('❌ Missing session files (cookies.json / fingerprint.json).');
+    const cookiesPath = path.join(__dirname, 'cookies.json');
+    cookies = JSON.parse(fs.readFileSync(cookiesPath, 'utf8'));
+  } catch (err) {
+    console.log('❌ Missing or invalid cookies.json.', err.message);
     return;
   }
 
   const browser = await chromium.launch({ headless: false, args: ['--no-sandbox'] });
+  
+  // ---------------------------------------------------------
+  // THE FIX: Standard Desktop Viewport (No Mobile UA)
+  // ---------------------------------------------------------
   const context = await browser.newContext({
-    userAgent,
-    viewport: null,
+    viewport: { width: 1920, height: 1080 }, // Full HD Desktop
     locale: 'en-IN',
-    timezoneId: 'Asia/Kolkata',
-    proxy: {
-      server: 'http://disp.oxylabs.io:8001',
-      username: 'user-shivasingh_clgdY',
-      password: 'Iamironman_3'
-    }
+    timezoneId: 'Asia/Kolkata'
   });
 
   await context.addCookies(cookies);
   const page = await context.newPage();
 
-  page.setDefaultTimeout(30000);
-  page.setDefaultNavigationTimeout(60000);
-
-  // Block heavy resources
+  // Block heavy resources to speed up scraping
   await page.route('**/*', (route) => {
     const type = route.request().resourceType();
-    const url = route.request().url();
-    if (['image', 'media', 'font'].includes(type) || url.includes('analytics') || url.includes('ads')) {
-      return route.abort();
+    if (['image', 'media', 'font'].includes(type) || route.request().url().includes('analytics')) {
+        return route.abort();
     }
     return route.continue();
   });
 
-  const profileUrl = "https://www.linkedin.com/in/shiva-singh-genai-llm/";
+  const profileUrl = "https://www.linkedin.com/in/saloni-singh-05a456234/";
 
   const result = {
     profile: profileUrl,
+    topCard: { name: null, headline: null, location: null, rawDetails: [] },
     aboutInfo: null,
-    contactDetails: {
-      email: null,
-      phone: null,
-      connectedDate: null,
-      profileLink: null
-    }
+    experience: [],
+    education: [],
+    contactDetails: { email: null, phone: null, connectedDate: null, profileLink: null }
   };
 
   try {
-    // ---------------- WARMUP ----------------
     console.log('\n🔥 Warming up...');
-    await safeGoto(page, 'https://www.linkedin.com/feed/');
+    await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded' });
     await wait(3000);
 
-    // ---------------- OPEN PROFILE ----------------
     console.log(`\n👤 Opening profile: ${profileUrl}`);
-    await safeGoto(page, profileUrl);
+    await page.goto(profileUrl, { waitUntil: 'domcontentloaded' });
     await wait(4000);
+
+    // ---------------------------------------------------------
+    // SMOOTH SCROLL: Forces lazy-loaded Desktop sections to render
+    // ---------------------------------------------------------
+    console.log('📜 Scrolling to render lazy-loaded sections...');
+    await page.evaluate(async () => {
+        await new Promise((resolve) => {
+            let totalHeight = 0;
+            const distance = 400; 
+            const timer = setInterval(() => {
+                const scrollHeight = document.body.scrollHeight;
+                window.scrollBy(0, distance);
+                totalHeight += distance;
+                if (totalHeight >= scrollHeight - window.innerHeight) {
+                    clearInterval(timer);
+                    resolve();
+                }
+            }, 500); 
+        });
+    });
     
-    // Scroll a bit to trigger dynamic DOM rendering for the About section
-    await page.mouse.wheel(0, 800);
     await wait(2000);
+    await page.evaluate(() => window.scrollTo(0, 0)); // Scroll back to top
+    await wait(1000);
+
+    console.log('🔍 Extracting data from Desktop DOM...');
+
+    // ---------------- EXTRACT TOP CARD ----------------
+    try {
+        const topCardData = await page.evaluate(() => {
+            const data = { name: null, headline: null, location: null, rawDetails: [] };
+            
+            // Find Contact info link to locate the top card
+            const contactLinks = Array.from(document.querySelectorAll('a')).filter(a => a.innerText.toLowerCase().includes('contact info') || (a.id && a.id.includes('contact-info')));
+            
+            if (contactLinks.length > 0) {
+                const section = contactLinks[0].closest('section');
+                if (section) {
+                    const rawText = section.innerText.split('\n')
+                        .map(t => t.trim())
+                        .filter(t => t.length > 0 && !t.includes('connections') && !t.includes('Message'));
+                    
+                    data.rawDetails = [...new Set(rawText)]; // Deduplicate
+                    
+                    if (data.rawDetails.length > 0) {
+                       data.name = data.rawDetails[0];
+                       // Clean up pronouns from the name
+                       ['He/Him', 'She/Her', 'They/Them'].forEach(p => {
+                         if (data.name.endsWith(p)) data.name = data.name.replace(p, '').trim();
+                       });
+                    }
+                    
+                    const potentialHeadlines = data.rawDetails.filter(t => t.length > 15 && t !== data.name && !t.includes(','));
+                    if (potentialHeadlines.length > 0) data.headline = potentialHeadlines[0];
+                    
+                    data.location = data.rawDetails.find(t => t.includes(',') && !t.includes('Mutual'));
+                }
+            }
+            return data;
+        });
+        result.topCard = topCardData;
+    } catch (e) {
+        console.log(`⚠️ Failed to extract Top Card: ${e.message}`);
+    }
+
+    // ---------------- EXTRACT ABOUT ----------------
+    try {
+        const aboutText = await page.evaluate(() => {
+            const h2s = Array.from(document.querySelectorAll('h2'));
+            const aboutH2 = h2s.find(h => h.innerText.trim().toLowerCase() === 'about');
+            if (!aboutH2) return null;
+
+            const section = aboutH2.closest('section');
+            if (!section) return null;
+
+            // Find the visual text box inside the section
+            const textBox = section.querySelector('.display-flex.ph5.pv3, [data-testid="expandable-text-box"]') || section;
+            return textBox.innerText.replace('About\n', '').trim();
+        });
+        result.aboutInfo = aboutText;
+    } catch (e) {
+        console.log(`⚠️ Failed to extract About info: ${e.message}`);
+    }
+
+    // ---------------- EXTRACT EXP & EDU ----------------
+    const extractDesktopSection = async (sectionTitle) => {
+        return await page.evaluate((title) => {
+            const h2s = Array.from(document.querySelectorAll('h2'));
+            const header = h2s.find(h => h.innerText.trim().toLowerCase() === title.toLowerCase());
+            if (!header) return [];
+
+            const section = header.closest('section');
+            if (!section) return [];
+
+            // Grab the main list items
+            const listItems = Array.from(section.querySelectorAll('ul > li.artdeco-list__item, ul > li.pvs-list__paged-list-item, ul > li'));
+            
+            return listItems.map(li => {
+                // Split text, remove empty lines and hidden screen reader spans
+                const lines = li.innerText.split('\n')
+                    .map(l => l.trim())
+                    .filter(l => l.length > 0 && !l.includes('skills') && l !== '·');
+                
+                return [...new Set(lines)]; // Deduplicate
+            }).filter(arr => arr.length > 2); // Ignore empty/malformed items
+        }, sectionTitle);
+    };
+
+    try {
+        result.experience = await extractDesktopSection('Experience');
+        result.education = await extractDesktopSection('Education');
+    } catch (e) {
+        console.log(`⚠️ Failed to extract Exp/Edu: ${e.message}`);
+    }
 
     // ---------------- EXTRACT CONTACT INFO ----------------
     console.log('\n📇 Opening Contact Info modal...');
     try {
-      const contactBtn = page.locator('a[href*="/overlay/contact-info/"]').first();
+      const contactBtn = page.locator('a:has-text("Contact info"), a#top-card-text-details-contact-info').first();
       
       if (await contactBtn.isVisible()) {
-        await contactBtn.evaluate(el => el.click());
-        await wait(2000);
+        await contactBtn.click();
         
-        console.log('🔍 Parsing structured contact data...');
+        // Wait for the dialog/overlay to render
+        await page.waitForTimeout(2000); 
+        
         const extractedData = await page.evaluate(() => {
             const data = { email: null, phone: null, connectedDate: null, profileLink: null };
-            const labels = Array.from(document.querySelectorAll('div[data-component-type="LazyColumn"] p:first-child'));
-
-            for (let label of labels) {
-                const labelText = label.innerText.trim();
-                const valueNode = label.nextElementSibling;
-                
-                if (valueNode) {
-                    if (labelText === 'Email') {
-                        data.email = valueNode.innerText.trim();
-                    } else if (labelText === 'Phone') {
-                        const firstSpan = valueNode.querySelector('span');
-                        data.phone = firstSpan ? firstSpan.innerText.trim() : valueNode.innerText.trim();
-                    } else if (labelText === 'Connected since') {
-                        data.connectedDate = valueNode.innerText.trim();
-                    } else if (labelText.includes('profile')) {
-                        data.profileLink = valueNode.innerText.trim();
-                    }
-                }
+            
+            // Get the container that holds the contact info. It usually has an h2 with "Contact info" or we can just use the body text.
+            let container = document.body;
+            const h2s = Array.from(document.querySelectorAll('h2'));
+            const contactH2 = h2s.find(h => h.innerText.toLowerCase().includes('contact info') && h.closest('section'));
+            if (contactH2) {
+                container = contactH2.closest('section') || contactH2.parentElement.parentElement || document.body;
             }
+
+            // Grab the entire text block of the container
+            const fullText = container.innerText;
+
+            // Regex extraction ignores HTML nesting entirely
+            const emailMatch = fullText.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+            if (emailMatch) data.email = emailMatch[0];
+
+            if (fullText.includes('Phone')) {
+                const afterPhone = fullText.split('Phone')[1].trim();
+                const phoneLine = afterPhone.split('\n')[0];
+                data.phone = phoneLine.replace(/[a-zA-Z()]/g, '').trim();
+            }
+
+            if (fullText.includes('Connected since')) {
+                const afterConnected = fullText.split('Connected since')[1].trim();
+                data.connectedDate = afterConnected.split('\n')[0].trim();
+            }
+
+            const profileMatch = fullText.match(/linkedin\.com\/in\/[a-zA-Z0-9_-]+/);
+            if (profileMatch) data.profileLink = profileMatch[0];
+
             return data;
         });
 
         result.contactDetails = extractedData;
 
-        // Close modal
-        const closeBtn = page.locator('button[aria-label="Dismiss"]').first();
-        if (await closeBtn.isVisible()) {
-            await closeBtn.evaluate(el => el.click());
-        } else {
-            await page.keyboard.press('Escape');
-        }
-        await wait(1000);
+        // Press Escape to close the modal
+        await page.keyboard.press('Escape');
+        await page.waitForTimeout(1000);
 
       } else {
         console.log('⚠️ Contact info button not visible.');
       }
     } catch (e) {
       console.log(`⚠️ Failed to extract contact info: ${e.message}`);
-    }
-
-    // ---------------- EXTRACT ABOUT INFO ----------------
-    console.log('\n📖 Extracting About info...');
-    try {
-      // Robust locator: Find the section that contains the div with id="about", or an h2 with the text "About"
-      const aboutSection = page.locator('section:has(div[id="about"]), section:has(h2:has-text("About"))').first();
-      
-      if (await aboutSection.isVisible()) {
-        // Look for the "... more" button specifically inside the About section
-        const moreBtn = aboutSection.locator('button[data-testid="expandable-text-button"]').first();
-        
-        if (await moreBtn.isVisible()) {
-            console.log('🖱️ Clicking "... more" to expand About section...');
-            await moreBtn.evaluate(el => el.click());
-            await wait(1000);
-        }
-
-        // Grab the text from the expandable text box
-        const aboutBox = aboutSection.locator('[data-testid="expandable-text-box"]').first();
-        if (await aboutBox.isVisible()) {
-            result.aboutInfo = await aboutBox.innerText();
-            console.log('✅ About info extracted successfully!');
-        } else {
-            console.log('⚠️ About text box not found within the About section.');
-        }
-      } else {
-          console.log('⚠️ About section not found on this profile.');
-      }
-    } catch (e) {
-      console.log(`⚠️ Failed to extract About info: ${e.message}`);
     }
 
   } catch (err) {
@@ -342,8 +241,7 @@ async function testContactAndAboutExtraction() {
   console.log('\n========== FINAL RESULT ==========\n');
   console.log(JSON.stringify(result, null, 2));
 
-  await wait(4000); 
   await browser.close();
 }
 
-testContactAndAboutExtraction();
+extractLinkedInDataDesktop();

@@ -1,21 +1,44 @@
 import axios from 'axios';
 
-const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://ai-service:8001';
+const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8001';
 
 export interface ThreadMessage {
     sender: string;
     text: string;
 }
 
+export interface Experience {
+    jobTitle?: string;
+    company?: string;
+    duration?: string;
+}
+
+export interface Education {
+    school?: string;
+    degree?: string;
+}
+
 export interface AIGenerateOptions {
+    // Profile data
     profileName: string;
     profileHeadline?: string;
-    postContent?: string;
+    company?: string;
+    jobTitle?: string;
+    location?: string;
+    about?: string;
+    experience?: Experience[];
+    education?: Education[];
+    
+    // Campaign context
     connectionContext?: string;
+    campaignDescription?: string;
     tone?: string;
     cta?: string;
     persona?: string;
     valueProposition?: string;
+    
+    // Thread/context
+    postContent?: string;
     threadHistory?: ThreadMessage[];
     draftReply?: string;
     originalMessage?: string;
@@ -24,9 +47,19 @@ export interface AIGenerateOptions {
 export async function generateAIComment(options: AIGenerateOptions): Promise<string> {
     try {
         const response = await axios.post(`${AI_SERVICE_URL}/ai/comment`, {
+            // Profile data
             profile_name: options.profileName,
             profile_headline: options.profileHeadline,
+            company: options.company,
+            job_title: options.jobTitle,
+            location: options.location,
+            about: options.about,
+            
+            // Post data
             post_content: options.postContent,
+            
+            // Campaign context
+            campaign_description: options.campaignDescription,
             tone: options.tone || 'professional',
             persona: options.persona,
             value_proposition: options.valueProposition
@@ -78,9 +111,19 @@ function cleanAIOutput(text: string, name: string): string {
 export async function generateAIMessage(options: AIGenerateOptions): Promise<string> {
     try {
         const response = await axios.post(`${AI_SERVICE_URL}/ai/message`, {
+            // Profile data
             recipient_name: options.profileName,
             recipient_headline: options.profileHeadline,
+            company: options.company,
+            job_title: options.jobTitle,
+            location: options.location,
+            about: options.about,
+            experience: options.experience,
+            education: options.education,
+            
+            // Campaign context
             connection_context: options.connectionContext,
+            campaign_description: options.campaignDescription,
             tone: options.tone || 'professional',
             cta: options.cta || 'connect',
             persona: options.persona,

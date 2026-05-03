@@ -95,12 +95,12 @@ export const likeNthPost: NodeHandler = async (ctx, config): Promise<NodeResult>
             output.postContent = await page.$eval('.update-components-text, [data-testid="expandable-text-box"]', (el: any) => el.innerText).catch(() => null);
         } catch {}
 
-        // Like
+        // Like (use evaluate() to bypass sticky headers, matching testscripts)
         const likeBtn = page.locator('button:has(span:text-is("Like"))').first();
         if (await likeBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
             const isPressed = await likeBtn.getAttribute('aria-pressed');
             if (isPressed !== 'true') {
-                await likeBtn.click({ force: true });
+                await likeBtn.evaluate((el: any) => el.click());
                 await wait(2000);
                 // Verify like took effect
                 const nowPressed = await likeBtn.getAttribute('aria-pressed').catch(() => null);

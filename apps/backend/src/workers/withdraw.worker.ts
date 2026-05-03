@@ -9,11 +9,10 @@ export const withdrawOldInvites = async (userId: string, olderThanDays: number =
     console.log(`[Withdraw Sync] Checking old outstanding invites for user ${userId} > ${olderThanDays} days`);
 
     const user = await prisma.user.findUnique({
-        where: { id: userId },
-        include: { proxy: true }
+        where: { id: userId }
     });
 
-    if (!user || (!user.linkedinCookie && !user.proxy)) {
+    if (!user || (!user.linkedinCookie && !user.proxyId)) {
         console.log(`[Withdraw Sync] Skipping: Missing LinkedIn Cookie or Proxy info.`);
         return { success: false, reason: 'Missing cookies/auth' };
     }

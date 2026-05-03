@@ -64,7 +64,7 @@
 //         userAgent: savedUserAgent,
 //         proxy: {
 //             // CHANGED: Use http instead of socks5
-//             server: 'http://disp.oxylabs.io:8001',
+//             server: 'http://82.41.252.111:46222',
 //             username: proxyUser,
 //             password: proxyPass
 //         },

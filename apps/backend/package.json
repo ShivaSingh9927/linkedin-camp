@@ -28,6 +28,7 @@
         "playwright": "latest",
         "playwright-extra": "latest",
         "puppeteer-extra-plugin-stealth": "latest",
+        "socket.io": "^4.8.3",
         "zod": "latest"
     },
     "devDependencies": {
@@ -40,6 +41,7 @@
         "@types/node": "latest",
         "@types/node-cron": "latest",
         "@types/nodemailer": "^7.0.11",
+        "@types/socket.io": "^3.0.1",
         "ts-node-dev": "latest",
         "tsup": "^8.5.1",
         "typescript": "latest"

@@ -17,6 +17,7 @@
 import { runCampaign } from '../campaign-engine';
 import { CampaignConfig } from '../campaign-engine/types';
 import { prisma } from '@repo/db';
+import { randomUUID } from 'crypto';
 
 // ---- CONFIGURE YOUR TEST HERE ----
 
@@ -25,6 +26,7 @@ const HARDCODED_PROFILE_URL = 'https://www.linkedin.com/in/shiva-singh-genai-llm
 const TEST_CAMPAIGN_CONFIG: CampaignConfig = {
     flow: [
         { node: 'profile-visit' },
+        { node: 'send-message', text: 'Hey {{name}}, great profile!', requireConnection: false },
     ],
 };
 
@@ -72,10 +74,13 @@ async function main() {
     if (!lead) {
         lead = await prisma.lead.create({
             data: {
+                id: randomUUID(),
                 userId,
                 linkedinUrl: HARDCODED_PROFILE_URL,
-                firstName: 'Test',
+                firstName: 'Shiva',
+                lastName: 'Singh',
                 status: 'IMPORTED',
+                updatedAt: new Date(),
             },
         });
         console.log(`[TEST] Created test lead: ${lead.id}`);
@@ -87,9 +92,11 @@ async function main() {
     await prisma.campaignLead.upsert({
         where: { campaignId_leadId: { campaignId: campaign.id, leadId: lead.id } },
         create: {
+            id: randomUUID(),
             campaignId: campaign.id,
             leadId: lead.id,
             status: 'PENDING',
+            lastActionAt: new Date(),
         },
         update: {
             isCompleted: false,

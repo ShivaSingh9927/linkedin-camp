@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: linkedin-camp-db-local
+    restart: always
+    environment:
+      - POSTGRES_USER=shiva
+      - POSTGRES_PASSWORD=password123
+      - POSTGRES_DB=linkedin_camp
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data_local:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    container_name: linkedin-camp-redis-local
+    restart: always
+    ports:
+      - "6399:6379"
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: linkedin-camp-backend-local
+    restart: always
+    ports:
+      - "3001:3001"
+    volumes:
+      - /home/shiva/Documents/linkedin-session:/session-storage
+    environment:
+      - NODE_ENV=production
+      - SESSION_STORAGE_PATH=/session-storage
+      - DATABASE_URL=postgresql://shiva:password123@db:5432/linkedin_camp
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=super-secret-key-123
+    depends_on:
+      - db
+      - redis
+
+volumes:
+  postgres_data_local:

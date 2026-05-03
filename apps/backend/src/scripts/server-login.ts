@@ -97,7 +97,7 @@ async function main() {
                 path: c.path,
                 secure: c.secure,
                 httpOnly: c.httpOnly,
-                sameSite: c.sameSite === 'none' ? 'None' : (c.sameSite === 'lax' ? 'Lax' : c.sameSite),
+                sameSite: c.sameSite?.toLowerCase() === 'none' ? 'None' : (c.sameSite?.toLowerCase() === 'lax' ? 'Lax' : 'Strict'),
                 expires: c.expires || Math.round(Date.now() / 1000) + 86400 * 30,
             }));
 

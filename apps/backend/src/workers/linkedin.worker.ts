@@ -30,8 +30,7 @@ export const processWorkflowStep = async (data: any, job: Job) => {
     const { userId, campaignId, leadId, campaignLeadId, currentStepId, workflowJson, stepIndex: legacyStepIndex } = data;
 
     const user = await prisma.user.findUnique({
-        where: { id: userId },
-        include: { proxy: true }
+        where: { id: userId }
     });
     const campaign = await prisma.campaign.findUnique({ where: { id: campaignId } });
     const lead = await prisma.lead.findUnique({ where: { id: leadId } });
@@ -53,45 +52,18 @@ export const processWorkflowStep = async (data: any, job: Job) => {
 
     let browser: any;
     let context: any;
-    let activeProxy: any = user.proxy;
 
     try {
         // --- MANUAL ACTIVITY SAFETY CHECK ---
         const safetyWindowMins = 2;
         const safetyTimeAgo = new Date(Date.now() - safetyWindowMins * 60 * 1000);
 
-        // Check if user is active in extension OR had activity in last 2 minutes
-        const isUserActiveInBrowser = user.linkedinActiveInBrowser && (user.lastBrowserActivityAt && user.lastBrowserActivityAt > safetyTimeAgo);
+        // Check if user had manual browser activity in last 2 minutes
+        const isUserActiveInBrowser = user.lastBrowserActivityAt && user.lastBrowserActivityAt > safetyTimeAgo;
 
         if (isUserActiveInBrowser) {
             console.log(`[WORKER] Safety: User ${userId} is active in browser. Skipping cloud task this turn. Redo in next sync circle.`);
             return;
-        }
-
-        // --- ENSURE PROXY ASSIGNMENT ---
-        if (!activeProxy) {
-            console.log(`[WORKER] No proxy assigned for user ${userId}. Fetching from DB pool...`);
-            activeProxy = await getOrAssignProxy(userId);
-            if (!activeProxy) {
-                console.warn(`[WORKER] Could not assign proxy for ${userId}. Relying on internal Oxylabs fallback.`);
-            }
-        }
-
-        // --- PROXY SAFETY LOCK ---
-        if (activeProxy && activeProxy.id && redisConnection) {
-            const lockKey = `${PROXY_LOCK_PREFIX}${activeProxy.id}`;
-            const isLocked = await redisConnection.get(lockKey);
-
-            if (isLocked) {
-                // If the proxy is being used by another user or in cooldown, delay this job
-                const delayMs = (Math.floor(Math.random() * 120) + 60) * 1000; // 1-3 minutes
-                console.log(`[WORKER] Proxy ${activeProxy.id} is busy or in cooldown. Delaying job ${job.id} by ${delayMs / 1000}s`);
-                await job.moveToDelayed(Date.now() + delayMs);
-                return;
-            }
-
-            // Lock the proxy for the duration of this action (max 5 mins failsafe)
-            await redisConnection.set(lockKey, 'LOCKED', 'EX', 300);
         }
 
         console.log(`[WORKER] Initiating action for lead ${lead.id} (${lead.firstName})`);
@@ -139,23 +111,6 @@ export const processWorkflowStep = async (data: any, job: Job) => {
             timezoneId: 'Asia/Kolkata'
         };
 
-        if (activeProxy) {
-            contextOptions.proxy = {
-                server: `http://${activeProxy.proxyHost}:${activeProxy.proxyPort}`,
-                username: activeProxy.proxyUsername || undefined,
-                password: activeProxy.proxyPassword || undefined
-            };
-            console.log(`[WORKER] Using DB proxy: ${activeProxy.proxyHost}`);
-        } else {
-            // Dedicated ISP Proxy fallback to avoid LinkedIn ban
-            contextOptions.proxy = {
-                server: 'http://disp.oxylabs.io:8001',
-                username: 'user-shivasingh_clgdY',
-                password: 'Iamironman_3'
-            };
-            console.log(`[WORKER] Using dedicated ISP proxy (Oxylabs) to avoid ban`);
-        }
-
         // We strictly mimic phase2.js: standard launch + fresh context + injection
         console.log(`[WORKER] Launching standard browser for ${userId} (Mirroring phase2.js behavior)`);
         browser = await chromium.launch(launchOptions);
@@ -164,7 +119,7 @@ export const processWorkflowStep = async (data: any, job: Job) => {
         // --- ALWAYS LOAD COOKIES FROM DB (Forces sync parity) ---
         if (user.linkedinCookie) {
             try {
-                const domainToInject = user.proxy ? '.linkedin.com' : 'linkedin.com'; // Adjust based on proxy env
+                const domainToInject = 'linkedin.com';
                 const cookies = JSON.parse(user.linkedinCookie);
 
                 // Basic sanity check: ensure we have an array
@@ -898,19 +853,6 @@ export const processWorkflowStep = async (data: any, job: Job) => {
     } catch (error: any) {
         console.error(`[WORKER] Action failed for lead ${lead.id}:`, error.message);
     } finally {
-        // --- PROXY SAFETY COOL DOWN ---
-        let finalProxyId = user.proxyId;
-        // if user.proxyId was null at start but activeProxy got assigned during the task, use it:
-        if (!finalProxyId && activeProxy) {
-            finalProxyId = activeProxy.id;
-        }
-
-        if (finalProxyId && redisConnection) {
-            const lockKey = `${PROXY_LOCK_PREFIX}${finalProxyId}`;
-            // Set cooldown lock instead of just deleting
-            await redisConnection.set(lockKey, 'COOLDOWN', 'EX', PROXY_COOLDOWN_SEC);
-        }
-
         if (context) await context.close();
         if (browser) await browser.close();
     }

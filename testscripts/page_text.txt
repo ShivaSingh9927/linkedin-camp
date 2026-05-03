@@ -1,0 +1,646 @@
+0 notifications
+Skip to main content
+Home
+My Network
+Jobs
+Messaging
+15
+Notifications
+Me
+For Business
+
+Claim 1 free month of Premium Page
+
+Shiva Singh
+
+AI/SDE at Merai Newage Limited (Meril)
+
+More
+Message
+Shiva Singh
+
+He/Him
+
+· 1st
+
+AI/SDE at Merai Newage Limited (Meril)
+
+Kanpur, Uttar Pradesh, India
+
+·
+
+Contact info
+
+Meril
+
+Indian Institute of Technology, Kanpur
+
+495 connections
+
+Saloni and Vijay are mutual connections
+
+Message
+More
+Highlights
+
+Shiva is celebrating 2 years at Meril
+
+Message
+About
+
+I design and deploy machine learning solutions for medical applications, working at the intersection of AI, imaging, and clinical impact. My work emphasizes scalable architectures, model interpretability, and production-grade deployment.
+
+Driven by innovation, precision, and building technology that improves patient outcomes.
+… more
+
+Top skills
+
+Machine Learning • Computer Vision • Generative Neural Networks • Agentic AI Development • Large Language Models (LLM)
+
+Activity
+
+497 followers
+
+Posts
+Comments
+Images
+Documents
+
+Shiva Singh
+
+ 
+ • 1st
+
+AI/SDE at Merai Newage Limited (Meril)
+
+2mo • 
+
+You might be hearing a lot of buzz lately about "Skills" and "Tools"—especially with the rise of software like Claude Code and Antigravity.
+The reason these systems feel so much more capable isn't just a better model; it's because of a fundamental shift in how they "learn" to do tasks through Skills.
+
+
+What exactly is a "Skill"?
+
+Think of a Skill as a specialized playbook. Physically, it’s often just a Markdown file containing specific instructions, workflow directions, and "things to remember" while performing a task. It is your domain expertise codified into a document that the AI can "read" and "internalize" before it starts working.
+
+
+Skill vs. Tool: The Simple Difference
+
+ * A Tool is the action. (e.g., A "Web Search" tool or a "Write to File" command).
+ * A Skill is the knowledge of how to use those actions effectively.
+Example: Imagine you want the AI to "Refactor Code." The Tool is the text editor that changes the lines of code. The Skill is the Markdown file you wrote that explains your specific coding standards, which libraries to avoid, and the step-by-step logic for testing.
+
+
+Why Skills are the Real Game Changer
+
+Skills make agentic workflows incredibly efficient by optimizing how the AI uses its "brain power":
+
+ * On-Demand Loading: The workflow only "calls" a skill when the task actually requires it.
+
+ * Context Efficiency: The model often only loads the first few lines of a skill to understand the summary. If it matches the task, it pulls in the rest, saving massive amounts of context window (tokens).
+
+ * User-Created Expertise: You can create these skills yourself. It is a very simple and effective way to make a workflow more efficient. By writing a clear Markdown file, you are "teaching" the agent to think like you.
+
+#AI #AgenticWorkflows #PersonalBranding #TechTrends #ClaudeCode
+… more
+
+Vijay . and 10 others reacted
+Vijay . and 10 others
+
+3 comments
+3 comments
+
+Like
+Comment
+Repost
+Send
+
+Shiva Singh
+
+ 
+ • 1st
+
+AI/SDE at Merai Newage Limited (Meril)
+
+2mo • 
+
+Why 2026 belongs to Agents, not just LLMs. 🤖🚀
+You might be wondering how tools like Claude Code or Antigravity work so well. Is it just a "smarter" model?
+
+Recently, I was deep in the trenches of a project/research and realized : A standard LLM can talk about data, but it can’t manage the project. 
+The real game-changer isn't more parameters—it's the move from a simple chat interface to a Deep-Agentic Architecture.
+
+This is why deep agents work well than normal agents :
+• 🧠 Planning & Task Decomposition: It doesn't just guess. It breaks a high-level goal into a dynamic roadmap, adapting its "TODO list" as it discovers new information.
+• 📂 Pluggable Filesystem Backends: The agent isn't stuck in a chat box. It "mounts" local disks, cloud storage, or sandboxes, treating your entire project as a navigable directory.
+• 🛰️ Sub-Agent Spawning: For heavy lifting, the main agent spawns specialized "workers" in isolated windows to handle research or coding, keeping its own context clean.
+• 🛡️ Sandboxing: It executes its own code in secure, isolated environments. It doesn't just write a script; it runs it, catches the error, and self-corrects—safely.
+• 📜 Long-Term Memory & Skills: Unlike stateless chatbots, deep agents use persistent memory to recall past decisions and "Skills" (pre-defined logic) to handle recurring tasks with zero-shot accuracy.
+• 📉 Context Management: No more "context dumps." It uses progressive disclosure to feed the model only the exact file snippets or data it needs at that millisecond.
+
+The Bottom Line:
+In 2026, the competitive edge isn’t "the best prompt"—it’s the architecture that lets the agent thrive. We are moving from AI as a consultant to AI as a colleague. 🚀
+How are you turning AI from a consultant into a colleague?
+#AIAgents #ClaudeCode #Antigravity #DeepLearning #SoftwareArchitecture #FutureOfWork #Engineering
+… more
+
+How claude code and antigravit
+
+·
+
+6 pages
+
+20 reactions
+20
+
+3 comments
+3 comments
+
+•
+
+1 repost
+1 repost
+
+Like
+Comment
+Repost
+Send
+
+Shiva Singh
+
+ 
+ • 1st
+
+AI/SDE at Merai Newage Limited (Meril)
+
+2mo • 
+
+Engineering in the Age of AI: Elevation, or Elimination.🛠️🧠
+
+Since the launch of agents like Claude Coworker and MoltBolt. 
+There’s a growing narrative that since AI can code, we don’t really need to understand systems anymore.
+
+I don’t buy that.
+
+Yes, leaders like Jensen Huang say the future programming language is natural language. And that’s powerful.
+
+But natural language is just the interface.
+Logic, systems thinking, and architecture are still the foundation.
+
+
+1️⃣ AI Is Trained on Text — Not Your Reality
+
+An LLM knows how a Kubernetes cluster should work.
+
+It doesn’t know:
+	•	The undocumented patch someone pushed at 3 AM.
+	•	The legacy dependency nobody wants to refactor.
+	•	The production bottleneck that only appears under real traffic.
+
+AI predicts patterns from data.
+Engineering is dealing with constraints, trade-offs, and chaos.
+
+That gap still requires humans.
+
+
+2️⃣ We’re Not Replacing Engineers. We’re Upgrading Them.
+
+The people winning right now aren’t just “prompting.”
+
+They’re:
+	•	Designing systems
+	•	Validating assumptions
+	•	Thinking in terms of failure modes
+	•	Using AI to accelerate execution, not outsource thinking
+
+AI handles repetition.
+Engineers protect architecture.
+
+That’s not less responsibility — it’s more leverage.
+
+
+3️⃣ Fundamentals Matter More, Not Less
+
+If you don’t understand:
+	•	Distributed systems
+	•	Memory and compute trade-offs
+	•	Latency vs throughput
+	•	Observability and debugging
+
+You won’t know when AI is subtly wrong.
+
+AI amplifies capability.
+But it also amplifies ignorance.
+
+That’s why I agree more with Satya Nadella calling AI a “cognitive amplifier.”
+
+Amplification only works if there’s signal to amplify.
+
+
+The future isn’t engineering-less IT.
+
+It’s engineers who:
+	•	Think deeper
+	•	Move faster
+	•	Use AI as a force multiplier
+
+The real shift isn’t from coder → prompt engineer.
+
+It’s from coder → system architect.
+
+So I’m curious —
+
+Are we moving toward fewer engineers?
+Or toward super-engineers?
+
+#SoftwareEngineering #AI #SystemDesign #DevOps #TechLeadership #FutureOfWork
+… more
+
+Vijay . and 19 others reacted
+Vijay . and 19 others
+
+1 comment
+1 comment
+
+•
+
+1 repost
+1 repost
+
+Like
+Comment
+Repost
+Send
+
+Shiva Singh
+
+ 
+ • 1st
+
+AI/SDE at Merai Newage Limited (Meril)
+
+2mo • 
+
+The "Safe Haven" of Indian IT is Shaking. 📉
+
+Today was a bloodbath for TCS, Infosys, and HCL Tech. Over ₹1.3 lakh crore wiped out in hours. But it’s not just a market "dip"—the 30-year-old business model is actually breaking.
+
+1. No more "Project Padding" 
+The old secret? If a job needed 5 people and a month, firms would bill for 20 people and 4 months to boost profits. Now, AI can build and debug that same solution in days. Clients are seeing through the "fat" and refusing to pay for extra heads.
+2. From "Chatbot" to "Worker" 
+AI doesn't just suggest code anymore. It runs it, debugs it, and ships products. It’s no longer a "helper"; it’s a digital employee.
+3. The Revenue Trap 
+This is the irony: These firms charge "per head." If AI allows 1 person to do the work of 10, the firm loses the billing for those other 9 people. They are literally becoming "too efficient" for their own bank accounts.
+4. The "In-House" Threat 
+Why outsource to India when a US bank can hire 5 senior devs, give them AI, and do it all in-house? The "middleman" era is under serious fire.
+
+The Bottom Line:
+Investors aren't worried about failure; they’re worried about growth. If growth drops from 15% to 3% because AI made services "too cheap," the stock price has to crash back to reality.
+Buy the dip, or is the era of outsourcing officially over? 👇
+#TCS #Infosys #NiftyIT #StockMarket #AI #TechTrends2026
+… more
+
+14 reactions
+14
+
+1 repost
+1 repost
+
+Like
+Comment
+Repost
+Send
+
+Shiva Singh
+
+ 
+ • 1st
+
+AI/SDE at Merai Newage Limited (Meril)
+
+1yr • 
+
+I am happy to share that our research work titled “Influence of Camera Position and Fusion of Multiple Cameras for Driver Gaze Estimation” was successfully presented at the 104th Transportation Research Board (TRB) Annual Meeting, held from January 5-9 in Washington, D.C.
+
+The presentation, delivered by Pawan, was well-received, and it was a great opportunity to connect with researchers, professors, and industry experts in the field of Transportation Engineering.
+
+I would like to thank my co-authors Pawan and Ph.D. thesis supervisor, Pranamesh Chakraborty, Ph.D., for their valuable contributions to this work.
+… more
+
+Pavan Kumar Sharma
+
+ • 2nd
+
+Research Scholar
+
+1yr • Edited • 
+
+It was an amazing experience, I got from the 104th Transportation Research Board (TRB) Annual Meeting held between 5-9 January at Washington D.C. I have met several researchers, professors and industries experts working in the Transportation Engineering field.
+I have presented one of our research work having a title. "Influence of Camera Position and Fusion of Multiple Cameras for Driver Gaze Estimation." I want to thank the other authors of this work, "Shiva Singh", a former M.Tech student at IIT Kanpur, and my PhD thesis supervisor Pranamesh Chakraborty, PhD.
+… more
+
+1/8
+
+21 reactions
+21
+
+1 comment
+1 comment
+
+Like
+Comment
+Repost
+Send
+
+Shiva Singh reposted this
+
+Pranamesh Chakraborty, PhD
+
+ • 2nd
+
+Assistant Professor, IIT Kanpur
+
+1yr • 
+
+#TRB presentation 
+Our research group will be presenting the poster titled "Influence of Camera Position and Fusion of Multiple Cameras for Driver Gaze Estimation" in this year's TRB. This work was done by our M. Tech student Shiva Singh and PhD student Pavan Kumar Sharma. Pavan will be presenting the poster. The details of the poster session are given below:
+
+Time: Tuesday, Jan 07, 2025 6:00PM - 7:30PM
+Poster-board Location Number: B503
+Location: Convention Center, Hall A
+
+Please visit our poster board if you are interested to know more about our ongoing research work on driver gaze.
+… more
+
+69 reactions
+69
+
+2 reposts
+2 reposts
+
+Like
+Comment
+Repost
+Send
+
+Shiva Singh
+
+ 
+ • 1st
+
+AI/SDE at Merai Newage Limited (Meril)
+
+2yr • 
+
+Have a look at the Report/Dashboard I have created using PowerBi.
+Successfully Completed the End-to-End BI Project on some raw data from one company Techno Edge Learning Services, which keeps on receiving the data every month. There is a dedicated team who sits cleans and combine the data, create a report in Microsoft excel and then they send it. It actively takes a lot of time; I have used Power-Bi to solve this issue and automate the end-to-end work. 
+
+1. What people kept on doing is they will open one file copy and then paste it, they will do the same for every month.
+2. If you get smarter you can use Microsoft excel VBA again if you are more smarter you can use python and automate this process.
+3. But PowerBi can clean the dirtiest possible data without coding and do the same work.
+
+ Now to present the data to the director of the company and director wants to understand-
+1. How much profit they receive.
+2. Month with highest profit.
+3. Which client gave more profit.
+4. Which region gives the maximum profit.
+ so that he can take better decision to improve overall profit.
+… more
+
+18 reactions
+18
+
+Like
+Comment
+Repost
+Send
+
+Shiva Singh
+
+ 
+ • 1st
+
+AI/SDE at Merai Newage Limited (Meril)
+
+2yr • 
+
+Happy to successfully complete the Microsoft Power BI course.
+
+Udemy Course Completion Certificate
+Udemy Course Completion Certificate
+
+udemy.com
+
+5 reactions
+5
+
+Like
+Comment
+Repost
+Send
+
+Shiva Singh
+
+ 
+ • 1st
+
+AI/SDE at Merai Newage Limited (Meril)
+
+2yr • 
+
+Feeling happy to complete this 🙂 .
+
+Udemy Course Completion Certificate
+Udemy Course Completion Certificate
+
+udemy.com
+
+5 reactions
+5
+
+Like
+Comment
+Repost
+Send
+
+Shiva Singh
+
+ 
+ • 1st
+
+AI/SDE at Merai Newage Limited (Meril)
+
+2yr • 
+
+Feeling happy to complete this 😄.
+
+Udemy Course Completion Certificate
+Udemy Course Completion Certificate
+
+udemy.com
+
+5 reactions
+5
+
+1 comment
+1 comment
+
+Like
+Comment
+Repost
+Send
+Show all
+More profiles for you
+
+Divam Badaya
+
+· 2nd
+
+SDE(1)@ Meril | IIT Kanpur
+
+Connect
+
+Rohan Joshi 
+
+· 3rd
+
+AI software engineer @NuvoAI #Meril | MTech CSE23 @ DDU #DrugDiscovery #ML
+
+Connect
+
+Shailesh Chaudhary 
+
+· 2nd
+
+AI Engineer@Meril | IIT KGP (CSE'24)
+
+Follow
+
+Faizah Kureshi 
+
+· 2nd
+
+MS DS @ UCSD | AI Engineer @ Meril (MERAI) | Computer Vision Specialist | Ex-Research Intern @NUS  | NLP, LLM, and RAG Integration Expert  |Specializing in Scalable AI Solutions
+
+Connect
+
+Subodh Kasaudhan 
+
+· 2nd
+
+Software Developer @HFT | IIT Kanpur | Knight(Max: 2046) @Leetcode || Problem Solving, Programming, Leadership
+
+Connect
+Show all
+Explore Premium profiles
+
+Mayank Joshi 
+
+· 3rd+
+
+Tech Enthusiast | Developer | Engineering Undergrad
+
+Connect
+
+Abhishek Singh 
+
+· 3rd+
+
+Student at ITM Gwalior
+
+Connect
+
+Jai Mishra 
+
+· 3rd+
+
+MCA Student at PSIT
+
+Connect
+
+Abhinav kumar 
+
+· 3rd
+
+Aspiring DevOps Engineer | Skilled in Linux, Git, Docker, AWS, CI/CD & Terraform | Eager to automate and optimize deployment workflows
+
+Connect
+
+About
+
+Accessibility
+
+Talent Solutions
+
+Community Guidelines
+
+Careers
+
+Marketing Solutions 
+
+Privacy & Terms
+
+Ad Choices
+
+Advertising
+
+Sales Solutions
+
+Mobile
+
+Small Business
+
+Safety Center
+
+LinkedIn Corporation © 2026
+
+Questions?
+
+Visit our Help Center.
+
+Manage your account and privacy
+
+Go to your Settings.
+
+Recommendation transparency
+
+Learn more about Recommended Content.
+
+Select language
+
+العربية (Arabic)
+বাংলা (Bangla)
+Čeština (Czech)
+Dansk (Danish)
+Deutsch (German)
+Ελληνικά (Greek)
+English (English)
+Español (Spanish)
+فارسی (Persian)
+Suomi (Finnish)
+Français (French)
+हिंदी (Hindi)
+Magyar (Hungarian)
+Bahasa Indonesia (Indonesian)
+Italiano (Italian)
+עברית (Hebrew)
+日本語 (Japanese)
+한국어 (Korean)
+मराठी (Marathi)
+Bahasa Malaysia (Malay)
+Nederlands (Dutch)
+Norsk (Norwegian)
+ਪੰਜਾਬੀ (Punjabi)
+Polski (Polish)
+Português (Portuguese)
+Română (Romanian)
+Русский (Russian)
+Svenska (Swedish)
+తెలుగు (Telugu)
+ภาษาไทย (Thai)
+Tagalog (Tagalog)
+Türkçe (Turkish)
+Українська (Ukrainian)
+Tiếng Việt (Vietnamese)
+简体中文 (Chinese (Simplified))
+正體中文 (Chinese (Traditional))

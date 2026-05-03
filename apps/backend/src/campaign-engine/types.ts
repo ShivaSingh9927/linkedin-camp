@@ -9,24 +9,34 @@ export interface CampaignFlowNode {
     hours?: number;
     requireConnection?: boolean;
     aiEnabled?: boolean;
+    condition?: IfElseCondition;
+    trueBranch?: CampaignFlowNode[];
+    falseBranch?: CampaignFlowNode[];
     [key: string]: any;
+}
+
+export interface IfElseCondition {
+    field: 'connectionStatus' | 'connected' | 'connectionDegree';
+    operator: 'equals' | 'not_equals' | 'is_true' | 'is_false';
+    value?: string | boolean;
 }
 
 export interface SessionContext {
     cookies: any[] | null;
     userAgent: string | null;
     localStorage: Record<string, string> | null;
-    proxy: {
+    proxy?: {
         server: string;
-        username: string;
-        password: string;
-    };
+        username?: string;
+        password?: string;
+    } | null;
 }
 
 export interface CampaignConfig {
     flow: CampaignFlowNode[];
     campaignId?: string;
     objective?: string;
+    campaignDescription?: string;
     cta?: string;
     toneOverride?: string;
     persona?: string;
@@ -42,7 +52,9 @@ export type NodeType =
     | 'comment-nth-post'
     | 'send-message'
     | 'delay'
-    | 'inbox-sync';
+    | 'inbox-sync'
+    | 'if-else'
+    | 'check-connection';
 
 // ---- Node Output ----
 
@@ -56,6 +68,8 @@ export interface NodeExecution {
 
 export interface ProfileVisitOutput {
     name: string | null;
+    headline: string | null;
+    location: string | null;
     company: string | null;
     jobTitle: string | null;
     companyUrl: string | null;
@@ -63,6 +77,26 @@ export interface ProfileVisitOutput {
     email: string | null;
     phone: string | null;
     connected: boolean;
+    connectedDate: string | null;
+    experience: Experience[];
+    education: Education[];
+}
+
+export interface Experience {
+    jobTitle: string | null;
+    company: string | null;
+    employmentType: string | null;
+    duration: string | null;
+    yearsExp: string | null;
+    location: string | null;
+    mode: string | null;
+}
+
+export interface Education {
+    school: string | null;
+    degree: string | null;
+    field: string | null;
+    dates: string | null;
 }
 
 export interface ConnectOutput {
@@ -86,6 +120,16 @@ export interface DelayOutput {
     waitedUntil: string;
 }
 
+export interface IfElseOutput {
+    branch: 'true' | 'false';
+    executed: boolean;
+}
+
+export interface CheckConnectionOutput {
+    connectionStatus: 'not_connected' | 'pending' | 'connected';
+    connected: boolean;
+}
+
 // ---- Context passed to each node ----
 
 export interface NodeContext {
@@ -100,8 +144,10 @@ export interface NodeContext {
     userId: string;
     campaignId: string;
     storedOutputs: Record<string, Record<string, any>>;
+    connectionStatus?: 'not_connected' | 'pending' | 'connected';
     campaign?: {
         objective?: string;
+        campaignDescription?: string;
         cta?: string;
         toneOverride?: string;
         persona?: string;

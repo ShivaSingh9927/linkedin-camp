@@ -1,6 +1,7 @@
 const { chromium } = require('playwright-extra');
 const stealth = require('puppeteer-extra-plugin-stealth')();
 const fs = require('fs');
+const path = require('path');
 
 chromium.use(stealth);
 
@@ -24,11 +25,12 @@ async function safeGoto(page, url, retries = 3) {
 
 // ---------------- MAIN ----------------
 async function testFollowConnect() {
+  const targetProfileUrl = process.env.LI_CONNECT_TARGET || "https://www.linkedin.com/in/shiva-singh-genai-llm/";
   let cookies, userAgent;
 
   try {
-    cookies = JSON.parse(fs.readFileSync('./cookies.json'));
-    const fp = JSON.parse(fs.readFileSync('./fingerprint.json'));
+    cookies = JSON.parse(fs.readFileSync(path.join(__dirname, 'cookies.json'), 'utf8'));
+    const fp = JSON.parse(fs.readFileSync(path.join(__dirname, 'fingerprint.json'), 'utf8'));
     userAgent = fp.userAgent;
   } catch {
     console.log('❌ Missing session files (cookies.json / fingerprint.json).');
@@ -42,9 +44,9 @@ async function testFollowConnect() {
     locale: 'en-IN',
     timezoneId: 'Asia/Kolkata',
     proxy: {
-      server: 'http://disp.oxylabs.io:8001',
-      username: 'user-shivasingh_clgdY',
-      password: 'Iamironman_3'
+      server: 'http://82.41.252.111:46222',
+      username: 'xBVyYdUpx84nWx7',
+      password: 'dwwTxtvv5a10RXn'
     }
   });
 
@@ -65,19 +67,23 @@ async function testFollowConnect() {
   });
 
   const result = {
-    profile: "https://www.linkedin.com/in/shiva-singh-genai-llm/",
+    profile: targetProfileUrl,
     actions: { followed: false, connected: false }
   };
 
   try {
     // ---------------- WARMUP ----------------
-    console.log('\n🔥 Warming up...');
-    await safeGoto(page, 'https://www.linkedin.com/feed/');
-    await wait(randomRange(3000, 5000));
+    if (process.env.LI_SKIP_FEED === '1') {
+      console.log('\n⚠️ Skipping feed warmup (LI_SKIP_FEED=1)');
+    } else {
+      console.log('\n🔥 Warming up...');
+      await safeGoto(page, 'https://www.linkedin.com/feed/');
+      await wait(randomRange(3000, 5000));
+    }
 
     // ---------------- PROFILE ----------------
-    console.log(`\n👤 Opening profile: ${result.profile}`);
-    await safeGoto(page, result.profile);
+    console.log(`\n👤 Opening profile: ${targetProfileUrl}`);
+    await safeGoto(page, targetProfileUrl);
     await wait(4000);
     
     // Scroll a bit to trigger dynamic DOM rendering

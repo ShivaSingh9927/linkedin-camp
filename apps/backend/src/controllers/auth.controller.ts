@@ -11,6 +11,7 @@ import { getOrAssignProxy } from '../services/proxy.service';
 import axios from 'axios';
 import { LinkedInService } from '../services/linkedin.service';
 import { mailService } from '../services/mail.service';
+import { sessionManager } from '../services/session-manager.service';
 
 chromium.use(stealth);
 
@@ -171,7 +172,8 @@ export const login = async (req: Request, res: Response) => {
 };
 
 export const syncExtension = async (req: any, res: Response) => {
-    const { linkedinCookie, linkedinLocalStorage, fingerprint } = req.body;
+    res.status(410).json({ error: 'Extension sync disabled' });
+};
     const userId = req.user.id;
 
     try {
@@ -472,109 +474,18 @@ export const syncLinkedinProfile = async (req: any, res: Response) => {
 export const startLinkedinLogin = async (req: any, res: Response) => {
     const userId = req.user.id;
     await getOrAssignProxy(userId);
-    const sessionDir = path.join(process.cwd(), 'sessions', userId);
-
-    // Ensure sessions directory exists
-    if (!fs.existsSync(path.dirname(sessionDir))) {
-        try {
-            fs.mkdirSync(path.dirname(sessionDir), { recursive: true });
-        } catch (e: any) {
-            console.error(`[LOGIN-BOT] Error creating sessions parent directory: ${e.message}`);
-        }
-    }
-
+    
     res.json({ success: true, message: 'Launching LinkedIn login browser...' });
 
-    // Run browser logic in background
+    // Run browser logic in background using sessionManager
     (async () => {
-        console.log(`[LOGIN-BOT] Starting browser for user ${userId}...`);
         try {
-            const user = await prisma.user.findUnique({
-                where: { id: userId },
-                include: { proxy: true }
-            });
-
-            const launchOptions: any = {
-                headless: true,
-                args: [
-                    '--disable-blink-features=AutomationControlled',
-                    '--no-sandbox',
-                    '--disable-setuid-sandbox'
-                ],
-                userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
-                viewport: { width: 1280, height: 720 },
-            };
-
-            if (user?.proxy) {
-                launchOptions.proxy = {
-                    server: `${user.proxy.proxyHost}:${user.proxy.proxyPort}`,
-                    username: user.proxy.proxyUsername || undefined,
-                    password: user.proxy.proxyPassword || undefined
-                };
-                console.log(`[LOGIN-BOT] Using proxy for login: ${user.proxy.proxyHost}`);
-            }
-
-            const context = await chromium.launchPersistentContext(sessionDir, launchOptions);
-
-            const page = context.pages().length > 0 ? context.pages()[0] : await context.newPage();
-
-            await page.goto('https://www.linkedin.com/login', {
-                waitUntil: 'domcontentloaded',
-                timeout: 60000
-            });
-
-            console.log(`[LOGIN-BOT] Waiting for user ${userId} to login...`);
-
-            // Fast detection: Watch for either the landing URL OR the li_at cookie appearing
-            let liAt: string | undefined = undefined;
-
-            try {
-                await Promise.race([
-                    // Case 1: User lands on feed or profile
-                    page.waitForURL('**/feed/**', { timeout: 300000, waitUntil: 'domcontentloaded' }),
-                    page.waitForURL('**/in/**', { timeout: 300000, waitUntil: 'domcontentloaded' }),
-                    // Case 2: Polling for cookie
-                    (async () => {
-                        while (true) {
-                            const cookies = await context.cookies();
-                            const found = cookies.find(c => c.name === 'li_at')?.value;
-                            if (found) {
-                                liAt = found;
-                                break;
-                            }
-                            await new Promise(r => setTimeout(r, 1000));
-                        }
-                    })()
-                ]);
-
-                console.log(`[LOGIN-BOT] Login detected for user ${userId}.`);
-
-                // Final check for the cookie
-                const cookies = await context.cookies();
-                const finalLiAt = cookies.find(c => c.name === 'li_at')?.value;
-
-                if (finalLiAt) {
-                    await prisma.user.update({
-                        where: { id: userId },
-                        data: {
-                            persistentSessionPath: sessionDir,
-                            linkedinCookie: finalLiAt
-                        }
-                    });
-                    console.log(`[LOGIN-BOT] Success: Session saved for user ${userId}.`);
-                } else {
-                    console.log(`[LOGIN-BOT] Warning: Login detected but li_at cookie was missing for user ${userId}.`);
-                }
-
-            } catch (error: any) {
-                console.error(`[LOGIN-BOT] Login process interrupted or timed out for user ${userId}`);
-            } finally {
-                // Ensure browser is absolutely closed
-                console.log(`[LOGIN-BOT] Terminating browser window for user ${userId}...`);
-                await context.close().catch(e => console.error("Error closing context:", e));
+            const result = await sessionManager.startLogin(userId);
+            if (!result.success) {
+                console.error(`[LOGIN-BOT] Failed to start login: ${result.error}`);
             }
         } catch (error: any) {
-            console.error(`[LOGIN-BOT] Fatal error in login routine for user ${userId}:`, error.message);
+            console.error(`[LOGIN-BOT] Error in startLogin:`, error.message);
         }
     })();
 };

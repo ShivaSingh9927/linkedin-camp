@@ -42,13 +42,46 @@ export const sendMessage: NodeHandler = async (ctx, config): Promise<NodeResult>
             console.log('[SEND-MESSAGE] Generating AI message...');
             try {
                 const profileName = `${lead.firstName || ''} ${lead.lastName || ''}`.trim() || 'User';
-                let aiMessage = await generateAIMessage({
-                    profileName,
-                    connectionContext: campaign?.objective,
-                    tone,
-                    cta,
+                
+                const profileVisitOutput = storedOutputs['profile-visit'];
+                
+                // Extract all available profile data
+                const profileData = {
+                    name: profileName,
+                    headline: profileVisitOutput?.headline || profileVisitOutput?.jobTitle || null,
+                    location: profileVisitOutput?.location || null,
+                    company: profileVisitOutput?.company || null,
+                    jobTitle: profileVisitOutput?.jobTitle || null,
+                    about: profileVisitOutput?.about || null,
+                    experience: profileVisitOutput?.experience || [],
+                    education: profileVisitOutput?.education || [],
+                };
+                
+                // Campaign context for personalized outreach
+                const campaignContext = {
+                    objective: campaign?.objective || 'Connect with prospects',
+                    description: campaign?.campaignDescription || campaign?.objective || null,
+                    tone: tone,
+                    cta: cta,
                     persona: campaign?.persona,
-                    valueProposition: campaign?.valueProp,
+                    valueProp: campaign?.valueProp,
+                };
+                
+                let aiMessage = await generateAIMessage({
+                    profileName: profileData.name,
+                    profileHeadline: profileData.headline || undefined,
+                    company: profileData.company || undefined,
+                    jobTitle: profileData.jobTitle || undefined,
+                    location: profileData.location || undefined,
+                    about: profileData.about || undefined,
+                    experience: profileData.experience,
+                    education: profileData.education,
+                    connectionContext: campaignContext.objective || undefined,
+                    campaignDescription: campaignContext.description || undefined,
+                    tone: campaignContext.tone,
+                    cta: campaignContext.cta,
+                    persona: campaignContext.persona,
+                    valueProposition: campaignContext.valueProp,
                 });
                 if (aiMessage && aiMessage.length > 10) {
                     messageText = aiMessage;

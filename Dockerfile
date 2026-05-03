@@ -32,8 +32,13 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     xvfb \
     openssl \
-    && npx playwright install --with-deps chromium \
     && rm -rf /var/lib/apt/lists/*
+
+# Copy node_modules from builder to ensure playwright is available
+COPY --from=builder /app/node_modules ./node_modules
+
+# Install Playwright browsers
+RUN npx playwright install chromium && npx playwright install-deps chromium
 
 # Copy the built source and installed node_modules from the builder stage
 # This ensures we don't carry over npm caches or temporary build files from ~/.npm

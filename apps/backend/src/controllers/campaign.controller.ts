@@ -4,21 +4,34 @@ import { getOrAssignProxy } from '../services/proxy.service';
 import { enqueueCampaign } from '../workers/campaign-worker';
 
 export const createCampaign = async (req: any, res: Response) => {
-    const { name, workflowJson } = req.body;
+    const { name, workflow, workflowJson } = req.body;
     const userId = req.user.id;
 
+    console.log('createCampaign called:', { name, workflow: !!workflow, workflowJson: !!workflowJson });
+
+    // Use workflow or workflowJson (frontend sends "workflow")
+    const workflowData = workflow || workflowJson;
+
+    if (!name || !workflowData) {
+        console.log('Missing fields:', { name: !!name, workflowData: !!workflowData });
+        return res.status(400).json({ error: 'Missing name or workflow' });
+    }
+
     try {
+        console.log('Creating campaign with data:', { userId, name, workflowData: JSON.stringify(workflowData).substring(0, 100) });
         const campaign = await prisma.campaign.create({
             data: {
                 userId,
                 name,
-                workflowJson,
+                workflowJson: workflowData,
                 status: 'DRAFT',
             },
         });
+        console.log('Campaign created:', campaign.id);
         res.status(201).json(campaign);
-    } catch (error) {
-        res.status(500).json({ error: 'Failed to create campaign' });
+    } catch (error: any) {
+        console.error('createCampaign error:', error);
+        res.status(500).json({ error: 'Failed to create campaign: ' + error.message });
     }
 };
 
@@ -73,11 +86,14 @@ export const getCampaignById = async (req: any, res: Response) => {
 };
 
 export const startCampaign = async (req: any, res: Response) => {
+    console.log('startCampaign called, id:', req.params.id);
     const { id } = req.params;
     const userId = req.user.id;
     const { leadIds = [] } = req.body || {};
+    console.log('startCampaign params:', { id, userId, leadIdsCount: leadIds.length });
 
     try {
+        console.log('Starting campaign...');
         // Ensure user has a proxy assigned before starting campaign actions
         await getOrAssignProxy(userId);
 
@@ -85,6 +101,7 @@ export const startCampaign = async (req: any, res: Response) => {
             where: { id, userId }
         });
 
+        console.log('Campaign found:', campaign ? 'yes' : 'no');
         if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
 
         const updatedCampaign = await prisma.campaign.update({
@@ -92,25 +109,33 @@ export const startCampaign = async (req: any, res: Response) => {
             data: { status: 'ACTIVE' },
         });
 
+        console.log('Campaign status updated to ACTIVE');
+
         // Identify the start node from WorkflowJson
         const workflow = campaign.workflowJson as any;
+        console.log('Workflow:', workflow ? 'exists' : 'null', 'nodes:', workflow?.nodes?.length || 0);
         const startNode = workflow.nodes?.find((n: any) => n.type === 'TRIGGER' || n.type === 'input') || workflow.nodes?.[0];
+        console.log('startNode:', startNode?.id, startNode?.type);
 
         let skippedCount = 0;
         let startedCount = 0;
 
         if (startNode) {
             let finalLeadIds = leadIds;
+            console.log('finalLeadIds initial:', finalLeadIds.length);
 
             // IF leadIds is empty, fetch existing leads for this campaign
             if (!finalLeadIds || finalLeadIds.length === 0) {
-                console.log(`[Campaign] No leadIds provided. Fetching existing leads for campaign ${id} to start them.`);
-                const existingLeads = await prisma.campaignLead.findMany({
-                    where: { campaignId: id, isCompleted: false },
-                    select: { leadId: true }
+                console.log(`[Campaign] No leadIds provided. Fetching all user leads for campaign ${id}.`);
+                const userLeads = await prisma.lead.findMany({
+                    where: { userId },
+                    select: { id: true }
                 });
-                finalLeadIds = existingLeads.map((el: any) => el.leadId);
+                finalLeadIds = userLeads.map((el: any) => el.id);
+                console.log('Fetched user leads:', finalLeadIds.length);
             }
+
+            console.log('Final leadIds to process:', finalLeadIds.length);
 
             if (finalLeadIds && finalLeadIds.length > 0) {
                 console.log(`[Campaign] Starting Campaign ${id} for User ${userId}. Attempting to enroll ${finalLeadIds.length} leads.`);
@@ -151,7 +176,9 @@ export const startCampaign = async (req: any, res: Response) => {
                         const leadIdRecord = await prisma.campaignLead.findUnique({
                             where: { campaignId_leadId: { campaignId: id, leadId } }
                         });
-                        
+
+                        console.log(`Processing leadId: ${leadId}, existing record: ${leadIdRecord ? 'yes' : 'no'}`);
+
                         if (leadIdRecord) {
                             await prisma.campaignLead.update({
                                 where: { campaignId_leadId: { campaignId: id, leadId } },
@@ -175,15 +202,15 @@ export const startCampaign = async (req: any, res: Response) => {
                             });
                         }
                     }
-                    
+
                     if (safeLeadIdsToStart.length > 0) {
                         await enqueueCampaign(userId, id);
                     }
-                    
+
                     console.log(`[Campaign] Successfully started/enrolled ${safeLeadIdsToStart.length} leads.`);
                 }
             } else {
-                console.warn(`[Campaign] Skipping enrollment logic. leadIds length: 0 and no existing leads found for campaign ${id}`);
+                console.warn(`[Campaign] Skipping enrollment logic. finalLeadIds length: 0`);
             }
         } else {
             console.warn(`[Campaign] Skipping enrollment logic. No startNode present: ${!!startNode}`);
@@ -193,9 +220,9 @@ export const startCampaign = async (req: any, res: Response) => {
             ...updatedCampaign,
             meta: { startedCount, skippedCount }
         });
-    } catch (error) {
+    } catch (error: any) {
         console.error('Start campaign error:', error);
-        res.status(500).json({ error: 'Failed to start campaign' });
+        res.status(500).json({ error: 'Failed to start campaign: ' + error.message });
     }
 };
 
@@ -229,23 +256,26 @@ export const deleteCampaign = async (req: any, res: Response) => {
 
 // New endpoint: detailed campaign status with summary
 export const getCampaignStatus = async (req: any, res: Response) => {
+    console.log('getCampaignStatus called, id:', req.params.id);
     const { id } = req.params;
     const userId = req.user.id;
     try {
+        console.log('Fetching campaign with id: ' + id + ' userId: ' + userId);
         const campaign = await prisma.campaign.findUnique({
             where: { id, userId },
             include: {
-                leads: {
-                    include: { lead: true },
+                CampaignLead: {
+                    include: { Lead: true },
                     orderBy: { lastActionAt: 'desc' }
                 }
             }
         });
 
+        console.log('Campaign found:', campaign ? 'yes' : 'no');
         if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
 
         // Fetch all relevant action logs for these leads
-        const leadIds = campaign.leads.map(cl => cl.leadId);
+        const leadIds = campaign.CampaignLead.map(cl => cl.leadId);
         const allLogs = await prisma.actionLog.findMany({
             where: {
                 leadId: { in: leadIds }
@@ -264,53 +294,39 @@ export const getCampaignStatus = async (req: any, res: Response) => {
             }
         });
 
-        const leadsWithLogs = campaign.leads.map(cl => ({
-            campaignLeadId: cl.id,
-            lead: {
-                id: cl.lead.id,
-                firstName: cl.lead.firstName || '',
-                lastName: cl.lead.lastName || '',
-                linkedinUrl: cl.lead.linkedinUrl,
-                status: cl.lead.status || 'UNCONNECTED',
-                company: cl.lead.company,
-                jobTitle: cl.lead.jobTitle,
-                aboutInfo: cl.lead.aboutInfo,
-            },
-            status: cl.lead.status || 'UNCONNECTED',
-            currentStepId: cl.currentStepId || '',
-            nextActionDate: cl.nextActionDate,
-            isCompleted: cl.isCompleted || false,
-            // Include full execution log from personalization
-            execLog: (cl as any).personalization?.execLog || [],
-            // Include extracted data
-            nodeOutputs: (cl as any).personalization?.nodeOutputs || {},
-            personalization: (cl as any).personalization?.nodeOutputs?.['send-message']?.messageText || 
-                            (typeof (cl as any).personalization === 'string' ? (cl as any).personalization : ''),
-            recentLogs: logsMap[cl.leadId] || []
-        }));
-
-        // Calculate stats for this specific campaign using lead status
-        const stats = {
-            total: campaign.leads.length,
-            pending: campaign.leads.filter(l => l.lead.status === 'IMPORTED' || l.lead.status === 'PENDING').length,
-            connected: campaign.leads.filter(l => l.lead.status === 'CONNECTED' || l.lead.status === 'REPLIED').length,
-            replied: campaign.leads.filter(l => l.lead.status === 'REPLIED').length,
-            // Calculate from execLog
-            completed: campaign.leads.filter(l => l.isCompleted).length,
-            failed: campaign.leads.filter(l => {
-                const pl = l as any;
-                return pl.personalization?.execLog?.some((e: any) => e.status === 'failed');
-            }).length,
-        };
+        // Build summary
+        const summary = campaign.CampaignLead.map(cl => {
+            const lead = cl.Lead;
+            const recentLogs = logsMap[lead.id!] || [];
+            return {
+                leadId: lead.id,
+                name: `${lead.firstName} ${lead.lastName}`,
+                linkedinUrl: lead.linkedinUrl,
+                isCompleted: cl.isCompleted,
+                currentStepId: cl.currentStepId,
+                lastActionAt: cl.lastActionAt,
+                nextActionDate: cl.nextActionDate,
+                recentLogs: recentLogs.map(l => ({
+                    type: l.type,
+                    createdAt: l.executedAt,
+                    success: l.success,
+                    message: l.message
+                }))
+            };
+        });
 
         res.json({
-            campaign: { id: campaign.id, name: campaign.name, status: campaign.status },
-            stats,
-            leads: leadsWithLogs,
+            id: campaign.id,
+            name: campaign.name,
+            status: campaign.status,
+            totalLeads: campaign.CampaignLead.length,
+            completedLeads: campaign.CampaignLead.filter(cl => cl.isCompleted).length,
+            leads: summary,
         });
-    } catch (error) {
-        console.error('Campaign status error:', error);
-        res.status(500).json({ error: 'Failed to fetch campaign status' });
+
+    } catch (error: any) {
+        console.error('getCampaignStatus error:', error);
+        res.status(500).json({ error: 'Failed to fetch campaign status: ' + error.message });
     }
 };
 
@@ -344,8 +360,8 @@ export const exportCampaign = async (req: any, res: Response) => {
         const campaign = await prisma.campaign.findUnique({
             where: { id: campaignId, userId },
             include: {
-                leads: {
-                    include: { lead: true }
+                CampaignLead: {
+                    include: { Lead: true }
                 }
             }
         });
@@ -353,7 +369,7 @@ export const exportCampaign = async (req: any, res: Response) => {
         if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
 
         // Build export data
-        const exportData = campaign.leads.map(cl => {
+        const exportData = campaign.CampaignLead.map(cl => {
             const pl = cl as any;
             const nodeOutputs = pl.personalization?.nodeOutputs || {};
             const execLog = pl.personalization?.execLog || [];

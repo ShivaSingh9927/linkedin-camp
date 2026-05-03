@@ -9,6 +9,9 @@ import { prisma } from '@repo/db';
 import Redis from 'ioredis';
 import { runCampaign } from '../campaign-engine';
 import { CampaignConfig } from '../campaign-engine/types';
+import { getOrAssignProxy } from '../services/proxy.service';
+import * as fs from 'fs';
+import * as path from 'path';
 
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
 const redisConnection = REDIS_URL ? new Redis(REDIS_URL, { maxRetriesPerRequest: null }) : null;
@@ -35,8 +38,37 @@ const processCampaignJob = async (data: CampaignJobData, job: Job) => {
     // 2. FETCH SESSION DATA (from User table)
     const user = await prisma.user.findUnique({ where: { id: userId } });
     
-    if (!user || (!user.linkedinCookie && !user.persistentSessionPath)) {
+    if (!user || (!user.linkedinCookie && !user.persistentSessionPath && !user.sessionPath)) {
         throw new Error(`No active LinkedIn session found for user ${userId}. Run Phase 1 first.`);
+    }
+
+    // PRE-FLIGHT SESSION VALIDATION
+    const { sessionValidator } = await import('../services/session-validator.service');
+    const quickCheck = await sessionValidator.quickCheck(userId);
+    
+    if (!quickCheck.connected || quickCheck.sessionInvalid) {
+        console.error(`[CAMPAIGN-WORKER] Session invalid for user ${userId}. Pausing campaign.`);
+        await prisma.campaign.update({
+            where: { id: campaignId },
+            data: { status: 'PAUSED' }
+        });
+        await prisma.notification.create({
+            data: {
+                userId,
+                title: 'Session Expired',
+                body: 'Your LinkedIn session has expired. Please re-login to resume campaigns.',
+                type: 'ERROR',
+            }
+        });
+        
+        const { io } = await import('../socket');
+        io.to(`user_${userId}`).emit('SESSION_EXPIRED', {
+            userId,
+            campaignId,
+            message: 'LinkedIn session expired. Please re-login.',
+            timestamp: new Date().toISOString()
+        });
+        return;
     }
 
     // 3. PARSE CONFIG & INJECT STEALTH ARGS
@@ -76,10 +108,22 @@ const processCampaignJob = async (data: CampaignJobData, job: Job) => {
                     break;
                 case 'MESSAGE': 
                     mappedNodeType = 'send-message'; break;
-                case 'LIKE_POST': mappedNodeType = 'like-nth-post'; break;
-                case 'COMMENT_POST': mappedNodeType = 'comment-nth-post'; break;
-                case 'CONNECT': mappedNodeType = 'connect'; break;
-                case 'DELAY': mappedNodeType = 'delay'; break;
+                case 'LIKE_NTH_POST':
+                case 'LIKE_POST':
+                case 'LIKE':
+                    mappedNodeType = 'like-nth-post'; break;
+                case 'COMMENT_NTH_POST':
+                case 'COMMENT_POST':
+                case 'COMMENT':
+                    mappedNodeType = 'comment-nth-post'; break;
+                case 'CONNECT': 
+                    mappedNodeType = 'connect'; break;
+                case 'DELAY': 
+                    mappedNodeType = 'delay'; break;
+                case 'WARMUP': 
+                    mappedNodeType = 'warmup'; break;
+                case 'INBOX_SYNC':
+                    mappedNodeType = 'inbox-sync'; break;
             }
 
             return {
@@ -94,23 +138,54 @@ const processCampaignJob = async (data: CampaignJobData, job: Job) => {
     config.objective = campaign.objective || undefined;
     config.persona = businessProfile.persona || undefined;
 
-    // Build session context from DB (same data the extension synced via /sync-extension)
+     // Build session context from database session files
     let parsedCookies = null;
     let parsedUserAgent = null;
     let parsedLocalStorage = null;
 
     try {
         if (user.linkedinCookie) {
-            const raw = JSON.parse(user.linkedinCookie);
+            // Check if it's already a JSON string (array of cookies) or just the li_at value
+            let raw;
+            try {
+                raw = JSON.parse(user.linkedinCookie);
+                // It's JSON - could be array or object
+            } catch (e) {
+                // It's not JSON, treat as raw li_at cookie value
+                raw = [{ name: 'li_at', value: user.linkedinCookie, domain: '.linkedin.com', path: '/' }];
+            }
+            
             // Normalize: ensure expires is a number (seconds), not string/ms
-            parsedCookies = Array.isArray(raw) ? raw.map((c: any) => ({
-                ...c,
-                expires: c.expires != null ? Math.round(Number(c.expires)) : Math.round(Date.now() / 1000) + 86400 * 30,
-                sameSite: c.sameSite === 'no_restriction' ? 'None' : (c.sameSite === 'unspecified' ? 'Lax' : c.sameSite),
-            })) : raw;
+            parsedCookies = Array.isArray(raw) ? raw.map((c: any) => {
+                // Ensure we have the basic cookie properties
+                const cookie = {
+                    ...c,
+                    // Set default values if missing
+                    domain: c.domain || '.linkedin.com',
+                    path: c.path || '/',
+                    // Ensure expires is a number (seconds)
+                    expires: c.expires != null ? Math.round(Number(c.expires)) : Math.round(Date.now() / 1000) + 86400 * 30,
+                    // Handle sameSite values
+                    sameSite: c.sameSite === 'no_restriction' || c.sameSite === 'none' ? 'None' : 
+                             c.sameSite === 'unspecified' || c.sameSite === 'lax' ? 'Lax' : 
+                             c.sameSite === 'strict' ? 'Strict' : 'Lax'
+                };
+                return cookie;
+            }) : [raw]; // If raw is not an array, wrap it in one
         }
     } catch (e: any) {
         console.error(`[CAMPAIGN-WORKER] Cookie parse error: ${e.message}`);
+        // Fallback: create a basic li_at cookie if parsing fails completely
+        if (user.linkedinCookie) {
+            parsedCookies = [{
+                name: 'li_at',
+                value: user.linkedinCookie,
+                domain: '.linkedin.com',
+                path: '/',
+                expires: Math.round(Date.now() / 1000) + 86400 * 30, // 30 days from now
+                sameSite: 'Lax'
+            }];
+        }
     }
 
     try {
@@ -128,15 +203,70 @@ const processCampaignJob = async (data: CampaignJobData, job: Job) => {
         }
     } catch {}
 
+    // FALLBACK: Load session from disk files (socket login)
+    const sessionDir = user.persistentSessionPath || user.sessionPath;
+    if (sessionDir && !parsedCookies) {
+        try {
+            const cookiesPath = path.join(sessionDir, 'cookies.json');
+            if (fs.existsSync(cookiesPath)) {
+                const rawCookies = JSON.parse(fs.readFileSync(cookiesPath, 'utf-8'));
+                parsedCookies = Array.isArray(rawCookies) ? rawCookies.map((c: any) => ({
+                    ...c,
+                    domain: c.domain || '.linkedin.com',
+                    path: c.path || '/',
+                    expires: c.expires != null ? Math.round(Number(c.expires)) : Math.round(Date.now() / 1000) + 86400 * 30,
+                    sameSite: c.sameSite === 'no_restriction' || c.sameSite === 'none' ? 'None' :
+                             c.sameSite === 'unspecified' || c.sameSite === 'lax' ? 'Lax' :
+                             c.sameSite === 'strict' ? 'Strict' : 'Lax'
+                })) : [rawCookies];
+                console.log(`[CAMPAIGN-WORKER] Loaded ${parsedCookies.length} cookies from disk`);
+            }
+        } catch (e: any) {
+            console.error(`[CAMPAIGN-WORKER] Failed to load cookies from disk: ${e.message}`);
+        }
+    }
+
+    if (sessionDir && !parsedUserAgent) {
+        try {
+            const fpPath = path.join(sessionDir, 'fingerprint.json');
+            if (fs.existsSync(fpPath)) {
+                const fp = JSON.parse(fs.readFileSync(fpPath, 'utf-8'));
+                parsedUserAgent = fp?.userAgent || null;
+                console.log(`[CAMPAIGN-WORKER] Loaded userAgent from disk: ${!!parsedUserAgent}`);
+            }
+        } catch (e: any) {
+            console.error(`[CAMPAIGN-WORKER] Failed to load fingerprint from disk: ${e.message}`);
+        }
+    }
+
+    if (sessionDir && !parsedLocalStorage) {
+        try {
+            const lsPath = path.join(sessionDir, 'localStorage.json');
+            if (fs.existsSync(lsPath)) {
+                parsedLocalStorage = JSON.parse(fs.readFileSync(lsPath, 'utf-8'));
+                console.log(`[CAMPAIGN-WORKER] Loaded ${Object.keys(parsedLocalStorage).length} localStorage keys from disk`);
+            }
+        } catch (e: any) {
+            console.error(`[CAMPAIGN-WORKER] Failed to load localStorage from disk: ${e.message}`);
+        }
+    }
+
+    // Get proxy via service instead of hardcoded
+    const userProxy = await getOrAssignProxy(userId);
+    let sessionProxy = null;
+    if (userProxy) {
+        sessionProxy = {
+            server: `http://${userProxy.proxyHost}:${userProxy.proxyPort}`,
+            username: userProxy.proxyUsername || undefined,
+            password: userProxy.proxyPassword || undefined,
+        };
+    }
+
     config.sessionContext = {
         cookies: parsedCookies,
         userAgent: parsedUserAgent,
         localStorage: parsedLocalStorage,
-        proxy: {
-            server: 'http://82.41.252.111:46222',
-            username: 'xBVyYdUpx84nWx7',
-            password: 'dwwTxtvv5a10RXn',
-        }
+        proxy: sessionProxy
     };
 
     console.log(`[CAMPAIGN-WORKER] Session ready — cookies: ${parsedCookies?.length || 0}, UA: ${parsedUserAgent ? 'yes' : 'no'}, localStorage keys: ${parsedLocalStorage ? Object.keys(parsedLocalStorage).length : 0}`);
@@ -187,9 +317,21 @@ const processCampaignJob = async (data: CampaignJobData, job: Job) => {
 // ---- WORKER INITIALIZATION ----
 
 export const initCampaignWorker = () => {
-    if (!redisConnection) return;
+    console.log('[CAMPAIGN-WORKER] Attempting to initialize...');
+    console.log('[CAMPAIGN-WORKER] Redis URL from env:', process.env.REDIS_URL);
+    console.log('[CAMPAIGN-WORKER] Fallback REDIS_URL constant:', REDIS_URL);
+    
+    if (!redisConnection) {
+        console.log('[CAMPAIGN-WORKER] ❌ No Redis connection - worker NOT started');
+        console.log('[CAMPAIGN-WORKER] ❌ Redis URL was:', REDIS_URL);
+        return;
+    }
 
+    console.log('[CAMPAIGN-WORKER] ✅ Redis connection exists, creating worker...');
+    console.log('[CAMPAIGN-WORKER] Queue name: campaign-actions');
+    
     const worker = new Worker('campaign-actions', async (job: Job) => {
+        console.log('[CAMPAIGN-WORKER] 📥 Received job:', job.id, job.data);
         await processCampaignJob(job.data as CampaignJobData, job);
     }, {
         connection: redisConnection as any,
@@ -198,6 +340,14 @@ export const initCampaignWorker = () => {
 
     worker.on('failed', (job, err) => {
         console.error(`[CAMPAIGN-WORKER] Job ${job?.id} failed:`, err.message);
+    });
+
+    worker.on('completed', (job) => {
+        console.log(`[CAMPAIGN-WORKER] Job ${job?.id} completed!`);
+    });
+
+    worker.on('progress', (job, progress) => {
+        console.log(`[CAMPAIGN-WORKER] Job ${job?.id} progress:`, progress);
     });
 
     console.log('[CAMPAIGN-WORKER] 🛰️ Listening on queue: campaign-actions');

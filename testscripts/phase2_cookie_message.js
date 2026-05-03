@@ -19,6 +19,15 @@ async function startPhase2CookieAutomation() {
 
   console.log('\n[PHASE 2] DIRECT COMPOSE FLOW (NO BUTTON CLICK)\n');
 
+  const result = {
+    success: false,
+    profile: null,
+    message: null,
+    status: 'failed',
+    error: null,
+    reason: null
+  };
+
   // 1. LOAD SESSION FILES
   let cookies, userAgent, localStorageData;
 
@@ -39,7 +48,7 @@ async function startPhase2CookieAutomation() {
 
   // 2. LAUNCH BROWSER
   const browser = await chromium.launch({
-    headless: true,
+    headless: false,
     args: [
       '--disable-blink-features=AutomationControlled',
       '--start-maximized',
@@ -76,8 +85,11 @@ async function startPhase2CookieAutomation() {
 
   try {
 
-    const targetProfile = "https://www.linkedin.com/in/shiva-singh-genai-llm/";
-    const message = "Hi Shiva! I saw your GenAI work — really impressive. Would love to connect and exchange ideas.";
+    const targetProfile = "https://www.linkedin.com/in/daanesh-bhathena/";
+    const message = "Hi Daanesh! I saw your work — really impressive. Would love to connect and exchange ideas.";
+
+    result.profile = targetProfile;
+    result.message = message;
 
     // ---------------------
     // STEP 1: OPEN PROFILE
@@ -99,6 +111,7 @@ async function startPhase2CookieAutomation() {
 
     if (!composeUrl) {
       await page.screenshot({ path: 'compose_link_missing.png' });
+      result.reason = "Compose link missing from profile. The profile might not have a message button or it might be restricted.";
       throw new Error("Compose URL not found. Screenshot saved.");
     }
 
@@ -142,6 +155,7 @@ async function startPhase2CookieAutomation() {
 
     if (!textBox) {
       await page.screenshot({ path: 'textbox_not_found.png' });
+      result.reason = "Message box not found. This usually happens if you are not connected to the user.";
       throw new Error('Message textbox not found');
     }
 
@@ -170,9 +184,16 @@ async function startPhase2CookieAutomation() {
     await sendBtn.click();
 
     console.log('\n✅ SUCCESS: Message sent without clicking profile button\n');
+    result.success = true;
+    result.status = "success";
 
   } catch (err) {
     console.error('\n❌ ERROR:', err.message);
+    result.error = err.message;
+  } finally {
+    console.log('\n========== FINAL JSON RESULT ==========');
+    console.log(JSON.stringify(result, null, 2));
+    console.log('=======================================\n');
   }
 
   console.log('Closing in 60 seconds...');

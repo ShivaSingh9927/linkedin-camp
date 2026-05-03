@@ -4,6 +4,7 @@ import { Queue } from 'bullmq';
 import Redis from 'ioredis';
 import { syncInbox, inboxQueue } from '../workers/inbox.worker';
 import { withdrawOldInvites } from '../workers/withdraw.worker';
+import { sessionValidator } from '../services/session-validator.service';
 
 let redisConnection: any;
 let actionQueue: any;
@@ -27,13 +28,20 @@ export const initScheduler = () => {
     console.log('Running campaign scheduler heartbeat...');
 
     try {
-      // Fetch users who are actively running campaigns
+      // Fetch users who have active campaigns by checking the Campaign table directly
+      const activeCampaigns = await prisma.campaign.findMany({
+        where: { status: 'ACTIVE' },
+        select: { userId: true }
+      });
+      
+      const userIds = [...new Set(activeCampaigns.map(c => c.userId))];
+      
       const activeUsers = await prisma.user.findMany({
-        where: { campaigns: { some: { status: 'ACTIVE' } } },
+        where: { id: { in: userIds } },
         select: { 
           id: true, 
           linkedinCookie: true,
-          persistentSessionPath: true, // ADDED
+          persistentSessionPath: true,
           linkedinActiveInBrowser: true,
           lastBrowserActivityAt: true
         }
@@ -52,10 +60,16 @@ export const initScheduler = () => {
         const lastActivity = user.lastBrowserActivityAt ? new Date(user.lastBrowserActivityAt).getTime() : 0;
         
         // Skip only if Redis says ACTIVE OR DB activity is very recent (< 2 mins)
-        const isExtensionActive = redisPresence === 'ACTIVE' || (user.linkedinActiveInBrowser && (now - lastActivity < twoMins));
+const isUserActive = redisPresence === 'ACTIVE' || (now - lastActivity < twoMins);
+        
+        if (isUserActive) {
+          console.log(`[Scheduler] User ${user.id} is active (browser). Skipping cloud scheduler for safety.`);
+          continue;
+        }
 
-        if (isExtensionActive) {
-          console.log(`[Scheduler] User ${user.id} is active on extension (laptop). Skipping cloud scheduler for safety.`);
+        const quickStatus = await sessionValidator.quickCheck(user.id);
+        if (quickStatus.sessionInvalid) {
+          console.log(`[Scheduler] User ${user.id} session is marked invalid. Skipping.`);
           continue;
         }
 
@@ -65,33 +79,46 @@ export const initScheduler = () => {
           continue; 
         }
 
+        // Get user's active campaigns
+        const userCampaigns = await prisma.campaign.findMany({
+          where: { userId: user.id, status: 'ACTIVE' }
+        });
+        
+        const campaignIds = userCampaigns.map(c => c.id);
+        
+        if (campaignIds.length === 0) continue;
+
         const userPendingTasks = await prisma.campaignLead.findMany({
           where: {
-            campaign: { userId: user.id, status: 'ACTIVE' },
+            campaignId: { in: campaignIds },
             nextActionDate: { lte: new Date() },
             isCompleted: false,
           },
-          include: {
-            campaign: true,
-            lead: true,
-          },
-          take: 5, // Process max 5 tasks per user per 5 mins to ensure fairness
+          take: 5,
         });
 
         console.log(`[Scheduler] User ${user.id}: Found ${userPendingTasks.length} pending tasks.`);
 
         for (const task of userPendingTasks) {
-          let jobPriority = 5; // Default low priority for Invites / visits
+          // Fetch campaign separately
+          const campaign = await prisma.campaign.findUnique({
+            where: { id: task.campaignId },
+            select: { userId: true, workflowJson: true }
+          });
+          
+          if (!campaign) continue;
+          
+          let jobPriority = 5;
 
           // Parse workflow to determine if this step is a MESSAGE
           try {
-            const parsedWorkflow = typeof task.campaign.workflowJson === 'string'
-              ? JSON.parse(task.campaign.workflowJson)
-              : task.campaign.workflowJson;
+            const parsedWorkflow = typeof campaign.workflowJson === 'string'
+              ? JSON.parse(campaign.workflowJson)
+              : campaign.workflowJson;
 
             const currentNode = parsedWorkflow?.nodes?.find((n: any) => n.id === task.currentStepId);
             if (currentNode && currentNode.subType === 'MESSAGE') {
-              jobPriority = 2; // Campaign messages get Priority 2
+              jobPriority = 2;
             }
           } catch (e) {
             console.error('Failed to parse workflow for priority detection', e);
@@ -104,11 +131,11 @@ export const initScheduler = () => {
             'execute-workflow-step',
             {
               campaignLeadId: task.id,
-              userId: task.campaign.userId,
+              userId: campaign.userId,
               leadId: task.leadId,
               campaignId: task.campaignId,
               currentStepId: task.currentStepId,
-              workflowJson: task.campaign.workflowJson,
+              workflowJson: campaign.workflowJson,
             },
             {
               jobId,
@@ -201,6 +228,83 @@ export const initScheduler = () => {
       }
     } catch (error) {
       console.error('[Scheduler] Onboarding reminder process failed:', error);
+    }
+  });
+
+  // 5. Delayed Leads Retry Scheduler (Every 5 minutes)
+  // Handles leads that were paused due to delay node and need to retry
+  cron.schedule('*/5 * * * *', async () => {
+    console.log('[Scheduler] Running delayed leads retry check...');
+    
+    try {
+      const now = new Date();
+      
+      const delayedLeads = await prisma.campaignLeadProgress.findMany({
+        where: {
+          needsRetry: true,
+          nextRetryAt: { lte: now },
+          completedAt: null
+        },
+        take: 10,
+        orderBy: { nextRetryAt: 'asc' }
+      });
+
+      console.log(`[Scheduler] Found ${delayedLeads.length} leads ready for retry.`);
+
+      for (const progress of delayedLeads) {
+        try {
+          const campaign = await prisma.campaign.findUnique({
+            where: { id: progress.campaignId },
+            select: { 
+              id: true, 
+              userId: true, 
+              workflowJson: true,
+              status: true
+            }
+          });
+
+          if (!campaign || campaign.status !== 'ACTIVE') {
+            console.log(`[Scheduler] Campaign ${progress.campaignId} not active, skipping.`);
+            continue;
+          }
+
+          const lead = await prisma.lead.findUnique({
+            where: { id: progress.leadId }
+          });
+
+          if (!lead) {
+            console.log(`[Scheduler] Lead ${progress.leadId} not found, skipping.`);
+            continue;
+          }
+
+          console.log(`[Scheduler] Queueing retry for lead ${lead.firstName} in campaign ${campaign.id}`);
+
+          const jobId = `retry_${progress.id}`;
+
+          if (actionQueue) {
+            await actionQueue.add(
+              'execute-delayed-lead',
+              {
+                campaignLeadProgressId: progress.id,
+                campaignId: campaign.id,
+                userId: campaign.userId,
+                leadId: progress.leadId,
+                currentNodeIndex: progress.currentNodeIndex,
+                workflowJson: campaign.workflowJson,
+              },
+              {
+                jobId,
+                removeOnComplete: true,
+                priority: 3,
+              }
+            );
+          }
+        } catch (err) {
+          console.error(`[Scheduler] Failed to queue delayed lead ${progress.id}:`, err);
+        }
+      }
+    } catch (error) {
+      console.error('[Scheduler] Delayed leads retry check failed:', error);
     }
   });
 };
