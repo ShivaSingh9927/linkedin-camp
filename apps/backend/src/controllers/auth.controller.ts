@@ -130,6 +130,7 @@ export const register = async (req: Request, res: Response) => {
                 passwordHash,
                 firstName,
                 lastName,
+                updatedAt: new Date(),
             },
         });
 
