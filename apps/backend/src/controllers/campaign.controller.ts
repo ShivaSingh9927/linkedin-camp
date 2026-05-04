@@ -4,7 +4,7 @@ import { getOrAssignProxy } from '../services/proxy.service';
 import { enqueueCampaign } from '../workers/campaign-worker';
 
 export const createCampaign = async (req: any, res: Response) => {
-    const { name, workflow, workflowJson } = req.body;
+    const { name, workflow, workflowJson, leads } = req.body;
     const userId = req.user.id;
 
     console.log('createCampaign called:', { name, workflow: !!workflow, workflowJson: !!workflowJson });
@@ -27,6 +27,20 @@ export const createCampaign = async (req: any, res: Response) => {
                 status: 'DRAFT',
             },
         });
+
+        // Add leads to campaign if provided
+        if (leads && Array.isArray(leads) && leads.length > 0) {
+            for (const leadId of leads) {
+                await prisma.campaignLead.create({
+                    data: {
+                        campaignId: campaign.id,
+                        leadId,
+                    },
+                });
+            }
+            console.log(`Added ${leads.length} leads to campaign`);
+        }
+
         console.log('Campaign created:', campaign.id);
         res.status(201).json(campaign);
     } catch (error: any) {
