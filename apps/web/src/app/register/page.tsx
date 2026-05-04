@@ -11,6 +11,7 @@ export default function RegisterPage() {
   const [password, setPassword] = useState('');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
+  const [country, setCountry] = useState('IN'); // Default to India
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
@@ -23,7 +24,8 @@ export default function RegisterPage() {
         email, 
         password,
         firstName,
-        lastName
+        lastName,
+        country
       });
       const data = res.data;
 
@@ -54,6 +56,8 @@ export default function RegisterPage() {
       setFirstName={setFirstName}
       lastName={lastName}
       setLastName={setLastName}
+      country={country}
+      setCountry={setCountry}
       onSubmit={handleSubmit}
     />
   );

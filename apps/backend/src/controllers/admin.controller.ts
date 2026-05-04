@@ -75,11 +75,11 @@ export const listProxies = async (req: Request, res: Response): Promise<void> =>
         const proxies = await prisma.proxy.findMany({
             orderBy: { createdAt: 'desc' },
             include: {
-                assignedUsers: {
+                users: {
                     select: { id: true, email: true, tier: true }
                 },
                 _count: {
-                    select: { assignedUsers: true }
+                    select: { users: true }
                 }
             }
         });
@@ -103,5 +103,49 @@ export const deleteProxy = async (req: Request, res: Response): Promise<void> =>
     } catch (error) {
         console.error('Error deleting proxy:', error);
         res.status(500).json({ success: false, error: 'Failed to delete proxy' });
+    }
+};
+
+export const updateProxyMaxUsers = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { id } = req.params;
+        const { maxUsers } = req.body;
+
+        if (!maxUsers || typeof maxUsers !== 'number' || maxUsers < 1) {
+            res.status(400).json({ success: false, error: 'Invalid maxUsers value' });
+            return;
+        }
+
+        // Get current proxy to check current usage
+        const proxy = await prisma.proxy.findUnique({
+            where: { id: id as string },
+            include: { users: true }
+        });
+
+        if (!proxy) {
+            res.status(404).json({ success: false, error: 'Proxy not found' });
+            return;
+        }
+
+        const currentUsers = proxy.users.length;
+
+        // Prevent setting maxUsers below current usage
+        if (maxUsers < currentUsers) {
+            res.status(400).json({ 
+                success: false, 
+                error: `Cannot set maxUsers below current usage (${currentUsers} users). Please rebind users first.` 
+            });
+            return;
+        }
+
+        const updated = await prisma.proxy.update({
+            where: { id: id as string },
+            data: { maxUsers }
+        });
+
+        res.json({ success: true, proxy: updated });
+    } catch (error) {
+        console.error('Error updating proxy maxUsers:', error);
+        res.status(500).json({ success: false, error: 'Failed to update proxy' });
     }
 };

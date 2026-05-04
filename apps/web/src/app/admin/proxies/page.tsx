@@ -13,7 +13,10 @@ import {
     Ban,
     Filter,
     RefreshCw,
-    Search
+    Search,
+    Edit2,
+    X,
+    Check
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -39,6 +42,8 @@ export default function ProxyAdminPage() {
     const [error, setError] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [filter, setFilter] = useState<'ALL' | 'BANNED' | 'HEALTHY' | 'LINKEDIN_BANNED'>('ALL');
+    const [editingId, setEditingId] = useState<string | null>(null);
+    const [editValue, setEditValue] = useState<number>(15);
 
     const fetchProxies = async () => {
         setLoading(true);
@@ -79,6 +84,29 @@ export default function ProxyAdminPage() {
             }
         } catch (err) {
             alert('Delete failed');
+        }
+    };
+
+    const handleEditMaxUsers = async (id: string) => {
+        try {
+            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/admin/proxies/${id}`, {
+                method: 'PATCH',
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ maxUsers: editValue })
+            });
+            const data = await res.json();
+            if (data.success) {
+                setProxies(proxies.map(p => p.id === id ? { ...p, maxUsers: editValue } : p));
+                setEditingId(null);
+                alert('Updated successfully');
+            } else {
+                alert(data.error || 'Update failed');
+            }
+        } catch (err) {
+            alert('Update failed');
         }
     };
 
@@ -196,15 +224,38 @@ export default function ProxyAdminPage() {
                                 </div>
 
                                 <div className="space-y-4 relative z-10">
-                                    {/* Stats Row */}
+                                    {/* Stats Row - Editable Capacity */}
                                     <div className="flex justify-between text-xs py-2 border-y border-slate-800/50">
                                         <div className="text-slate-500 uppercase font-medium">Capacity</div>
-                                        <div className="text-slate-200">
-                                            <span className={proxy._count.assignedUsers >= proxy.maxUsers ? 'text-orange-400' : 'text-slate-200'}>
-                                                {proxy._count.assignedUsers}
-                                            </span>
-                                            <span className="text-slate-600"> / {proxy.maxUsers} Users</span>
-                                        </div>
+                                        {editingId === proxy.id ? (
+                                            <div className="flex items-center gap-1">
+                                                <input
+                                                    type="number"
+                                                    min={proxy._count.assignedUsers}
+                                                    max={50}
+                                                    value={editValue}
+                                                    onChange={(e) => setEditValue(parseInt(e.target.value))}
+                                                    className="w-16 bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs"
+                                                />
+                                                <button onClick={() => handleEditMaxUsers(proxy.id)} className="text-green-400">
+                                                    <Check className="w-4 h-4" />
+                                                </button>
+                                                <button onClick={() => setEditingId(null)} className="text-red-400">
+                                                    <X className="w-4 h-4" />
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <div 
+                                                className="text-slate-200 flex items-center gap-1 cursor-pointer hover:text-blue-400"
+                                                onClick={() => { setEditingId(proxy.id); setEditValue(proxy.maxUsers); }}
+                                            >
+                                                <span className={proxy._count.assignedUsers >= proxy.maxUsers ? 'text-orange-400' : 'text-slate-200'}>
+                                                    {proxy._count.assignedUsers}
+                                                </span>
+                                                <span className="text-slate-600">/ {proxy.maxUsers}</span>
+                                                <Edit2 className="w-3 h-3 ml-1 opacity-50 hover:opacity-100" />
+                                            </div>
+                                        )}
                                     </div>
 
                                     <div className="flex justify-between text-xs pb-2 border-b border-slate-800/50">

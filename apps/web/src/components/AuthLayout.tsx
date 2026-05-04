@@ -9,6 +9,18 @@ import { toast } from 'sonner';
 import api from '@/lib/api';
 import { cn } from '@/lib/utils';
 
+const COUNTRIES = [
+    { code: 'IN', name: 'India' },
+    { code: 'US', name: 'United States' },
+    { code: 'UK', name: 'United Kingdom' },
+    { code: 'AU', name: 'Australia' },
+    { code: 'CA', name: 'Canada' },
+    { code: 'DE', name: 'Germany' },
+    { code: 'FR', name: 'France' },
+    { code: 'JP', name: 'Japan' },
+    { code: 'BR', name: 'Brazil' },
+];
+
 export interface Testimonial {
     avatarSrc: string;
     name: string;
@@ -30,6 +42,8 @@ interface AuthLayoutProps {
     setFirstName?: (val: string) => void;
     lastName?: string;
     setLastName?: (val: string) => void;
+    country?: string;
+    setCountry?: (val: string) => void;
 }
 
 const testimonials: Testimonial[] = [
@@ -60,7 +74,9 @@ export function AuthLayout({
     firstName,
     setFirstName,
     lastName,
-    setLastName
+    setLastName,
+    country,
+    setCountry
 }: AuthLayoutProps) {
     const [showPassword, setShowPassword] = useState(false);
     const router = useRouter();
@@ -184,6 +200,28 @@ export function AuthLayout({
                                                 {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                                             </button>
                                         </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Country Dropdown for Registration */}
+                            {type === 'register' && setCountry && (
+                                <div className="animate-element animate-delay-250">
+                                    <label className="text-sm font-bold text-muted-foreground ml-1">Country (for proxy assignment)</label>
+                                    <div className="mt-1 rounded-2xl border border-border bg-muted/30 backdrop-blur-sm transition-all focus-within:border-primary/50 focus-within:bg-background focus-within:ring-4 focus-within:ring-primary/5">
+                                        <select
+                                            name="country"
+                                            value={country || 'IN'}
+                                            onChange={(e) => setCountry(e.target.value)}
+                                            required
+                                            className="w-full bg-transparent text-sm p-4 rounded-2xl focus:outline-none font-medium appearance-none cursor-pointer"
+                                        >
+                                            {COUNTRIES.map((c) => (
+                                                <option key={c.code} value={c.code} className="bg-background">
+                                                    {c.name}
+                                                </option>
+                                            ))}
+                                        </select>
                                     </div>
                                 </div>
                             )}

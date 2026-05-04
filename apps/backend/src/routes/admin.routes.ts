@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { addProxies, listProxies, deleteProxy } from '../controllers/admin.controller';
+import { addProxies, listProxies, deleteProxy, updateProxyMaxUsers } from '../controllers/admin.controller';
 
 const router = Router();
 
@@ -9,6 +9,7 @@ const router = Router();
 
 router.post('/proxies', addProxies);
 router.get('/proxies', listProxies);
+router.patch('/proxies/:id', updateProxyMaxUsers);
 router.delete('/proxies/:id', deleteProxy);
 
 export default router;
