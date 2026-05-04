@@ -127,8 +127,10 @@ export const startCampaign = async (req: any, res: Response) => {
 
         // Identify the start node from WorkflowJson
         const workflow = campaign.workflowJson as any;
-        console.log('Workflow:', workflow ? 'exists' : 'null', 'nodes:', workflow?.nodes?.length || 0);
-        const startNode = workflow.nodes?.find((n: any) => n.type === 'TRIGGER' || n.type === 'input') || workflow.nodes?.[0];
+        // Handle both { nodes: [...] } and [...] formats
+        const workflowNodes = workflow?.nodes || workflow;
+        console.log('Workflow:', workflow ? 'exists' : 'null', 'nodes:', workflowNodes?.length || 0);
+        const startNode = workflowNodes?.find((n: any) => n.type === 'TRIGGER' || n.type === 'input') || workflowNodes?.[0];
         console.log('startNode:', startNode?.id, startNode?.type);
 
         let skippedCount = 0;

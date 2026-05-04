@@ -148,7 +148,8 @@ export const importLeads = async (req: any, res: Response) => {
                 const campaign = await prisma.campaign.findUnique({ where: { id: campaignId, userId } });
                 if (campaign) {
                     const workflow = campaign.workflowJson as any;
-                    const startNode = workflow.nodes?.find((n: any) => n.type === 'TRIGGER' || n.type === 'input') || workflow.nodes?.[0];
+                    const workflowNodes = workflow?.nodes || workflow;
+                    const startNode = workflowNodes?.find((n: any) => n.type === 'TRIGGER' || n.type === 'input') || workflowNodes?.[0];
                     const firstEdge = workflow.edges?.find((e: any) => e.source === startNode?.id);
                     const firstStepId = firstEdge ? firstEdge.target : startNode?.id;
 
@@ -254,7 +255,8 @@ export const uploadCsvLeads = async (req: any, res: Response) => {
                 const campaign = await prisma.campaign.findUnique({ where: { id: campaignId, userId } });
                 if (campaign) {
                     const workflow = campaign.workflowJson as any;
-                    const startNode = workflow.nodes?.find((n: any) => n.type === 'TRIGGER' || n.type === 'input') || workflow.nodes?.[0];
+                    const workflowNodes = workflow?.nodes || workflow;
+                    const startNode = workflowNodes?.find((n: any) => n.type === 'TRIGGER' || n.type === 'input') || workflowNodes?.[0];
                     const firstEdge = workflow.edges?.find((e: any) => e.source === startNode?.id);
                     const firstStepId = firstEdge ? firstEdge.target : startNode?.id;
 
