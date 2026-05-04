@@ -138,15 +138,15 @@ export const startCampaign = async (req: any, res: Response) => {
             let finalLeadIds = leadIds;
             console.log('finalLeadIds initial:', finalLeadIds.length);
 
-            // IF leadIds is empty, fetch existing leads for this campaign
+            // IF leadIds is empty, fetch campaign leads
             if (!finalLeadIds || finalLeadIds.length === 0) {
-                console.log(`[Campaign] No leadIds provided. Fetching all user leads for campaign ${id}.`);
-                const userLeads = await prisma.lead.findMany({
-                    where: { userId },
-                    select: { id: true }
+                console.log(`[Campaign] No leadIds provided. Fetching campaign leads for campaign ${id}.`);
+                const campaignLeads = await prisma.campaignLead.findMany({
+                    where: { campaignId: id },
+                    select: { leadId: true }
                 });
-                finalLeadIds = userLeads.map((el: any) => el.id);
-                console.log('Fetched user leads:', finalLeadIds.length);
+                finalLeadIds = campaignLeads.map((el: any) => el.leadId);
+                console.log('Fetched campaign leads:', finalLeadIds.length);
             }
 
             console.log('Final leadIds to process:', finalLeadIds.length);
