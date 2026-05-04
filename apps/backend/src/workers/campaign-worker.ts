@@ -76,6 +76,7 @@ const processCampaignJob = async (data: CampaignJobData, job: Job) => {
     const config: any = typeof rawConfig === 'string' ? JSON.parse(rawConfig) : rawConfig;
     
     // Convert React Flow graph (nodes/edges) into a linear flow array for the engine
+    // Also handle plain array format: [{"type": "PROFILE_VISIT"}, {"type": "MESSAGE"}]
     if (config.nodes && config.edges && !config.flow) {
         const orderedNodes = [];
         let currentNodeId = config.nodes.find((n: any) => 
@@ -131,6 +132,40 @@ const processCampaignJob = async (data: CampaignJobData, job: Job) => {
                 node: mappedNodeType
             };
         });
+    }
+
+    // Also handle plain array format: [{"type": "PROFILE_VISIT"}, {"type": "MESSAGE"}]
+    if (!config.flow && Array.isArray(config)) {
+        config.flow = config.map((node: any) => {
+            const rawSubType = (node.type || node.subType || '').toUpperCase();
+            let mappedNodeType = rawSubType;
+            
+            switch(rawSubType) {
+                case 'VISIT':
+                case 'PROFILE_VISIT':
+                    mappedNodeType = 'profile-visit'; 
+                    break;
+                case 'MESSAGE': 
+                    mappedNodeType = 'send-message'; break;
+                case 'LIKE_NTH_POST':
+                case 'LIKE_POST':
+                case 'LIKE':
+                    mappedNodeType = 'like-nth-post'; break;
+                case 'COMMENT_NTH_POST':
+                case 'COMMENT_POST':
+                case 'COMMENT':
+                    mappedNodeType = 'comment-nth-post'; break;
+                case 'CONNECT': 
+                    mappedNodeType = 'connect'; break;
+                case 'INMAIL':
+                    mappedNodeType = 'inmail'; break;
+                default:
+                    mappedNodeType = node.type?.toLowerCase() || node.subType?.toLowerCase() || 'unknown';
+            }
+            
+            return { ...node, node: mappedNodeType };
+        });
+        console.log(`[CAMPAIGN-WORKER] Converted plain array to flow:`, JSON.stringify(config.flow));
     }
 
     // Inject AI Context & Session Security
