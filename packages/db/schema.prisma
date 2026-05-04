@@ -61,7 +61,7 @@ model Campaign {
 }
 
 model CampaignLead {
-  id              String     @id
+  id              String     @id @default(cuid())
   campaignId      String
   leadId          String
   stepIndex       Int        @default(0)
