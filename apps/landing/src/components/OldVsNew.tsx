@@ -32,7 +32,7 @@ export function OldVsNew() {
           className="text-center mb-16"
         >
           <h2 className="text-3xl sm:text-4xl lg:text-5xl font-black text-slate-900 tracking-tight">
-            Outreach shouldn't feel like a{" "}
+            {"Outreach shouldn't feel like a "}
             <span className="text-primary">second job</span>
           </h2>
           <p className="mt-4 text-lg text-slate-600">
