@@ -14,12 +14,25 @@ build/
 *.log
 .env
 .env.local
+.env.production
+.env.worker
+.env.db
+
+# Credentials files (never commit)
+linkedin_username_password.txt
+db_cookies_raw.txt
 .DS_Store
 .venv
 .turbo
 ui_improve
 *.zip
 *.json
+!vercel.json
+!turbo.json
+!package.json
+!package-lock.json
+!tsconfig.json
+!nixpacks.toml
 # app sessions
 apps/backend/sessions/
 linkedin_session/
