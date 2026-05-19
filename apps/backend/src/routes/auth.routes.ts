@@ -1,29 +1,16 @@
-import express from 'express';
 import { Router } from 'express';
-import { 
-  register, 
-  login, 
+import {
+  register,
+  login,
   googleLogin,
-  syncExtension, 
-  getCloudStatus, 
-  getLinkedinStatus, 
-  syncLinkedinProfile, 
-  startLinkedinLogin, 
-  heartbeat, 
-  bookmarkletSync,
-  cloudLogin 
+  getCloudStatus,
+  getLinkedinStatus,
+  syncLinkedinProfile,
+  startLinkedinLogin,
+  heartbeat,
 } from '../controllers/auth.controller';
-import { 
-  startSimulationLogin, 
-  submitSimulation2FA,
-  startPhase1PersistentSync
-} from '../controllers/simulation.controller';
-import { uploadSessionZip } from '../controllers/sync.controller';
-import sessionRouter from './session.routes';
 import { authMiddleware } from '../middleware/auth.middleware';
-import multer from 'multer';
 
-const upload = multer({ storage: multer.memoryStorage() });
 const router = Router();
 
 router.post('/register', register);
@@ -34,18 +21,5 @@ router.get('/linkedin-status', authMiddleware, getLinkedinStatus);
 router.post('/sync-profile', authMiddleware, syncLinkedinProfile);
 router.post('/start-login', authMiddleware, startLinkedinLogin);
 router.post('/heartbeat', authMiddleware, heartbeat);
-router.post('/bookmarklet-sync', authMiddleware, bookmarkletSync);
-router.get('/cloud-login', authMiddleware, cloudLogin);
-
-// Cloud-Native Simulation Routes
-router.post('/start-simulation', authMiddleware, startSimulationLogin);
-router.post('/submit-2fa', authMiddleware, submitSimulation2FA);
-router.post('/start-phase1-sync', authMiddleware, startPhase1PersistentSync);
-
-// Local-Sync Upload Route
-router.post('/upload-session', authMiddleware, upload.single('sessionZip'), uploadSessionZip);
-
-// Session Management Routes (socket login, validation)
-router.use('/', sessionRouter);
 
 export default router;

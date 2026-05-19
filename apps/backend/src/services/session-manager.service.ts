@@ -91,6 +91,29 @@ class SessionManagerService {
             userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
         };
 
+        // Sticky proxy per LinkedIn account: same exit IP for login + every campaign run
+        try {
+            const { getOrAssignProxy } = await import('./proxy.service');
+            const proxy = await getOrAssignProxy(userId);
+            if (proxy) {
+                launchOptions.proxy = {
+                    server: `http://${proxy.proxyHost}:${proxy.proxyPort}`,
+                    username: proxy.proxyUsername || undefined,
+                    password: proxy.proxyPassword || undefined,
+                };
+                console.log(`[SESSION-MANAGER] Using sticky proxy ${proxy.proxyHost}:${proxy.proxyPort} (${proxy.proxyCountry}) for user ${userId}`);
+            } else if (process.env.DEFAULT_PROXY_SERVER && process.env.DEFAULT_PROXY_PORT) {
+                launchOptions.proxy = {
+                    server: `http://${process.env.DEFAULT_PROXY_SERVER}:${process.env.DEFAULT_PROXY_PORT}`,
+                    username: process.env.DEFAULT_PROXY_USERNAME || undefined,
+                    password: process.env.DEFAULT_PROXY_PASSWORD || undefined
+                };
+                console.log(`[SESSION-MANAGER] No proxy assigned — using DEFAULT_PROXY fallback ${process.env.DEFAULT_PROXY_SERVER}:${process.env.DEFAULT_PROXY_PORT}`);
+            }
+        } catch (err: any) {
+            console.error(`[SESSION-MANAGER] Failed to load proxy for ${userId}: ${err.message}`);
+        }
+
         const contextOptions: any = {
             userAgent: launchOptions.userAgent,
             viewport: null,
@@ -157,38 +180,100 @@ class SessionManagerService {
         const sessionPath = this.getUserSessionPath(userId);
 
         try {
-            await page.waitForSelector('#username', { state: 'visible', timeout: 30000 }).catch(() => null);
-            
-            const usernameInput = await page.$('#username');
-            
-            if (usernameInput) {
-                console.log(`[SESSION-MANAGER] Filling email and clicking Continue...`);
-                await usernameInput.fill(email);
-                await page.waitForTimeout(500);
-                
-                const continueBtn = await page.$('button[type="submit"]:has-text("Continue")');
-                if (continueBtn) {
-                    await continueBtn.click();
-                    await page.waitForSelector('#password', { state: 'visible', timeout: 15000 }).catch(() => null);
-                    await page.waitForTimeout(1000);
-                } else {
-                    await page.keyboard.press('Enter');
-                    await page.waitForSelector('#password', { state: 'visible', timeout: 15000 }).catch(() => null);
-                    await page.waitForTimeout(1000);
-                }
-                
-                const passwordInput = await page.$('#password');
-                if (passwordInput) {
-                    await passwordInput.fill(password);
-                    await page.waitForTimeout(500);
-                    
-                    const signInBtn = await page.$('button[type="submit"]:has-text("Sign in")');
-                    if (signInBtn) {
-                        await signInBtn.click();
-                    } else {
-                        await page.keyboard.press('Enter');
+            const usernameSelectors = ['#username', 'input[name="session_key"]', 'input[autocomplete="username"]', 'input[type="email"]'];
+            const passwordSelectors = ['#password', 'input[name="session_password"]', 'input[autocomplete="current-password"]', 'input[type="password"]'];
+
+            let usernameInput = null;
+            for (const sel of usernameSelectors) {
+                await page.waitForSelector(sel, { state: 'visible', timeout: 8000 }).catch(() => null);
+                const candidates = await page.$$(sel);
+                for (const c of candidates) {
+                    if (await c.isVisible().catch(() => false)) {
+                        usernameInput = c;
+                        break;
                     }
                 }
+                if (usernameInput) {
+                    console.log(`[SESSION-MANAGER] Found visible username field via: ${sel}`);
+                    break;
+                }
+            }
+
+            if (usernameInput) {
+                console.log(`[SESSION-MANAGER] Typing email (human-like)...`);
+                await usernameInput.click();
+                await page.waitForTimeout(300);
+                await page.keyboard.type(email, { delay: 80 });
+                await page.waitForTimeout(800);
+
+                const continueBtn = await page.$('button[type="submit"]:has-text("Continue")');
+                if (continueBtn) {
+                    const continueVisible = await continueBtn.isVisible().catch(() => false);
+                    if (continueVisible) {
+                        console.log(`[SESSION-MANAGER] Clicking Continue (two-step variant)`);
+                        await continueBtn.click();
+                        await page.waitForTimeout(2000);
+                    } else {
+                        console.log(`[SESSION-MANAGER] Continue button hidden, single-page variant — skipping`);
+                    }
+                }
+
+                let passwordInput = null;
+                for (const sel of passwordSelectors) {
+                    await page.waitForSelector(sel, { state: 'visible', timeout: 8000 }).catch(() => null);
+                    const candidates = await page.$$(sel);
+                    for (const c of candidates) {
+                        if (await c.isVisible().catch(() => false)) {
+                            passwordInput = c;
+                            break;
+                        }
+                    }
+                    if (passwordInput) {
+                        console.log(`[SESSION-MANAGER] Found visible password field via: ${sel}`);
+                        break;
+                    }
+                }
+
+                if (passwordInput) {
+                    console.log(`[SESSION-MANAGER] Typing password (human-like)...`);
+                    await passwordInput.click();
+                    await page.waitForTimeout(300);
+                    await page.keyboard.type(password, { delay: 80 });
+                    await page.waitForTimeout(800);
+
+                    // Try multiple ways to find and click the submit button
+                    let clicked = false;
+                    const buttonSelectors = [
+                        'button[type="submit"]:has-text("Sign in")',
+                        'button[aria-label*="Sign in"]',
+                        'button.btn__primary--large',
+                        'button:has-text("Sign in")',
+                    ];
+                    for (const sel of buttonSelectors) {
+                        const btn = await page.$(sel);
+                        if (btn) {
+                            const isVisible = await btn.isVisible().catch(() => false);
+                            if (isVisible) {
+                                console.log(`[SESSION-MANAGER] Clicking submit via: ${sel}`);
+                                await btn.click();
+                                clicked = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (!clicked) {
+                        console.log(`[SESSION-MANAGER] No submit button matched; pressing Enter`);
+                        await page.keyboard.press('Enter');
+                    }
+
+                    // Give the page a moment to react and log where we land
+                    await page.waitForTimeout(5000);
+                    console.log(`[SESSION-MANAGER] Post-submit URL: ${page.url()}`);
+                } else {
+                    console.warn(`[SESSION-MANAGER] No password field found after filling email`);
+                }
+            } else {
+                console.warn(`[SESSION-MANAGER] No username field matched any selector — page may be a checkpoint/challenge`);
             }
 
             await page.waitForURL('**/feed/**', { timeout: 120000 });
@@ -213,10 +298,12 @@ class SessionManagerService {
 
             await prisma.user.update({
                 where: { id: userId },
-                data: { 
+                data: {
                     sessionPath,
                     sessionInvalid: false,
-                    linkedinCookie: JSON.stringify(cookies)
+                    linkedinCookie: JSON.stringify(cookies),
+                    linkedinLocalStorage: localStorageData,
+                    linkedinFingerprint: JSON.stringify({ userAgent })
                 }
             });
 
@@ -227,7 +314,10 @@ class SessionManagerService {
         } catch (e: any) {
             console.error(`[SESSION-MANAGER] Login failed: ${e.message}`);
             try {
-                await page.screenshot({ path: path.join(SESSION_STORAGE_PATH, `login_error_${userId}.png`) });
+                console.log(`[SESSION-MANAGER] Browser URL at failure: ${page.url()}`);
+                await page.screenshot({ path: path.join(SESSION_STORAGE_PATH, `login_error_${userId}.png`), fullPage: true });
+                const bodyText = await page.evaluate(() => document.body.innerText.slice(0, 1500)).catch(() => '');
+                console.log(`[SESSION-MANAGER] Body text snippet: ${bodyText.replace(/\n+/g, ' | ')}`);
             } catch {}
             this.emitStatus(userId, 'FAILED', { error: e.message });
             return { error: e.message };
@@ -314,7 +404,10 @@ class SessionManagerService {
                 sessionInvalid: false,
                 profileData: profileData.firstName ? JSON.stringify(profileData) : undefined,
                 persistentSessionPath: sessionPath,
-                lastBrowserActivityAt: new Date()
+                lastBrowserActivityAt: new Date(),
+                linkedinCookie: JSON.stringify(cookies),
+                linkedinLocalStorage: JSON.stringify(localStorageData),
+                linkedinFingerprint: JSON.stringify({ userAgent })
             }
         });
 

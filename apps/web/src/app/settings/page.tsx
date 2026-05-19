@@ -15,7 +15,7 @@ import {
     Save
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import LinkedInConnection from '@/components/LinkedInConnection';
+import LinkedInConnectivity from '@/components/LinkedInConnectivity';
 import BusinessProfileForm from '@/components/BusinessProfileForm';
 import { cn } from '@/lib/utils';
 import { TopBar } from '@/components/TopBar';
@@ -179,7 +179,7 @@ export default function SettingsPage() {
                             )}
 
                             {activeSection === 'linkedin' && (
-                                <LinkedInConnection />
+                                <LinkedInConnectivity />
                             )}
 
                             {activeSection === 'business' && (

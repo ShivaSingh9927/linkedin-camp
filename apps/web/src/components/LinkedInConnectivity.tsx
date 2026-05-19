@@ -1,162 +1,143 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import {
     Linkedin,
     CheckCircle2,
     RefreshCcw,
-    ShieldCheck,
     AlertCircle,
     Eye,
     EyeOff,
-    ExternalLink,
-    Chrome,
     Zap,
-    Globe,
     Lock,
     Smartphone,
     ArrowRight,
-    Loader2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
+import { io as socketIO, Socket } from 'socket.io-client';
 
-type LinkStep = 'CHOICE' | 'CREDENTIALS' | 'PROGRESS' | '2FA' | 'SUCCESS' | 'DEBUGGER';
+type LinkStep = 'CREDENTIALS' | 'PROGRESS' | '2FA' | 'SUCCESS';
+
+const apiBase = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/v1\/?$/, '');
 
 export default function LinkedInConnectivity() {
-    const [status, setStatus] = useState<{
-        userId?: string;
-        connected: boolean;
-        cookie?: string;
-        persistent?: boolean;
-        persistentPath?: string;
-    } | null>(null);
-    const [step, setStep] = useState<LinkStep>('CHOICE');
+    const [status, setStatus] = useState<{ connected?: boolean } | null>(null);
+    const [step, setStep] = useState<LinkStep>('CREDENTIALS');
     const [showModal, setShowModal] = useState(false);
     const [mounted, setMounted] = useState(false);
 
-    // Form inputs
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
     const [twoFACode, setTwoFACode] = useState('');
-    
-    // Status tracking
+
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [progressMsg, setProgressMsg] = useState('Initiating secure cloud session...');
+    const [progressMsg, setProgressMsg] = useState('Initializing secure browser...');
+
+    const socketRef = useRef<Socket | null>(null);
 
     useEffect(() => {
         setMounted(true);
         fetchStatus();
     }, []);
 
+    // Subscribe to live SESSION_LOGIN_STATUS while the modal is open.
+    useEffect(() => {
+        if (!showModal) return;
+
+        const token = localStorage.getItem('token');
+        if (!token) return;
+
+        const s = socketIO(apiBase, { transports: ['websocket', 'polling'] });
+        socketRef.current = s;
+
+        s.on('connect', () => s.emit('join_room', { token }));
+        s.on('SESSION_LOGIN_STATUS', (payload: { status?: string; message?: string; error?: string }) => {
+            if (payload?.message) setProgressMsg(payload.message);
+            else if (payload?.status) setProgressMsg(payload.status);
+        });
+
+        return () => {
+            s.disconnect();
+            socketRef.current = null;
+        };
+    }, [showModal]);
+
     const fetchStatus = async () => {
         try {
             const token = localStorage.getItem('token');
-            const apiBase = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/v1\/?$/, '');
             const res = await fetch(`${apiBase}/api/v1/auth/linkedin-status`, {
-                headers: { 'Authorization': `Bearer ${token}` }
+                headers: { Authorization: `Bearer ${token}` },
             });
             const data = await res.json();
             setStatus(data);
             return data;
-        } catch (error) {
+        } catch {
             return null;
         }
     };
 
-    const handleStartSimulation = async (e: React.FormEvent) => {
+    const handleSubmitCredentials = async (e: React.FormEvent) => {
         e.preventDefault();
         setError(null);
-        setStep('PROGRESS');
         setLoading(true);
-        setProgressMsg('Launching stealth browser on cloud...');
+        setStep('PROGRESS');
+        setProgressMsg('Launching headless browser...');
 
         try {
             const token = localStorage.getItem('token');
-            const apiBase = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/v1\/?$/, '');
-            
-            setTimeout(() => setProgressMsg('Navigating to LinkedIn...'), 2000);
-            setTimeout(() => setProgressMsg('Entering credentials safely...'), 5000);
+            const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
 
-            const res = await fetch(`${apiBase}/api/v1/auth/start-simulation`, {
+            // 1) Spin up the cloud browser
+            const startRes = await fetch(`${apiBase}/api/v1/session/start-socket-login`, {
                 method: 'POST',
-                headers: { 
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}` 
-                },
-                body: JSON.stringify({ email, password })
+                headers,
+                body: '{}',
             });
-
-            const data = await res.json();
-
-            if (data.success) {
-                if (data.requires2FA) {
-                    setStep('2FA');
-                    toast.info('LinkedIn security verification required');
-                } else if (data.connected) {
-                    setStep('SUCCESS');
-                    fetchStatus();
-                    toast.success('Successfully linked your account!');
-                }
-            } else {
-                setError(data.error || 'Identity verification failed.');
-                setStep('CREDENTIALS');
+            if (!startRes.ok) {
+                const j = await startRes.json().catch(() => ({}));
+                throw new Error(j.error || 'Failed to start browser');
             }
-        } catch (err) {
-            setError('Connection error.');
+
+            // 2) Submit credentials. This may take ~120s if 2FA appears (server times out on /feed/).
+            const credRes = await fetch(`${apiBase}/api/v1/session/submit-credentials`, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({ email, password }),
+            });
+            const credData = await credRes.json();
+
+            if (credData.success) {
+                setStep('SUCCESS');
+                fetchStatus();
+                toast.success('LinkedIn connected!');
+                return;
+            }
+
+            if (credData.requires2FA) {
+                setStep('2FA');
+                toast.info('Enter the verification code LinkedIn sent you');
+                return;
+            }
+
+            // The server is still on the verification page — most often this means 2FA is up.
+            // Fall through to 2FA step and let the user enter the code.
+            if (credData.error && /Timeout|waitForURL|verification/i.test(credData.error)) {
+                setStep('2FA');
+                toast.info('Please enter the verification code from LinkedIn');
+                return;
+            }
+
+            throw new Error(credData.error || 'Login failed');
+        } catch (err: any) {
+            setError(err?.message || 'Connection error');
             setStep('CREDENTIALS');
         } finally {
             setLoading(false);
         }
-    };
-
-    const handleOneClickSync = () => {
-        setStep('PROGRESS');
-        setLoading(true);
-        setProgressMsg('Waiting for extension to capture session...');
-        
-        // Ensure the user is actually on LinkedIn or at least has it open
-        window.open('https://www.linkedin.com/feed/', '_blank');
-        
-        window.postMessage({ type: 'LINKEDIN_CAMP_FORCE_SYNC' }, '*');
-        toast.info('Opening secure sync window...', {
-            description: 'Please make sure you are logged into LinkedIn in this browser.'
-        });
-        
-        let attempts = 0;
-        const interval = setInterval(async () => {
-            attempts++;
-            const statusData = await fetchStatus();
-            
-            if (statusData?.persistentPath || statusData?.connected) {
-                setStep('SUCCESS');
-                setLoading(false);
-                clearInterval(interval);
-                toast.success('Session synchronized & verified!');
-            } else if (attempts > 30) {
-                 setProgressMsg('Still waiting... Please ensure LinkedIn is open and you are logged in.');
-            }
-        }, 3000);
-        
-        setTimeout(() => {
-            clearInterval(interval);
-            if (step !== 'SUCCESS') {
-                setLoading(false);
-                setStep('CHOICE');
-                setError('Sync timed out. Please try again.');
-            }
-        }, 120000);
-    };
-
-    const handlePhase1Sync = () => {
-        setStep('DEBUGGER');
-        setLoading(false);
-        toast.info('Launching Cloud Debugger...', {
-            description: 'You can now log in directly on our secure server.'
-        });
     };
 
     const handleVerify2FA = async (e: React.FormEvent) => {
@@ -168,27 +149,22 @@ export default function LinkedInConnectivity() {
 
         try {
             const token = localStorage.getItem('token');
-            const apiBase = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/v1\/?$/, '');
-            
-            const res = await fetch(`${apiBase}/api/v1/auth/submit-2fa`, {
+            const res = await fetch(`${apiBase}/api/v1/session/submit-2fa-code`, {
                 method: 'POST',
-                headers: { 
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}` 
-                },
-                body: JSON.stringify({ code: twoFACode })
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                body: JSON.stringify({ code: twoFACode }),
             });
-
             const data = await res.json();
-            if (data.success && data.connected) {
+            if (data.success) {
                 setStep('SUCCESS');
                 fetchStatus();
+                toast.success('LinkedIn connected!');
             } else {
-                setError(data.error || 'Invalid code.');
+                setError(data.error || 'Invalid code');
                 setStep('2FA');
             }
-        } catch (err) {
-            setError('Sync error.');
+        } catch (err: any) {
+            setError(err?.message || 'Verification error');
             setStep('2FA');
         } finally {
             setLoading(false);
@@ -206,7 +182,6 @@ export default function LinkedInConnectivity() {
                         onClick={() => !loading && setShowModal(false)}
                         className="absolute inset-0 bg-slate-900/60 backdrop-blur-md cursor-pointer"
                     />
-
                     <motion.div
                         initial={{ scale: 0.95, opacity: 0, y: 10 }}
                         animate={{ scale: 1, opacity: 1, y: 0 }}
@@ -220,52 +195,86 @@ export default function LinkedInConnectivity() {
                                     <div className="w-12 h-12 bg-[#0077b5] rounded-xl flex items-center justify-center shadow-lg">
                                         <Linkedin className="w-7 h-7 text-white" />
                                     </div>
-                                    <div>
-                                        <h2 className="text-xl font-black text-slate-900 leading-none uppercase italic">Cloud Link</h2>
-                                    </div>
+                                    <h2 className="text-xl font-black text-slate-900 leading-none uppercase italic">Cloud Link</h2>
                                 </div>
                             </div>
 
                             <AnimatePresence mode="wait">
-                                {step === 'CHOICE' && (
-                                    <motion.div key="choice" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-6">
-                                        <div className="space-y-2 text-center pb-4">
-                                            <h3 className="text-2xl font-black text-slate-900 italic">SECURE SYNC</h3>
-                                            <p className="text-sm text-slate-500 font-medium">Capture your active LinkedIn session via extension.</p>
+                                {step === 'CREDENTIALS' && (
+                                    <motion.form
+                                        key="creds"
+                                        initial={{ opacity: 0 }}
+                                        animate={{ opacity: 1 }}
+                                        exit={{ opacity: 0 }}
+                                        onSubmit={handleSubmitCredentials}
+                                        className="space-y-5"
+                                    >
+                                        <div className="space-y-2 text-center pb-2">
+                                            <h3 className="text-2xl font-black text-slate-900 italic">CONNECT LINKEDIN</h3>
+                                            <p className="text-sm text-slate-500 font-medium">
+                                                We log into LinkedIn on our cloud browser, then keep your session warm.
+                                            </p>
                                         </div>
-                                        <div className="grid grid-cols-1 gap-4">
-                                            <button 
-                                                onClick={handleOneClickSync}
-                                                className="group text-left p-8 bg-slate-900 rounded-[2.5rem] hover:bg-black transition-all shadow-xl hover:scale-[1.02] active:scale-[0.98]"
-                                            >
-                                                <div className="flex justify-between items-center mb-4">
-                                                    <div className="w-14 h-14 rounded-2xl bg-[#0077b5] flex items-center justify-center text-white shadow-lg">
-                                                        <Chrome className="w-8 h-8" />
-                                                    </div>
-                                                    <div className="px-3 py-1 bg-emerald-500/10 rounded-full border border-emerald-500/20">
-                                                        <span className="text-[10px] text-emerald-500 font-black uppercase">Instant</span>
-                                                    </div>
-                                                </div>
-                                                <h4 className="font-black text-white uppercase text-lg italic">Start Sync</h4>
-                                                <p className="text-xs text-slate-400 font-bold mt-1 uppercase">Recommended Flow</p>
-                                            </button>
-                                            
-                                            {error && (
-                                                <div className="p-4 bg-red-50 text-red-600 rounded-2xl text-[10px] font-black uppercase text-center border border-red-100 italic">
-                                                    {error}
-                                                </div>
-                                            )}
+                                        <div className="space-y-3">
+                                            <input
+                                                type="email"
+                                                required
+                                                placeholder="LinkedIn email"
+                                                value={email}
+                                                onChange={(e) => setEmail(e.target.value)}
+                                                className="w-full h-14 px-5 rounded-2xl border border-slate-200 focus:outline-none focus:border-[#0077b5] text-sm"
+                                            />
+                                            <div className="relative">
+                                                <input
+                                                    type={showPassword ? 'text' : 'password'}
+                                                    required
+                                                    placeholder="Password"
+                                                    value={password}
+                                                    onChange={(e) => setPassword(e.target.value)}
+                                                    className="w-full h-14 px-5 pr-12 rounded-2xl border border-slate-200 focus:outline-none focus:border-[#0077b5] text-sm"
+                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowPassword((v) => !v)}
+                                                    className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"
+                                                >
+                                                    {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                                                </button>
+                                            </div>
                                         </div>
-                                    </motion.div>
+                                        {error && (
+                                            <div className="flex items-start space-x-2 p-3 bg-red-50 text-red-600 rounded-2xl text-xs border border-red-100">
+                                                <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                                                <span>{error}</span>
+                                            </div>
+                                        )}
+                                        <button
+                                            type="submit"
+                                            disabled={loading}
+                                            className="w-full h-14 bg-slate-900 text-white rounded-2xl font-black text-sm uppercase flex items-center justify-center space-x-2 hover:bg-black disabled:opacity-60"
+                                        >
+                                            <Lock className="w-4 h-4" />
+                                            <span>Connect securely</span>
+                                            <ArrowRight className="w-4 h-4" />
+                                        </button>
+                                        <p className="text-[10px] text-slate-400 text-center font-medium">
+                                            Credentials are sent over TLS and used once for browser login. We store the resulting session cookies only.
+                                        </p>
+                                    </motion.form>
                                 )}
 
                                 {step === 'PROGRESS' && (
-                                    <motion.div key="progress" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="py-12 text-center space-y-8">
+                                    <motion.div
+                                        key="progress"
+                                        initial={{ opacity: 0 }}
+                                        animate={{ opacity: 1 }}
+                                        className="py-12 text-center space-y-8"
+                                    >
                                         <div className="relative w-24 h-24 mx-auto">
                                             <div className="absolute inset-0 border-4 border-[#0077b5]/20 rounded-full" />
-                                            <motion.div 
+                                            <motion.div
                                                 animate={{ rotate: 360 }}
-                                                transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
+                                                transition={{ duration: 1.5, repeat: Infinity, ease: 'linear' }}
                                                 className="absolute inset-0 border-4 border-t-[#0077b5] rounded-full"
                                             />
                                             <div className="absolute inset-0 flex items-center justify-center">
@@ -273,12 +282,57 @@ export default function LinkedInConnectivity() {
                                             </div>
                                         </div>
                                         <div className="space-y-3">
-                                            <h3 className="text-2xl font-black text-slate-900 italic uppercase">Syncing...</h3>
+                                            <h3 className="text-2xl font-black text-slate-900 italic uppercase">Working...</h3>
                                             <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest leading-relaxed">
                                                 {progressMsg}
                                             </p>
+                                            <p className="text-xs text-slate-400">This can take up to 2 minutes if LinkedIn challenges the login.</p>
                                         </div>
                                     </motion.div>
+                                )}
+
+                                {step === '2FA' && (
+                                    <motion.form
+                                        key="2fa"
+                                        initial={{ opacity: 0 }}
+                                        animate={{ opacity: 1 }}
+                                        exit={{ opacity: 0 }}
+                                        onSubmit={handleVerify2FA}
+                                        className="space-y-5"
+                                    >
+                                        <div className="space-y-2 text-center pb-2">
+                                            <div className="w-16 h-16 mx-auto bg-amber-50 rounded-2xl flex items-center justify-center border border-amber-100">
+                                                <Smartphone className="w-8 h-8 text-amber-600" />
+                                            </div>
+                                            <h3 className="text-2xl font-black text-slate-900 italic">VERIFICATION CODE</h3>
+                                            <p className="text-sm text-slate-500 font-medium">
+                                                LinkedIn sent a code to your email or phone. Enter it below.
+                                            </p>
+                                        </div>
+                                        <input
+                                            type="text"
+                                            required
+                                            inputMode="numeric"
+                                            maxLength={8}
+                                            placeholder="000000"
+                                            value={twoFACode}
+                                            onChange={(e) => setTwoFACode(e.target.value.replace(/\D/g, ''))}
+                                            className="w-full h-16 px-5 rounded-2xl border border-slate-200 focus:outline-none focus:border-[#0077b5] text-center text-2xl tracking-widest font-mono"
+                                        />
+                                        {error && (
+                                            <div className="flex items-start space-x-2 p-3 bg-red-50 text-red-600 rounded-2xl text-xs border border-red-100">
+                                                <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                                                <span>{error}</span>
+                                            </div>
+                                        )}
+                                        <button
+                                            type="submit"
+                                            disabled={loading || twoFACode.length < 4}
+                                            className="w-full h-14 bg-slate-900 text-white rounded-2xl font-black text-sm uppercase disabled:opacity-60"
+                                        >
+                                            Verify
+                                        </button>
+                                    </motion.form>
                                 )}
 
                                 {step === 'SUCCESS' && (
@@ -286,21 +340,14 @@ export default function LinkedInConnectivity() {
                                         <div className="w-24 h-24 bg-emerald-500 rounded-[2.5rem] flex items-center justify-center shadow-2xl mx-auto">
                                             <CheckCircle2 className="w-12 h-12 text-white" />
                                         </div>
-                                        <h3 className="text-3xl font-black text-slate-900 italic uppercase">Signals Locked</h3>
-                                        <div className="flex flex-col gap-3">
-                                            <button 
-                                                onClick={() => setShowModal(false)} 
-                                                className="w-full h-14 bg-slate-900 text-white rounded-[24px] font-black text-sm uppercase"
-                                            >
-                                                Enter Dashboard
-                                            </button>
-                                            <button 
-                                                onClick={() => setStep('CHOICE')} 
-                                                className="w-full h-10 text-slate-400 font-bold text-[10px] uppercase hover:text-slate-600 transition-colors"
-                                            >
-                                                Re-Sync or Manage Connection
-                                            </button>
-                                        </div>
+                                        <h3 className="text-3xl font-black text-slate-900 italic uppercase">Connected</h3>
+                                        <p className="text-sm text-slate-500 font-medium">Your LinkedIn session is now live. Campaigns can run.</p>
+                                        <button
+                                            onClick={() => setShowModal(false)}
+                                            className="w-full h-14 bg-slate-900 text-white rounded-[24px] font-black text-sm uppercase"
+                                        >
+                                            Done
+                                        </button>
                                     </motion.div>
                                 )}
                             </AnimatePresence>
@@ -316,17 +363,25 @@ export default function LinkedInConnectivity() {
             <button
                 onClick={() => {
                     setShowModal(true);
-                    setStep('CHOICE');
+                    setStep('CREDENTIALS');
+                    setError(null);
                 }}
-                className={status?.connected
-                    ? "flex items-center space-x-2 px-4 py-2 bg-emerald-50 text-emerald-600 rounded-full border border-emerald-100"
-                    : "flex items-center space-x-2 px-6 py-3 bg-slate-900 text-white rounded-full animate-pulse"
+                className={
+                    status?.connected
+                        ? 'flex items-center space-x-2 px-4 py-2 bg-emerald-50 text-emerald-600 rounded-full border border-emerald-100'
+                        : 'flex items-center space-x-2 px-6 py-3 bg-slate-900 text-white rounded-full animate-pulse'
                 }
             >
                 {status?.connected ? (
-                    <><div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /><span className="text-[10px] font-black uppercase">Signal Active</span></>
+                    <>
+                        <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                        <span className="text-[10px] font-black uppercase">Signal Active</span>
+                    </>
                 ) : (
-                    <><Zap className="w-4 h-4 text-emerald-400" /><span className="text-[10px] font-black uppercase">Sync Now</span></>
+                    <>
+                        <Zap className="w-4 h-4 text-emerald-400" />
+                        <span className="text-[10px] font-black uppercase">Connect LinkedIn</span>
+                    </>
                 )}
             </button>
             {mounted && createPortal(modalContent, document.body)}

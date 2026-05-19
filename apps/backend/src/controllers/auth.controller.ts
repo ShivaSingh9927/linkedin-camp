@@ -172,34 +172,6 @@ export const login = async (req: Request, res: Response) => {
     }
 };
 
-export const syncExtension = async (req: any, res: Response) => {
-    res.status(410).json({ error: 'Extension sync disabled' });
-};
-
-export const bookmarkletSync = async (req: Request, res: Response) => {
-    const { linkedinCookie, userId } = req.body;
-
-    if (!linkedinCookie || !userId) {
-        return res.status(400).json({ error: 'Missing required params' });
-    }
-
-    try {
-        await prisma.user.update({
-            where: { id: userId },
-            data: {
-                linkedinCookie,
-                linkedinActiveInBrowser: true,
-                lastBrowserActivityAt: new Date()
-            },
-        });
-
-        console.log(`[BOOKMARKLET] Session synced for user ${userId}`);
-        res.json({ success: true, message: 'Session synchronized successfully!' });
-    } catch (error) {
-        res.status(500).json({ error: 'Failed to sync via bookmarklet' });
-    }
-};
-
 export const getCloudStatus = async (req: any, res: Response) => {
     const userId = req.user.id;
     try {
@@ -283,38 +255,6 @@ export const startLinkedinLogin = async (req: any, res: Response) => {
             console.error(`[LOGIN-BOT] Error in startLogin:`, error.message);
         }
     })();
-};
-
-export const cloudLogin = async (req: any, res: Response) => {
-    const userId = req.user.id;
-    const hetznerIp = '204.168.167.198'; 
-    const token = 'Raja_Security_2026';
-
-    // This script automatically navigates the remote browser to LinkedIn
-    const script = `
-      export default async ({ page }) => {
-        await page.goto('https://www.linkedin.com/login');
-      };
-    `.trim();
-
-    const launchOptions = {
-        args: [
-            "--no-sandbox",
-            `--user-data-dir=/sessions/${userId}` // Persistent login
-        ]
-    };
-
-    const params = new URLSearchParams({
-        token: token,
-        launch: JSON.stringify(launchOptions),
-        // Encode the script so it runs on startup
-        script: Buffer.from(script).toString('base64')
-    });
-
-    // Final URL - Open source Browserless uses the root or /debugger/
-    const url = `http://${hetznerIp}:3000/debugger/?${params.toString()}`;
-    
-    res.redirect(url);
 };
 
 export const heartbeat = async (req: any, res: Response) => {

@@ -10,11 +10,38 @@ import Redis from 'ioredis';
 import { runCampaign } from '../campaign-engine';
 import { CampaignConfig } from '../campaign-engine/types';
 import { getOrAssignProxy } from '../services/proxy.service';
-import * as fs from 'fs';
-import * as path from 'path';
 
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
 const redisConnection = REDIS_URL ? new Redis(REDIS_URL, { maxRetriesPerRequest: null }) : null;
+
+// --- Per-account lock: prevents two workers from driving the same LinkedIn account in parallel.
+// LinkedIn flags accounts that hit two profiles in the same second from two different IPs;
+// this lock makes job execution serial per userId across all worker processes.
+const ACCOUNT_LOCK_TTL_SEC = 600; // 10 min — long enough for any single job, auto-expires on crash
+const LOCK_RETRY_DELAY_MS = 30_000; // 30 s — re-queue contended jobs
+
+const RELEASE_LOCK_LUA = `
+if redis.call('get', KEYS[1]) == ARGV[1] then
+  return redis.call('del', KEYS[1])
+else
+  return 0
+end
+`;
+
+async function tryAcquireAccountLock(userId: string, lockToken: string): Promise<boolean> {
+    if (!redisConnection) return true; // No redis => single-instance fallback, no contention possible
+    const key = `linkedin-lock:${userId}`;
+    const res = await redisConnection.set(key, lockToken, 'EX', ACCOUNT_LOCK_TTL_SEC, 'NX');
+    return res === 'OK';
+}
+
+async function releaseAccountLock(userId: string, lockToken: string): Promise<void> {
+    if (!redisConnection) return;
+    const key = `linkedin-lock:${userId}`;
+    await redisConnection.eval(RELEASE_LOCK_LUA, 1, key, lockToken).catch((err: any) => {
+        console.warn(`[CAMPAIGN-WORKER] Failed to release lock for ${userId}:`, err?.message);
+    });
+}
 
 interface CampaignJobData {
     userId: string;
@@ -238,52 +265,10 @@ const processCampaignJob = async (data: CampaignJobData, job: Job) => {
         }
     } catch {}
 
-    // FALLBACK: Load session from disk files (socket login)
-    const sessionDir = user.persistentSessionPath || user.sessionPath;
-    if (sessionDir && !parsedCookies) {
-        try {
-            const cookiesPath = path.join(sessionDir, 'cookies.json');
-            if (fs.existsSync(cookiesPath)) {
-                const rawCookies = JSON.parse(fs.readFileSync(cookiesPath, 'utf-8'));
-                parsedCookies = Array.isArray(rawCookies) ? rawCookies.map((c: any) => ({
-                    ...c,
-                    domain: c.domain || '.linkedin.com',
-                    path: c.path || '/',
-                    expires: c.expires != null ? Math.round(Number(c.expires)) : Math.round(Date.now() / 1000) + 86400 * 30,
-                    sameSite: c.sameSite === 'no_restriction' || c.sameSite === 'none' ? 'None' :
-                             c.sameSite === 'unspecified' || c.sameSite === 'lax' ? 'Lax' :
-                             c.sameSite === 'strict' ? 'Strict' : 'Lax'
-                })) : [rawCookies];
-                console.log(`[CAMPAIGN-WORKER] Loaded ${parsedCookies.length} cookies from disk`);
-            }
-        } catch (e: any) {
-            console.error(`[CAMPAIGN-WORKER] Failed to load cookies from disk: ${e.message}`);
-        }
-    }
-
-    if (sessionDir && !parsedUserAgent) {
-        try {
-            const fpPath = path.join(sessionDir, 'fingerprint.json');
-            if (fs.existsSync(fpPath)) {
-                const fp = JSON.parse(fs.readFileSync(fpPath, 'utf-8'));
-                parsedUserAgent = fp?.userAgent || null;
-                console.log(`[CAMPAIGN-WORKER] Loaded userAgent from disk: ${!!parsedUserAgent}`);
-            }
-        } catch (e: any) {
-            console.error(`[CAMPAIGN-WORKER] Failed to load fingerprint from disk: ${e.message}`);
-        }
-    }
-
-    if (sessionDir && !parsedLocalStorage) {
-        try {
-            const lsPath = path.join(sessionDir, 'localStorage.json');
-            if (fs.existsSync(lsPath)) {
-                parsedLocalStorage = JSON.parse(fs.readFileSync(lsPath, 'utf-8'));
-                console.log(`[CAMPAIGN-WORKER] Loaded ${Object.keys(parsedLocalStorage).length} localStorage keys from disk`);
-            }
-        } catch (e: any) {
-            console.error(`[CAMPAIGN-WORKER] Failed to load localStorage from disk: ${e.message}`);
-        }
+    // DB is the canonical source — disk fallback removed. If DB has no session, fail fast.
+    if (!parsedCookies || parsedCookies.length === 0) {
+        console.error(`[CAMPAIGN-WORKER] No session cookies in DB for user ${userId} — aborting campaign ${campaignId}`);
+        return;
     }
 
     // Get proxy via service instead of hardcoded
@@ -366,8 +351,32 @@ export const initCampaignWorker = () => {
     console.log('[CAMPAIGN-WORKER] Queue name: campaign-actions');
     
     const worker = new Worker('campaign-actions', async (job: Job) => {
-        console.log('[CAMPAIGN-WORKER] 📥 Received job:', job.id, job.data);
-        await processCampaignJob(job.data as CampaignJobData, job);
+        const data = job.data as CampaignJobData;
+        console.log('[CAMPAIGN-WORKER] 📥 Received job:', job.id, data);
+
+        const lockToken = `${job.id || 'unknown'}-${Date.now()}`;
+        const acquired = await tryAcquireAccountLock(data.userId, lockToken);
+
+        if (!acquired) {
+            console.log(`[CAMPAIGN-WORKER] 🔒 Account ${data.userId} busy — re-queueing in ${LOCK_RETRY_DELAY_MS / 1000}s`);
+            const queue = getCampaignQueue();
+            if (queue) {
+                await queue.add(`retry-${data.campaignId}`, data, {
+                    delay: LOCK_RETRY_DELAY_MS,
+                    removeOnComplete: true,
+                    attempts: 1,
+                });
+            }
+            return;
+        }
+
+        try {
+            console.log(`[CAMPAIGN-WORKER] 🔓 Acquired account lock for ${data.userId} (token=${lockToken})`);
+            await processCampaignJob(data, job);
+        } finally {
+            await releaseAccountLock(data.userId, lockToken);
+            console.log(`[CAMPAIGN-WORKER] 🔓 Released account lock for ${data.userId}`);
+        }
     }, {
         connection: redisConnection as any,
         concurrency: 1, // Stay safe: One campaign at a time to avoid IP flags

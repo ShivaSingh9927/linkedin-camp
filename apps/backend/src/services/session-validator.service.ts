@@ -2,13 +2,9 @@ import { chromium } from 'playwright-extra';
 import { Cookie } from 'playwright';
 const stealth = require('puppeteer-extra-plugin-stealth')();
 import { prisma, Prisma } from '@repo/db';
-import path from 'path';
-import fs from 'fs';
 import { getOrAssignProxy } from './proxy.service';
 
 chromium.use(stealth);
-
-const SESSION_STORAGE_PATH = process.env.SESSION_STORAGE_PATH || path.join(process.cwd(), 'sessions');
 
 export interface ValidationResult {
     valid: boolean;
@@ -48,40 +44,42 @@ class SessionValidatorService {
                 return { valid: false, reason: 'NO_SESSION' };
             }
 
-            const sessionPath = user.sessionPath || path.join(SESSION_STORAGE_PATH, userId);
-            const cookiesPath = path.join(sessionPath, 'cookies.json');
-            const fingerprintPath = path.join(sessionPath, 'fingerprint.json');
-            const localStoragePath = path.join(sessionPath, 'localStorage.json');
-
-            if (!fs.existsSync(cookiesPath)) {
-                console.log(`[SESSION-VALIDATOR] No cookies.json found for user ${userId}`);
+            // DB-backed session (canonical). Disk files no longer consulted.
+            if (!user.linkedinCookie) {
+                console.log(`[SESSION-VALIDATOR] No linkedinCookie in DB for user ${userId}`);
                 await this.markInvalid(userId);
                 return { valid: false, reason: 'NO_SESSION' };
             }
 
             let cookies: any[];
             try {
-                cookies = JSON.parse(fs.readFileSync(cookiesPath, 'utf-8'));
+                const raw = JSON.parse(user.linkedinCookie);
+                cookies = Array.isArray(raw) ? raw.map((c: any) => ({
+                    ...c,
+                    expires: c.expires != null ? Math.round(Number(c.expires)) : Math.round(Date.now() / 1000) + 86400 * 30,
+                })) : [raw];
             } catch (e) {
-                console.error(`[SESSION-VALIDATOR] Failed to parse cookies.json: ${e}`);
+                console.error(`[SESSION-VALIDATOR] Failed to parse linkedinCookie from DB: ${e}`);
                 await this.markInvalid(userId);
                 return { valid: false, reason: 'ERROR' };
             }
 
             let userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36';
-            if (fs.existsSync(fingerprintPath)) {
-                try {
-                    const fp = JSON.parse(fs.readFileSync(fingerprintPath, 'utf-8'));
-                    if (fp.userAgent) userAgent = fp.userAgent;
-                } catch {}
-            }
+            try {
+                if (user.linkedinFingerprint) {
+                    const fp = typeof user.linkedinFingerprint === 'string'
+                        ? JSON.parse(user.linkedinFingerprint) : user.linkedinFingerprint;
+                    if (fp?.userAgent) userAgent = fp.userAgent;
+                }
+            } catch {}
 
             let localStorageData: Record<string, string> | null = null;
-            if (fs.existsSync(localStoragePath)) {
-                try {
-                    localStorageData = JSON.parse(fs.readFileSync(localStoragePath, 'utf-8'));
-                } catch {}
-            }
+            try {
+                if (user.linkedinLocalStorage) {
+                    localStorageData = typeof user.linkedinLocalStorage === 'string'
+                        ? JSON.parse(user.linkedinLocalStorage) : user.linkedinLocalStorage as any;
+                }
+            } catch {}
 
             const launchOptions: any = {
                 headless: true,
@@ -97,8 +95,22 @@ class SessionValidatorService {
                 userAgent,
                 viewport: null,
                 locale: 'en-IN',
-timezoneId: 'Asia/Kolkata'
+                timezoneId: 'Asia/Kolkata'
             };
+
+            try {
+                const proxy = await getOrAssignProxy(userId);
+                if (proxy) {
+                    contextOptions.proxy = {
+                        server: `http://${proxy.proxyHost}:${proxy.proxyPort}`,
+                        username: proxy.proxyUsername || undefined,
+                        password: proxy.proxyPassword || undefined,
+                    };
+                    console.log(`[SESSION-VALIDATOR] Using sticky proxy ${proxy.proxyHost}:${proxy.proxyPort} for user ${userId}`);
+                }
+            } catch (err: any) {
+                console.error(`[SESSION-VALIDATOR] Failed to load proxy: ${err.message}`);
+            }
 
             console.log(`[SESSION-VALIDATOR] Validating session for user ${userId} with ${cookies.length} cookies`);
 

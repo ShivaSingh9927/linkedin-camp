@@ -61,11 +61,7 @@ app.listen(serverPort, '0.0.0.0', () => {
             const aiRoutes = (await import('./routes/ai.routes')).default;
             const userRoutes = (await import('./routes/user.routes')).default;
             const sessionRoutes = (await import('./routes/session.routes')).default;
-            const { initScheduler } = await import('./cron/scheduler');
-            const { initWorker } = await import('./workers/linkedin.worker');
-            const { initProxyHealthWorker } = await import('./workers/proxy.worker');
             const { downgradeExpiredTrials } = await import('./services/trial.service');
-            const { initCampaignWorker, enqueueCampaign } = await import('./workers/campaign-worker');
 
             app.use('/api/v1/auth', authRoutes);
             app.use('/api/v1/leads', leadRoutes);
@@ -81,35 +77,7 @@ app.listen(serverPort, '0.0.0.0', () => {
             app.use('/api/v1/users', userRoutes);
             app.use('/api/v1/session', sessionRoutes);
 
-            initScheduler();
-
-            // TEMPORARY: Kickstart route for testing
-            app.get('/api/admin/jumpstart', async (req, res) => {
-                const count = await prisma.campaignLead.updateMany({
-                   where: { isCompleted: false },
-                   data: { nextActionDate: new Date() }
-                });
-                res.json({ success: true, count });
-            });
-
-            // Campaign engine route — enqueue a campaign to the new queue
-            app.post('/api/admin/enqueue-campaign', async (req, res) => {
-                const { campaignId, delayMs } = req.body;
-                if (!campaignId) return res.status(400).json({ error: 'campaignId required' });
-
-                const campaign = await prisma.campaign.findUnique({ where: { id: campaignId } });
-                if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
-
-                await enqueueCampaign(campaign.userId, campaignId, delayMs || 0);
-                res.json({ success: true, campaignId, queued: true });
-            });
-
-            initWorker(); // Required for scheduler to work
-            initCampaignWorker();
-            initProxyHealthWorker();
-            const { initInboxWorker } = await import('./workers/inbox.worker');
-            initInboxWorker();
-            console.log('[BACKEND-COMPLETE] All background services ready');
+            console.log('[BACKEND-COMPLETE] API routes ready (workers run in separate process)');
         } catch (err) {
             console.error('[BACKEND-FATAL] Failed to load modules:', err);
         }

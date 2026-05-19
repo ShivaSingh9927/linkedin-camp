@@ -3,8 +3,6 @@ const stealth = require('puppeteer-extra-plugin-stealth')();
 chromium.use(stealth);
 
 import { prisma } from '@repo/db';
-import * as fs from 'fs';
-import * as path from 'path';
 
 let io: any = null;
 const getSocketIO = async () => {
@@ -43,90 +41,6 @@ import { readNodeOutputs, writeNodeOutput, updateLeadEnrichment } from './storag
 
 const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
 const randomRange = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1) + min);
-
-// ---- File-based session loading (like testscripts) ----
-
-interface SessionFiles {
-    cookies: any[];
-    userAgent: string;
-    localStorage: Record<string, string>;
-}
-
-function loadSessionFromFiles(userId?: string, basePath?: string): SessionFiles | null {
-    const sessionBase = process.env.SESSION_STORAGE_PATH || path.join(process.cwd(), 'sessions');
-    
-    const possiblePaths: string[] = [];
-    
-    if (userId) {
-        possiblePaths.push(path.join(sessionBase, userId));
-    }
-    
-    if (basePath) {
-        possiblePaths.unshift(basePath);
-    }
-    
-    // Check relative to project root (for ts-node execution)
-    possiblePaths.push(path.join(process.cwd(), '../testscripts'));
-    possiblePaths.push(path.join(process.cwd(), 'testscripts'));
-    
-    // Check absolute paths
-    possiblePaths.push('/home/shiva/Documents/linkedin-camp/testscripts');
-    possiblePaths.push('/app/testscripts');
-    
-    // Check relative to this file's location
-    possiblePaths.push(path.join(__dirname, '../../testscripts'));
-    possiblePaths.push(path.join(__dirname, '../../../testscripts'));
-    
-    console.log('[ENGINE] Checking session paths:', possiblePaths);
-    
-    let base: string | null = null;
-    for (const p of possiblePaths) {
-        const cookiesPath = path.join(p, 'cookies.json');
-        const fingerprintPath = path.join(p, 'fingerprint.json');
-        if (fs.existsSync(cookiesPath) && fs.existsSync(fingerprintPath)) {
-            base = p;
-            break;
-        }
-    }
-    
-    if (!base) {
-        console.log('[ENGINE] Session files not found in any location');
-        return null;
-    }
-    
-    try {
-        const cookiesPath = path.join(base, 'cookies.json');
-        const fingerprintPath = path.join(base, 'fingerprint.json');
-        const localStoragePath = path.join(base, 'localStorage.json');
-        
-        if (!fs.existsSync(cookiesPath) || !fs.existsSync(fingerprintPath)) {
-            console.log(`[ENGINE] Session files not found at ${base}`);
-            return null;
-        }
-        
-        const cookies = JSON.parse(fs.readFileSync(cookiesPath, 'utf-8'));
-        const fingerprint = JSON.parse(fs.readFileSync(fingerprintPath, 'utf-8'));
-        
-        let localStorage: Record<string, string> = {};
-        if (fs.existsSync(localStoragePath)) {
-            try {
-                localStorage = JSON.parse(fs.readFileSync(localStoragePath, 'utf-8'));
-            } catch {}
-        }
-        
-        console.log(`[ENGINE] Loaded session from files: ${cookies.length} cookies`);
-        console.log(`[ENGINE] UserAgent: ${fingerprint.userAgent}`);
-        
-        return {
-            cookies,
-            userAgent: fingerprint.userAgent,
-            localStorage,
-        };
-    } catch (err: any) {
-        console.log(`[ENGINE] Failed to load session files: ${err.message}`);
-        return null;
-    }
-}
 
 // ---- Node registry ----
 
@@ -260,57 +174,70 @@ async function runLead(
             launchOptions.executablePath = chromiumPath;
         }
 
-        // Determine session source: files > worker-provided context > DB
-        // File-based session is the proven working source.
+        // Session source priority: DB > worker-provided context > file fallback (legacy)
+        // DB-first makes workers stateless and supports horizontal scaling.
         let activeCookies: any[] | null = null;
         let activeUserAgent: string | null = null;
         let activeLocalStorage: Record<string, string> | null = null;
         let activeProxy: { server: string; username?: string; password?: string } | null = null;
 
-        // Always take proxy from worker context if available
         if (sessionContext?.proxy) {
             activeProxy = sessionContext.proxy;
         }
 
-        // PRIMARY: Try file-based session (like testscripts) — proven working
-        const sessionFiles = loadSessionFromFiles(userId);
-        if (sessionFiles) {
-            console.log(`[ENGINE] Using session from FILES (${sessionFiles.cookies.length} cookies) — proven working source`);
-            activeCookies = sessionFiles.cookies;
-            activeUserAgent = sessionFiles.userAgent;
-            activeLocalStorage = sessionFiles.localStorage;
+        // PRIMARY: DB-backed session (canonical source for stateless workers)
+        try {
+            if (user.linkedinCookie) {
+                const raw = JSON.parse(user.linkedinCookie);
+                activeCookies = Array.isArray(raw) ? raw.map((c: any) => ({
+                    ...c,
+                    expires: c.expires != null ? Math.round(Number(c.expires)) : Math.round(Date.now() / 1000) + 86400 * 30,
+                })) : raw;
+            }
+        } catch (e: any) {
+            console.log(`[ENGINE] Failed to parse DB cookies: ${e.message}`);
+        }
+        try {
+            if (user.linkedinFingerprint) {
+                const fp = typeof user.linkedinFingerprint === 'string'
+                    ? JSON.parse(user.linkedinFingerprint) : user.linkedinFingerprint;
+                activeUserAgent = fp?.userAgent || null;
+            }
+        } catch {}
+        try {
+            if (user.linkedinLocalStorage) {
+                activeLocalStorage = typeof user.linkedinLocalStorage === 'string'
+                    ? JSON.parse(user.linkedinLocalStorage) : user.linkedinLocalStorage;
+            }
+        } catch {}
+
+        if (activeCookies && activeCookies.length > 0) {
+            console.log(`[ENGINE] Using session from DB (${activeCookies.length} cookies, ua=${activeUserAgent ? 'yes' : 'no'}, ls=${activeLocalStorage ? Object.keys(activeLocalStorage).length : 0})`);
         } else if (sessionContext?.cookies) {
-            // FALLBACK 1: Session from worker (parsed from DB by campaign-worker)
-            console.log(`[ENGINE] Using session from worker context (${sessionContext.cookies.length} cookies)`);
+            console.log(`[ENGINE] DB session empty, using worker context (${sessionContext.cookies.length} cookies)`);
             activeCookies = sessionContext.cookies;
             activeUserAgent = sessionContext.userAgent;
             activeLocalStorage = sessionContext.localStorage;
             if (!activeProxy && sessionContext?.proxy) activeProxy = sessionContext.proxy;
-        } else {
-            // LAST RESORT: Parse from DB directly
-            console.log('[ENGINE] No files or worker context. Falling back to DB session.');
+        }
+
+        // Load proxy from service
+        let proxyConfig: any = null;
+        if (userId) {
             try {
-                if (user.linkedinCookie) {
-                    const raw = JSON.parse(user.linkedinCookie);
-                    activeCookies = Array.isArray(raw) ? raw.map((c: any) => ({
-                        ...c,
-                        expires: c.expires != null ? Math.round(Number(c.expires)) : Math.round(Date.now() / 1000) + 86400 * 30,
-                    })) : raw;
+                const { getOrAssignProxy } = await import('../services/proxy.service');
+                const proxy = await getOrAssignProxy(userId);
+                if (proxy) {
+                    proxyConfig = {
+                        server: `http://${proxy.proxyHost}:${proxy.proxyPort}`,
+                        username: proxy.proxyUsername || undefined,
+                        password: proxy.proxyPassword || undefined,
+                    };
+                    console.log(`[ENGINE] Using proxy ${proxy.proxyHost}:${proxy.proxyPort} (${proxy.proxyCountry})`);
                 }
-            } catch {}
-            try {
-                if (user.linkedinFingerprint) {
-                    const fp = typeof user.linkedinFingerprint === 'string'
-                        ? JSON.parse(user.linkedinFingerprint) : user.linkedinFingerprint;
-                    activeUserAgent = fp?.userAgent || null;
-                }
-            } catch {}
-            try {
-                if (user.linkedinLocalStorage) {
-                    activeLocalStorage = typeof user.linkedinLocalStorage === 'string'
-                        ? JSON.parse(user.linkedinLocalStorage) : user.linkedinLocalStorage;
-                }
-            } catch {}
+            } catch (err: any) {
+                console.log(`[ENGINE] Failed to load proxy: ${err.message}`);
+            }
         }
 
         const contextOptions: any = {
@@ -320,13 +247,16 @@ async function runLead(
             timezoneId: 'Asia/Kolkata',
         };
 
-        // Using cheap proxy
-        contextOptions.proxy = {
-            server: 'http://82.41.252.111:46222',
-            username: 'xBVyYdUpx84nWx7',
-            password: 'dwwTxtvv5a10RXn'
-        };
-        console.log('[ENGINE] Using cheap proxy 82.41.252.111:46222');
+        if (proxyConfig) {
+            contextOptions.proxy = proxyConfig;
+        } else {
+            contextOptions.proxy = {
+                server: 'http://82.41.252.111:46222',
+                username: 'xBVyYdUpx84nWx7',
+                password: 'dwwTxtvv5a10RXn'
+            };
+            console.log('[ENGINE] Using fallback proxy 82.41.252.111:46222');
+        }
 
         browser = await chromium.launch(launchOptions);
         context = await browser.newContext(contextOptions);
