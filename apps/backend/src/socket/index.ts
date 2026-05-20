@@ -4,10 +4,13 @@ import jwt from 'jsonwebtoken';
 export let io: Server;
 
 export const initSocket = (httpServer: any) => {
+    const allowedOrigins = (process.env.CORS_ORIGIN || 'https://app.qampi.com,https://qampi.com,https://www.qampi.com')
+        .split(',').map(s => s.trim()).filter(Boolean);
     io = new Server(httpServer, {
         cors: {
-            origin: '*',
-            methods: ['GET', 'POST']
+            origin: allowedOrigins,
+            methods: ['GET', 'POST'],
+            credentials: true,
         }
     });
 

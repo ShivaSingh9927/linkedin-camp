@@ -58,7 +58,17 @@ app.get('/health', async (_req, res) => {
 
 app.get('/ping', (_req, res) => res.send('pong'));
 
-app.use(cors());
+const allowedOrigins = (process.env.CORS_ORIGIN || 'https://app.qampi.com,https://qampi.com,https://www.qampi.com')
+    .split(',').map(s => s.trim()).filter(Boolean);
+app.use(cors({
+    origin: (origin, callback) => {
+        // Same-origin / curl / health checks have no Origin header — allow.
+        if (!origin) return callback(null, true);
+        if (allowedOrigins.includes(origin)) return callback(null, true);
+        return callback(new Error(`CORS: origin ${origin} not allowed`));
+    },
+    credentials: true,
+}));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
@@ -101,8 +111,19 @@ app.listen(serverPort, '0.0.0.0', () => {
             const userRoutes = (await import('./routes/user.routes')).default;
             const sessionRoutes = (await import('./routes/session.routes')).default;
             const { downgradeExpiredTrials } = await import('./services/trial.service');
+            const { default: rateLimit } = await import('express-rate-limit');
 
-            app.use('/api/v1/auth', authRoutes);
+            // Throttle auth endpoints to slow credential-stuffing / brute-force.
+            // 10 requests per IP per 15-minute window — generous for real users,
+            // tight for bots. Counts both successful and failed responses.
+            const authLimiter = rateLimit({
+                windowMs: 15 * 60 * 1000,
+                limit: 10,
+                standardHeaders: 'draft-7',
+                legacyHeaders: false,
+                message: { error: 'Too many requests. Try again in 15 minutes.' },
+            });
+            app.use('/api/v1/auth', authLimiter, authRoutes);
             app.use('/api/v1/leads', leadRoutes);
             app.use('/api/v1/campaigns', campaignRoutes);
             app.use('/api/v1/stats', statsRoutes);
