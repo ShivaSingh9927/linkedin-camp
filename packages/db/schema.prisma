@@ -58,6 +58,9 @@ model Campaign {
   CampaignLead CampaignLead[]
   CampaignLeadProgress CampaignLeadProgress[]
   WorkerLog  WorkerLog[]
+
+  @@index([userId, status])
+  @@index([status])
 }
 
 model CampaignLead {
@@ -75,6 +78,7 @@ model CampaignLead {
   Lead            Lead       @relation(fields: [leadId], references: [id], onDelete: Cascade)
 
   @@unique([campaignId, leadId])
+  @@index([campaignId, isCompleted, nextActionDate])
 }
 
 model CampaignLeadProgress {
@@ -148,6 +152,7 @@ model Lead {
   WorkerLog     WorkerLog[]
 
   @@unique([userId, linkedinUrl])
+  @@index([userId])
 }
 
 model Message {
@@ -306,6 +311,8 @@ model User {
   TeamMember              TeamMember[]
   Proxy                   Proxy?            @relation(fields: [proxyId], references: [id])
   WorkerLog               WorkerLog[]
+
+  @@index([updatedAt])
 }
 
 model WorkerLog {
