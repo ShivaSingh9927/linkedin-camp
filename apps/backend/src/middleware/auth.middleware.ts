@@ -37,8 +37,8 @@ export const authMiddleware = async (req: AuthRequest, res: Response, next: Next
                 where: {
                     userId: decoded.id,
                     role: 'ADMIN',
-                    team: {
-                        members: {
+                    Team: {
+                        TeamMember: {
                             some: { userId: operatingUserId }
                         }
                     }

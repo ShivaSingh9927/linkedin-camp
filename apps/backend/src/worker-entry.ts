@@ -1,3 +1,6 @@
+import './sentry';
+import { Sentry } from './sentry';
+
 console.log('[WORKER-INIT] Process starting...');
 console.error('[WORKER-INIT-STDERR] Verification log to stderr');
 
@@ -38,9 +41,11 @@ process.on('SIGTERM', () => {
 
 process.on('unhandledRejection', (reason) => {
     console.error('[WORKER-UNHANDLED-REJECTION]', reason);
+    Sentry.captureException(reason);
 });
 
 process.on('uncaughtException', (err) => {
     console.error('[WORKER-UNCAUGHT-EXCEPTION]', err);
+    Sentry.captureException(err);
     process.exit(1);
 });

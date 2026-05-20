@@ -2,17 +2,25 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Bot, Shield, BarChart3, MessageSquare, Zap, Users } from "lucide-react";
+import { Bot, Shield, BarChart3, MessageSquare, Zap, Users, Brain } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const FEATURES = [
   {
     id: "ai-messages",
-    label: "AI-Powered Messages",
+    label: "Aigeon AI Messages",
     icon: Bot,
-    description: "Generate personalized messages that sound like you. Our AI analyzes profiles and crafts messages that get replies.",
+    description: "Our AI is fine-tuned on your writing style and company context. Every message sounds like you — not a template. Free users get 25 messages/week with Aigeon Fast.",
     gradient: "from-purple-500 via-indigo-500 to-blue-500",
     pattern: "ai",
+  },
+  {
+    id: "aigeon-pro",
+    label: "Aigeon Pro",
+    icon: Brain,
+    description: "Unlock our largest AI models for deep prospect research, intent signal detection, and multi-layered personalization. Aigeon Pro doesn't just read profiles — it understands them.",
+    gradient: "from-violet-500 via-fuchsia-500 to-pink-500",
+    pattern: "pro",
   },
   {
     id: "safe-automation",
@@ -32,9 +40,9 @@ const FEATURES = [
   },
   {
     id: "auto-followup",
-    label: "Auto Follow-Up",
+    label: "AI Auto Follow-Up",
     icon: MessageSquare,
-    description: "Never lose a lead again. Automated follow-up sequences that nurture prospects until they reply or convert.",
+    description: "AI-powered follow-up sequences that adapt based on prospect behavior. If they viewed your profile but didn't reply, Aigeon adjusts the next message accordingly.",
     gradient: "from-blue-500 via-cyan-500 to-teal-500",
     pattern: "followup",
   },
@@ -105,6 +113,36 @@ function FeatureVisual({ pattern, gradient }: { pattern: string; gradient: strin
                 <div className="h-2 bg-white/25 rounded-full w-12 mb-2" />
                 <div className="h-2 bg-white/20 rounded-full w-full" />
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {pattern === "pro" && (
+        <div className="absolute inset-0 flex items-center justify-center p-8">
+          <div className="w-full max-w-[280px]">
+            <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-5 border border-white/20 mb-4">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 bg-white/30 rounded-xl flex items-center justify-center">
+                  <Brain size={20} className="text-white" />
+                </div>
+                <div>
+                  <div className="h-2.5 bg-white/40 rounded-full w-28 mb-1.5" />
+                  <div className="h-2 bg-white/25 rounded-full w-20" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {["Profile", "Posts", "Company", "Intent"].map((item) => (
+                  <div key={item} className="bg-white/15 rounded-lg p-2 text-center">
+                    <div className="h-2 bg-white/30 rounded-full w-12 mx-auto" />
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="bg-white/15 rounded-xl p-3">
+              <div className="h-2 bg-white/25 rounded-full w-full mb-2" />
+              <div className="h-2 bg-white/20 rounded-full w-5/6 mb-2" />
+              <div className="h-2 bg-white/20 rounded-full w-4/6" />
             </div>
           </div>
         </div>
@@ -304,7 +342,7 @@ export function FeaturesCarousel() {
         </div>
 
         {/* Carousel Container */}
-        <div className="relative overflow-hidden rounded-[2.5rem] lg:rounded-[4rem] flex flex-col lg:flex-row min-h-[600px] lg:aspect-video border border-slate-200/60 shadow-xl shadow-slate-200/30">
+        <div className="relative overflow-hidden rounded-[2.5rem] lg:rounded-[4rem] flex flex-col lg:flex-row min-h-[600px] lg:aspect-video min-h-[600px] border border-slate-200/60 shadow-xl shadow-slate-200/30">
           {/* Left Side - Feature List */}
           <div className="w-full lg:w-[40%] min-h-[350px] md:min-h-[450px] lg:h-full relative z-30 flex flex-col items-start justify-center overflow-hidden px-6 md:px-10 lg:pl-12 bg-gradient-to-br from-primary via-indigo-600 to-purple-700">
             {/* Top gradient fade */}

@@ -1,3 +1,6 @@
+import './sentry';
+import { Sentry } from './sentry';
+
 console.log('[BACKEND-INIT] Process starting...');
 console.error('[BACKEND-INIT-STDERR] Verification log to stderr');
 
@@ -5,6 +8,8 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
+import Redis from 'ioredis';
+import { prisma } from '@repo/db';
 dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 
 console.log('[BACKEND-ENV] PORT:', process.env.PORT);
@@ -12,12 +17,46 @@ console.log('[BACKEND-ENV] PORT:', process.env.PORT);
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-app.get('/health', (req, res) => {
-    console.log('[BACKEND-REQ] /health hit');
-    res.status(200).json({ status: 'ok', msg: 'Core process is alive' });
+const healthRedis = process.env.REDIS_URL
+    ? new Redis(process.env.REDIS_URL, { lazyConnect: true, maxRetriesPerRequest: 1, connectTimeout: 1500 })
+    : null;
+
+app.get('/health', async (_req, res) => {
+    const checks: Record<string, string> = {};
+    let allOk = true;
+
+    try {
+        await Promise.race([
+            prisma.$queryRaw`SELECT 1`,
+            new Promise((_, rej) => setTimeout(() => rej(new Error('db timeout')), 2000)),
+        ]);
+        checks.db = 'ok';
+    } catch (e: any) {
+        checks.db = `fail: ${e.message}`;
+        allOk = false;
+    }
+
+    if (healthRedis) {
+        try {
+            if (healthRedis.status === 'wait' || healthRedis.status === 'end') await healthRedis.connect();
+            const pong = await Promise.race([
+                healthRedis.ping(),
+                new Promise<string>((_, rej) => setTimeout(() => rej(new Error('redis timeout')), 2000)),
+            ]);
+            checks.redis = pong === 'PONG' ? 'ok' : `unexpected: ${pong}`;
+            if (pong !== 'PONG') allOk = false;
+        } catch (e: any) {
+            checks.redis = `fail: ${e.message}`;
+            allOk = false;
+        }
+    } else {
+        checks.redis = 'not configured';
+    }
+
+    res.status(allOk ? 200 : 503).json({ status: allOk ? 'ok' : 'degraded', checks });
 });
 
-app.get('/ping', (req, res) => res.send('pong'));
+app.get('/ping', (_req, res) => res.send('pong'));
 
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
@@ -76,6 +115,13 @@ app.listen(serverPort, '0.0.0.0', () => {
             app.use('/api/v1/ai', aiRoutes);
             app.use('/api/v1/users', userRoutes);
             app.use('/api/v1/session', sessionRoutes);
+
+            // Sentry error handler must come after all routes
+            app.use((err: any, _req: any, res: any, _next: any) => {
+                Sentry.captureException(err);
+                console.error('[BACKEND-ERROR]', err);
+                res.status(err.status || 500).json({ error: err.message || 'Internal server error' });
+            });
 
             console.log('[BACKEND-COMPLETE] API routes ready (workers run in separate process)');
         } catch (err) {

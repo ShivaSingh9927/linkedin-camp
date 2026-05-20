@@ -23,11 +23,9 @@ export function Logo({ size = "md", className, showText = true }: LogoProps) {
   return (
     <div className={cn("flex items-center space-x-2", className)}>
       <div className={cn("relative", sizes[size])}>
-        <Image
+        <img
           src="/leadmate.png"
           alt="Qampi Logo"
-          width={size === "sm" ? 32 : size === "md" ? 40 : 48}
-          height={size === "sm" ? 32 : size === "md" ? 40 : 48}
           className="w-full h-full object-contain"
         />
       </div>

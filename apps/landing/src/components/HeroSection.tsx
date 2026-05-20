@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowRight, Zap, Target, Mail, Users } from "lucide-react";
+import { ArrowRight, Zap, Target, Mail, Users, Sparkles } from "lucide-react";
 import { motion } from "framer-motion";
 import { GlowButton } from "./GlowButton";
 import { cn } from "@/lib/utils";
@@ -30,6 +30,12 @@ export function HeroSection() {
       {/* Background */}
       <div className="absolute inset-0 bg-gradient-to-br from-white via-purple-50/50 to-indigo-50/30" />
 
+      {/* Subtle background image */}
+      <div
+        className="absolute inset-0 opacity-[0.03] bg-cover bg-center"
+        style={{ backgroundImage: "url('https://images.unsplash.com/photo-1557804506-669a67965ba0?w=1920&h=1080&auto=format&fit=crop&q=80')" }}
+      />
+
       {/* Animated blobs */}
       <motion.div
         className="absolute top-1/4 -left-32 w-96 h-96 bg-primary/10 rounded-full blur-3xl"
@@ -54,15 +60,15 @@ export function HeroSection() {
           >
             <motion.div variants={itemVariants}>
               <div className="inline-flex items-center space-x-2 bg-primary/10 text-primary px-4 py-2 rounded-full text-sm font-bold mb-6">
-                <Zap className="w-4 h-4" />
-                <span>Now with AI-powered messaging</span>
+                <Sparkles className="w-4 h-4" />
+                <span>AI that writes like you, not a bot</span>
               </div>
             </motion.div>
 
             <motion.h1 variants={itemVariants} className="text-4xl sm:text-5xl lg:text-6xl xl:text-7xl font-black text-slate-900 tracking-tight leading-[1.1]">
-              We make LinkedIn outreach{" "}
+              LinkedIn outreach that{" "}
               <span className="text-primary relative inline-block">
-                easy
+                actually gets replies
                 <svg className="absolute -bottom-2 left-0 w-full" viewBox="0 0 200 12" fill="none">
                   <motion.path
                     d="M2 8C50 2 150 2 198 8"
@@ -78,16 +84,16 @@ export function HeroSection() {
             </motion.h1>
 
             <motion.p variants={itemVariants} className="mt-6 text-lg sm:text-xl text-slate-600 max-w-xl mx-auto lg:mx-0 leading-relaxed">
-              Reach 800+ potential buyers every month on LinkedIn. Auto follow-up until prospects reply. No complex setup. No database. No heavy workflows.
+              Qampi's AI reads every prospect's profile, recent posts, and company activity — then crafts messages that sound like you wrote them. No templates. No copy-paste. Just real conversations that convert.
             </motion.p>
 
             <motion.div variants={itemVariants} className="mt-8 flex flex-col sm:flex-row items-center gap-4 justify-center lg:justify-start">
               <GlowButton size="lg" href="https://app.qampi.com/register">
-                Start Free Trial
+                See AI in Action
                 <ArrowRight className="w-5 h-5 ml-2" />
               </GlowButton>
-              <GlowButton variant="secondary" size="lg" href="#how-it-works">
-                See How It Works
+              <GlowButton variant="secondary" size="lg" href="https://app.qampi.com/register">
+                Start Free — 25 AI messages/week
               </GlowButton>
             </motion.div>
 
@@ -99,6 +105,10 @@ export function HeroSection() {
               <div className="flex items-center space-x-2">
                 <div className="w-2 h-2 bg-emerald-500 rounded-full" />
                 <span className="font-semibold">No credit card</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <div className="w-2 h-2 bg-emerald-500 rounded-full" />
+                <span className="font-semibold">Setup in 2 minutes</span>
               </div>
             </motion.div>
 
@@ -123,7 +133,7 @@ export function HeroSection() {
                   ))}
                 </div>
                 <p className="text-xs text-slate-500 mt-1">
-                  <span className="font-bold text-slate-700">4.8/5</span> from 2,000+ users
+                  <span className="font-bold text-slate-700">4.8/5</span> from 3,000+ users
                 </p>
               </div>
             </motion.div>
@@ -184,6 +194,31 @@ export function HeroSection() {
                     </div>
                   </div>
 
+                  {/* AI Message Preview Card */}
+                  <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="w-6 h-6 bg-primary/10 rounded-lg flex items-center justify-center">
+                        <Sparkles className="w-3.5 h-3.5 text-primary" />
+                      </div>
+                      <span className="text-xs font-bold text-slate-700">Aigeon AI generating...</span>
+                      <div className="ml-auto flex space-x-0.5">
+                        {[0, 1, 2].map((i) => (
+                          <motion.div
+                            key={i}
+                            className="w-1.5 h-1.5 bg-primary rounded-full"
+                            animate={{ opacity: [0.3, 1, 0.3] }}
+                            transition={{ duration: 1, repeat: Infinity, delay: i * 0.2 }}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                    <div className="bg-white rounded-xl p-3 border border-slate-100">
+                      <p className="text-xs text-slate-600 leading-relaxed">
+                        "Hey Sarah, saw your post about scaling SaaS to $2M ARR — we helped 3 founders do exactly that..."
+                      </p>
+                    </div>
+                  </div>
+
                   {/* Activity feed */}
                   <div className="space-y-2">
                     {[
@@ -233,11 +268,11 @@ export function HeroSection() {
               >
                 <div className="flex items-center space-x-2">
                   <div className="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center">
-                    <Zap className="w-4 h-4 text-primary" />
+                    <Sparkles className="w-4 h-4 text-primary" />
                   </div>
                   <div>
                     <p className="text-xs font-bold text-slate-700">+47% Reply Rate</p>
-                    <p className="text-[10px] text-slate-400">This week</p>
+                    <p className="text-[10px] text-slate-400">With Aigeon AI</p>
                   </div>
                 </div>
               </motion.div>

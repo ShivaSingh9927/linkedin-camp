@@ -6,7 +6,7 @@ export const getOrAssignProxy = async (userId: string, detectedCountry?: string)
     if (user.proxyId) {
         return await prisma.proxy.findUnique({ where: { id: user.proxyId } });
     }
-    const country = user.country || detectedCountry || 'IN';
+    const country = user.actualCountry || detectedCountry || 'IN';
     const now = new Date();
     const proxy = await prisma.proxy.findFirst({
         where: {
@@ -106,7 +106,8 @@ export const addProxy = async (data: {
             proxyCountry: data.proxyCountry,
             tierClass: (data.tierClass as any) || 'ECONOMY',
             maxUsers: data.maxUsers || 15,
-            isAssigned: true
+            isAssigned: true,
+            updatedAt: new Date()
         }
     });
 };
@@ -138,7 +139,7 @@ export const bulkCheckProxyHealth = async () => {
         try {
             const http = require('http');
             await new Promise((resolve, reject) => {
-                const req = http.get(`http://${proxy.proxyHost}:${proxy.proxyPort}/`, { timeout: 5000 }, (res) => {
+                const req = http.get(`http://${proxy.proxyHost}:${proxy.proxyPort}/`, { timeout: 5000 }, (res: any) => {
                     res.resume();
                     res.on('end', () => resolve(true));
                 });

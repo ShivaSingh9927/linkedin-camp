@@ -6,27 +6,27 @@ import { Rocket, TrendingUp, Users } from "lucide-react";
 const useCases = [
   {
     icon: Rocket,
-    emoji: "🚀",
     title: "For Founders & Business Owners",
     description: "Outreach that doesn't steal your day and still gets replies. Focus on building while Qampi handles prospecting.",
     stats: "3x more meetings",
     color: "from-primary to-indigo-600",
+    image: "https://images.unsplash.com/photo-1559136555-9303baea8ebd?w=600&h=400&auto=format&fit=crop&q=80",
   },
   {
     icon: TrendingUp,
-    emoji: "",
     title: "For Sales Reps",
     description: "Book more meetings without living on LinkedIn. Automate your pipeline and spend time closing deals.",
     stats: "40% reply rate",
     color: "from-emerald-500 to-teal-600",
+    image: "https://images.unsplash.com/photo-1552664730-d307ca884978?w=600&h=400&auto=format&fit=crop&q=80",
   },
   {
     icon: Users,
-    emoji: "🎯",
     title: "For Recruiters & HR",
     description: "Reach top talent before they apply elsewhere. Build your talent pipeline on autopilot.",
     stats: "10x more candidates",
     color: "from-amber-500 to-orange-600",
+    image: "https://images.unsplash.com/photo-1521737711867-e3b97375f902?w=600&h=400&auto=format&fit=crop&q=80",
   },
 ];
 
@@ -61,13 +61,30 @@ export function UseCasesSection() {
               viewport={{ once: true }}
               transition={{ delay: i * 0.15, duration: 0.6 }}
               whileHover={{ y: -8 }}
-              className="group bg-white rounded-3xl p-8 border border-slate-100 hover:shadow-xl hover:shadow-slate-200/50 transition-all duration-500"
+              className="group bg-white rounded-3xl overflow-hidden border border-slate-100 hover:shadow-xl hover:shadow-slate-200/50 transition-all duration-500"
             >
-              <div className="text-4xl mb-4">{useCase.emoji}</div>
-              <h3 className="text-xl font-black text-slate-900 mb-3">{useCase.title}</h3>
-              <p className="text-slate-600 leading-relaxed mb-6">{useCase.description}</p>
-              <div className={`inline-block bg-gradient-to-r text-white text-sm font-bold px-4 py-2 rounded-xl ${useCase.color}`}>
-                {useCase.stats}
+              {/* Image */}
+              <div className="relative h-48 overflow-hidden">
+                <img
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                  src={useCase.image}
+                  alt={useCase.title}
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
+                <div className={`absolute top-4 left-4 w-12 h-12 bg-gradient-to-br ${useCase.color} rounded-xl flex items-center justify-center shadow-lg`}>
+                  <useCase.icon className="w-6 h-6 text-white" />
+                </div>
+                <div className="absolute bottom-4 left-4">
+                  <span className="bg-white/90 backdrop-blur-sm text-slate-900 text-xs font-bold px-3 py-1.5 rounded-full">
+                    {useCase.stats}
+                  </span>
+                </div>
+              </div>
+
+              {/* Content */}
+              <div className="p-6">
+                <h3 className="text-xl font-black text-slate-900 mb-3">{useCase.title}</h3>
+                <p className="text-slate-600 leading-relaxed">{useCase.description}</p>
               </div>
             </motion.div>
           ))}

@@ -9,6 +9,8 @@ const oldWay = [
   "Complicated workflows for big teams",
   "Forgetting follow-ups constantly",
   "Losing conversations in messy inbox",
+  "Generic templates that prospects ignore",
+  "5-8% reply rate — most messages go unanswered",
 ];
 
 const newWay = [
@@ -17,6 +19,8 @@ const newWay = [
   "One simple flow, no tech to manage",
   "Auto follow-ups that turn silence to replies",
   "One inbox for every conversation",
+  "Aigeon crafts unique messages referencing actual posts and activity",
+  "25-40% reply rate — every message feels personal",
 ];
 
 export function OldVsNew() {

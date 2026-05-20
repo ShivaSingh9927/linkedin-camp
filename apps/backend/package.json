@@ -12,6 +12,7 @@
         "@prisma/client": "latest",
         "@repo/db": "*",
         "@repo/types": "*",
+        "@sentry/node": "^10.53.1",
         "adm-zip": "^0.5.16",
         "bcryptjs": "latest",
         "bullmq": "latest",

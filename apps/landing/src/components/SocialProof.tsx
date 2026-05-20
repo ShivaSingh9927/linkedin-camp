@@ -3,7 +3,14 @@
 import { motion } from "framer-motion";
 
 const logos = [
-  "Stripe", "Shopify", "Notion", "Vercel", "Linear", "Figma", "Slack", "HubSpot"
+  { name: "Stripe", logo: "https://img.logo.dev/stripe.com?token=pk_YjPmzKTaQJqYX8V5Z9xJ1g" },
+  { name: "Shopify", logo: "https://img.logo.dev/shopify.com?token=pk_YjPmzKTaQJqYX8V5Z9xJ1g" },
+  { name: "Notion", logo: "https://img.logo.dev/notion.so?token=pk_YjPmzKTaQJqYX8V5Z9xJ1g" },
+  { name: "Vercel", logo: "https://img.logo.dev/vercel.com?token=pk_YjPmzKTaQJqYX8V5Z9xJ1g" },
+  { name: "Linear", logo: "https://img.logo.dev/linear.app?token=pk_YjPmzKTaQJqYX8V5Z9xJ1g" },
+  { name: "Figma", logo: "https://img.logo.dev/figma.com?token=pk_YjPmzKTaQJqYX8V5Z9xJ1g" },
+  { name: "Slack", logo: "https://img.logo.dev/slack.com?token=pk_YjPmzKTaQJqYX8V5Z9xJ1g" },
+  { name: "HubSpot", logo: "https://img.logo.dev/hubspot.com?token=pk_YjPmzKTaQJqYX8V5Z9xJ1g" },
 ];
 
 export function SocialProof() {
@@ -24,9 +31,17 @@ export function SocialProof() {
             {[...logos, ...logos].map((logo, i) => (
               <div
                 key={i}
-                className="flex-shrink-0 mx-8 flex items-center justify-center w-32 h-12 bg-slate-50 rounded-xl text-slate-400 font-bold text-lg hover:text-primary hover:bg-primary/5 transition-colors"
+                className="flex-shrink-0 mx-6 flex items-center justify-center w-28 h-12 bg-slate-50 rounded-xl overflow-hidden hover:bg-primary/5 transition-colors"
               >
-                {logo}
+                <img
+                  src={logo.logo}
+                  alt={logo.name}
+                  className="w-20 h-6 object-contain opacity-40 hover:opacity-100 transition-opacity"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.display = 'none';
+                    (e.target as HTMLImageElement).parentElement!.innerHTML = `<span class="text-slate-400 font-bold text-sm">${logo.name}</span>`;
+                  }}
+                />
               </div>
             ))}
           </div>

@@ -14,6 +14,7 @@ const steps = [
     features: ["Target by intent signals", "No external database needed", "Always up-to-date profiles"],
     gradient: "from-purple-400 via-indigo-500 to-blue-500",
     pattern: "search",
+    image: "https://images.unsplash.com/photo-1486312338219-ce68d2c6f44d?w=600&h=400&auto=format&fit=crop&q=80",
   },
   {
     number: "02",
@@ -23,6 +24,7 @@ const steps = [
     features: ["Automated follow-ups", "Human-like timing", "Stay within LinkedIn limits"],
     gradient: "from-blue-400 via-cyan-500 to-teal-500",
     pattern: "messages",
+    image: "https://images.unsplash.com/photo-1577563908411-5077b6dc7624?w=600&h=400&auto=format&fit=crop&q=80",
   },
   {
     number: "03",
@@ -32,6 +34,7 @@ const steps = [
     features: ["Reply rate benchmarks", "Visual sentiment analysis", "Clear performance dashboard"],
     gradient: "from-amber-400 via-orange-500 to-red-500",
     pattern: "analytics",
+    image: "https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=600&h=400&auto=format&fit=crop&q=80",
   },
   {
     number: "04",
@@ -41,126 +44,105 @@ const steps = [
     features: ["Auto-enrich leads", "Full CSV export", "2,000+ integrations"],
     gradient: "from-emerald-400 via-green-500 to-teal-600",
     pattern: "sync",
+    image: "https://images.unsplash.com/photo-1558494949-ef010cbdcc31?w=600&h=400&auto=format&fit=crop&q=80",
   },
 ];
 
-function StepVisual({ pattern, gradient }: { pattern: string; gradient: string }) {
+function StepVisual({ pattern, gradient, image }: { pattern: string; gradient: string; image: string }) {
   return (
-    <div className={`w-full aspect-[4/3] bg-gradient-to-br ${gradient} relative overflow-hidden rounded-3xl`}>
+    <div className="relative w-full aspect-[4/3] overflow-hidden rounded-3xl">
+      {/* Background image */}
+      <img
+        src={image}
+        alt=""
+        className="absolute inset-0 w-full h-full object-cover"
+      />
+      <div className={`absolute inset-0 bg-gradient-to-br ${gradient} opacity-75`} />
+
       {/* Grid pattern */}
       <div className="absolute inset-0 opacity-10" style={{
         backgroundImage: `radial-gradient(circle at 1px 1px, white 1px, transparent 0)`,
         backgroundSize: '24px 24px'
       }} />
 
-      {/* Floating elements based on pattern */}
       {pattern === "search" && (
-        <>
-          <div className="absolute top-8 left-8 right-8">
-            <div className="bg-white/20 backdrop-blur-sm rounded-xl p-4 border border-white/20">
-              <div className="flex items-center gap-3 mb-3">
-                <div className="w-8 h-8 bg-white/30 rounded-lg flex items-center justify-center">
-                  <Search size={16} className="text-white" />
-                </div>
-                <div className="h-3 bg-white/30 rounded-full w-32" />
+        <div className="absolute top-8 left-8 right-8">
+          <div className="bg-white/20 backdrop-blur-sm rounded-xl p-4 border border-white/20">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-8 h-8 bg-white/30 rounded-lg flex items-center justify-center">
+                <Search size={16} className="text-white" />
               </div>
-              <div className="space-y-2">
-                {[1, 2, 3].map((i) => (
-                  <div key={i} className="flex items-center gap-3 bg-white/10 rounded-lg p-2">
-                    <div className="w-8 h-8 bg-white/20 rounded-full" />
-                    <div className="flex-1">
-                      <div className="h-2 bg-white/30 rounded-full w-24 mb-1" />
-                      <div className="h-2 bg-white/20 rounded-full w-16" />
-                    </div>
+              <div className="h-3 bg-white/30 rounded-full w-32" />
+            </div>
+            <div className="space-y-2">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="flex items-center gap-3 bg-white/10 rounded-lg p-2">
+                  <div className="w-8 h-8 bg-white/20 rounded-full" />
+                  <div className="flex-1">
+                    <div className="h-2 bg-white/30 rounded-full w-24 mb-1" />
+                    <div className="h-2 bg-white/20 rounded-full w-16" />
                   </div>
-                ))}
-              </div>
+                </div>
+              ))}
             </div>
           </div>
-          <div className="absolute bottom-4 right-4 w-16 h-16 bg-white/10 rounded-2xl flex items-center justify-center">
-            <div className="w-8 h-8 bg-white/30 rounded-full" />
-          </div>
-        </>
+        </div>
       )}
 
       {pattern === "messages" && (
-        <>
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48">
-            <div className="space-y-3">
-              <div className="flex justify-end">
-                <div className="bg-white/30 backdrop-blur-sm rounded-2xl rounded-br-md p-3 max-w-[180px]">
-                  <div className="h-2 bg-white/50 rounded-full w-full mb-1" />
-                  <div className="h-2 bg-white/30 rounded-full w-3/4" />
-                </div>
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48">
+          <div className="space-y-3">
+            <div className="flex justify-end">
+              <div className="bg-white/30 backdrop-blur-sm rounded-2xl rounded-br-md p-3 max-w-[180px]">
+                <div className="h-2 bg-white/50 rounded-full w-full mb-1" />
+                <div className="h-2 bg-white/30 rounded-full w-3/4" />
               </div>
-              <div className="flex justify-start">
-                <div className="bg-white/20 backdrop-blur-sm rounded-2xl rounded-bl-md p-3 max-w-[180px]">
-                  <div className="h-2 bg-white/40 rounded-full w-full mb-1" />
-                  <div className="h-2 bg-white/25 rounded-full w-2/3" />
-                </div>
+            </div>
+            <div className="flex justify-start">
+              <div className="bg-white/20 backdrop-blur-sm rounded-2xl rounded-bl-md p-3 max-w-[180px]">
+                <div className="h-2 bg-white/40 rounded-full w-full mb-1" />
+                <div className="h-2 bg-white/25 rounded-full w-2/3" />
               </div>
-              <div className="flex justify-end">
-                <div className="bg-white/30 backdrop-blur-sm rounded-2xl rounded-br-md p-3 max-w-[180px]">
-                  <div className="h-2 bg-white/50 rounded-full w-5/6" />
-                </div>
+            </div>
+            <div className="flex justify-end">
+              <div className="bg-white/30 backdrop-blur-sm rounded-2xl rounded-br-md p-3 max-w-[180px]">
+                <div className="h-2 bg-white/50 rounded-full w-5/6" />
               </div>
             </div>
           </div>
-          <div className="absolute top-6 right-6 w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
-            <Send size={16} className="text-white" />
-          </div>
-        </>
+        </div>
       )}
 
       {pattern === "analytics" && (
-        <>
-          <div className="absolute top-6 left-6 right-6">
-            <div className="bg-white/20 backdrop-blur-sm rounded-xl p-4 border border-white/20">
-              <div className="flex items-center justify-between mb-4">
-                <div className="h-3 bg-white/40 rounded-full w-20" />
-                <div className="h-3 bg-white/30 rounded-full w-12" />
-              </div>
-              <div className="flex items-end gap-2 h-24">
-                {[40, 65, 45, 80, 55, 90, 70].map((h, i) => (
-                  <div key={i} className="flex-1 bg-white/30 rounded-t-lg" style={{ height: `${h}%` }} />
-                ))}
-              </div>
+        <div className="absolute top-6 left-6 right-6">
+          <div className="bg-white/20 backdrop-blur-sm rounded-xl p-4 border border-white/20">
+            <div className="flex items-center justify-between mb-4">
+              <div className="h-3 bg-white/40 rounded-full w-20" />
+              <div className="h-3 bg-white/30 rounded-full w-12" />
+            </div>
+            <div className="flex items-end gap-2 h-24">
+              {[40, 65, 45, 80, 55, 90, 70].map((h, i) => (
+                <div key={i} className="flex-1 bg-white/30 rounded-t-lg" style={{ height: `${h}%` }} />
+              ))}
             </div>
           </div>
-          <div className="absolute bottom-6 left-6 right-6 flex gap-3">
-            <div className="flex-1 bg-white/15 rounded-xl p-3">
-              <div className="h-2 bg-white/30 rounded-full w-12 mb-2" />
-              <div className="h-4 bg-white/40 rounded-full w-16" />
-            </div>
-            <div className="flex-1 bg-white/15 rounded-xl p-3">
-              <div className="h-2 bg-white/30 rounded-full w-12 mb-2" />
-              <div className="h-4 bg-white/40 rounded-full w-16" />
-            </div>
-          </div>
-        </>
+        </div>
       )}
 
       {pattern === "sync" && (
-        <>
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center gap-6">
-            <div className="w-20 h-20 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center border border-white/20">
-              <Database size={28} className="text-white" />
-            </div>
-            <div className="flex flex-col gap-2">
-              {[1, 2, 3].map((i) => (
-                <div key={i} className="w-12 h-1 bg-white/30 rounded-full" />
-              ))}
-            </div>
-            <div className="w-20 h-20 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center border border-white/20">
-              <CheckCircle2 size={28} className="text-white" />
-            </div>
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center gap-6">
+          <div className="w-20 h-20 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center border border-white/20">
+            <Database size={28} className="text-white" />
           </div>
-          <div className="absolute top-6 left-6">
-            <div className="bg-white/15 rounded-lg px-3 py-1.5">
-              <div className="h-2 bg-white/30 rounded-full w-16" />
-            </div>
+          <div className="flex flex-col gap-2">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="w-12 h-1 bg-white/30 rounded-full" />
+            ))}
           </div>
-        </>
+          <div className="w-20 h-20 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center border border-white/20">
+            <CheckCircle2 size={28} className="text-white" />
+          </div>
+        </div>
       )}
     </div>
   );
@@ -336,7 +318,7 @@ export function HowItWorks() {
             >
               {/* Main visual */}
               <div className="relative rounded-3xl overflow-hidden border border-white/10 shadow-2xl">
-                <StepVisual pattern={currentStep.pattern} gradient={currentStep.gradient} />
+                <StepVisual pattern={currentStep.pattern} gradient={currentStep.gradient} image={currentStep.image} />
 
                 {/* Overlay content */}
                 <div className="absolute bottom-0 left-0 right-0 p-6 md:p-8 bg-gradient-to-t from-slate-950 via-slate-950/60 to-transparent">

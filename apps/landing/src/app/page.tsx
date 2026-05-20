@@ -2,7 +2,10 @@
 
 import { Navbar } from '@/components/Navbar';
 import { HeroSection } from '@/components/HeroSection';
+import { AIMessagePreview } from '@/components/AIMessagePreview';
 import { SocialProof } from '@/components/SocialProof';
+import { MetricsBar } from '@/components/MetricsBar';
+import { HowAigeonWorks } from '@/components/HowAigeonWorks';
 import { HowItWorks } from '@/components/HowItWorks';
 import { FeaturesCarousel } from '@/components/FeaturesCarousel';
 import { OldVsNew } from '@/components/OldVsNew';
@@ -21,7 +24,10 @@ export default function LandingPage() {
       <ScrollProgress />
       <Navbar />
       <HeroSection />
+      <AIMessagePreview />
       <SocialProof />
+      <MetricsBar />
+      <HowAigeonWorks />
       <HowItWorks />
       <FeaturesCarousel />
       <OldVsNew />
