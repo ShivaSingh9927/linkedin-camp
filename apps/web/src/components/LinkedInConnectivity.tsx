@@ -58,6 +58,21 @@ export default function LinkedInConnectivity() {
         s.on('SESSION_LOGIN_STATUS', (payload: { status?: string; message?: string; error?: string }) => {
             if (payload?.message) setProgressMsg(payload.message);
             else if (payload?.status) setProgressMsg(payload.status);
+
+            if (payload?.status === 'SUCCESS') {
+                setStep('SUCCESS');
+                fetchStatus();
+                toast.success('LinkedIn connected!');
+                setLoading(false);
+            } else if (payload?.status === 'AWAITING_2FA') {
+                setStep('2FA');
+                toast.info('Enter the verification code LinkedIn sent you');
+                setLoading(false);
+            } else if (payload?.status === 'FAILED') {
+                setError(payload.error || 'Login failed');
+                setStep('CREDENTIALS');
+                setLoading(false);
+            }
         });
 
         return () => {
@@ -102,40 +117,23 @@ export default function LinkedInConnectivity() {
                 throw new Error(j.error || 'Failed to start browser');
             }
 
-            // 2) Submit credentials. This may take ~120s if 2FA appears (server times out on /feed/).
+            // 2) Submit credentials. Backend returns 202 immediately and runs the
+            // Playwright login in the background — final outcome arrives over
+            // Socket.IO as SESSION_LOGIN_STATUS (SUCCESS / AWAITING_2FA / FAILED).
             const credRes = await fetch(`${apiBase}/api/v1/session/submit-credentials`, {
                 method: 'POST',
                 headers,
                 body: JSON.stringify({ email, password }),
             });
-            const credData = await credRes.json();
-
-            if (credData.success) {
-                setStep('SUCCESS');
-                fetchStatus();
-                toast.success('LinkedIn connected!');
-                return;
+            if (!credRes.ok) {
+                const j = await credRes.json().catch(() => ({}));
+                throw new Error(j.error || 'Failed to submit credentials');
             }
-
-            if (credData.requires2FA) {
-                setStep('2FA');
-                toast.info('Enter the verification code LinkedIn sent you');
-                return;
-            }
-
-            // The server is still on the verification page — most often this means 2FA is up.
-            // Fall through to 2FA step and let the user enter the code.
-            if (credData.error && /Timeout|waitForURL|verification/i.test(credData.error)) {
-                setStep('2FA');
-                toast.info('Please enter the verification code from LinkedIn');
-                return;
-            }
-
-            throw new Error(credData.error || 'Login failed');
+            setProgressMsg('Logging in to LinkedIn — this may take up to 90 seconds...');
+            // Outcome handled by the SESSION_LOGIN_STATUS WS listener above.
         } catch (err: any) {
             setError(err?.message || 'Connection error');
             setStep('CREDENTIALS');
-        } finally {
             setLoading(false);
         }
     };

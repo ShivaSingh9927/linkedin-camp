@@ -8,7 +8,7 @@ datasource db {
 }
 
 model ActionLog {
-  id           String    @id
+  id           String    @id @default(cuid())
   userId       String
   campaignId   String?
   leadId       String?
@@ -22,7 +22,7 @@ model ActionLog {
 }
 
 model BusinessProfile {
-  id             String   @id
+  id             String   @id @default(cuid())
   userId         String   @unique
   name           String?
   company        String?
@@ -106,7 +106,7 @@ model LeadTag {
 }
 
 model Integration {
-  id         String   @id
+  id         String   @id @default(cuid())
   userId     String
   provider   String
   webhookUrl String?
@@ -120,7 +120,7 @@ model Integration {
 }
 
 model Lead {
-  id            String         @id
+  id            String         @id @default(cuid())
   userId        String
   linkedinUrl   String
   firstName     String?
@@ -151,7 +151,7 @@ model Lead {
 }
 
 model Message {
-  id         String   @id
+  id         String   @id @default(cuid())
   userId     String
   leadId     String
   campaignId String?
@@ -165,7 +165,7 @@ model Message {
 }
 
 model MessageTemplate {
-  id        String   @id
+  id        String   @id @default(cuid())
   userId    String
   name      String
   content   String
@@ -179,7 +179,7 @@ model MessageTemplate {
 }
 
 model Notification {
-  id        String   @id
+  id        String   @id @default(cuid())
   userId    String
   title     String
   body      String
@@ -193,7 +193,7 @@ model Notification {
 }
 
 model Proxy {
-  id             String    @id
+  id             String    @id @default(cuid())
   proxyIp        String    @unique
   proxyHost      String
   proxyPort      Int
@@ -215,7 +215,7 @@ model Proxy {
 }
 
 model SmartList {
-  id        String   @id
+  id        String   @id @default(cuid())
   userId    String
   name      String
   filters   Json
@@ -227,7 +227,7 @@ model SmartList {
 }
 
 model Team {
-  id         String       @id
+  id         String       @id @default(cuid())
   name       String
   ownerId    String
   createdAt  DateTime     @default(now())
@@ -236,7 +236,7 @@ model Team {
 }
 
 model TeamInvite {
-  id        String       @id
+  id        String       @id @default(cuid())
   teamId    String
   email     String
   role      TeamRole     @default(MEMBER)
@@ -248,7 +248,7 @@ model TeamInvite {
 }
 
 model TeamMember {
-  id        String   @id
+  id        String   @id @default(cuid())
   teamId    String
   userId    String
   role      TeamRole @default(MEMBER)
@@ -309,7 +309,7 @@ model User {
 }
 
 model WorkerLog {
-  id           String    @id
+  id           String    @id @default(cuid())
   userId       String
   campaignId   String?
   leadId       String?
