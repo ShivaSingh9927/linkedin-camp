@@ -37,7 +37,7 @@ model BusinessProfile {
   mainPainPoint  String?
   usp            String?
   createdAt      DateTime @default(now())
-  updatedAt      DateTime
+  updatedAt      DateTime @updatedAt
   User           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
@@ -113,7 +113,7 @@ model Integration {
   isActive   Boolean  @default(true)
   config     Json?
   createdAt  DateTime @default(now())
-  updatedAt  DateTime
+  updatedAt  DateTime @updatedAt
   User       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, provider])
@@ -138,7 +138,7 @@ model Lead {
   latestPost    String?
   latestPostUrl String?
   createdAt     DateTime       @default(now())
-  updatedAt     DateTime
+  updatedAt     DateTime @updatedAt
   ActionLog     ActionLog[]
   CampaignLead  CampaignLead[]
   CampaignLeadProgress CampaignLeadProgress[]
@@ -172,7 +172,7 @@ model MessageTemplate {
   variables String[] @default([])
   category  String?
   createdAt DateTime @default(now())
-  updatedAt DateTime
+  updatedAt DateTime @updatedAt
   User      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, name])
@@ -210,7 +210,7 @@ model Proxy {
   linkedinBanned Boolean   @default(false)
   bannedAt       DateTime?
   createdAt      DateTime  @default(now())
-  updatedAt      DateTime
+  updatedAt      DateTime @updatedAt
   User           User[]
 }
 
@@ -220,7 +220,7 @@ model SmartList {
   name      String
   filters   Json
   createdAt DateTime @default(now())
-  updatedAt DateTime
+  updatedAt DateTime @updatedAt
   User      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, name])
