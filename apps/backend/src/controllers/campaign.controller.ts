@@ -125,12 +125,14 @@ export const startCampaign = async (req: any, res: Response) => {
 
         console.log('Campaign status updated to ACTIVE');
 
-        // Identify the start node from WorkflowJson
+        // Identify the start node from WorkflowJson.
+        // Accept three shapes: { nodes:[...], edges:[...] } (React Flow),
+        // [...] (plain array), and { flow:[...] } (engine's linear form).
         const workflow = campaign.workflowJson as any;
-        // Handle both { nodes: [...] } and [...] formats
-        const workflowNodes = workflow?.nodes || workflow;
-        console.log('Workflow:', workflow ? 'exists' : 'null', 'nodes:', workflowNodes?.length || 0);
-        const startNode = workflowNodes?.find((n: any) => n.type === 'TRIGGER' || n.type === 'input') || workflowNodes?.[0];
+        const rawNodes = workflow?.nodes || workflow?.flow || workflow;
+        const workflowNodes = Array.isArray(rawNodes) ? rawNodes : [];
+        console.log('Workflow:', workflow ? 'exists' : 'null', 'nodes:', workflowNodes.length);
+        const startNode = workflowNodes.find((n: any) => n.type === 'TRIGGER' || n.type === 'input') || workflowNodes[0];
         console.log('startNode:', startNode?.id, startNode?.type);
 
         let skippedCount = 0;
