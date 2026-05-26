@@ -51,9 +51,30 @@ services:
     container_name: ai-service
     restart: unless-stopped
     environment:
+      # Cloudflare AI Gateway (BYOK routes to OpenRouter/DeepSeek/Groq)
+      CLOUDFLARE_AI_GATEWAY_URL: ${CLOUDFLARE_AI_GATEWAY_URL}
+      CF_AIG_TOKEN: ${CF_AIG_TOKEN}
+      # Direct DeepSeek fallback (used only if CF gateway env vars are missing)
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY}
+      DEEPSEEK_API: ${DEEPSEEK_API_KEY}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+      # Provider direct keys (some agents may use these via Cloudflare BYOK)
       GROQ_API: ${GROQ_API}
+      SERPER_API_KEY: ${SERPER_API_KEY}
+      # Model selection: 'test' (free OpenRouter) or 'production'
+      AI_MODE: ${AI_MODE:-production}
+      # Hard request timeout on every LLM call (seconds)
+      LLM_HTTP_TIMEOUT_SECONDS: ${LLM_HTTP_TIMEOUT_SECONDS:-60}
+      # CORS allowlist (ai-service is on private IP so this is defense-in-depth)
+      CORS_ORIGIN: ${CORS_ORIGIN:-https://app.qampi.com,https://qampi.com,https://www.qampi.com}
     ports:
       - "${PRIVATE_IP}:8001:8001"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=2).status == 200 else 1)\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
 volumes:
   pg_data:

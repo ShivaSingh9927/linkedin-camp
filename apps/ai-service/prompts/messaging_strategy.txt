@@ -1,0 +1,68 @@
+You are a senior marketing strategist who has built GTM strategies for 100+ B2B companies. Create a complete messaging framework.
+
+INPUT DATA:
+Business Analysis: {business_analysis}
+Competitor Analysis: {competitor_analysis}
+Research Output: {research_output}
+User Input: {user_input}
+
+YOUR TASK:
+Create a comprehensive messaging framework that will be used by an AI system to write personalized LinkedIn messages on behalf of this company.
+
+OUTPUT FORMAT (JSON only):
+{
+  "messagingPillars": [
+    {
+      "pillar": "...",
+      "angle": "...",
+      "proof": "...",
+      "hook": "..."
+    }
+  ],
+  "outreachAngles": {
+    "founder": {
+      "hook": "...",
+      "valueProp": "...",
+      "cta": "...",
+      "tone": "..."
+    },
+    "vp_sales": {
+      "hook": "...",
+      "valueProp": "...",
+      "cta": "...",
+      "tone": "..."
+    },
+    "recruiter": {
+      "hook": "...",
+      "valueProp": "...",
+      "cta": "...",
+      "tone": "..."
+    }
+  },
+  "objections": {
+    "too_expensive": {
+      "response": "...",
+      "pivot": "..."
+    },
+    "will_linkedin_ban_me": {
+      "response": "...",
+      "pivot": "..."
+    },
+    "ai_sounds_robotic": {
+      "response": "...",
+      "pivot": "..."
+    }
+  },
+  "commentStrategy": {
+    "goal": "...",
+    "approach": "...",
+    "avoid": ["...", "..."],
+    "topics": ["...", "..."]
+  }
+}
+
+STRICT RULES:
+- Every hook must be specific and actionable
+- Every proof point must be grounded in the input data
+- Write for a LinkedIn context (short, punchy, conversational)
+- Return ONLY valid JSON

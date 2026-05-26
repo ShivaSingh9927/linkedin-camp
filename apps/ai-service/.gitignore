@@ -1,0 +1,20 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Virtual environments
+venv/
+venv_test/
+.venv/
+
+# Runtime logs / artifacts
+server.log
+*.log
+
+# Dev-only scripts that shouldn't ship in the prod image
+test_cloudflare.py
+test_service.sh
+
+# Accidental pip-install output filenames
+=*

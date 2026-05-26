@@ -110,6 +110,7 @@ app.listen(serverPort, '0.0.0.0', () => {
             const aiRoutes = (await import('./routes/ai.routes')).default;
             const userRoutes = (await import('./routes/user.routes')).default;
             const sessionRoutes = (await import('./routes/session.routes')).default;
+            const strategyRoutes = (await import('./routes/strategy.routes')).default;
             const { downgradeExpiredTrials } = await import('./services/trial.service');
             const { default: rateLimit } = await import('express-rate-limit');
 
@@ -136,6 +137,7 @@ app.listen(serverPort, '0.0.0.0', () => {
             app.use('/api/v1/ai', aiRoutes);
             app.use('/api/v1/users', userRoutes);
             app.use('/api/v1/session', sessionRoutes);
+            app.use('/api/v1/strategy', strategyRoutes);
 
             // Sentry error handler must come after all routes
             app.use((err: any, _req: any, res: any, _next: any) => {

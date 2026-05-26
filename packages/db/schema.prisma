@@ -22,23 +22,48 @@ model ActionLog {
 }
 
 model BusinessProfile {
-  id             String   @id @default(cuid())
-  userId         String   @unique
-  name           String?
-  company        String?
-  persona        String?
-  valueProp      String?
-  style          String?
-  keywords       String[] @default([])
-  targetAudience String?
-  industry       String?
-  website        String?
-  heardFrom      String?
-  mainPainPoint  String?
-  usp            String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  User           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                   String    @id @default(cuid())
+  userId               String    @unique
+  name                 String?
+  company              String?
+  persona              String?
+  valueProp            String?
+  style                String?
+  keywords             String[]  @default([])
+  targetAudience       String?
+  industry             String?
+  website              String?
+  heardFrom            String?
+  mainPainPoint        String?
+  usp                  String?
+  companyDescription   String?
+  products             String?
+  differentiators      String?
+  caseStudies          String?
+  communicationStyle   String?
+  writingSamples       Json?
+  tonePreferences      String[]  @default([])
+  aiStrategy           Json?
+  aiStrategyGeneratedAt DateTime?
+  websiteScrapedAt     DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  User                 User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model StrategyHistory {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  version         Int
+  generatedAt     DateTime @default(now())
+  trigger         String
+  inputSnapshot   Json
+  outputStrategy  Json
+  reviewIssues    Json?
+  performance     Json?
+
+  @@index([userId, version])
 }
 
 model Campaign {
@@ -301,6 +326,7 @@ model User {
   sessionValidatedAt      DateTime?
   ActionLog               ActionLog[]
   BusinessProfile         BusinessProfile?
+  StrategyHistory         StrategyHistory[]
   Campaign                Campaign[]
   Integration             Integration[]
   Lead                    Lead[]
