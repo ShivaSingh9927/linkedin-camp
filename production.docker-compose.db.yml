@@ -54,6 +54,9 @@ services:
       # Cloudflare AI Gateway (BYOK routes to OpenRouter/DeepSeek/Groq)
       CLOUDFLARE_AI_GATEWAY_URL: ${CLOUDFLARE_AI_GATEWAY_URL}
       CF_AIG_TOKEN: ${CF_AIG_TOKEN}
+      CF_BYOK_ALIAS_OPENROUTER: ${CF_BYOK_ALIAS_OPENROUTER:-qampi-openrouter}
+      CF_BYOK_ALIAS_DEEPSEEK: ${CF_BYOK_ALIAS_DEEPSEEK:-qampi-deepseek-v4-flash}
+      CF_BYOK_ALIAS_GROQ: ${CF_BYOK_ALIAS_GROQ:-}
       # Direct DeepSeek fallback (used only if CF gateway env vars are missing)
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY}
       DEEPSEEK_API: ${DEEPSEEK_API_KEY}

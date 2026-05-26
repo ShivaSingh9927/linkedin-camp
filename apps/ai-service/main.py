@@ -209,17 +209,22 @@ def get_strategy_context(ai_strategy: Optional[Dict] = None) -> str:
     return ctx
 
 
+CF_BYOK_ALIAS_OPENROUTER = os.environ.get("CF_BYOK_ALIAS_OPENROUTER", "qampi-openrouter")
+CF_BYOK_ALIAS_DEEPSEEK = os.environ.get("CF_BYOK_ALIAS_DEEPSEEK", "qampi-deepseek-v4-flash")
+CF_BYOK_ALIAS_GROQ = os.environ.get("CF_BYOK_ALIAS_GROQ", "")  # unset = skip
+
+
 def call_llm(system: str, user: str, temperature: float = 0.7, model: str = "deepseek/deepseek-chat") -> str:
     model_name = model
 
     extra_headers = {}
     if USE_CLOUDFLARE_GATEWAY:
-        if model_name.startswith("openrouter/"):
-            extra_headers["cf-aig-byok-alias"] = "openrouter-primary"
-        elif model_name.startswith("deepseek/"):
-            extra_headers["cf-aig-byok-alias"] = "deepseek-primary"
-        elif model_name.startswith("groq/"):
-            extra_headers["cf-aig-byok-alias"] = "groq-primary"
+        if model_name.startswith("openrouter/") and CF_BYOK_ALIAS_OPENROUTER:
+            extra_headers["cf-aig-byok-alias"] = CF_BYOK_ALIAS_OPENROUTER
+        elif model_name.startswith("deepseek/") and CF_BYOK_ALIAS_DEEPSEEK:
+            extra_headers["cf-aig-byok-alias"] = CF_BYOK_ALIAS_DEEPSEEK
+        elif model_name.startswith("groq/") and CF_BYOK_ALIAS_GROQ:
+            extra_headers["cf-aig-byok-alias"] = CF_BYOK_ALIAS_GROQ
 
     resolved = _resolve_model(model_name)
 

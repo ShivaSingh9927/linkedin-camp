@@ -36,12 +36,15 @@ class BaseAgent:
         model_name = model
         extra_headers = {}
         if USE_CLOUDFLARE_GATEWAY:
-            if model_name.startswith("openrouter/"):
-                extra_headers["cf-aig-byok-alias"] = "openrouter-primary"
-            elif model_name.startswith("deepseek/"):
-                extra_headers["cf-aig-byok-alias"] = "deepseek-primary"
-            elif model_name.startswith("groq/"):
-                extra_headers["cf-aig-byok-alias"] = "groq-primary"
+            openrouter_alias = os.environ.get("CF_BYOK_ALIAS_OPENROUTER", "qampi-openrouter")
+            deepseek_alias = os.environ.get("CF_BYOK_ALIAS_DEEPSEEK", "qampi-deepseek-v4-flash")
+            groq_alias = os.environ.get("CF_BYOK_ALIAS_GROQ", "")
+            if model_name.startswith("openrouter/") and openrouter_alias:
+                extra_headers["cf-aig-byok-alias"] = openrouter_alias
+            elif model_name.startswith("deepseek/") and deepseek_alias:
+                extra_headers["cf-aig-byok-alias"] = deepseek_alias
+            elif model_name.startswith("groq/") and groq_alias:
+                extra_headers["cf-aig-byok-alias"] = groq_alias
             resolved = model_name
         else:
             # Direct DeepSeek fallback only accepts its own short model names.
