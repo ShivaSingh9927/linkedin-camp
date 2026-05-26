@@ -6,23 +6,30 @@ const router = Router();
 router.use(authMiddleware);
 
 router.post('/generate', async (req: AuthRequest, res) => {
-  try {
-    const { trigger, force_regenerate } = req.body;
-    const strategy = await strategyService.generateStrategy(
-      req.user!.id,
-      trigger || 'manual',
-      force_regenerate || false
-    );
-    res.json({ success: true, strategy });
-  } catch (error: any) {
-    console.error('[STRATEGY] Generate error:', error.message);
-    // Rate limit errors should return 429
-    if (error.message.includes('Rate limit exceeded')) {
-      res.status(429).json({ error: error.message });
-    } else {
-      res.status(500).json({ error: error.message });
-    }
-  }
+  const userId = req.user!.id;
+  const { trigger, force_regenerate } = req.body;
+
+  // Strategy generation runs a 6-agent pipeline that takes ~2 minutes —
+  // longer than the Hetzner LB 50s idle timeout. Return 202 immediately
+  // and emit the result to the user's Socket.IO room when done.
+  // Same async pattern as POST /session/submit-credentials.
+  strategyService
+    .generateStrategy(userId, trigger || 'manual', force_regenerate || false)
+    .then(async (strategy) => {
+      const { io } = await import('../socket');
+      io.to(`user_${userId}`).emit('STRATEGY_GENERATED', { success: true, strategy });
+    })
+    .catch(async (error: any) => {
+      console.error('[STRATEGY] Generate error:', error.message);
+      const { io } = await import('../socket');
+      const status = error.message?.includes('Rate limit exceeded') ? 'rate_limited' : 'failed';
+      io.to(`user_${userId}`).emit('STRATEGY_GENERATED', { success: false, status, error: error.message });
+    });
+
+  res.status(202).json({
+    accepted: true,
+    message: 'Strategy generation started. Watch STRATEGY_GENERATED over Socket.IO for the result.',
+  });
 });
 
 router.get('/', async (req: AuthRequest, res) => {

@@ -68,24 +68,31 @@ class BaseAgent:
     
     def extract_json(self, text: str) -> str:
         """Extract JSON from text, handling common LLM output issues."""
+        if not text:
+            # Upstream returned no content (e.g. OpenRouter quota exhausted on
+            # a free model, BYOK key issue, or model timeout). Treat as empty
+            # so callers raise a typed JSON error instead of AttributeError.
+            return ""
         text = text.strip()
-        
+
         # Remove markdown code blocks
         text = re.sub(r'^```json\s*', '', text, flags=re.MULTILINE)
         text = re.sub(r'^```\s*', '', text, flags=re.MULTILINE)
         text = re.sub(r'\s*```$', '', text, flags=re.MULTILINE)
         text = text.strip()
-        
+
         # Find the first { and last }
         start = text.find('{')
         end = text.rfind('}')
         if start != -1 and end != -1:
             text = text[start:end+1]
-        
+
         return text
-    
+
     def parse_json_response(self, text: str) -> Dict:
         text = self.extract_json(text)
+        if not text:
+            raise ValueError(f"[{self.name}] empty LLM response")
         return json.loads(text)
     
     async def run_with_retry(self, state: StrategyState) -> Optional[Dict]:
