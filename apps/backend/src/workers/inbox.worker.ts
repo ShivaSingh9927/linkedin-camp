@@ -232,80 +232,62 @@ export const syncInbox = async (userId: string) => {
             // (d) sender-name inheritance across grouped messages (only the
             // first bubble in a group carries the sender's name).
             const chatHistory: Array<{ sender: string; text: string; direction: 'SENT' | 'RECEIVED' }> = await page.evaluate(() => {
+                // Logged-in user's name from the global nav. The avatar's alt
+                // attribute reads "Photo of <Name>" on most rollouts but on
+                // some it's just the bare name — handle both.
                 const meName = (() => {
-                    const candidates = [
-                        document.querySelector('.global-nav__me-photo')?.getAttribute('alt'),
-                        document.querySelector('.global-nav__me .t-bold')?.textContent,
-                        document.querySelector('[data-control-name="identity_welcome_message"]')?.textContent,
-                        document.querySelector('.profile-card-name')?.textContent,
-                    ];
-                    for (const c of candidates) {
-                        const t = (c || '').trim();
-                        if (t && !/^Photo of/i.test(t)) return t;
-                        if (t) return t.replace(/^Photo of\s+/i, '');
-                    }
-                    return '';
+                    const alt = (document.querySelector('.global-nav__me-photo')?.getAttribute('alt') || '').trim();
+                    const stripped = alt.replace(/^Photo of\s+/i, '').trim();
+                    if (stripped) return stripped;
+                    const bold = (document.querySelector('.global-nav__me .t-bold')?.textContent || '').trim();
+                    return bold;
                 })().toLowerCase();
+
+                // Extract the sender's name from a bubble's profile link. The
+                // link's anchor text is literally "View {Name}'s profile"
+                // (curly apostrophe). Returns null if no such link is present
+                // (which happens for grouped subsequent bubbles).
+                const senderFromBubble = (eventNode: Element): string | null => {
+                    const linkText = (
+                        eventNode.querySelector('.msg-s-event-listitem__link')?.textContent ||
+                        eventNode.querySelector('a.msg-s-event-listitem__link')?.textContent ||
+                        ''
+                    ).trim();
+                    const m = linkText.match(/View\s+(.+?)['’]s\s+profile/i);
+                    if (m && m[1]) return m[1].trim();
+                    // Some bubbles carry the bare sender name in a separate span.
+                    const groupName = (eventNode.querySelector('.msg-s-message-group__name')?.textContent || '').trim();
+                    return groupName || null;
+                };
 
                 const msgs: any[] = [];
                 const eventNodes = Array.from(document.querySelectorAll('.msg-s-message-list__event, li.msg-s-message-list__event'));
 
-                let lastSender = 'Unknown';
+                let lastSender = '';
                 let lastDirection: 'SENT' | 'RECEIVED' = 'RECEIVED';
 
                 for (const eventNode of eventNodes) {
                     const bodyNode = eventNode.querySelector('.msg-s-event-listitem__body, .msg-s-event__content');
                     if (!bodyNode) continue;
-
                     const text = (bodyNode as HTMLElement).innerText.trim();
                     if (text.length === 0) continue;
 
-                    let sender = '';
-                    let direction: 'SENT' | 'RECEIVED' | null = null;
+                    const bubbleSender = senderFromBubble(eventNode);
+                    let sender = bubbleSender || lastSender;
+                    let direction: 'SENT' | 'RECEIVED';
 
-                    // 1. Visible sender name on this bubble — only present on
-                    //    the first message of each grouped run.
-                    const nameEl = eventNode.querySelector('.msg-s-message-group__name, .msg-s-event-listitem__link, .msg-s-event-listitem__name');
-                    if (nameEl) {
-                        sender = (nameEl.textContent || '').trim();
-                    }
-
-                    // 2. aria-label hint ("Options for your message" vs
-                    //    "Options for message from X:")
-                    const optionEl = eventNode.querySelector('[aria-label*="Options"], [aria-label*="options"]');
-                    const ariaLabel = optionEl?.getAttribute('aria-label') || '';
-                    if (/your message/i.test(ariaLabel)) {
-                        direction = 'SENT';
-                        sender = sender || 'You';
+                    if (bubbleSender) {
+                        // First message of a new group — direction comes from
+                        // matching the bubble's named sender against meName.
+                        direction = meName && bubbleSender.toLowerCase() === meName ? 'SENT' : 'RECEIVED';
                     } else {
-                        const m = ariaLabel.match(/message from (.*?):/i);
-                        if (m && m[1]) sender = sender || m[1].trim();
-                    }
-
-                    // 3. Bubble class variants used by various LinkedIn rollouts.
-                    if (!direction) {
-                        const cls = (eventNode.getAttribute('class') || '') + ' ' +
-                                    (eventNode.querySelector('.msg-s-event-listitem__message-bubble')?.getAttribute('class') || '');
-                        if (/outgoing|from-self|--me\b|sender--me/i.test(cls)) direction = 'SENT';
-                        else if (/other|from-them|--them|sender--them/i.test(cls)) direction = 'RECEIVED';
-                    }
-
-                    // 4. Compare extracted sender name to logged-in user.
-                    if (!direction && sender && meName) {
-                        direction = sender.toLowerCase() === meName ? 'SENT' : 'RECEIVED';
-                    }
-
-                    // 5. Group inheritance — empty sender means "same as the
-                    //    previous bubble in this group".
-                    if (!direction && !sender) {
+                        // Grouped subsequent bubble — same direction as the
+                        // last named bubble. Defaults to RECEIVED only if the
+                        // thread literally opens with no named bubble at all.
                         direction = lastDirection;
-                        sender = lastSender;
                     }
 
-                    // 6. Last-resort default.
-                    if (!direction) direction = 'RECEIVED';
                     if (!sender) sender = direction === 'SENT' ? 'You' : 'Unknown';
-
                     lastDirection = direction;
                     lastSender = sender;
                     msgs.push({ sender, text, direction });
