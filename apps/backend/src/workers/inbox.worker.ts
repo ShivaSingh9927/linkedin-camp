@@ -207,6 +207,24 @@ export const syncInbox = async (userId: string) => {
                 }
             }
 
+            // One-shot DOM diagnostic — log the class list and aria-label of
+            // the first two message events so we can see what LinkedIn is
+            // actually rendering and tighten the selectors based on real data
+            // instead of guesses. Stripped of message content for log volume.
+            if (i === 0 && process.env.INBOX_DIAG === '1') {
+                const diag = await page.evaluate(() => {
+                    const nodes = Array.from(document.querySelectorAll('.msg-s-message-list__event, li.msg-s-message-list__event')).slice(0, 2);
+                    return nodes.map((n: any) => ({
+                        outerClass: n.className,
+                        bubbleClass: n.querySelector('.msg-s-event-listitem__message-bubble')?.className || null,
+                        nameElText: n.querySelector('.msg-s-message-group__name, .msg-s-event-listitem__name, .msg-s-event-listitem__link')?.textContent?.trim() || null,
+                        ariaLabels: Array.from(n.querySelectorAll('[aria-label]')).slice(0, 3).map((e: any) => e.getAttribute('aria-label')),
+                        meName: (document.querySelector('.global-nav__me-photo')?.getAttribute('alt') || document.querySelector('.global-nav__me .t-bold')?.textContent || '').trim(),
+                    }));
+                });
+                console.log(`[INBOX-WORKER][DIAG] ${JSON.stringify(diag)}`);
+            }
+
             // Parse message bubbles. LinkedIn keeps changing the outgoing-bubble
             // class name, so rely on multiple signals: (a) the logged-in user's
             // own name from the global nav, (b) any aria-label hint LinkedIn
@@ -311,10 +329,12 @@ export const syncInbox = async (userId: string) => {
             if (lead) {
                 let hasNewReply = false;
                 for (const msg of chatHistory) {
-                    // Dedup on content+lead — direction is intentionally not in
-                    // the key. Past rollouts misclassified everything as
-                    // RECEIVED; we don't want a corrected sync to double-insert
-                    // those when the direction flips to SENT.
+                    // Dedup on content+lead. Once a row exists we never touch
+                    // it again — campaign-engine writes are authoritative for
+                    // SENT and we don't want a wobbly sync heuristic to
+                    // overwrite that ground truth. Replies the LinkedIn UI
+                    // already pulled in stay frozen too; that's fine, they
+                    // don't change.
                     const exists = await prisma.message.findFirst({
                         where: { leadId: lead.id, content: msg.text }
                     });
@@ -330,14 +350,6 @@ export const syncInbox = async (userId: string) => {
                             }
                         });
                         if (msg.direction === 'RECEIVED') hasNewReply = true;
-                    } else if (exists.direction !== msg.direction) {
-                        // Backfill: row exists but the previous sync got the
-                        // direction wrong. Update in place rather than
-                        // inserting a duplicate.
-                        await prisma.message.update({
-                            where: { id: exists.id },
-                            data: { direction: msg.direction },
-                        });
                     }
                 }
 
