@@ -17,6 +17,10 @@ console.log('[BACKEND-ENV] PORT:', process.env.PORT);
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// Behind the Hetzner LB which sets X-Forwarded-For. Without this, express-rate-limit
+// refuses to key off the client IP and falls back to a noisy warning.
+app.set('trust proxy', 1);
+
 const healthRedis = process.env.REDIS_URL
     ? new Redis(process.env.REDIS_URL, { lazyConnect: true, maxRetriesPerRequest: 1, connectTimeout: 1500 })
     : null;
@@ -90,9 +94,18 @@ app.use((req, res, next) => {
 
 const serverPort = parseInt(String(PORT), 10);
 
-app.listen(serverPort, '0.0.0.0', () => {
+const httpServer = app.listen(serverPort, '0.0.0.0', () => {
     console.log(`[BACKEND-READY] Listening on 0.0.0.0:${serverPort}`);
     console.log('[BACKEND-BOOT] Proceeding with module loading...');
+
+    // Attach Socket.IO to the same HTTP server so /api/v1/strategy/generate and
+    // /api/v1/session/submit-credentials can emit room events when their
+    // fire-and-forget work completes. Without this `io` stays undefined and
+    // `io.to(...).emit(...)` throws an unhandled rejection.
+    import('./socket').then(({ initSocket }) => {
+        initSocket(httpServer);
+        console.log('[BACKEND-SOCKET] Socket.IO attached');
+    }).catch(err => console.error('[BACKEND-SOCKET] init failed:', err));
 
     const initializeApp = async () => {
         try {
