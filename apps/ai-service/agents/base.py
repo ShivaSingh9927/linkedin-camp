@@ -50,16 +50,26 @@ class BaseAgent:
             # Direct DeepSeek fallback only accepts its own short model names.
             resolved = model_name.split("/", 1)[1].replace(":free", "") if "/" in model_name else model_name
 
-        response = self.client.chat.completions.create(
-            model=resolved,
-            messages=[
+        # Force JSON output mode when the system prompt asks for JSON (which
+        # is true for every agent in this codebase). DeepSeek + OpenAI-compat
+        # endpoints honor response_format and refuse to emit malformed JSON,
+        # which kills the "Expecting ',' delimiter" retries that were burning
+        # ~45s per failed messaging_strategy run.
+        kwargs: Dict[str, Any] = {
+            "model": resolved,
+            "messages": [
                 {"role": "system", "content": system},
-                {"role": "user", "content": user}
+                {"role": "user", "content": user},
             ],
-            temperature=temperature,
-            max_tokens=max_tokens,
-            extra_headers=extra_headers if extra_headers else None,
-        )
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+        if extra_headers:
+            kwargs["extra_headers"] = extra_headers
+        if "ONLY valid JSON" in system or "Return ONLY" in system:
+            kwargs["response_format"] = {"type": "json_object"}
+
+        response = self.client.chat.completions.create(**kwargs)
         return response.choices[0].message.content
     
     # Keep backward compatibility with old method name
