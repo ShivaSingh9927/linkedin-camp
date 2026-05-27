@@ -42,6 +42,13 @@ export interface AIGenerateOptions {
     threadHistory?: ThreadMessage[];
     draftReply?: string;
     originalMessage?: string;
+
+    // Strategy + business context (loaded once per campaign run from
+    // BusinessProfile.aiStrategy). The ai-service prompts thread these
+    // through get_brand_context / get_strategy_context helpers so every
+    // message respects the user's GTM positioning + ICP outreach angles.
+    aiStrategy?: any;
+    userContext?: Record<string, any>;
 }
 
 export async function generateAIComment(options: AIGenerateOptions): Promise<string> {
@@ -62,9 +69,13 @@ export async function generateAIComment(options: AIGenerateOptions): Promise<str
             campaign_description: options.campaignDescription,
             tone: options.tone || 'professional',
             persona: options.persona,
-            value_proposition: options.valueProposition
+            value_proposition: options.valueProposition,
+
+            // Strategy + business context
+            ai_strategy: options.aiStrategy,
+            user_context: options.userContext,
         }, { timeout: 30000 });
-        
+
         return response.data.comment;
     } catch (error: any) {
         console.error('[AI-SERVICE] Error generating comment:', error.message);
@@ -127,9 +138,13 @@ export async function generateAIMessage(options: AIGenerateOptions): Promise<str
             tone: options.tone || 'professional',
             cta: options.cta || 'connect',
             persona: options.persona,
-            value_proposition: options.valueProposition
+            value_proposition: options.valueProposition,
+
+            // Strategy + business context
+            ai_strategy: options.aiStrategy,
+            user_context: options.userContext,
         }, { timeout: 30000 });
-        
+
         const raw = response.data.message;
         const cleaned = cleanAIOutput(raw, options.profileName);
         return cleaned || raw;

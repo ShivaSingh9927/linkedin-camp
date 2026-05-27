@@ -112,7 +112,8 @@ async function runLead(
         persona?: string;
         valueProp?: string;
     },
-    sessionContext?: SessionContext
+    sessionContext?: SessionContext,
+    aiContext?: NodeContext['aiContext']
 ): Promise<LeadExecutionResult> {
     const execResult: LeadExecutionResult = {
         leadId: lead.id,
@@ -373,6 +374,7 @@ async function runLead(
             const nodeCtx: NodeContext = {
                 page, context, lead, userId, campaignId, storedOutputs,
                 campaign: campaignData,
+                aiContext,
             };
 
             console.log(`[ENGINE] Lead ${lead.firstName}: executing node ${i + 1}/${flow.length} → ${nodeType}`);
@@ -545,6 +547,42 @@ export async function runCampaign(
     console.log(`[CAMPAIGN] Starting campaign ${campaignId}`);
     console.log(`${'='.repeat(50)}\n`);
 
+    // Fetch the user's strategy + business context ONCE per campaign run.
+    // Threaded into every NodeContext so per-action /ai/message and
+    // /ai/comment calls receive the same ai_strategy + user_context payload.
+    // Without this, the multi-agent strategy is generated but never reaches
+    // the message-writing step — the link Phase 1 → Phase 2.
+    let aiContext: NodeContext['aiContext'] | undefined;
+    try {
+        const bp = await prisma.businessProfile.findUnique({ where: { userId } });
+        if (bp) {
+            aiContext = {
+                aiStrategy: bp.aiStrategy || null,
+                userContext: {
+                    persona: bp.persona,
+                    company: bp.company,
+                    companyDescription: bp.companyDescription,
+                    products: bp.products,
+                    differentiators: bp.differentiators,
+                    caseStudies: bp.caseStudies,
+                    targetAudience: bp.targetAudience,
+                    industry: bp.industry,
+                    mainPainPoint: bp.mainPainPoint,
+                    usp: bp.usp,
+                    valueProp: bp.valueProp,
+                    communicationStyle: bp.communicationStyle,
+                    writingSamples: bp.writingSamples,
+                    tonePreferences: bp.tonePreferences,
+                },
+            };
+            console.log(`[CAMPAIGN] Loaded ai context (strategy=${bp.aiStrategy ? 'yes' : 'no'})`);
+        } else {
+            console.log('[CAMPAIGN] No BusinessProfile — ai context disabled');
+        }
+    } catch (err: any) {
+        console.warn('[CAMPAIGN] Failed to load BusinessProfile for ai context:', err.message);
+    }
+
     // Get all leads for this campaign
     const campaignLeads = await prisma.campaignLead.findMany({
         where: { campaignId, isCompleted: false },
@@ -582,7 +620,7 @@ export async function runCampaign(
             toneOverride: config.toneOverride,
             persona: config.persona,
             valueProp: config.valueProp,
-        }, config.sessionContext);
+        }, config.sessionContext, aiContext);
         summary.leadResults.push(result);
 
         if (result.status === 'completed') {

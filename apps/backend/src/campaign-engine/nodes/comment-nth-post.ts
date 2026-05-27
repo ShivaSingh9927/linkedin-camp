@@ -18,7 +18,7 @@ async function safeGoto(page: any, url: string, retries = 3) {
 }
 
 export const commentNthPost: NodeHandler = async (ctx, config): Promise<NodeResult> => {
-    const { page, lead, storedOutputs, campaign } = ctx;
+    const { page, lead, storedOutputs, campaign, aiContext } = ctx;
     const n = config.n || 1;
     const rawText = config.text || 'Great insights!';
     const aiEnabled = config.aiEnabled || false;
@@ -141,8 +141,10 @@ export const commentNthPost: NodeHandler = async (ctx, config): Promise<NodeResu
                     postContent: postContent,
                     campaignDescription: campaignContext.description || undefined,
                     tone: campaignContext.tone,
-                    persona: campaignContext.persona,
-                    valueProposition: campaignContext.valueProp,
+                    persona: campaignContext.persona || aiContext?.userContext?.persona || undefined,
+                    valueProposition: campaignContext.valueProp || aiContext?.userContext?.valueProp || undefined,
+                    aiStrategy: aiContext?.aiStrategy,
+                    userContext: aiContext?.userContext,
                 });
                 console.log('[COMMENT-NTH-POST] AI comment generated:', commentText.substring(0, 50) + '...');
             } catch (aiError: any) {

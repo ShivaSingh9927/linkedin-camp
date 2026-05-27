@@ -153,6 +153,28 @@ export interface NodeContext {
         persona?: string;
         valueProp?: string;
     };
+    // Loaded once per campaign run from BusinessProfile so every per-action
+    // LLM call ('/ai/message', '/ai/comment') gets the user's strategy +
+    // company context — keeps voice/positioning consistent across leads.
+    aiContext?: {
+        aiStrategy?: any;
+        userContext?: {
+            persona?: string | null;
+            company?: string | null;
+            companyDescription?: string | null;
+            products?: string | null;
+            differentiators?: string | null;
+            caseStudies?: string | null;
+            targetAudience?: string | null;
+            industry?: string | null;
+            mainPainPoint?: string | null;
+            usp?: string | null;
+            valueProp?: string | null;
+            communicationStyle?: string | null;
+            writingSamples?: any;
+            tonePreferences?: any;
+        };
+    };
 }
 
 // ---- Node result ----

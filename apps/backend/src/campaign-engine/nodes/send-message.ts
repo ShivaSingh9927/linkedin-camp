@@ -27,7 +27,7 @@ async function safeGoto(page: any, url: string, retries = 3) {
 }
 
 export const sendMessage: NodeHandler = async (ctx, config): Promise<NodeResult> => {
-    const { page, lead, storedOutputs, campaign } = ctx;
+    const { page, lead, storedOutputs, campaign, aiContext } = ctx;
     const rawText = config.message || config.text || 'Hello!';
     const requireConnection = config.requireConnection || false;
     const aiEnabled = config.aiEnabled || false;
@@ -80,8 +80,10 @@ export const sendMessage: NodeHandler = async (ctx, config): Promise<NodeResult>
                     campaignDescription: campaignContext.description || undefined,
                     tone: campaignContext.tone,
                     cta: campaignContext.cta,
-                    persona: campaignContext.persona,
-                    valueProposition: campaignContext.valueProp,
+                    persona: campaignContext.persona || aiContext?.userContext?.persona || undefined,
+                    valueProposition: campaignContext.valueProp || aiContext?.userContext?.valueProp || undefined,
+                    aiStrategy: aiContext?.aiStrategy,
+                    userContext: aiContext?.userContext,
                 });
                 if (aiMessage && aiMessage.length > 10) {
                     messageText = aiMessage;
