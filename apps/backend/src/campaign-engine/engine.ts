@@ -102,7 +102,7 @@ async function blockResources(page: any) {
 async function runLead(
     userId: string,
     campaignId: string,
-    lead: { id: string; linkedinUrl: string; firstName: string | null; lastName: string | null },
+    lead: NodeContext['lead'],
     flow: CampaignFlowNode[],
     campaignData?: {
         objective?: string;
@@ -633,11 +633,16 @@ export async function runCampaign(
             where: { id: cl.leadId }
         });
         
-        const leadData = {
+        const leadData: NodeContext['lead'] = {
             id: cl.leadId,
             linkedinUrl: leadRecord?.linkedinUrl || '',
             firstName: leadRecord?.firstName || '',
             lastName: leadRecord?.lastName || '',
+            headline: leadRecord?.headline || null,
+            jobTitle: leadRecord?.jobTitle || null,
+            company: leadRecord?.company || null,
+            location: leadRecord?.location || null,
+            aboutInfo: leadRecord?.aboutInfo || null,
         };
 
         console.log(`\n[CAMPAIGN] Processing lead: ${leadData.firstName || leadData.linkedinUrl}`);

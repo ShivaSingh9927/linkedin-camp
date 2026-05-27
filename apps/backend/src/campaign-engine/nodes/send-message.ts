@@ -42,19 +42,21 @@ export const sendMessage: NodeHandler = async (ctx, config): Promise<NodeResult>
             console.log('[SEND-MESSAGE] Generating AI message...');
             try {
                 const profileName = `${lead.firstName || ''} ${lead.lastName || ''}`.trim() || 'User';
-                
-                const profileVisitOutput = storedOutputs['profile-visit'];
-                
-                // Extract all available profile data
+
+                // Prefer freshly-scraped data from a prior profile-visit step in the
+                // same workflow; fall back to whatever's on the Lead row (set at
+                // import / from prior runs) so AI generation isn't blank-slate
+                // when the workflow has no profile-visit step.
+                const pv = storedOutputs['profile-visit'] || {};
                 const profileData = {
                     name: profileName,
-                    headline: profileVisitOutput?.headline || profileVisitOutput?.jobTitle || null,
-                    location: profileVisitOutput?.location || null,
-                    company: profileVisitOutput?.company || null,
-                    jobTitle: profileVisitOutput?.jobTitle || null,
-                    about: profileVisitOutput?.about || null,
-                    experience: profileVisitOutput?.experience || [],
-                    education: profileVisitOutput?.education || [],
+                    headline:   pv.headline   || pv.jobTitle   || lead.headline  || lead.jobTitle || null,
+                    location:   pv.location   || lead.location || null,
+                    company:    pv.company    || lead.company  || null,
+                    jobTitle:   pv.jobTitle   || lead.jobTitle || null,
+                    about:      pv.about      || lead.aboutInfo || null,
+                    experience: pv.experience || [],
+                    education: pv.education || [],
                 };
                 
                 // Campaign context for personalized outreach

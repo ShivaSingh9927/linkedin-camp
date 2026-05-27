@@ -140,6 +140,15 @@ export interface NodeContext {
         linkedinUrl: string;
         firstName: string | null;
         lastName: string | null;
+        // Enrichment fields from the Lead row — used as fallback when no
+        // profile-visit step ran earlier in the flow. Without these, an
+        // aiEnabled send-message ships with only firstName+lastName to the
+        // LLM and personalization collapses to invented stereotypes.
+        headline?: string | null;
+        jobTitle?: string | null;
+        company?: string | null;
+        location?: string | null;
+        aboutInfo?: string | null;
     };
     userId: string;
     campaignId: string;
