@@ -40,7 +40,11 @@ AGENT_CONFIG = {
         "max_tokens": 1200,
         "timeout": 45,
         "prompt_file": "prompts/competitor_analysis.txt",
-        "depends_on": ["business_analysis"],
+        # Independent of business_analysis — the LLM produces competitors
+        # primarily from training memory anchored on industry/company in
+        # user_input. Letting it run in parallel with business_analysis
+        # halves the first-wave latency. Both still feed messaging_strategy.
+        "depends_on": [],
     },
     "messaging_strategy": {
         "model": _DEEPSEEK_MODEL,
@@ -66,7 +70,7 @@ MAX_RETRIES = 3
 
 EXECUTION_ORDER = [
     {"agent": "business_analysis", "depends_on": []},
-    {"agent": "competitor_analysis", "depends_on": ["business_analysis"]},
+    {"agent": "competitor_analysis", "depends_on": []},
     {"agent": "messaging_strategy", "depends_on": ["business_analysis", "competitor_analysis"]},
     {"agent": "synthesizer", "depends_on": ["messaging_strategy"]},
 ]

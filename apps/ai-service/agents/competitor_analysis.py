@@ -19,7 +19,7 @@ class CompetitorAnalysisAgent(BaseAgent):
             user_input=json.dumps(user_input, indent=2),
         )
 
-        response = self.call_groq(
+        response = await self.call_groq_async(
             system="You are a competitive intelligence analyst. Return ONLY valid JSON.",
             user=prompt,
         )

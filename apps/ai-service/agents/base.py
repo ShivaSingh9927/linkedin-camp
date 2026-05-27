@@ -65,6 +65,18 @@ class BaseAgent:
     # Keep backward compatibility with old method name
     def call_groq(self, system: str, user: str, model: str = None, temperature: float = None, max_tokens: int = None) -> str:
         return self.call_llm(system, user, model, temperature, max_tokens)
+
+    async def call_llm_async(self, system: str, user: str, model: str = None, temperature: float = None, max_tokens: int = None) -> str:
+        """Async wrapper so asyncio.gather actually parallelizes LLM calls.
+
+        Without this, the sync openai SDK blocks the event loop on the first
+        request and effectively serializes whatever asyncio.gather scheduled.
+        asyncio.to_thread runs the blocking call on a worker thread.
+        """
+        return await asyncio.to_thread(self.call_llm, system, user, model, temperature, max_tokens)
+
+    async def call_groq_async(self, system: str, user: str, model: str = None, temperature: float = None, max_tokens: int = None) -> str:
+        return await self.call_llm_async(system, user, model, temperature, max_tokens)
     
     def extract_json(self, text: str) -> str:
         """Extract JSON from text, handling common LLM output issues."""
@@ -116,7 +128,7 @@ class BaseAgent:
                     try:
                         raw_text = str(e)
                         # Try with fallback model to fix JSON
-                        fixed = self.call_llm(
+                        fixed = await self.call_llm_async(
                             "Fix this JSON. Return ONLY valid JSON, nothing else.",
                             f"Broken JSON: {raw_text[:2000]}",
                             model=FALLBACK_MODEL,

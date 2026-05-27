@@ -174,12 +174,20 @@ async def generate_strategy(user_input: Dict[str, Any], client: OpenAI, force_re
         if not ready:
             break
 
-        for step in ready:
-            agent_name = step["agent"]
-            agent = agents[agent_name]
-            print(f"[orchestrator] Running {agent_name}...")
-            result = await run_with_rate_limit_retry(agent, state)
+        # Run every agent in this wave concurrently. asyncio.gather schedules
+        # them all on the event loop; LLM time dominates and they don't share
+        # mutable state writes (each agent writes only to its own slot on
+        # `state`). Was a sequential for-loop with AGENT_DELAY sleeps; that
+        # latency was pure waste once we moved everything to DeepSeek (no
+        # cross-provider rate-limit contention).
+        names = [step["agent"] for step in ready]
+        print(f"[orchestrator] Running wave: {', '.join(names)}")
+        results = await asyncio.gather(
+            *(run_with_rate_limit_retry(agents[n], state) for n in names),
+            return_exceptions=False,
+        )
 
+        for agent_name, result in zip(names, results):
             if result is None:
                 state.errors.append({"agent": agent_name, "error": "Agent returned None"})
 
@@ -190,8 +198,6 @@ async def generate_strategy(user_input: Dict[str, Any], client: OpenAI, force_re
                 state.final_strategy = result
 
             completed.add(agent_name)
-            if len(completed) < len(EXECUTION_ORDER):
-                await asyncio.sleep(AGENT_DELAY)
 
     # Validate final strategy
     strategy_valid = True
