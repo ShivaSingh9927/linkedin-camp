@@ -207,10 +207,33 @@ export const syncInbox = async (userId: string) => {
                 }
             }
 
-            // Parse message bubbles
+            // Parse message bubbles. LinkedIn keeps changing the outgoing-bubble
+            // class name, so rely on multiple signals: (a) the logged-in user's
+            // own name from the global nav, (b) any aria-label hint LinkedIn
+            // exposes, (c) a wide set of bubble class variants, and finally
+            // (d) sender-name inheritance across grouped messages (only the
+            // first bubble in a group carries the sender's name).
             const chatHistory: Array<{ sender: string; text: string; direction: 'SENT' | 'RECEIVED' }> = await page.evaluate(() => {
+                const meName = (() => {
+                    const candidates = [
+                        document.querySelector('.global-nav__me-photo')?.getAttribute('alt'),
+                        document.querySelector('.global-nav__me .t-bold')?.textContent,
+                        document.querySelector('[data-control-name="identity_welcome_message"]')?.textContent,
+                        document.querySelector('.profile-card-name')?.textContent,
+                    ];
+                    for (const c of candidates) {
+                        const t = (c || '').trim();
+                        if (t && !/^Photo of/i.test(t)) return t;
+                        if (t) return t.replace(/^Photo of\s+/i, '');
+                    }
+                    return '';
+                })().toLowerCase();
+
                 const msgs: any[] = [];
                 const eventNodes = Array.from(document.querySelectorAll('.msg-s-message-list__event, li.msg-s-message-list__event'));
+
+                let lastSender = 'Unknown';
+                let lastDirection: 'SENT' | 'RECEIVED' = 'RECEIVED';
 
                 for (const eventNode of eventNodes) {
                     const bodyNode = eventNode.querySelector('.msg-s-event-listitem__body, .msg-s-event__content');
@@ -219,31 +242,54 @@ export const syncInbox = async (userId: string) => {
                     const text = (bodyNode as HTMLElement).innerText.trim();
                     if (text.length === 0) continue;
 
-                    let sender = 'Unknown';
-                    let direction: 'SENT' | 'RECEIVED' = 'RECEIVED';
+                    let sender = '';
+                    let direction: 'SENT' | 'RECEIVED' | null = null;
 
-                    // Strategy 1: aria-label "Options for..." pattern
-                    const optionEl = eventNode.querySelector('[aria-label*="Options for"]');
-                    if (optionEl) {
-                        const ariaLabel = optionEl.getAttribute('aria-label');
-                        if (ariaLabel?.includes('your message')) {
-                            sender = 'You';
-                            direction = 'SENT';
-                        } else {
-                            const match = ariaLabel?.match(/message from (.*?):/);
-                            if (match && match[1]) sender = match[1].trim();
-                        }
+                    // 1. Visible sender name on this bubble — only present on
+                    //    the first message of each grouped run.
+                    const nameEl = eventNode.querySelector('.msg-s-message-group__name, .msg-s-event-listitem__link, .msg-s-event-listitem__name');
+                    if (nameEl) {
+                        sender = (nameEl.textContent || '').trim();
                     }
 
-                    // Strategy 2: Visual indicator fallback
-                    if (sender === 'Unknown') {
-                        const sendingIndicator = eventNode.querySelector('.msg-s-event-with-indicator__sending-indicator');
-                        if (sendingIndicator || eventNode.classList.contains('msg-s-event-listitem--message-bubble-outgoing')) {
-                            sender = 'You';
-                            direction = 'SENT';
-                        }
+                    // 2. aria-label hint ("Options for your message" vs
+                    //    "Options for message from X:")
+                    const optionEl = eventNode.querySelector('[aria-label*="Options"], [aria-label*="options"]');
+                    const ariaLabel = optionEl?.getAttribute('aria-label') || '';
+                    if (/your message/i.test(ariaLabel)) {
+                        direction = 'SENT';
+                        sender = sender || 'You';
+                    } else {
+                        const m = ariaLabel.match(/message from (.*?):/i);
+                        if (m && m[1]) sender = sender || m[1].trim();
                     }
 
+                    // 3. Bubble class variants used by various LinkedIn rollouts.
+                    if (!direction) {
+                        const cls = (eventNode.getAttribute('class') || '') + ' ' +
+                                    (eventNode.querySelector('.msg-s-event-listitem__message-bubble')?.getAttribute('class') || '');
+                        if (/outgoing|from-self|--me\b|sender--me/i.test(cls)) direction = 'SENT';
+                        else if (/other|from-them|--them|sender--them/i.test(cls)) direction = 'RECEIVED';
+                    }
+
+                    // 4. Compare extracted sender name to logged-in user.
+                    if (!direction && sender && meName) {
+                        direction = sender.toLowerCase() === meName ? 'SENT' : 'RECEIVED';
+                    }
+
+                    // 5. Group inheritance — empty sender means "same as the
+                    //    previous bubble in this group".
+                    if (!direction && !sender) {
+                        direction = lastDirection;
+                        sender = lastSender;
+                    }
+
+                    // 6. Last-resort default.
+                    if (!direction) direction = 'RECEIVED';
+                    if (!sender) sender = direction === 'SENT' ? 'You' : 'Unknown';
+
+                    lastDirection = direction;
+                    lastSender = sender;
                     msgs.push({ sender, text, direction });
                 }
                 return msgs;
@@ -265,9 +311,12 @@ export const syncInbox = async (userId: string) => {
             if (lead) {
                 let hasNewReply = false;
                 for (const msg of chatHistory) {
-                    // Dedup — check if message already exists
+                    // Dedup on content+lead — direction is intentionally not in
+                    // the key. Past rollouts misclassified everything as
+                    // RECEIVED; we don't want a corrected sync to double-insert
+                    // those when the direction flips to SENT.
                     const exists = await prisma.message.findFirst({
-                        where: { leadId: lead.id, content: msg.text, direction: msg.direction }
+                        where: { leadId: lead.id, content: msg.text }
                     });
                     if (!exists) {
                         await prisma.message.create({
@@ -281,6 +330,14 @@ export const syncInbox = async (userId: string) => {
                             }
                         });
                         if (msg.direction === 'RECEIVED') hasNewReply = true;
+                    } else if (exists.direction !== msg.direction) {
+                        // Backfill: row exists but the previous sync got the
+                        // direction wrong. Update in place rather than
+                        // inserting a duplicate.
+                        await prisma.message.update({
+                            where: { id: exists.id },
+                            data: { direction: msg.direction },
+                        });
                     }
                 }
 
