@@ -277,9 +277,22 @@ export const syncInbox = async (userId: string) => {
                     let direction: 'SENT' | 'RECEIVED';
 
                     if (bubbleSender) {
-                        // First message of a new group — direction comes from
-                        // matching the bubble's named sender against meName.
-                        direction = meName && bubbleSender.toLowerCase() === meName ? 'SENT' : 'RECEIVED';
+                        // First message of a new group — match the bubble's
+                        // named sender against meName. LinkedIn's profile link
+                        // typically renders the first name only ("View Raja's
+                        // profile") while the global-nav meName is the full
+                        // name ("Raja Singh"), so we compare on either the
+                        // first token of meName or substring containment in
+                        // either direction.
+                        const s = bubbleSender.toLowerCase();
+                        const meFirst = meName.split(/\s+/)[0] || '';
+                        const isMe = !!meName && (
+                            s === meName ||
+                            s === meFirst ||
+                            (s.length >= 3 && meName.includes(s)) ||
+                            (meFirst.length >= 3 && s.includes(meFirst))
+                        );
+                        direction = isMe ? 'SENT' : 'RECEIVED';
                     } else {
                         // Grouped subsequent bubble — same direction as the
                         // last named bubble. Defaults to RECEIVED only if the
