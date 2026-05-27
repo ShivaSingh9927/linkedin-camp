@@ -28,18 +28,16 @@ services:
     image: redis:7-alpine
     container_name: redis
     restart: unless-stopped
-    command:
-      - redis-server
-      - --requirepass
-      - ${REDIS_PASSWORD}
-      - --appendonly
-      - "yes"
+    # No password — Redis only listens on the private 10.0.0.4 IP and is
+    # firewalled. Authoritative production state; do not re-introduce a
+    # password without rotating it in every consumer's env at the same time.
+    command: ["redis-server", "--appendonly", "yes"]
     ports:
       - "${PRIVATE_IP}:6379:6379"
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli -a ${REDIS_PASSWORD} ping | grep -q PONG"]
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
       interval: 10s
       timeout: 5s
       retries: 5
