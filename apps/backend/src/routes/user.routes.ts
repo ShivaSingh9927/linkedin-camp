@@ -4,7 +4,6 @@ import { prisma } from '@repo/db';
 import { mailService } from '../services/mail.service';
 
 const router = Router();
-
 router.use(authMiddleware);
 
 router.get('/me', async (req: AuthRequest, res) => {
@@ -32,30 +31,30 @@ router.get('/me', async (req: AuthRequest, res) => {
 
 router.put('/business-profile', async (req: AuthRequest, res) => {
     try {
-        const { name, company, persona, valueProp, style, keywords, targetAudience, industry } = req.body;
+        const { 
+            name, company, persona, valueProp, style, keywords, targetAudience, industry,
+            companyDescription, products, differentiators, caseStudies, communicationStyle,
+            writingSamples, tonePreferences, website
+        } = req.body;
         
         const businessProfile = await prisma.businessProfile.upsert({
             where: { userId: req.user!.id },
             update: {
-                name,
-                company,
-                persona,
-                valueProp,
-                style,
+                name, company, persona, valueProp, style,
                 keywords: keywords || [],
-                targetAudience,
-                industry,
+                targetAudience, industry, website,
+                companyDescription, products, differentiators, caseStudies,
+                communicationStyle, writingSamples,
+                tonePreferences: tonePreferences || [],
             },
             create: {
                 userId: req.user!.id,
-                name,
-                company,
-                persona,
-                valueProp,
-                style,
+                name, company, persona, valueProp, style,
                 keywords: keywords || [],
-                targetAudience,
-                industry,
+                targetAudience, industry, website,
+                companyDescription, products, differentiators, caseStudies,
+                communicationStyle, writingSamples,
+                tonePreferences: tonePreferences || [],
             },
         });
 
@@ -69,22 +68,12 @@ router.put('/business-profile', async (req: AuthRequest, res) => {
 router.put('/onboarding', async (req: AuthRequest, res) => {
     try {
         const { 
-            firstName, 
-            lastName, 
-            jobTitle, 
-            linkedinUrl, 
-            company, 
-            website, 
-            targetAudience, 
-            mainPainPoint, 
-            valueProp, 
-            heardFrom,
-            industry 
+            firstName, lastName, jobTitle, linkedinUrl, company, website,
+            targetAudience, mainPainPoint, valueProp, heardFrom, industry 
         } = req.body;
         
         const userId = req.user!.id;
 
-        // 1. Update User basic info & status
         await prisma.user.update({
             where: { id: userId },
             data: {
@@ -95,33 +84,19 @@ router.put('/onboarding', async (req: AuthRequest, res) => {
             }
         });
 
-        // 2. Upsert BusinessProfile with GTM data
         const businessProfile = await prisma.businessProfile.upsert({
             where: { userId: userId },
             update: {
-                company,
-                persona: jobTitle,
-                website,
-                targetAudience,
-                mainPainPoint,
-                valueProp,
-                heardFrom,
-                industry,
+                company, persona: jobTitle, website, targetAudience,
+                mainPainPoint, valueProp, heardFrom, industry,
             },
             create: {
                 userId: userId,
-                company,
-                persona: jobTitle,
-                website,
-                targetAudience,
-                mainPainPoint,
-                valueProp,
-                heardFrom,
-                industry,
+                company, persona: jobTitle, website, targetAudience,
+                mainPainPoint, valueProp, heardFrom, industry,
             },
         });
 
-        // 3. Send Onboarding Success Email (Optional, don't fail if mail server is down)
         try {
             await mailService.sendOnboardingSuccessEmail(req.user!.email);
         } catch (mailError: any) {

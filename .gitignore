@@ -67,3 +67,15 @@ good_images_pred.zip
 **/local_raja_session/
 **/google_test_session/
 **/local_stealth_test_visible.js
+
+# python runtime artifacts (ai-service)
+__pycache__/
+*.pyc
+*.pyo
+apps/ai-service/venv*/
+apps/ai-service/=*
+deepseek_api_test.py
+
+# runtime pid files
+server.pid
+*.pid

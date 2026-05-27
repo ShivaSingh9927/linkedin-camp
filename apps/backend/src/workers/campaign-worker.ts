@@ -199,6 +199,25 @@ const processCampaignJob = async (data: CampaignJobData, job: Job) => {
     config.campaignId = campaignId;
     config.objective = campaign.objective || undefined;
     config.persona = businessProfile.persona || undefined;
+    config.valueProp = businessProfile.valueProp || undefined;
+    config.userContext = {
+        persona: businessProfile.persona,
+        company: businessProfile.company,
+        companyDescription: businessProfile.companyDescription,
+        products: businessProfile.products,
+        differentiators: businessProfile.differentiators,
+        caseStudies: businessProfile.caseStudies,
+        targetAudience: businessProfile.targetAudience,
+        industry: businessProfile.industry,
+        keywords: businessProfile.keywords,
+        mainPainPoint: businessProfile.mainPainPoint,
+        usp: businessProfile.usp,
+        valueProp: businessProfile.valueProp,
+        communicationStyle: businessProfile.communicationStyle,
+        writingSamples: businessProfile.writingSamples,
+        tonePreferences: businessProfile.tonePreferences,
+        aiStrategy: businessProfile.aiStrategy,
+    };
 
      // Build session context from database session files
     let parsedCookies = null;

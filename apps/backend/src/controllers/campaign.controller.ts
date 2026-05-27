@@ -4,10 +4,10 @@ import { getOrAssignProxy } from '../services/proxy.service';
 import { enqueueCampaign } from '../workers/campaign-worker';
 
 export const createCampaign = async (req: any, res: Response) => {
-    const { name, workflow, workflowJson, leads } = req.body;
+    const { name, workflow, workflowJson, leads, objective, description, cta, toneOverride } = req.body;
     const userId = req.user.id;
 
-    console.log('createCampaign called:', { name, workflow: !!workflow, workflowJson: !!workflowJson });
+    console.log('createCampaign called:', { name, workflow: !!workflow, workflowJson: !!workflowJson, objective: !!objective, description: !!description });
 
     // Use workflow or workflowJson (frontend sends "workflow")
     const workflowData = workflow || workflowJson;
@@ -18,12 +18,22 @@ export const createCampaign = async (req: any, res: Response) => {
     }
 
     try {
-        console.log('Creating campaign with data:', { userId, name, workflowData: JSON.stringify(workflowData).substring(0, 100) });
+        console.log('Creating campaign with data:', { 
+            userId, 
+            name, 
+            workflowData: JSON.stringify(workflowData).substring(0, 100),
+            objective: !!objective,
+            description: !!description
+        });
         const campaign = await prisma.campaign.create({
             data: {
                 userId,
                 name,
                 workflowJson: workflowData,
+                objective: objective || undefined,
+                description: description || undefined,
+                cta: cta || undefined,
+                toneOverride: toneOverride || undefined,
                 status: 'DRAFT',
             },
         });
@@ -51,7 +61,7 @@ export const createCampaign = async (req: any, res: Response) => {
 
 export const updateCampaign = async (req: any, res: Response) => {
     const { id } = req.params;
-    const { name, workflowJson } = req.body;
+    const { name, workflowJson, objective, description, cta, toneOverride } = req.body;
     const userId = req.user.id;
 
     try {
@@ -59,7 +69,11 @@ export const updateCampaign = async (req: any, res: Response) => {
             where: { id, userId },
             data: {
                 name,
-                workflowJson
+                workflowJson,
+                objective: objective !== undefined ? objective : undefined,
+                description: description !== undefined ? description : undefined,
+                cta: cta !== undefined ? cta : undefined,
+                toneOverride: toneOverride !== undefined ? toneOverride : undefined,
             },
         });
         res.json(campaign);
@@ -403,15 +417,15 @@ export const exportCampaign = async (req: any, res: Response) => {
 
             return {
                 // Lead Info
-                firstName: cl.lead.firstName,
-                lastName: cl.lead.lastName,
-                email: cl.lead.email || pv.email,
-                linkedinUrl: cl.lead.linkedinUrl,
+                firstName: cl.Lead.firstName,
+                lastName: cl.Lead.lastName,
+                email: cl.Lead.email || pv.email,
+                linkedinUrl: cl.Lead.linkedinUrl,
                 
                 // Enrichment
-                company: cl.lead.company || pv.company,
-                jobTitle: cl.lead.jobTitle || pv.jobTitle,
-                about: cl.lead.aboutInfo || pv.about,
+                company: cl.Lead.company || pv.company,
+                jobTitle: cl.Lead.jobTitle || pv.jobTitle,
+                about: cl.Lead.aboutInfo || pv.about,
                 
                 // Campaign Status
                 status: cl.status,
