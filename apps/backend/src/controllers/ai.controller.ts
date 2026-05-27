@@ -34,6 +34,17 @@ export const generateComment = async (req: AuthRequest, res: Response) => {
             tone: tone || campaignCtx?.toneOverride || 'professional',
             persona: businessProfile?.persona || undefined,
             valueProposition: businessProfile?.valueProp || undefined,
+            aiStrategy: businessProfile?.aiStrategy || undefined,
+            userContext: businessProfile ? {
+                persona: businessProfile.persona,
+                company: businessProfile.company,
+                companyDescription: businessProfile.companyDescription,
+                differentiators: businessProfile.differentiators,
+                communicationStyle: businessProfile.communicationStyle,
+                tonePreferences: businessProfile.tonePreferences,
+                valueProp: businessProfile.valueProp,
+                industry: businessProfile.industry,
+            } : undefined,
         });
         
         res.json({ comment });
@@ -65,10 +76,26 @@ export const generateMessage = async (req: AuthRequest, res: Response) => {
             profileName: recipient_name,
             profileHeadline: recipient_headline,
             connectionContext: connection_context || campaignCtx?.objective || undefined,
+            campaignDescription: campaignCtx?.description || undefined,
             tone: tone || campaignCtx?.toneOverride || 'professional',
             cta: cta || campaignCtx?.cta || 'connect',
             persona: businessProfile?.persona || undefined,
             valueProposition: businessProfile?.valueProp || undefined,
+            aiStrategy: businessProfile?.aiStrategy || undefined,
+            userContext: businessProfile ? {
+                persona: businessProfile.persona,
+                company: businessProfile.company,
+                companyDescription: businessProfile.companyDescription,
+                products: businessProfile.products,
+                differentiators: businessProfile.differentiators,
+                caseStudies: businessProfile.caseStudies,
+                communicationStyle: businessProfile.communicationStyle,
+                writingSamples: businessProfile.writingSamples,
+                tonePreferences: businessProfile.tonePreferences,
+                valueProp: businessProfile.valueProp,
+                industry: businessProfile.industry,
+                targetAudience: businessProfile.targetAudience,
+            } : undefined,
         });
         
         res.json({ message });
@@ -97,6 +124,7 @@ export const enhanceReply = async (req: AuthRequest, res: Response) => {
             tone: tone || 'professional',
             persona: businessProfile?.persona || undefined,
             valueProposition: businessProfile?.valueProp || undefined,
+            aiStrategy: businessProfile?.aiStrategy || undefined,
         });
         
         res.json({ enhanced });
