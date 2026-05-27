@@ -45,6 +45,12 @@ export async function writeNodeOutput(
 
 /**
  * Updates the Lead model with enriched data from profile-visit.
+ *
+ * Canonical post-scrape writer — profile-visit no longer writes the lead row
+ * itself. Splits output.name into firstName/lastName so the firstName column
+ * doesn't get corrupted with the full name. Persists every field the send-
+ * message fallback reads so a future run on the same lead doesn't have to
+ * re-scrape just to get personalization.
  */
 export async function updateLeadEnrichment(
     leadId: string,
@@ -52,7 +58,13 @@ export async function updateLeadEnrichment(
 ): Promise<void> {
     const updateData: any = {};
 
-    if (output.name) updateData.firstName = output.name;
+    if (output.name) {
+        const parts = String(output.name).split(/\s+/).filter(Boolean);
+        if (parts[0]) updateData.firstName = parts[0];
+        if (parts.length > 1) updateData.lastName = parts.slice(1).join(' ');
+    }
+    if (output.headline) updateData.headline = output.headline;
+    if (output.location) updateData.location = output.location;
     if (output.company) updateData.company = output.company;
     if (output.jobTitle) updateData.jobTitle = output.jobTitle;
     if (output.about) updateData.aboutInfo = output.about;

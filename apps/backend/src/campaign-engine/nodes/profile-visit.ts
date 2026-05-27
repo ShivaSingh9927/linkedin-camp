@@ -1,5 +1,4 @@
 import { NodeHandler, NodeResult, ProfileVisitOutput } from '../types';
-import { prisma } from '@repo/db';
 
 const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
 const randomRange = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1) + min);
@@ -231,21 +230,10 @@ export const profileVisit: NodeHandler = async (ctx): Promise<NodeResult> => {
             console.log(`[PROFILE-VISIT] Contact error: ${e?.message}`);
         }
 
-        // --- UPDATE LEAD IN DB ---
-        if (output.name || output.company || output.jobTitle || output.about) {
-            try {
-                const nameParts = (output.name || '').split(' ').filter((n: string) => n.length > 0);
-                const firstName = nameParts[0] || '';
-                const lastName = nameParts.slice(1).join(' ') || null;
-                await prisma.lead.update({
-                    where: { id: lead.id },
-                    data: { firstName, lastName, company: output.company || undefined, jobTitle: output.jobTitle || undefined, aboutInfo: output.about || undefined },
-                });
-                console.log(`[PROFILE-VISIT] Updated lead: ${firstName} ${lastName || ''}`);
-            } catch (e: any) {
-                console.log(`[PROFILE-VISIT] Update error: ${e?.message}`);
-            }
-        }
+        // Persistence happens centrally in engine.ts via updateLeadEnrichment
+        // once this handler returns. Doing it here too caused a second write
+        // race that re-corrupted firstName ("Shiva Singh") on top of the
+        // engine's canonical split.
 
         console.log(`[PROFILE-VISIT] Done. Name: ${output.name}, Company: ${output.company}, Connected: ${output.connected}`);
         return { success: true, output };
