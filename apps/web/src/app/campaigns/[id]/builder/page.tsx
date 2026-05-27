@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, use } from 'react';
 import { CampaignBuilder } from "@/components/CampaignBuilder";
-import { ArrowLeft, Save, Play, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Save, Play, Loader2, CheckCircle, AlertCircle, ChevronUp, ChevronDown } from 'lucide-react';
 import Link from 'next/link';
 import { useNodesState, useEdgesState, Node, Edge } from '@xyflow/react';
 import api from '@/lib/api';
@@ -18,6 +18,18 @@ export default function CampaignBuilderPage({ params }: { params: Promise<{ id: 
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [status, setStatus] = useState<string>('DRAFT');
+    const [campaignDetails, setCampaignDetails] = useState<{
+        objective: string;
+        description: string;
+        cta: string;
+        toneOverride: string;
+    }>({
+        objective: '',
+        description: '',
+        cta: 'connect',
+        toneOverride: 'professional'
+    });
+    const [showDetailsPanel, setShowDetailsPanel] = useState(false);
 
     // Lead Selection Modal state
     const [isLaunchModalOpen, setIsLaunchModalOpen] = useState(false);
@@ -48,6 +60,16 @@ export default function CampaignBuilderPage({ params }: { params: Promise<{ id: 
             const campaign = response.data;
             setCampaignName(campaign.name);
             setStatus(campaign.status);
+            
+            // Set campaign details if they exist
+            if (campaign.objective || campaign.description !== undefined) {
+                setCampaignDetails({
+                    objective: campaign.objective || '',
+                    description: campaign.description || '',
+                    cta: campaign.cta || 'connect',
+                    toneOverride: campaign.toneOverride || 'professional'
+                });
+            }
 
             if (campaign.workflowJson && campaign.workflowJson.nodes && campaign.workflowJson.nodes.length > 0) {
                 setNodes(campaign.workflowJson.nodes);
@@ -89,14 +111,22 @@ export default function CampaignBuilderPage({ params }: { params: Promise<{ id: 
             if (id === 'new') {
                 const response = await api.post('/campaigns', {
                     name: campaignName,
-                    workflowJson
+                    workflowJson,
+                    objective: campaignDetails.objective,
+                    description: campaignDetails.description,
+                    cta: campaignDetails.cta,
+                    toneOverride: campaignDetails.toneOverride
                 });
                 alert('Campaign Created Successfully!');
                 router.push(`/campaigns/${response.data.id}/builder`);
             } else {
                 await api.put(`/campaigns/${id}`, {
                     name: campaignName,
-                    workflowJson
+                    workflowJson,
+                    objective: campaignDetails.objective,
+                    description: campaignDetails.description,
+                    cta: campaignDetails.cta,
+                    toneOverride: campaignDetails.toneOverride
                 });
 
                 if (shouldStart) {
@@ -178,7 +208,7 @@ export default function CampaignBuilderPage({ params }: { params: Promise<{ id: 
                                 status === 'PAUSED' ? 'bg-amber-100 text-amber-700' :
                                     status === 'DRAFT' ? 'bg-slate-100 text-slate-600' :
                                         'bg-blue-100 text-blue-700'
-                                }`}>
+                            }`}>
                                 {status}
                             </span>
                             <span className="text-slate-400">ID: {id}</span>
@@ -205,6 +235,83 @@ export default function CampaignBuilderPage({ params }: { params: Promise<{ id: 
                         <span>Launch Campaign</span>
                     </button>
                 </div>
+            </div>
+
+            {/* Campaign Details Panel */}
+            <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                    <h3 className="text-lg font-black text-foreground uppercase tracking-tight">Campaign Details</h3>
+                    <button
+                        onClick={() => setShowDetailsPanel(!showDetailsPanel)}
+                        className="text-[10px] font-black text-slate-500 hover:text-slate-400"
+                    >
+                        {showDetailsPanel ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                    </button>
+                </div>
+                
+                {showDetailsPanel && (
+                    <div className="bg-card border border-border rounded-xl p-4">
+                        <div className="space-y-3">
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                                    Campaign Objective
+                                </label>
+                                <textarea
+                                    value={campaignDetails.objective}
+                                    onChange={(e) => setCampaignDetails(prev => ({...prev, objective: e.target.value}))}
+                                    className="w-full h-16 p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all resize-none"
+                                    placeholder="What is the goal of this campaign?"
+                                />
+                            </div>
+                            
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                                    Campaign Description
+                                </label>
+                                <textarea
+                                    value={campaignDetails.description}
+                                    onChange={(e) => setCampaignDetails(prev => ({...prev, description: e.target.value}))}
+                                    className="w-full h-20 p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all resize-none"
+                                    placeholder="Describe your target audience and value proposition"
+                                />
+                            </div>
+                            
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="space-y-2">
+                                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                                        Call to Action
+                                    </label>
+                                    <select
+                                        value={campaignDetails.cta}
+                                        onChange={(e) => setCampaignDetails(prev => ({...prev, cta: e.target.value}))}
+                                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500"
+                                    >
+                                        <option value="connect">Connect</option>
+                                        <option value="reply">Reply</option>
+                                        <option value="demo">Book Demo</option>
+                                        <option value="learn_more">Learn More</option>
+                                    </select>
+                                </div>
+                                
+                                <div className="space-y-2">
+                                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                                        Tone Override
+                                    </label>
+                                    <select
+                                        value={campaignDetails.toneOverride}
+                                        onChange={(e) => setCampaignDetails(prev => ({...prev, toneOverride: e.target.value}))}
+                                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500"
+                                    >
+                                        <option value="professional">Professional</option>
+                                        <option value="friendly">Friendly</option>
+                                        <option value="casual">Casual</option>
+                                        <option value="formal">Formal</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
 
             <div className="flex-1 relative rounded-2xl overflow-hidden border">

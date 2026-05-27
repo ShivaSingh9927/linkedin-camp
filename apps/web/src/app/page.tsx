@@ -22,6 +22,8 @@ import {
 import { motion } from 'framer-motion';
 import { TopBar } from '@/components/TopBar';
 import { GlowContainer } from '@/components/GlowBorder';
+import { AIProfileBanner } from '@/components/AIProfileBanner';
+import { AICommandCenter } from '@/components/AICommandCenter';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
 
@@ -83,6 +85,7 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6 sm:space-y-8 lg:space-y-10">
+      <AIProfileBanner />
       <GlowContainer active={hasActiveCampaigns} className="p-0 border-none bg-transparent">
         <div className="bg-background rounded-[inherit] overflow-hidden shadow-xl shadow-slate-200/50">
           <TopBar
@@ -249,22 +252,7 @@ export default function DashboardPage() {
 
               {/* Right Sidebar */}
               <div className="space-y-6">
-                <div className="bg-gradient-to-br from-primary to-primary-foreground rounded-[3rem] p-10 text-primary-foreground relative overflow-hidden shadow-2xl shadow-primary/20">
-                  <Sparkles className="absolute -right-4 -top-4 w-32 h-32 text-white/10" />
-                  <div className="relative z-10">
-                    <span className="text-[10px] font-black uppercase tracking-[0.2em] bg-white/20 px-3 py-1 rounded-full">Pro Tip</span>
-                    <h3 className="text-2xl font-black mt-6 leading-tight">Increase your reply rate by 40%</h3>
-                    <p className="text-sm font-medium mt-4 text-white/80 leading-relaxed">
-                      Connect your profile to use &quot;Visit Before Invite&quot; automation. It increases trust and visibility.
-                    </p>
-                    <Link href="/pricing">
-                      <button className="mt-8 flex items-center justify-between w-full bg-white text-primary px-8 py-4 rounded-[1.5rem] font-black group transition-all hover:scale-105 active:scale-95">
-                        <span>Upgrade to advanced</span>
-                        <ArrowRight className="w-5 h-5 group-hover:translate-x-2 transition-transform" />
-                      </button>
-                    </Link>
-                  </div>
-                </div>
+                <AICommandCenter />
 
                 <div className="bg-card rounded-[3rem] border border-border p-8 shadow-soft">
                   <div className="flex items-center justify-between mb-6 px-2">

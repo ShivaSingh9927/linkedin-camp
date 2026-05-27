@@ -6,31 +6,60 @@ import { X, Rocket } from 'lucide-react';
 interface CampaignNameModalProps {
     isOpen: boolean;
     defaultName: string;
-    onConfirm: (name: string) => void;
+    onConfirm: (name: string, details: CampaignDetails) => void;
     onCancel: () => void;
+    aiGuidance?: {
+        objective: string;
+        description: string;
+        cta: string;
+        toneOverride: string;
+    };
 }
 
-export function CampaignNameModal({ isOpen, defaultName, onConfirm, onCancel }: CampaignNameModalProps) {
+interface CampaignDetails {
+    objective?: string;
+    description?: string;
+    cta?: string;
+    toneOverride?: string;
+}
+
+export function CampaignNameModal({ isOpen, defaultName, onConfirm, onCancel, aiGuidance }: CampaignNameModalProps) {
     const [name, setName] = useState(defaultName);
+    const [objective, setObjective] = useState(aiGuidance?.objective || '');
+    const [description, setDescription] = useState(aiGuidance?.description || '');
+    const [cta, setCta] = useState(aiGuidance?.cta || 'connect');
+    const [toneOverride, setToneOverride] = useState(aiGuidance?.toneOverride || 'professional');
     const inputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
         if (isOpen) {
             setName(defaultName);
+            // Only reset to AI guidance if it's provided, otherwise keep current values
+            if (aiGuidance) {
+                setObjective(aiGuidance.objective || '');
+                setDescription(aiGuidance.description || '');
+                setCta(aiGuidance.cta || 'connect');
+                setToneOverride(aiGuidance.toneOverride || 'professional');
+            }
             setTimeout(() => inputRef.current?.select(), 50);
         }
-    }, [isOpen, defaultName]);
+    }, [isOpen, defaultName, aiGuidance]);
 
     if (!isOpen) return null;
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        onConfirm(name.trim() || defaultName);
+        onConfirm(name.trim() || defaultName, {
+            objective: objective.trim(),
+            description: description.trim(),
+            cta,
+            toneOverride,
+        });
     };
 
     return (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
-            <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl border animate-in zoom-in-95 duration-200 overflow-hidden">
+            <div className="bg-white w-full max-w-[500px] rounded-3xl shadow-2xl border animate-in zoom-in-95 duration-200 overflow-hidden">
                 {/* Header */}
                 <div className="flex items-center justify-between px-7 py-5 border-b bg-slate-50/50">
                     <div className="flex items-center space-x-3">
@@ -63,6 +92,64 @@ export function CampaignNameModal({ isOpen, defaultName, onConfirm, onCancel }: 
                             autoFocus
                         />
                         <p className="text-[10px] text-slate-400 font-bold">You can rename this later in the campaign builder.</p>
+                    </div>
+
+                    <div className="space-y-4">
+                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                            Campaign Objective
+                        </label>
+                        <textarea
+                            value={objective}
+                            onChange={(e) => setObjective(e.target.value)}
+                            className="w-full h-20 p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all resize-none"
+                            placeholder="What is the goal of this campaign? (e.g., Generate leads, Book demos, Build awareness)"
+                        />
+                    </div>
+
+                    <div className="space-y-4">
+                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                            Campaign Description
+                        </label>
+                        <textarea
+                            value={description}
+                            onChange={(e) => setDescription(e.target.value)}
+                            className="w-full h-24 p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all resize-none"
+                            placeholder="Describe your target audience, value proposition, and key messages for the AI to use when generating personalized outreach."
+                        />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                                Call to Action
+                            </label>
+                            <select
+                                value={cta}
+                                onChange={(e) => setCta(e.target.value)}
+                                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500"
+                            >
+                                <option value="connect">Connect</option>
+                                <option value="reply">Reply</option>
+                                <option value="demo">Book Demo</option>
+                                <option value="learn_more">Learn More</option>
+                            </select>
+                        </div>
+
+                        <div className="space-y-2">
+                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                                Tone Override
+                            </label>
+                            <select
+                                value={toneOverride}
+                                onChange={(e) => setToneOverride(e.target.value)}
+                                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500"
+                            >
+                                <option value="professional">Professional</option>
+                                <option value="friendly">Friendly</option>
+                                <option value="casual">Casual</option>
+                                <option value="formal">Formal</option>
+                            </select>
+                        </div>
                     </div>
 
                     <div className="flex space-x-3">

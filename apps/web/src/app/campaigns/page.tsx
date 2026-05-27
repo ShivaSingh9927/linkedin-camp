@@ -74,14 +74,72 @@ export default function CampaignsPage() {
     const [filter, setFilter] = useState<string>('ALL');
     const [showCreateMenu, setShowCreateMenu] = useState(false);
     const createMenuRef = useRef<HTMLDivElement>(null);
-    const [pendingCreate, setPendingCreate] = useState<{ defaultName: string; workflowJson: any } | null>(null);
+    const [pendingCreate, setPendingCreate] = useState<{ defaultName: string; workflowJson: any; aiDetails?: { objective: string; description: string; cta: string; toneOverride: string; } } | null>(null);
     const [activities, setActivities] = useState<CampaignActivity[]>([]);
     const [socket, setSocket] = useState<Socket | null>(null);
+    const [strategyData, setStrategyData] = useState<any>(null);
+    const [strategyLoading, setStrategyLoading] = useState(false);
+    const [aiGuidance, setAiGuidance] = useState<{
+        objective: string;
+        description: string;
+        cta: string;
+        toneOverride: string;
+    } | null>(null);
     const router = useRouter();
 
     useEffect(() => {
         fetchCampaigns();
+        fetchUserStrategy();
     }, []);
+
+    const fetchUserStrategy = async () => {
+        setStrategyLoading(true);
+        try {
+            const userContext = await api.get('/strategy/user-context');
+            if (userContext.data && userContext.data.aiStrategy) {
+                const aiStrategy = userContext.data.aiStrategy;
+                // Extract guidance from AI strategy
+                const guidance = extractCampaignGuidance(aiStrategy);
+                setAiGuidance(guidance);
+            }
+        } catch (error) {
+            console.error('Failed to fetch user strategy:', error);
+        } finally {
+            setStrategyLoading(false);
+        }
+    };
+
+    const extractCampaignGuidance = (strategy: any) => {
+        // Default values
+        let objective = 'Connect with prospects and generate leads';
+        let description = 'Targeted outreach to decision makers in relevant industries';
+        let cta = 'connect';
+        let toneOverride = 'professional';
+
+        // Try to extract from strategy if available
+        if (typeof strategy === 'string') {
+            try {
+                const parsed = JSON.parse(strategy);
+                if (parsed.objective) objective = parsed.objective;
+                if (parsed.description) description = parsed.description;
+                if (parsed.cta) cta = parsed.cta;
+                if (parsed.toneOverride) toneOverride = parsed.toneOverride;
+            } catch (e) {
+                // If not JSON, try to extract from text
+                if (strategy.includes('objective')) {
+                    // Simple extraction - in a real app this would be more sophisticated
+                    objective = 'Based on your AI strategy: ' + strategy.substring(0, 100) + '...';
+                }
+            }
+        } else if (strategy && typeof strategy === 'object') {
+            if (strategy.objective) objective = strategy.objective;
+            if (strategy.description) description = strategy.description;
+            if (strategy.cta) cta = strategy.cta;
+            if (strategy.toneOverride) toneOverride = strategy.toneOverride;
+        }
+
+        return { objective, description, cta, toneOverride };
+    };
 
     // Real-time campaign activity via Socket.IO
     useEffect(() => {
@@ -305,14 +363,30 @@ const removeLeadFromCampaign = async (campaignId: string, leadId: string) => {
             };
         }
 
-        setPendingCreate({ defaultName, workflowJson });
+        setPendingCreate({ 
+            defaultName, 
+            workflowJson
+        });
     };
 
-    const handleConfirmCreate = async (name: string) => {
+    const handleConfirmCreate = async (name: string, details: any) => {
         if (!pendingCreate) return;
         setPendingCreate(null);
         try {
-            const res = await api.post('/campaigns', { name, workflowJson: pendingCreate.workflowJson });
+            // Use AI guidance as default values, but allow user to override
+            const finalObjective = details.objective || pendingCreate.aiDetails?.objective || '';
+            const finalDescription = details.description || pendingCreate.aiDetails?.description || '';
+            const finalCta = details.cta || pendingCreate.aiDetails?.cta || 'connect';
+            const finalToneOverride = details.toneOverride || pendingCreate.aiDetails?.toneOverride || 'professional';
+            
+            const res = await api.post('/campaigns', { 
+                name, 
+                workflowJson: pendingCreate.workflowJson,
+                objective: finalObjective,
+                description: finalDescription,
+                cta: finalCta,
+                toneOverride: finalToneOverride
+            });
             router.push(`/campaigns/${res.data.id}/builder`);
         } catch (err) {
             alert('Error creating campaign. Make sure the backend is running.');
