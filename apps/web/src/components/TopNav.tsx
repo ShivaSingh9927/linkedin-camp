@@ -106,12 +106,12 @@ export function TopNav() {
                 {/* Left Side: Brand */}
                 <Link href="/" className="flex items-center space-x-3 flex-shrink-0 group">
                     <img 
-                        src="/leadmate_wbg.png" 
-                        alt="Leadmate" 
+                        src="/qampi_wbg.png" 
+                        alt="Qampi" 
                         className="w-10 h-10 object-contain group-hover:scale-105 transition-all duration-300" 
                     />
                     <div className="hidden sm:block">
-                        <span className="text-xl font-black text-foreground tracking-tight leading-none block">LEADMATE</span>
+                        <span className="text-xl font-black text-foreground tracking-tight leading-none block">QAMPI</span>
                         <span className="text-[9px] font-black text-primary tracking-[0.3em] uppercase mt-1 block">LinkedIn Hero</span>
                     </div>
                 </Link>

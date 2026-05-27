@@ -21,14 +21,14 @@ class MailService {
 
     async sendWelcomeEmail(to: string, name: string) {
         const mailOptions = {
-            from: `"Leadmate AI" <${process.env.OUTLOOK_EMAIL}>`,
+            from: `"Qampi AI" <${process.env.OUTLOOK_EMAIL}>`,
             to,
-            subject: 'Welcome to Leadmate! 🚀',
+            subject: 'Welcome to Qampi! 🚀',
             html: `
                 <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; rounded: 12px;">
-                    <h2 style="color: #0f172a;">Welcome to Leadmate, ${name}!</h2>
+                    <h2 style="color: #0f172a;">Welcome to Qampi, ${name}!</h2>
                     <p style="color: #475569; line-height: 1.6;">We're thrilled to have you join our community of high-performing LinkedIn outreach professionals.</p>
-                    <p style="color: #475569; line-height: 1.6;">Leadmate uses advanced AI to help you find better leads and automate your outreach safely and efficiently.</p>
+                    <p style="color: #475569; line-height: 1.6;">Qampi uses advanced AI to help you find better leads and automate your outreach safely and efficiently.</p>
                     <div style="margin-top: 30px; padding: 20px; background-color: #f8fafc; border-radius: 8px;">
                         <h3 style="margin-top: 0; font-size: 16px;">Next steps:</h3>
                         <p style="margin-bottom: 0;">Complete your onboarding to start your first campaign!</p>
@@ -49,7 +49,7 @@ class MailService {
 
     async sendOnboardingSuccessEmail(to: string) {
         const mailOptions = {
-            from: `"Leadmate AI" <${process.env.OUTLOOK_EMAIL}>`,
+            from: `"Qampi AI" <${process.env.OUTLOOK_EMAIL}>`,
             to,
             subject: 'Strategy Locked In! 🎯',
             html: `
@@ -74,13 +74,13 @@ class MailService {
 
     async sendOnboardingReminder(to: string, name: string) {
         const mailOptions = {
-            from: `"Leadmate AI" <${process.env.OUTLOOK_EMAIL}>`,
+            from: `"Qampi AI" <${process.env.OUTLOOK_EMAIL}>`,
             to,
             subject: 'Don\'t leave your outreach on autopilot! ✈️',
             html: `
                 <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; rounded: 12px;">
                     <h2 style="color: #0f172a;">Hi ${name},</h2>
-                    <p style="color: #475569; line-height: 1.6;">We noticed you started setting up your Leadmate account but didn't quite finish.</p>
+                    <p style="color: #475569; line-height: 1.6;">We noticed you started setting up your Qampi account but didn't quite finish.</p>
                     <p style="color: #475569; line-height: 1.6;">Your AI-powered LinkedIn outreach is just one step away. Finish your setup and start getting more qualified leads today!</p>
                     <a href="${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/onboarding" style="display: inline-block; margin-top: 20px; padding: 12px 24px; background-color: #2563eb; color: white; text-decoration: none; border-radius: 8px; font-weight: bold;">Finish Onboarding</a>
                 </div>
@@ -102,7 +102,7 @@ class MailService {
         return this.transporter.sendMail({
             from: process.env.OUTLOOK_EMAIL,
             to,
-            subject: 'Leadmate SMTP Test',
+            subject: 'Qampi SMTP Test',
             text: 'If you see this, your Outlook SMTP is working correctly!'
         });
     }

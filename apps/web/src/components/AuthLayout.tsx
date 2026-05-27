@@ -51,7 +51,7 @@ const testimonials: Testimonial[] = [
         avatarSrc: "https://api.dicebear.com/7.x/avataaars/svg?seed=Felix",
         name: "Alex Thompson",
         handle: "Founder, Growthly",
-        text: "Leadmate transformed our LinkedIn outreach. We've seen a 300% increase in connection rates."
+        text: "Qampi transformed our LinkedIn outreach. We've seen a 300% increase in connection rates."
     },
     {
         avatarSrc: "https://api.dicebear.com/7.x/avataaars/svg?seed=Sarah",
@@ -111,12 +111,12 @@ export function AuthLayout({
                     <div className="flex flex-col gap-6">
                         <div className="flex items-center gap-4 mb-8 animate-element animate-delay-100">
                             <img 
-                                src="/leadmate_wbg.png" 
-                                alt="Leadmate Logo" 
+                                src="/qampi_wbg.png" 
+                                alt="Qampi Logo" 
                                 className="w-12 h-12 object-contain opacity-95 drop-shadow-lg"
                             />
                             <div>
-                                <span className="text-3xl font-black text-foreground tracking-tight leading-none block">LEADMATE</span>
+                                <span className="text-3xl font-black text-foreground tracking-tight leading-none block">QAMPI</span>
                                 <span className="text-[12px] font-black text-primary tracking-[0.3em] uppercase mt-1 block">LinkedIn Hero</span>
                             </div>
                         </div>
@@ -262,7 +262,7 @@ export function AuthLayout({
 
                         <p className="animate-element animate-delay-900 text-center text-sm font-bold text-muted-foreground">
                             {type === 'login' ? (
-                                <>New to Leadmate? <Link href="/register" className="text-primary hover:underline transition-colors">Create Account</Link></>
+                                <>New to Qampi? <Link href="/register" className="text-primary hover:underline transition-colors">Create Account</Link></>
                             ) : (
                                 <>Already have an account? <Link href="/login" className="text-primary hover:underline transition-colors">Sign In</Link></>
                             )}

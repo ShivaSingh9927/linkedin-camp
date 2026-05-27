@@ -113,7 +113,7 @@ export default function OnboardingPage() {
             const updatedUser = { ...user, registrationStep: 'COMPLETED' };
             localStorage.setItem('user', JSON.stringify(updatedUser));
             
-            toast.success('Onboarding completed! Welcome to Leadmate.');
+            toast.success('Onboarding completed! Welcome to Qampi.');
             router.push('/');
         } catch (error: any) {
             console.error('Onboarding submission error:', error);
@@ -129,7 +129,7 @@ export default function OnboardingPage() {
                 {/* Header */}
                 <div className="text-center mb-10">
                     <div className="flex justify-center mb-6">
-                         <img src="/leadmate_wbg.png" alt="Logo" className="w-14 h-14 object-contain animate-in zoom-in duration-1000" />
+                         <img src="/qampi_wbg.png" alt="Logo" className="w-14 h-14 object-contain animate-in zoom-in duration-1000" />
                     </div>
                     <h1 className="text-3xl font-black text-foreground tracking-tight sm:text-4xl">Setup Your Success</h1>
                     <p className="text-muted-foreground font-medium mt-2">Just a few details to get your LinkedIn automation running perfectly.</p>
@@ -427,7 +427,7 @@ export default function OnboardingPage() {
                 </div>
 
                 <p className="text-center mt-12 text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] opacity-50">
-                    Leadmate AI &copy; 2026 • Powered by Cloud Simulations
+                    Qampi AI &copy; 2026 • Powered by Cloud Simulations
                 </p>
             </div>
         </div>

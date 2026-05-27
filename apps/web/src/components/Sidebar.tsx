@@ -49,12 +49,12 @@ export function Sidebar() {
       <div className="p-8 mb-4">
         <Link href="/" className="flex items-center space-x-3 group">
           <img 
-            src="/leadmate_wbg.png" 
-            alt="Leadmate" 
+            src="/qampi_wbg.png" 
+            alt="Qampi" 
             className="w-10 h-10 object-contain group-hover:scale-105 transition-all duration-300" 
           />
           <div>
-            <span className="text-xl font-black text-slate-900 tracking-tight leading-none block">LEADMATE</span>
+            <span className="text-xl font-black text-slate-900 tracking-tight leading-none block">QAMPI</span>
             <span className="text-[9px] font-black text-primary tracking-[0.3em] uppercase mt-1 block">LinkedIn Hero</span>
           </div>
         </Link>

@@ -9,7 +9,7 @@ import { GoogleOAuthProvider } from '@react-oauth/google';
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "LEADMATE | LinkedIn Automation",
+  title: "QAMPI | LinkedIn Automation",
   description: "Scale your LinkedIn outreach with AI-powered campaigns.",
   icons: {
     icon: [

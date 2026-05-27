@@ -60,13 +60,13 @@ export function Navbar() {
         <Link href="/" className="flex items-center space-x-3 group">
           <div className="w-36 h-36 bg-primary/10 rounded-2xl flex items-center justify-center shadow-lg shadow-primary/10 group-hover:scale-105 transition-all duration-300 relative overflow-hidden">
             <img 
-              src="/leadmate.png" 
+              src="/qampi_wbg.png" 
               alt="Logo" 
               className="w-full h-full object-contain filter brightness-0 invert" 
             />
           </div>
           <div>
-            <span className="text-2xl font-black text-slate-900 tracking-tight leading-none block">LEADMATE</span>
+            <span className="text-2xl font-black text-slate-900 tracking-tight leading-none block">QAMPI</span>
             <span className="text-[10px] font-black text-primary tracking-[0.25em] uppercase mt-0.5 block">Automate</span>
           </div>
         </Link>
