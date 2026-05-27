@@ -49,7 +49,12 @@ AGENT_CONFIG = {
     "messaging_strategy": {
         "model": _DEEPSEEK_MODEL,
         "temperature": 0.6,
-        "max_tokens": 1000,
+        # The prompt produces nested objects (messagingPillars array +
+        # outreachAngles for 3 personas + objections for 3 keys +
+        # commentStrategy). Empirically the model needs ~1500-2000 tokens;
+        # the old 1000 truncated output mid-JSON, causing 3x retries on
+        # 'Expecting , delimiter' at char ~3800 (= ~1000 tokens).
+        "max_tokens": 2500,
         "timeout": 60,
         "prompt_file": "prompts/messaging_strategy.txt",
         "depends_on": ["business_analysis", "competitor_analysis"],
@@ -57,7 +62,8 @@ AGENT_CONFIG = {
     "synthesizer": {
         "model": _DEEPSEEK_MODEL,
         "temperature": 0.3,
-        "max_tokens": 1500,
+        # Same shape as messaging plus gtm + icp + competitiveLandscape.
+        "max_tokens": 2500,
         "timeout": 60,
         "prompt_file": "prompts/synthesizer.txt",
         "depends_on": ["messaging_strategy"],
