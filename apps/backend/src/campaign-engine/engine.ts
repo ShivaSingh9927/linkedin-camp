@@ -429,6 +429,35 @@ async function runLead(
                 });
             }
 
+            // Audit every node execution — without this the UI has no record of
+            // what the campaign actually did. CampaignLead.personalization.execLog
+            // captures it as JSON but isn't queryable from the activity/inbox views.
+            await prisma.actionLog.create({
+                data: {
+                    userId,
+                    campaignId,
+                    leadId: lead.id,
+                    actionType: nodeType,
+                    status: result.success ? 'SUCCESS' : 'FAILED',
+                    errorMessage: result.error || null,
+                },
+            }).catch(err => console.error(`[ENGINE] ActionLog write failed: ${err.message}`));
+
+            // For send-message, also persist the outbound DM so it shows up in the
+            // inbox alongside the replies the sync worker pulls back.
+            if (result.success && nodeType === 'send-message' && result.output?.sent && result.output?.messageText) {
+                await prisma.message.create({
+                    data: {
+                        userId,
+                        leadId: lead.id,
+                        campaignId,
+                        direction: 'SENT',
+                        content: result.output.messageText,
+                        source: 'CAMPAIGN',
+                    },
+                }).catch(err => console.error(`[ENGINE] Message write failed: ${err.message}`));
+            }
+
             if (result.success) {
                 nodeExec.output = result.output;
                 execResult.nodesExecuted.push(nodeExec);
