@@ -50,6 +50,9 @@ services:
     image: linkedin-camp-ai-service:latest
     container_name: ai-service
     restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
     environment:
       # Cloudflare AI Gateway (BYOK routes to OpenRouter/DeepSeek/Groq)
       CLOUDFLARE_AI_GATEWAY_URL: ${CLOUDFLARE_AI_GATEWAY_URL}
@@ -67,6 +70,8 @@ services:
       AI_MODE: ${AI_MODE:-production}
       # Hard request timeout on every LLM call (seconds)
       LLM_HTTP_TIMEOUT_SECONDS: ${LLM_HTTP_TIMEOUT_SECONDS:-60}
+      # Redis for strategy cache (24h TTL, survives container restart)
+      REDIS_URL: redis://redis:6379
       # CORS allowlist (ai-service is on private IP so this is defense-in-depth)
       CORS_ORIGIN: ${CORS_ORIGIN:-https://app.qampi.com,https://qampi.com,https://www.qampi.com}
     ports:
