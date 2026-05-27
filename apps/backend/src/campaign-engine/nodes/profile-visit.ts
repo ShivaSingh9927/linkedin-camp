@@ -144,36 +144,81 @@ export const profileVisit: NodeHandler = async (ctx): Promise<NodeResult> => {
             console.log(`[PROFILE-VISIT] About error: ${e?.message}`);
         }
 
-        // --- EXTRACT EXPERIENCE (exact from testscript) ---
+        // --- EXTRACT EXPERIENCE ---
+        // LinkedIn renders the section header several ways and frequently drops
+        // the `<img alt="X logo">` attribute when companies have no logo. The
+        // previous scrape required both an exact-match h2 and that alt text,
+        // so most profiles came back with company=null/jobTitle=null.
         try {
             const expData = await page.evaluate(() => {
                 const data: any = { company: null, jobTitle: null, companyUrl: null };
-                
-                const h2s = Array.from(document.querySelectorAll('h2'));
-                const header = h2s.find((h: any) => h.innerText?.trim()?.toLowerCase() === 'experience');
-                if (!header) return data;
 
-                const section = header.closest('section');
+                // Find the Experience section header tolerantly: any heading or
+                // anchor target whose visible text contains "experience".
+                const headers = Array.from(document.querySelectorAll('h2, div[role="heading"]'));
+                const header = headers.find((h: any) => {
+                    const txt = (h.innerText || h.textContent || '').trim().toLowerCase();
+                    return txt === 'experience' || txt.startsWith('experience\n') || txt === 'experience ';
+                }) || document.querySelector('#experience');
+
+                const section: Element | null = header
+                    ? ((header as HTMLElement).closest('section') || (header.parentElement as Element))
+                    : null;
                 if (!section) return data;
 
-                const logoImg = section.querySelector('a[href*="/company/"] img');
-                data.company = logoImg?.getAttribute('alt')?.replace(/logo$/i, '').trim() || null;
-
+                // Company URL is reliable when present.
                 const companyLink = section.querySelector('a[href*="/company/"]');
-                data.companyUrl = companyLink ? (companyLink as HTMLAnchorElement).href?.split('?')[0] : null;
+                if (companyLink) {
+                    data.companyUrl = (companyLink as HTMLAnchorElement).href?.split('?')[0] || null;
+                }
 
-                const firstJob = section.querySelector('ul > li') || section.querySelector('.pvs-list__paged-list-item');
+                // First experience entry. LinkedIn keeps changing the wrapper
+                // (`ul > li`, `.pvs-list__paged-list-item`, `.artdeco-list__item`).
+                const firstJob = section.querySelector(
+                    'ul > li, .pvs-list__paged-list-item, .artdeco-list__item, [data-view-name="profile-component-entity"]'
+                );
                 if (!firstJob) return data;
 
-                const lines = (firstJob as HTMLElement).innerText.split('\n').map((l: string) => l.trim()).filter((l: string) => l.length > 0);
-                data.jobTitle = lines[0] || null;
+                // Inside the first card, LinkedIn marks each text run with an
+                // aria-hidden span that's the actual visible value. Collect them
+                // in order — the first is the role/title, the second is the
+                // "Company · Employment Type" line.
+                const spans = Array.from(firstJob.querySelectorAll('span[aria-hidden="true"]'))
+                    .map((s: any) => (s.innerText || s.textContent || '').trim())
+                    .filter((t: string) => t.length > 0);
+
+                if (spans.length > 0) data.jobTitle = spans[0];
+
+                if (spans.length > 1) {
+                    // "Acme Inc · Full-time"  →  "Acme Inc"
+                    data.company = spans[1].split('·')[0].trim() || null;
+                }
+
+                // Logo alt as final fallback for company name.
+                if (!data.company) {
+                    const logoImg = firstJob.querySelector('img[alt]') || section.querySelector('a[href*="/company/"] img[alt]');
+                    const alt = logoImg?.getAttribute('alt')?.replace(/\s*logo\s*$/i, '').trim();
+                    if (alt && alt.length > 1) data.company = alt;
+                }
 
                 return data;
             });
-            
+
             output.company = expData.company;
             output.jobTitle = expData.jobTitle;
             output.companyUrl = expData.companyUrl;
+
+            // Last-resort: parse "<title> at <company>" out of the headline so
+            // profiles whose experience scrape failed still get usable values.
+            if ((!output.company || !output.jobTitle) && output.headline) {
+                const m = output.headline.match(/^(.+?)\s+(?:at|@)\s+(.+?)$/i);
+                if (m) {
+                    if (!output.jobTitle) output.jobTitle = m[1].trim();
+                    if (!output.company)  output.company  = m[2].trim();
+                    console.log(`[PROFILE-VISIT] Filled company/jobTitle from headline.`);
+                }
+            }
+
             console.log(`[PROFILE-VISIT] Company: ${output.company}, Job: ${output.jobTitle}`);
         } catch (e: any) {
             console.log(`[PROFILE-VISIT] Experience error: ${e?.message}`);
