@@ -13,6 +13,40 @@ _root_env = os.path.join(os.path.dirname(__file__), '..', '..', '.env')
 if os.path.isfile(_root_env):
     load_dotenv(_root_env)
 
+# Sentry must initialize BEFORE the FastAPI app is constructed so its
+# integration can patch the ASGI stack. Shares the backend DSN; events get
+# tagged service=ai-service so they're filterable in the Sentry dashboard.
+# Disabled silently if SENTRY_DSN is unset (local dev).
+_SENTRY_DSN = os.environ.get("SENTRY_DSN", "")
+if _SENTRY_DSN:
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.fastapi import FastApiIntegration
+        from sentry_sdk.integrations.starlette import StarletteIntegration
+
+        def _before_send(event, hint):
+            # Strip auth headers the same way the backend does.
+            req = event.get("request")
+            if req and req.get("headers"):
+                for k in ("authorization", "Authorization", "cookie", "Cookie"):
+                    req["headers"].pop(k, None)
+            return event
+
+        sentry_sdk.init(
+            dsn=_SENTRY_DSN,
+            environment=os.environ.get("NODE_ENV") or os.environ.get("ENV") or "production",
+            traces_sample_rate=0.05,
+            send_default_pii=False,
+            integrations=[StarletteIntegration(), FastApiIntegration()],
+            before_send=_before_send,
+        )
+        sentry_sdk.set_tag("service", "ai-service")
+        print("[SENTRY] initialized (env=" + (os.environ.get("NODE_ENV") or "production") + ")")
+    except Exception as e:
+        print(f"[SENTRY] init failed: {e}")
+else:
+    print("[SENTRY] disabled (no SENTRY_DSN set)")
+
 # Cloudflare AI Gateway Configuration
 CLOUDFLARE_AI_GATEWAY_URL = os.environ.get("CLOUDFLARE_AI_GATEWAY_URL", "")
 CF_AIG_TOKEN = os.environ.get("CF_AIG_TOKEN", "")

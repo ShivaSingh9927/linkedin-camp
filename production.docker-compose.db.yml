@@ -70,6 +70,9 @@ services:
       LLM_HTTP_TIMEOUT_SECONDS: ${LLM_HTTP_TIMEOUT_SECONDS:-60}
       # Redis for strategy cache (24h TTL, survives container restart)
       REDIS_URL: redis://redis:6379
+      # Sentry — same DSN as backend; events tagged service=ai-service
+      SENTRY_DSN: ${SENTRY_DSN}
+      NODE_ENV: ${NODE_ENV:-production}
       # CORS allowlist (ai-service is on private IP so this is defense-in-depth)
       CORS_ORIGIN: ${CORS_ORIGIN:-https://app.qampi.com,https://qampi.com,https://www.qampi.com}
     ports:
