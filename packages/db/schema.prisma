@@ -309,6 +309,12 @@ model User {
   linkedinCookie          String?
   linkedinLocalStorage    String?
   linkedinFingerprint     String?
+  // Exact proxy used at LinkedIn login. Sticky for the lifetime of the
+  // saved session — every campaign run, profile visit, message send must
+  // egress through this same proxy at Playwright LAUNCH level. If LinkedIn
+  // sees cookies from one IP being used from another, the session is
+  // invalidated server-side. JSON shape: { server, username, password }.
+  linkedinProxySnapshot   Json?
   persistentSessionPath   String?
   actualCountry           String?
   linkedinActiveInBrowser Boolean           @default(false)

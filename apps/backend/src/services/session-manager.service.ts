@@ -18,6 +18,11 @@ export interface ActiveLoginSession {
     page: Page;
     status: LoginStatus;
     lastActivity: number;
+    // The exact proxy this login is being captured behind. Persisted to
+    // User.linkedinProxySnapshot on success so every later automation step
+    // can pin itself to the same exit IP. LinkedIn invalidates a session
+    // the moment it sees the cookies arrive from a different IP.
+    proxy?: { server: string; username?: string; password?: string };
 }
 
 class SessionManagerService {
@@ -134,7 +139,8 @@ class SessionManagerService {
                 context,
                 page,
                 status: 'NAVIGATING',
-                lastActivity: Date.now()
+                lastActivity: Date.now(),
+                proxy: launchOptions.proxy,
             });
 
             this.emitStatus(userId, 'NAVIGATING', { message: 'Navigating to LinkedIn...' });
@@ -296,6 +302,12 @@ class SessionManagerService {
             await context.close().catch(() => {});
             this.activeSessions.delete(userId);
 
+            // Persist the proxy snapshot too. Engine reads this verbatim and
+            // launches its browser through the same IP — anything else and
+            // LinkedIn invalidates the cookies on first request.
+            const session = this.activeSessions.get(userId);
+            const proxySnapshot = session?.proxy ?? null;
+
             await prisma.user.update({
                 where: { id: userId },
                 data: {
@@ -303,11 +315,12 @@ class SessionManagerService {
                     sessionInvalid: false,
                     linkedinCookie: JSON.stringify(cookies),
                     linkedinLocalStorage: localStorageData,
-                    linkedinFingerprint: JSON.stringify({ userAgent })
+                    linkedinFingerprint: JSON.stringify({ userAgent }),
+                    linkedinProxySnapshot: proxySnapshot as any,
                 }
             });
 
-            console.log(`[SESSION-MANAGER] Session files saved to ${sessionPath}`);
+            console.log(`[SESSION-MANAGER] Session files saved to ${sessionPath}${proxySnapshot ? ` (proxy pinned: ${proxySnapshot.server})` : ' (NO PROXY — session will likely die on first automation step)'}`);
             this.emitStatus(userId, 'SUCCESS', { sessionPath });
 
             return {};
@@ -396,6 +409,9 @@ class SessionManagerService {
 
         console.log(`[SESSION-MANAGER] Saved session for user ${userId}: ${cookies.length} cookies, ${Object.keys(localStorageData).length} localStorage keys`);
 
+        const sessionForProxy = this.activeSessions.get(userId);
+        const proxySnapshotForReval = sessionForProxy?.proxy ?? null;
+
         await prisma.user.update({
             where: { id: userId },
             data: {
@@ -407,7 +423,8 @@ class SessionManagerService {
                 lastBrowserActivityAt: new Date(),
                 linkedinCookie: JSON.stringify(cookies),
                 linkedinLocalStorage: JSON.stringify(localStorageData),
-                linkedinFingerprint: JSON.stringify({ userAgent })
+                linkedinFingerprint: JSON.stringify({ userAgent }),
+                linkedinProxySnapshot: proxySnapshotForReval as any,
             }
         });
 

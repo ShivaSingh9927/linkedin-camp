@@ -240,42 +240,53 @@ async function runLead(
             if (!activeProxy && sessionContext?.proxy) activeProxy = sessionContext.proxy;
         }
 
-        // Load proxy from service
-        let proxyConfig: any = null;
-        if (userId) {
-            try {
-                const { getOrAssignProxy } = await import('../services/proxy.service');
-                const proxy = await getOrAssignProxy(userId);
-                if (proxy) {
-                    proxyConfig = {
-                        server: `http://${proxy.proxyHost}:${proxy.proxyPort}`,
-                        username: proxy.proxyUsername || undefined,
-                        password: proxy.proxyPassword || undefined,
-                    };
-                    console.log(`[ENGINE] Using proxy ${proxy.proxyHost}:${proxy.proxyPort} (${proxy.proxyCountry})`);
-                }
-            } catch (err: any) {
-                console.log(`[ENGINE] Failed to load proxy: ${err.message}`);
-            }
+        // Sticky-proxy invariant: LinkedIn binds the captured cookies to the
+        // exact egress IP they were captured behind. ANY other IP carrying
+        // those cookies → server-side session invalidation on first request.
+        // So we read the proxy snapshot persisted at login time and apply it
+        // at Playwright LAUNCH level (not just context-level — Chrome's
+        // internal/background requests escape context proxy on Linux and
+        // would leak through the host IP).
+        //
+        // If the snapshot is missing (user logged in before this field
+        // existed, or login somehow ran without a proxy) we ABORT rather
+        // than fall back to a different proxy. A different proxy is a
+        // guaranteed ban path; aborting forces a re-login through the right
+        // proxy, which is the only correct outcome.
+        let proxyConfig: { server: string; username?: string; password?: string } | null = null;
+        const snapshot = (user as any).linkedinProxySnapshot;
+        if (snapshot && typeof snapshot === 'object' && snapshot.server) {
+            proxyConfig = {
+                server: snapshot.server,
+                username: snapshot.username || undefined,
+                password: snapshot.password || undefined,
+            };
+            console.log(`[ENGINE] Using pinned login proxy ${proxyConfig.server}`);
+        } else {
+            console.error(`[ENGINE] No linkedinProxySnapshot on user ${userId} — refusing to run. Re-login to pin a proxy.`);
+            execResult.status = 'failed';
+            execResult.failedAt = 'proxy-snapshot-missing';
+            execResult.nodesExecuted.push({
+                node: 'profile-visit' as NodeType,
+                status: 'failed',
+                error: 'No proxy snapshot on user — re-login required',
+                at: new Date().toISOString(),
+            });
+            return execResult;
         }
+
+        // Proxy at LAUNCH level so every Chrome subprocess (DNS, telemetry,
+        // stealth probes) egresses through the same IP as the cookies were
+        // captured under. Context-level proxy alone leaks.
+        launchOptions.proxy = proxyConfig;
 
         const contextOptions: any = {
             userAgent: activeUserAgent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36',
             viewport: null,
             locale: 'en-IN',
             timezoneId: 'Asia/Kolkata',
+            proxy: proxyConfig,
         };
-
-        if (proxyConfig) {
-            contextOptions.proxy = proxyConfig;
-        } else {
-            contextOptions.proxy = {
-                server: 'http://82.41.252.111:46222',
-                username: 'xBVyYdUpx84nWx7',
-                password: 'dwwTxtvv5a10RXn'
-            };
-            console.log('[ENGINE] Using fallback proxy 82.41.252.111:46222');
-        }
 
         browser = await chromium.launch(launchOptions);
         context = await browser.newContext(contextOptions);
