@@ -144,11 +144,13 @@ const processCampaignJob = async (data: CampaignJobData, job: Job) => {
                 case 'COMMENT_POST':
                 case 'COMMENT':
                     mappedNodeType = 'comment-nth-post'; break;
-                case 'CONNECT': 
+                case 'INVITE':
+                case 'CONNECT':
                     mappedNodeType = 'connect'; break;
-                case 'DELAY': 
+                case 'WAIT':
+                case 'DELAY':
                     mappedNodeType = 'delay'; break;
-                case 'WARMUP': 
+                case 'WARMUP':
                     mappedNodeType = 'warmup'; break;
                 case 'INBOX_SYNC':
                     mappedNodeType = 'inbox-sync'; break;
@@ -182,8 +184,12 @@ const processCampaignJob = async (data: CampaignJobData, job: Job) => {
                 case 'COMMENT_POST':
                 case 'COMMENT':
                     mappedNodeType = 'comment-nth-post'; break;
-                case 'CONNECT': 
+                case 'INVITE':
+                case 'CONNECT':
                     mappedNodeType = 'connect'; break;
+                case 'WAIT':
+                case 'DELAY':
+                    mappedNodeType = 'delay'; break;
                 case 'INMAIL':
                     mappedNodeType = 'inmail'; break;
                 default:

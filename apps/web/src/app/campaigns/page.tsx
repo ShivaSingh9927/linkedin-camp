@@ -305,7 +305,7 @@ const removeLeadFromCampaign = async (campaignId: string, leadId: string) => {
                 nodes: [
                     { id: 'trigger', type: 'TRIGGER', subType: 'START', data: { label: 'Trigger: Lead Added' }, position: { x: 250, y: 0 } },
                     { id: 'n1', type: 'ACTION', subType: 'PROFILE_VISIT', data: { label: 'Visit Profile' }, position: { x: 250, y: 100 } },
-                    { id: 'n2', type: 'ACTION', subType: 'INVITE', data: { label: 'Send Invite', message: '' }, position: { x: 250, y: 200 } },
+                    { id: 'n2', type: 'ACTION', subType: 'CONNECT', data: { label: 'Send Invite', message: '' }, position: { x: 250, y: 200 } },
                     { id: 'n3', type: 'DELAY', subType: 'WAIT', data: { label: 'Wait 2 days', delayDays: 2 }, position: { x: 250, y: 300 } },
                     { id: 'n4', type: 'ACTION', subType: 'MESSAGE', data: { label: 'Send Message', message: '' }, position: { x: 250, y: 400 } },
                 ],
