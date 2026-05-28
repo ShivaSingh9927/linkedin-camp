@@ -46,7 +46,12 @@ async function callDeepSeek(systemPrompt, userPrompt, { maxTokens = 600, tempera
   if (!CF_GATEWAY_URL || !CF_AIG_TOKEN) {
     throw new Error('CLOUDFLARE_AI_GATEWAY_URL or CF_AIG_TOKEN not configured');
   }
-  const url = `${CF_GATEWAY_URL.replace(/\/$/, '')}/${CF_BYOK_ALIAS_DEEPSEEK}/chat/completions`;
+  // Cloudflare AI Gateway with BYOK: base URL is the gateway, the BYOK
+  // alias is a header (`cf-aig-byok-alias`), not a path segment. The model
+  // name keeps the `deepseek/` prefix so the gateway knows which provider
+  // to route to. Mirrors what the Python ai-service does via the OpenAI
+  // SDK; the only difference is we're driving raw fetch here.
+  const url = `${CF_GATEWAY_URL.replace(/\/$/, '')}/chat/completions`;
   const body = {
     model: DEEPSEEK_MODEL,
     messages: [
@@ -63,7 +68,7 @@ async function callDeepSeek(systemPrompt, userPrompt, { maxTokens = 600, tempera
     headers: {
       'Authorization': `Bearer ${CF_AIG_TOKEN}`,
       'Content-Type': 'application/json',
-      'cf-aig-authorization': `Bearer ${CF_AIG_TOKEN}`,
+      'cf-aig-byok-alias': CF_BYOK_ALIAS_DEEPSEEK,
     },
     body: JSON.stringify(body),
   });
