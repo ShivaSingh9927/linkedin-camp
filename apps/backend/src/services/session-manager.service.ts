@@ -299,14 +299,15 @@ class SessionManagerService {
             fs.writeFileSync(path.join(sessionPath, 'localStorage.json'), localStorageData);
             console.log(`[SESSION-MANAGER] LocalStorage saved`);
 
-            await context.close().catch(() => {});
-            this.activeSessions.delete(userId);
-
-            // Persist the proxy snapshot too. Engine reads this verbatim and
-            // launches its browser through the same IP — anything else and
-            // LinkedIn invalidates the cookies on first request.
+            // Capture proxy BEFORE deleting the session below. Engine reads
+            // this verbatim and launches its browser through the same IP —
+            // anything else and LinkedIn invalidates the cookies on first
+            // request.
             const session = this.activeSessions.get(userId);
             const proxySnapshot = session?.proxy ?? null;
+
+            await context.close().catch(() => {});
+            this.activeSessions.delete(userId);
 
             await prisma.user.update({
                 where: { id: userId },
