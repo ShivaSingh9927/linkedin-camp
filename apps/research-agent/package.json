@@ -1,0 +1,14 @@
+{
+  "name": "qampi-research-agent",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Node sidecar that scrapes a user's website via Lightpanda, discovers competitors via search, and returns a structured competitive landscape. Called by ai-service before the strategy agents run.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.0",
+    "ioredis": "^5.4.1"
+  }
+}

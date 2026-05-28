@@ -75,6 +75,10 @@ services:
       NODE_ENV: ${NODE_ENV:-production}
       # CORS allowlist (ai-service is on private IP so this is defense-in-depth)
       CORS_ORIGIN: ${CORS_ORIGIN:-https://app.qampi.com,https://qampi.com,https://www.qampi.com}
+      # Research-agent sidecar (Lightpanda-driven competitor scraping). Same
+      # compose network, so we reach it by service name.
+      RESEARCH_AGENT_URL: http://research-agent:8002
+      RESEARCH_AGENT_TIMEOUT: 180
     ports:
       - "${PRIVATE_IP}:8001:8001"
     healthcheck:
@@ -83,6 +87,37 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
+
+  research-agent:
+    build:
+      context: ./apps/research-agent
+    image: linkedin-camp-research-agent:latest
+    container_name: research-agent
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      CLOUDFLARE_AI_GATEWAY_URL: ${CLOUDFLARE_AI_GATEWAY_URL}
+      CF_AIG_TOKEN: ${CF_AIG_TOKEN}
+      CF_BYOK_ALIAS_DEEPSEEK: ${CF_BYOK_ALIAS_DEEPSEEK:-qampi-deepseek-v4-flash}
+      SERPER_API_KEY: ${SERPER_API_KEY:-}
+      REDIS_URL: redis://redis:6379
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: 8002
+      # Lightpanda + LLM synth budget. The hard deadline below caps the whole
+      # /research/competitive-landscape call regardless.
+      LIGHTPANDA_TIMEOUT_MS: 45000
+      RESEARCH_HARD_DEADLINE_MS: 150000
+      RESEARCH_MAX_COMPETITORS: 4
+    ports:
+      - "${PRIVATE_IP}:8002:8002"
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://127.0.0.1:8002/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
 
 volumes:
   pg_data:

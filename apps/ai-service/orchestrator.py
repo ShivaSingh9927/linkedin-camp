@@ -1,7 +1,10 @@
 import asyncio
 import json
 import hashlib
+import os
 from typing import Dict, Any, Optional
+
+import httpx
 from openai import OpenAI, RateLimitError, APIConnectionError
 
 from state import StrategyState
@@ -120,21 +123,79 @@ async def run_with_rate_limit_retry(agent, state, max_retries=3):
     return None
 
 
+RESEARCH_AGENT_URL = os.environ.get("RESEARCH_AGENT_URL", "http://research-agent:8002")
+RESEARCH_AGENT_TIMEOUT = float(os.environ.get("RESEARCH_AGENT_TIMEOUT", "180"))
+
+
+async def _call_research_agent(website: str, industry: str, company: str) -> Optional[Dict]:
+    """Call the Node sidecar (apps/research-agent) which scrapes the website
+    with Lightpanda, derives competitor search queries from the homepage,
+    scrapes each competitor's site, and returns a structured landscape.
+
+    Returns None on any failure — the orchestrator falls back to the BS4
+    scrape so a research-agent outage never kills strategy gen."""
+    payload = {"website": website, "industry": industry or "", "company": company or ""}
+    try:
+        async with httpx.AsyncClient(timeout=RESEARCH_AGENT_TIMEOUT) as client:
+            r = await client.post(f"{RESEARCH_AGENT_URL}/research/competitive-landscape", json=payload)
+            if r.status_code != 200:
+                print(f"[orchestrator] research-agent {r.status_code}: {r.text[:200]}")
+                return None
+            return r.json()
+    except Exception as e:
+        print(f"[orchestrator] research-agent unreachable: {e}")
+        return None
+
+
 async def _inline_research(user_input: Dict[str, Any]) -> Dict:
-    """Replaces the deleted ResearchAgent: a BeautifulSoup scrape merged with
-    user-provided fields. No LLM call — there was never one here, just agent
-    ceremony around a synchronous scrape."""
+    """Returns the research-output dict consumed by business_analysis (and now
+    competitor_analysis) prompts.
+
+    Order of preference:
+      1. Node research-agent sidecar — Lightpanda scrape + LLM synthesis of
+         the user's own site, derived competitor queries, and short
+         {name, url, positioning, strengths, weaknesses} per competitor.
+      2. BeautifulSoup scrape — fallback when the sidecar is unreachable or
+         no website is configured.
+
+    User-provided BusinessProfile fields always override scraped values."""
     website_url = user_input.get("website", "")
+    result: Dict[str, Any] = {
+        "companyDescription": user_input.get("companyDescription"),
+        "products": [],
+        "targetMarket": user_input.get("targetAudience"),
+        "marketPositioning": None,
+        "competitors": [],
+    }
+
     if website_url:
-        result = await scrape_website(website_url)
-    else:
-        result = {
-            "companyDescription": user_input.get("companyDescription"),
-            "products": [],
-            "targetMarket": user_input.get("targetAudience"),
-            "marketPositioning": None,
-        }
-    # Merge user-provided overrides on top of scrape
+        landscape = await _call_research_agent(
+            website_url,
+            user_input.get("industry", ""),
+            user_input.get("company", ""),
+        )
+        if landscape and isinstance(landscape, dict) and landscape.get("ownSite"):
+            own = landscape["ownSite"]
+            result["marketPositioning"] = own.get("positioning") or result["marketPositioning"]
+            result["productCategory"] = own.get("productCategory") or ""
+            result["mainKeywords"] = own.get("mainKeywords") or []
+            result["competitors"] = landscape.get("competitors") or []
+            result["researchStats"] = landscape.get("stats") or {}
+            result["fromCache"] = landscape.get("fromCache", False)
+            print(
+                f"[orchestrator] research-agent ok "
+                f"(competitors={len(result['competitors'])}, "
+                f"cache={'hit' if result['fromCache'] else 'miss'})"
+            )
+        else:
+            # Sidecar unreachable or returned nothing useful — fall back to
+            # the in-process BS4 scrape so we still feed business_analysis
+            # something better than user_input alone.
+            print("[orchestrator] research-agent fallback: BS4 scrape")
+            scrape = await scrape_website(website_url)
+            result.update({k: v for k, v in scrape.items() if v})
+
+    # User-provided BusinessProfile fields always win.
     if user_input.get("companyDescription"):
         result["companyDescription"] = user_input["companyDescription"]
     if user_input.get("products"):
