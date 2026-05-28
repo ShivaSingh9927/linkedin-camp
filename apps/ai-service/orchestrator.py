@@ -127,14 +127,24 @@ RESEARCH_AGENT_URL = os.environ.get("RESEARCH_AGENT_URL", "http://research-agent
 RESEARCH_AGENT_TIMEOUT = float(os.environ.get("RESEARCH_AGENT_TIMEOUT", "180"))
 
 
-async def _call_research_agent(website: str, industry: str, company: str) -> Optional[Dict]:
+async def _call_research_agent(website: str, industry: str, company: str, force: bool = False) -> Optional[Dict]:
     """Call the Node sidecar (apps/research-agent) which scrapes the website
     with Lightpanda, derives competitor search queries from the homepage,
     scrapes each competitor's site, and returns a structured landscape.
 
+    SCOPE: strategy-time only. The sidecar is intentionally NOT for per-lead
+    enrichment — that lives in apps/backend/src/campaign-engine/nodes/
+    profile-visit.ts where the LinkedIn session is already authenticated.
+    Routing per-lead work through here would burn Lightpanda + LLM budget,
+    hit Yahoo rate limits, and need a proxy pool the worker box already has.
+
+    Cache lives in Redis on the sidecar (1y TTL by default). Pass force=True
+    only when the caller explicitly wants a refresh; otherwise reuse the
+    landscape from when the user first onboarded.
+
     Returns None on any failure — the orchestrator falls back to the BS4
     scrape so a research-agent outage never kills strategy gen."""
-    payload = {"website": website, "industry": industry or "", "company": company or ""}
+    payload = {"website": website, "industry": industry or "", "company": company or "", "force": bool(force)}
     try:
         async with httpx.AsyncClient(timeout=RESEARCH_AGENT_TIMEOUT) as client:
             r = await client.post(f"{RESEARCH_AGENT_URL}/research/competitive-landscape", json=payload)
@@ -147,7 +157,7 @@ async def _call_research_agent(website: str, industry: str, company: str) -> Opt
         return None
 
 
-async def _inline_research(user_input: Dict[str, Any]) -> Dict:
+async def _inline_research(user_input: Dict[str, Any], force_refresh: bool = False) -> Dict:
     """Returns the research-output dict consumed by business_analysis (and now
     competitor_analysis) prompts.
 
@@ -173,6 +183,7 @@ async def _inline_research(user_input: Dict[str, Any]) -> Dict:
             website_url,
             user_input.get("industry", ""),
             user_input.get("company", ""),
+            force=force_refresh,
         )
         if landscape and isinstance(landscape, dict) and landscape.get("ownSite"):
             own = landscape["ownSite"]
@@ -219,8 +230,10 @@ async def generate_strategy(user_input: Dict[str, Any], client: OpenAI, force_re
 
     state = StrategyState(user_input=user_input)
 
-    # Inline website research (formerly the ResearchAgent — pure BeautifulSoup)
-    state.research_output = await _inline_research(user_input)
+    # Website + competitor research. force_regenerate also refreshes the
+    # research cache so a user's "refresh strategy" button rescrapes their
+    # site and competitors; otherwise the landscape from onboarding is reused.
+    state.research_output = await _inline_research(user_input, force_refresh=force_regenerate)
     print(f"[orchestrator] Research complete (website={'yes' if user_input.get('website') else 'no'})")
 
     agents = {name: cls(name, AGENT_CONFIG[name], client) for name, cls in AGENT_CLASSES.items()}

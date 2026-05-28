@@ -31,7 +31,7 @@ app.get('/health', (_req, res) => {
 });
 
 app.post('/research/competitive-landscape', async (req, res) => {
-  const { website, industry, company } = req.body || {};
+  const { website, industry, company, force } = req.body || {};
   if (!website) return res.status(400).json({ error: 'website is required' });
 
   // Bound the whole pipeline so a stuck Lightpanda or LLM call can't pin the
@@ -45,7 +45,7 @@ app.post('/research/competitive-landscape', async (req, res) => {
 
   try {
     const result = await Promise.race([
-      buildCompetitiveLandscape({ website, industry, company }, redis),
+      buildCompetitiveLandscape({ website, industry, company, force: !!force }, redis),
       deadline,
     ]);
     res.json(result);

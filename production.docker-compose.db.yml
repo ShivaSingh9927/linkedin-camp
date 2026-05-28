@@ -110,6 +110,10 @@ services:
       LIGHTPANDA_TIMEOUT_MS: 45000
       RESEARCH_HARD_DEADLINE_MS: 150000
       RESEARCH_MAX_COMPETITORS: 4
+      # Cache the landscape effectively forever — the user's positioning + their
+      # competitor list rarely shifts week-to-week, and a "refresh strategy"
+      # action flows force_regenerate=true through which bypasses this anyway.
+      RESEARCH_CACHE_TTL_SECONDS: 31536000
     ports:
       - "${PRIVATE_IP}:8002:8002"
     healthcheck:

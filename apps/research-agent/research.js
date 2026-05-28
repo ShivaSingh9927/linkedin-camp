@@ -18,7 +18,11 @@ const LIGHTPANDA_PATH = process.env.LIGHTPANDA_PATH || '/usr/local/bin/lightpand
 const LIGHTPANDA_TIMEOUT_MS = parseInt(process.env.LIGHTPANDA_TIMEOUT_MS || '45000', 10);
 const SEARCH_TIMEOUT_MS = parseInt(process.env.SEARCH_TIMEOUT_MS || '60000', 10);
 const MAX_COMPETITORS = parseInt(process.env.RESEARCH_MAX_COMPETITORS || '4', 10);
-const CACHE_TTL_SECONDS = parseInt(process.env.RESEARCH_CACHE_TTL_SECONDS || String(7 * 24 * 60 * 60), 10);
+// Default: effectively run-once-per-website. The user's positioning + the
+// competitor landscape don't shift week-to-week, and re-running burns
+// Lightpanda + LLM budget for ~no signal change. An explicit refresh comes
+// through the `force` flag (mapped from strategy/generate?force_regenerate).
+const CACHE_TTL_SECONDS = parseInt(process.env.RESEARCH_CACHE_TTL_SECONDS || String(365 * 24 * 60 * 60), 10);
 
 const CF_GATEWAY_URL = process.env.CLOUDFLARE_AI_GATEWAY_URL || '';
 const CF_AIG_TOKEN = process.env.CF_AIG_TOKEN || '';
@@ -248,7 +252,7 @@ ${md.slice(0, 6000)}`;
   };
 }
 
-async function buildCompetitiveLandscape({ website, industry, company }, redis) {
+async function buildCompetitiveLandscape({ website, industry, company, force = false }, redis) {
   const startedAt = Date.now();
   const normalizedUrl = normalizeUrl(website);
   if (!normalizedUrl) {
@@ -256,7 +260,7 @@ async function buildCompetitiveLandscape({ website, industry, company }, redis) 
   }
 
   const cacheKey = `research:landscape:${normalizedUrl}`;
-  if (redis) {
+  if (redis && !force) {
     const cached = await redis.get(cacheKey).catch(() => null);
     if (cached) {
       try { return { ...JSON.parse(cached), fromCache: true }; } catch {}
