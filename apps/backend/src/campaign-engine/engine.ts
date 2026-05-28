@@ -78,6 +78,24 @@ export async function executeNode(ctx: NodeContext, config: CampaignFlowNode): P
 // Nodes that are fatal if they fail (skip to next lead)
 const FATAL_NODES: Set<string> = new Set(['profile-visit']);
 
+// Reply-pause invariant: once a lead has replied to ANY message in this
+// campaign, we stop running automation against them. The inbox-sync worker
+// writes Message rows with direction='RECEIVED' when it sees a reply on
+// LinkedIn; this check fires before each step so a reply that came in
+// between scheduled runs halts the next step before it executes.
+//
+// Scoped to this campaign so a reply on Campaign A doesn't freeze Campaign B
+// against the same lead (rare, but valid for agencies running parallel
+// pitches). If we ever want global pause, change `campaignId` filter to
+// userId-only.
+async function hasLeadReplied(campaignId: string, leadId: string): Promise<boolean> {
+    const reply = await prisma.message.findFirst({
+        where: { campaignId, leadId, direction: 'RECEIVED' },
+        select: { id: true },
+    }).catch(() => null);
+    return !!reply;
+}
+
 // ---- Block resources for speed ----
 
 async function blockResources(page: any) {
@@ -318,6 +336,25 @@ async function runLead(
         for (let i = 0; i < flow.length; i++) {
             const nodeConfig = flow[i];
             const nodeType = nodeConfig.node;
+
+            // Reply-pause check. Fires before every node (including warmup)
+            // so a reply that landed between the previous step and this one
+            // halts the campaign for this lead. Cheap indexed lookup; runs at
+            // most once per node.
+            if (await hasLeadReplied(campaignId, lead.id)) {
+                console.log(`[ENGINE] Lead ${lead.firstName}: reply detected — pausing campaign for this lead.`);
+                await prisma.campaignLead.updateMany({
+                    where: { campaignId, leadId: lead.id },
+                    data: { status: 'REPLIED', isCompleted: true },
+                }).catch(err => console.error(`[ENGINE] CampaignLead REPLIED update failed: ${err.message}`));
+                await prisma.lead.update({
+                    where: { id: lead.id },
+                    data: { status: 'REPLIED' },
+                }).catch(() => {});
+                execResult.status = 'paused';
+                execResult.pausedReason = 'lead_replied';
+                return execResult;
+            }
 
             // Auto warmup rules
             if (needsWarmup && nodeType !== 'delay') {

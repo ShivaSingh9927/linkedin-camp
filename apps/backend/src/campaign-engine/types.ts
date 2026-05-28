@@ -114,6 +114,12 @@ export interface PostOutput {
 export interface SendMessageOutput {
     messageText: string;
     sent: boolean;
+    // When the connection-degree gate trips at runtime (lead never accepted the
+    // invite, or LinkedIn put the DM behind an InMail paywall), the node
+    // succeeds *without* sending. The engine treats this as a no-op: no
+    // Message row, no error log, lead progresses to the next step.
+    skipped?: boolean;
+    skipReason?: 'not_connected' | 'no_message_ui';
 }
 
 export interface DelayOutput {
@@ -203,9 +209,12 @@ export type NodeHandler = (ctx: NodeContext, config: CampaignFlowNode) => Promis
 export interface LeadExecutionResult {
     leadId: string;
     leadName: string;
-    status: 'completed' | 'failed';
+    status: 'completed' | 'failed' | 'paused';
     nodesExecuted: NodeExecution[];
     failedAt?: string;
+    // Set when status === 'paused'. Today the only reason is 'lead_replied'
+    // (engine detected a RECEIVED Message and stopped further automation).
+    pausedReason?: 'lead_replied';
 }
 
 export interface CampaignSummary {

@@ -29,7 +29,6 @@ async function safeGoto(page: any, url: string, retries = 3) {
 export const sendMessage: NodeHandler = async (ctx, config): Promise<NodeResult> => {
     const { page, lead, storedOutputs, campaign, aiContext } = ctx;
     const rawText = config.message || config.text || 'Hello!';
-    const requireConnection = config.requireConnection || false;
     const aiEnabled = config.aiEnabled || false;
     const tone = config.tone || campaign?.toneOverride || 'professional';
     const cta = config.cta || campaign?.cta || 'connect';
@@ -103,16 +102,33 @@ export const sendMessage: NodeHandler = async (ctx, config): Promise<NodeResult>
         }
         output.messageText = messageText;
 
-        if (requireConnection) {
-            const isConnected = await page.isVisible('button:has-text("Message")');
-            if (!isConnected) {
-                return { success: false, error: 'Not connected. Cannot send message.' };
-            }
-        }
-
         console.log(`[SEND-MESSAGE] Navigating to profile...`);
         await safeGoto(page, lead.linkedinUrl);
         await wait(randomRange(12000, 18000));
+
+        // Connection-degree gate.
+        //
+        // LinkedIn only renders a "Message" button on the profile when the
+        // viewer can DM the lead — usually because they're 1st-degree, or
+        // (rarely) Open Profile / shared group. If it's absent the lead never
+        // accepted our invite, or LinkedIn put the DM behind an InMail
+        // paywall. Either way: do NOT send. Return success-with-skipped so
+        // the engine logs a clean ActionLog (no Message row) and the next
+        // step in the workflow still runs — maybe the next follow-up will
+        // catch them after they accept.
+        //
+        // This used to be gated by `config.requireConnection` and ran BEFORE
+        // navigation, which made it always-false on a stale page. Now it's
+        // always-on and only checked after we're actually on the profile.
+        const messageBtnVisible = await page.isVisible('button:has-text("Message")').catch(() => false);
+        const messageLinkVisible = await page.isVisible('a:has-text("Message")').catch(() => false);
+        if (!messageBtnVisible && !messageLinkVisible) {
+            console.log(`[SEND-MESSAGE] No Message UI on profile — lead not connected or InMail-gated. Skipping.`);
+            output.sent = false;
+            output.skipped = true;
+            output.skipReason = 'not_connected';
+            return { success: true, output };
+        }
 
         // Dismiss any premium overlays first
         const dismissSelectors = [
