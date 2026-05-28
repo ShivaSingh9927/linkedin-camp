@@ -1,5 +1,6 @@
 import { NodeHandler, NodeResult, ConnectOutput } from '../types';
 import { prisma } from '@repo/db';
+import { detectConnectionState } from '../connection-state';
 
 const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
 const randomRange = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1) + min);
@@ -12,27 +13,22 @@ export const connect: NodeHandler = async (ctx): Promise<NodeResult> => {
     try {
         console.log(`[CONNECT] Checking connection status for ${lead.firstName}...`);
 
-        // Already pending?
-        const isPending = await page.isVisible('button:has-text("Pending"), button:has-text("Withdraw"), button:has-text("Requested")');
-        if (isPending) {
-            console.log('[CONNECT] Connection already pending.');
+        const state = await detectConnectionState(page, lead.linkedinUrl);
+
+        if (state.invitePending) {
+            console.log(`[CONNECT] Connection already pending (${state.pendingAriaLabel}).`);
             output.status = 'pending';
-            
-            if (campaignId) {
-                await updateConnectionStatus(campaignId, lead.id, 'pending');
-            }
+            if (campaignId) await updateConnectionStatus(campaignId, lead.id, 'pending');
             return { success: true, output };
         }
 
-        // Already connected?
-        const isConnected = await page.isVisible('button:has-text("Message")');
-        if (isConnected) {
-            console.log('[CONNECT] Already a 1st degree connection.');
+        if (state.isDmable) {
+            // composeUrl present — either 1st-degree or Open Profile. Either
+            // way no invite is needed; treat as already_connected so the
+            // downstream send-message step proceeds.
+            console.log('[CONNECT] Already DMable (1st-degree or Open Profile).');
             output.status = 'already_connected';
-            
-            if (campaignId) {
-                await updateConnectionStatus(campaignId, lead.id, 'connected');
-            }
+            if (campaignId) await updateConnectionStatus(campaignId, lead.id, 'connected');
             return { success: true, output };
         }
 

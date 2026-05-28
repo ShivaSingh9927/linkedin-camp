@@ -1,5 +1,6 @@
 import { NodeHandler, NodeResult, CheckConnectionOutput } from '../types';
 import { prisma } from '@repo/db';
+import { detectConnectionState } from '../connection-state';
 
 const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
 const randomRange = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1) + min);
@@ -38,11 +39,13 @@ export const checkConnection: NodeHandler = async (ctx): Promise<NodeResult> => 
             return { success: false, error: `Session invalid. Redirected to: ${url}` };
         }
 
-        const isMessageBtnVisible = await page.isVisible('button:has-text("Message")');
-        const isMessageLinkVisible = await page.isVisible('a:has-text("Message")');
-        
-        output.connected = isMessageBtnVisible || isMessageLinkVisible;
-        output.connectionStatus = output.connected ? 'connected' : 'not_connected';
+        const state = await detectConnectionState(page, lead.linkedinUrl);
+        // "Connected" here means "we can DM right now" — which covers
+        // 1st-degree and Open Profile. The pending case is intentionally
+        // NOT marked connected (we can't message yet).
+        output.connected = state.isDmable;
+        output.connectionStatus = state.isDmable ? 'connected'
+            : (state.invitePending ? 'pending' : 'not_connected');
 
         console.log(`[CHECK-CONNECTION] Connection status: ${output.connectionStatus}`);
 

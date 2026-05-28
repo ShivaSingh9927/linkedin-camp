@@ -1,4 +1,5 @@
 import { NodeHandler, NodeResult, ProfileVisitOutput } from '../types';
+import { detectConnectionState } from '../connection-state';
 
 const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
 const randomRange = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1) + min);
@@ -75,8 +76,12 @@ export const profileVisit: NodeHandler = async (ctx): Promise<NodeResult> => {
         await wait(3000);
 
         // --- CHECK CONNECTED ---
+        // Compose-link presence is the only reliable "can I DM right now"
+        // signal in LinkedIn's new design system. The old <button>Message
+        // check returned false for everyone.
         try {
-            output.connected = await page.isVisible('button:has-text("Message")');
+            const state = await detectConnectionState(page, lead.linkedinUrl);
+            output.connected = state.isDmable;
         } catch {}
 
         // --- EXTRACT TOP CARD (exact from testscript) ---

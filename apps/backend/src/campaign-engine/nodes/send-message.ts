@@ -1,6 +1,7 @@
 import { NodeHandler, NodeResult, SendMessageOutput } from '../types';
 import { resolveVariables } from '../variables';
 import { generateAIMessage } from '../ai-service';
+import { detectConnectionState } from '../connection-state';
 
 const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
 const randomRange = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1) + min);
@@ -108,27 +109,31 @@ export const sendMessage: NodeHandler = async (ctx, config): Promise<NodeResult>
 
         // Connection-degree gate.
         //
-        // LinkedIn only renders a "Message" button on the profile when the
-        // viewer can DM the lead — usually because they're 1st-degree, or
-        // (rarely) Open Profile / shared group. If it's absent the lead never
-        // accepted our invite, or LinkedIn put the DM behind an InMail
-        // paywall. Either way: do NOT send. Return success-with-skipped so
-        // the engine logs a clean ActionLog (no Message row) and the next
-        // step in the workflow still runs — maybe the next follow-up will
-        // catch them after they accept.
+        // LinkedIn renders an `<a href="/messaging/compose/?profileUrn=...">`
+        // on the profile iff the current session can DM this lead right now
+        // (1st-degree OR Open Profile). The old heuristic looked for a
+        // `<button>Message</button>` which no longer exists in LinkedIn's
+        // new design system — that produced false negatives where we'd
+        // skip messages that COULD have been sent (we caught this in the
+        // Sandhya smoke).
         //
-        // This used to be gated by `config.requireConnection` and ran BEFORE
-        // navigation, which made it always-false on a stale page. Now it's
-        // always-on and only checked after we're actually on the profile.
-        const messageBtnVisible = await page.isVisible('button:has-text("Message")').catch(() => false);
-        const messageLinkVisible = await page.isVisible('a:has-text("Message")').catch(() => false);
-        if (!messageBtnVisible && !messageLinkVisible) {
-            console.log(`[SEND-MESSAGE] No Message UI on profile — lead not connected or InMail-gated. Skipping.`);
+        // detectConnectionState() reads the compose link AND the invite
+        // link bound to this lead's vanity slug, so:
+        //   compose present  → DMable, proceed
+        //   no compose + invite link → unconnected, skip cleanly
+        //   neither           → DOM didn't render, skip with anomaly reason
+        const state = await detectConnectionState(page, lead.linkedinUrl);
+        if (!state.isDmable) {
+            const reason = state.needsConnect ? 'not_connected'
+                : state.invitePending ? 'not_connected'
+                : 'no_message_ui';
+            console.log(`[SEND-MESSAGE] Skipping — isDmable=false (needsConnect=${state.needsConnect}, invitePending=${state.invitePending}, unknown=${state.isUnknown}).`);
             output.sent = false;
             output.skipped = true;
-            output.skipReason = 'not_connected';
+            output.skipReason = reason;
             return { success: true, output };
         }
+        console.log(`[SEND-MESSAGE] Compose link found — proceeding with send.`);
 
         // Dismiss any premium overlays first
         const dismissSelectors = [
@@ -145,29 +150,10 @@ export const sendMessage: NodeHandler = async (ctx, config): Promise<NodeResult>
             }
         }
 
-        // Strategy 1: Extract compose URL from profile (like testscripts/phase2_cookie_message.js)
-        console.log(`[SEND-MESSAGE] Looking for compose URL on: ${page.url()}`);
-        
-        // Try extracting compose URL, with a retry after extra wait
-        let composeUrl: string | null = null;
-        for (let attempt = 0; attempt < 2; attempt++) {
-            composeUrl = await page.evaluate(() => {
-                // Log all links that contain 'messaging' for debugging
-                const allMsgLinks = Array.from(document.querySelectorAll('a[href*="messaging"]'));
-                if (allMsgLinks.length > 0) {
-                    console.log('[SEND-MESSAGE-EVAL] Found messaging links:', allMsgLinks.map((l: any) => l.href));
-                }
-                const link = document.querySelector('a[href*="/messaging/compose/?profileUrn"]');
-                return link ? (link as HTMLAnchorElement).href : null;
-            });
-
-            if (composeUrl) break;
-            
-            if (attempt === 0) {
-                console.log('[SEND-MESSAGE] Compose URL not found on first try. Waiting for async render...');
-                await wait(randomRange(5000, 8000));
-            }
-        }
+        // Reuse the compose URL the gate already extracted. detectConnectionState
+        // waits for the link to be attached, so this is always populated when
+        // we got past the isDmable check above.
+        const composeUrl: string | null = state.composeUrl;
 
         if (composeUrl) {
             console.log('[SEND-MESSAGE] Found compose URL. Navigating directly...');
