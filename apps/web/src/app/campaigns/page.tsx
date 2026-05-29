@@ -31,6 +31,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import api from '@/lib/api';
+import { SafetyQuotaBadge } from '@/components/SafetyQuotaBadge';
 import { CampaignNameModal } from '@/components/CampaignNameModal';
 import { io, Socket } from 'socket.io-client';
 import { toast } from 'sonner';
@@ -414,9 +415,12 @@ const removeLeadFromCampaign = async (campaignId: string, leadId: string) => {
         <div className="space-y-8 lg:space-y-12 animate-in fade-in duration-500">
             {/* Header */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6">
-                <div>
-                    <h2 className="text-4xl font-black text-foreground tracking-tight italic uppercase">My Campaigns</h2>
-                    <p className="text-muted-foreground font-bold text-sm mt-1 uppercase tracking-widest opacity-60">Automate your outreach ecosystem.</p>
+                <div className="space-y-3">
+                    <div>
+                        <h2 className="text-4xl font-black text-foreground tracking-tight italic uppercase">My Campaigns</h2>
+                        <p className="text-muted-foreground font-bold text-sm mt-1 uppercase tracking-widest opacity-60">Automate your outreach ecosystem.</p>
+                    </div>
+                    <SafetyQuotaBadge />
                 </div>
                 <div className="relative group" ref={createMenuRef}>
                     <button

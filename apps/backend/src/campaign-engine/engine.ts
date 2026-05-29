@@ -38,6 +38,7 @@ import { delay } from './nodes/delay';
 import { ifElse } from './nodes/if-else';
 import { checkConnection } from './nodes/check-connection';
 import { readNodeOutputs, writeNodeOutput, updateLeadEnrichment } from './storage';
+import { checkQuota, nextDayRetryAt, DAILY_CAPS, GovernedAction, isWithinWorkingHours, nextWorkingHourAt } from './safety/quota';
 
 const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
 const randomRange = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1) + min);
@@ -412,6 +413,40 @@ async function runLead(
                 needsWarmup = false;
             }
 
+            // Daily-cap gate. LinkedIn rate-limits per account, not per
+            // campaign, so caps are scoped to userId across all of their work
+            // and counted from ActionLog (status=SUCCESS) for today. If we're
+            // at cap, push this lead's next retry to tomorrow's working window
+            // and return — the worker moves to the next lead instead of
+            // burning the action.
+            if (nodeType in DAILY_CAPS) {
+                const quota = await checkQuota(userId, nodeType as GovernedAction);
+                if (!quota.allowed) {
+                    const retryAt = nextDayRetryAt();
+                    console.log(`[ENGINE] Lead ${lead.firstName}: daily cap reached for ${nodeType} (${quota.used}/${quota.cap}). Rescheduling to ${retryAt.toISOString()}.`);
+                    await prisma.campaignLeadProgress.upsert({
+                        where: { campaignId_leadId: { campaignId, leadId: lead.id } },
+                        create: {
+                            campaignId,
+                            leadId: lead.id,
+                            connectionStatus: 'not_connected',
+                            currentNodeIndex: i,
+                            needsRetry: true,
+                            nextRetryAt: retryAt,
+                        },
+                        update: {
+                            currentNodeIndex: i,
+                            needsRetry: true,
+                            nextRetryAt: retryAt,
+                            updatedAt: new Date(),
+                        },
+                    }).catch(err => console.error(`[ENGINE] Cap-reschedule progress update failed: ${err.message}`));
+                    execResult.status = 'paused';
+                    execResult.pausedReason = 'daily_cap';
+                    return execResult;
+                }
+            }
+
             // Execute the node
             const nodeExec: NodeExecution = {
                 node: nodeType,
@@ -676,6 +711,33 @@ export async function runCampaign(
     };
 
     for (const cl of campaignLeads) {
+        // Working-hours gate. LinkedIn's behavioural model penalises off-hours
+        // activity — running at 03:00 IST is a clean bot signal even if daily
+        // totals are tiny. Reschedule the lead to the next window open + jitter
+        // and move on; the cron scheduler re-picks it up when nextRetryAt
+        // matures.
+        if (!isWithinWorkingHours()) {
+            const retryAt = nextWorkingHourAt();
+            console.log(`[CAMPAIGN] Outside working hours — rescheduling lead ${cl.leadId} to ${retryAt.toISOString()}.`);
+            await prisma.campaignLeadProgress.upsert({
+                where: { campaignId_leadId: { campaignId, leadId: cl.leadId } },
+                create: {
+                    campaignId,
+                    leadId: cl.leadId,
+                    connectionStatus: 'not_connected',
+                    currentNodeIndex: 0,
+                    needsRetry: true,
+                    nextRetryAt: retryAt,
+                },
+                update: {
+                    needsRetry: true,
+                    nextRetryAt: retryAt,
+                    updatedAt: new Date(),
+                },
+            }).catch(err => console.error(`[CAMPAIGN] Off-hours reschedule failed: ${err.message}`));
+            continue;
+        }
+
         // Fetch lead separately since relation is not available
         const leadRecord = await prisma.lead.findUnique({
             where: { id: cl.leadId }
@@ -715,8 +777,10 @@ export async function runCampaign(
             summary.failed++;
         }
 
-        // Gap between leads
-        await wait(randomRange(10000, 20000));
+        // Gap between leads — 30–120s. Tight enough that a campaign of
+        // ~20 leads still finishes inside the working window, wide enough
+        // that the inter-action timing distribution doesn't look mechanical.
+        await wait(randomRange(30000, 120000));
     }
 
     summary.completedAt = new Date().toISOString();

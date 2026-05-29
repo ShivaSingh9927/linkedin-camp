@@ -212,9 +212,12 @@ export interface LeadExecutionResult {
     status: 'completed' | 'failed' | 'paused';
     nodesExecuted: NodeExecution[];
     failedAt?: string;
-    // Set when status === 'paused'. Today the only reason is 'lead_replied'
-    // (engine detected a RECEIVED Message and stopped further automation).
-    pausedReason?: 'lead_replied';
+    // Set when status === 'paused'. Reasons:
+    //   'lead_replied' — engine detected a RECEIVED Message; stop automation.
+    //   'daily_cap'    — the next governed action would exceed today's per-user
+    //                    cap (see safety/quota.ts). Lead is rescheduled, not
+    //                    failed; engine returns paused so the worker can move on.
+    pausedReason?: 'lead_replied' | 'daily_cap';
 }
 
 export interface CampaignSummary {
