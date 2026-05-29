@@ -1,4 +1,17 @@
-version: '3.8'
+# Single compose for local dev AND the worker box on prod.
+#
+# Critical invariant: secrets and connection URLs (DATABASE_URL, REDIS_URL,
+# JWT_SECRET) MUST come from the env file, never from this YAML's
+# `environment:` block. Docker compose treats `environment:` as higher
+# precedence than `env_file:`, so any value placed here silently overrides
+# whatever is in .env.local / .env.production. That's how prod ended up
+# pointing the API at a freshly-created empty Postgres on the worker box
+# instead of the real DB at 10.0.0.4 — the hardcoded `db:5432` won and the
+# `.env.production` value was ignored.
+#
+# Local dev: cp .env.production.example .env.local, fill in dev values.
+# Prod worker box: `ln -sf .env.production .env.local` (or pass
+# `--env-file .env.production` to compose, which sets the same lookup).
 
 services:
   db:
@@ -36,9 +49,6 @@ services:
     environment:
       - NODE_ENV=production
       - SESSION_STORAGE_PATH=/session-storage
-      - DATABASE_URL=postgresql://shiva:password123@db:5432/linkedin_camp
-      - REDIS_URL=redis://redis:6379
-      - JWT_SECRET=super-secret-key-123
     env_file:
       - .env.local
     depends_on:
@@ -55,9 +65,6 @@ services:
     environment:
       - NODE_ENV=production
       - SESSION_STORAGE_PATH=/session-storage
-      - DATABASE_URL=postgresql://shiva:password123@db:5432/linkedin_camp
-      - REDIS_URL=redis://redis:6379
-      - JWT_SECRET=super-secret-key-123
     env_file:
       - .env.local
     shm_size: 1gb
