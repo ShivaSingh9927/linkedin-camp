@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { authMiddleware, AuthRequest } from '../middleware/auth.middleware';
 import { prisma } from '@repo/db';
 import { mailService } from '../services/mail.service';
+import { encrypt, decrypt } from '../utils/crypto';
 
 const router = Router();
 router.use(authMiddleware);
@@ -17,10 +18,32 @@ router.get('/me', async (req: AuthRequest, res) => {
             return res.status(404).json({ error: 'User not found' });
         }
 
-        const { passwordHash, linkedinCookie, linkedinFingerprint, ...userWithoutSensitive } = user;
+        const { 
+            passwordHash, 
+            linkedinCookie, 
+            linkedinFingerprint, 
+            hubspotToken, 
+            pipedriveToken, 
+            notionToken,
+            notionDatabaseId,
+            ...userWithoutSensitive 
+        } = user;
+        
+        const decryptedNotionDatabaseId = user.notionDatabaseId ? (() => {
+            try {
+                return decrypt(user.notionDatabaseId);
+            } catch (e) {
+                console.error('[USER-ROUTES] Failed to decrypt Notion Database ID:', e);
+                return null;
+            }
+        })() : null;
         
         res.json({
             ...userWithoutSensitive,
+            hasHubspot: !!user.hubspotToken,
+            hasPipedrive: !!user.pipedriveToken,
+            hasNotion: !!user.notionToken,
+            notionDatabaseId: decryptedNotionDatabaseId,
             businessProfile: user.businessProfile || null,
         });
     } catch (error: any) {
@@ -107,6 +130,69 @@ router.put('/onboarding', async (req: AuthRequest, res) => {
     } catch (error: any) {
         console.error('[USER-ROUTES] Onboarding error:', error.message);
         res.status(500).json({ error: 'Failed to complete onboarding' });
+    }
+});
+
+router.put('/crm-tokens', async (req: AuthRequest, res) => {
+    try {
+        const { hubspotToken, pipedriveToken, notionToken, notionDatabaseId } = req.body;
+        const updateData: any = {};
+
+        if (hubspotToken !== undefined) {
+            updateData.hubspotToken = hubspotToken ? encrypt(hubspotToken) : null;
+        }
+
+        if (pipedriveToken !== undefined) {
+            updateData.pipedriveToken = pipedriveToken ? encrypt(pipedriveToken) : null;
+        }
+
+        if (notionToken !== undefined) {
+            updateData.notionToken = notionToken ? encrypt(notionToken) : null;
+        }
+
+        if (notionDatabaseId !== undefined) {
+            updateData.notionDatabaseId = notionDatabaseId ? encrypt(notionDatabaseId) : null;
+        }
+
+        await prisma.user.update({
+            where: { id: req.user!.id },
+            data: updateData
+        });
+
+        res.json({ success: true, message: 'CRM tokens updated successfully' });
+    } catch (error: any) {
+        console.error('[USER-ROUTES] Error saving CRM tokens:', error.message);
+        res.status(500).json({ error: 'Failed to save CRM tokens' });
+    }
+});
+
+router.delete('/crm-tokens', async (req: AuthRequest, res) => {
+    try {
+        const { provider } = req.body;
+
+        if (!provider || (provider !== 'hubspot' && provider !== 'pipedrive' && provider !== 'notion')) {
+            return res.status(400).json({ error: "Provider must be 'hubspot', 'pipedrive' or 'notion'" });
+        }
+
+        const updateData: any = {};
+        if (provider === 'hubspot') {
+            updateData.hubspotToken = null;
+        } else if (provider === 'pipedrive') {
+            updateData.pipedriveToken = null;
+        } else if (provider === 'notion') {
+            updateData.notionToken = null;
+            updateData.notionDatabaseId = null;
+        }
+
+        await prisma.user.update({
+            where: { id: req.user!.id },
+            data: updateData
+        });
+
+        res.json({ success: true, message: `Disconnected ${provider} integration successfully` });
+    } catch (error: any) {
+        console.error('[USER-ROUTES] Error deleting CRM tokens:', error.message);
+        res.status(500).json({ error: 'Failed to delete CRM tokens' });
     }
 });
 

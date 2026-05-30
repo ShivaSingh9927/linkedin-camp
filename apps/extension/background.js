@@ -198,6 +198,54 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'OPEN_SIDE_PANEL') {
         chrome.sidePanel.open({ windowId: message.windowId }).catch(e => console.warn(e));
     }
+
+    if (message.type === 'DETECTED_REPLY') {
+        chrome.storage.local.get(['token', 'lastReplySync'], async (result) => {
+            const token = result.token;
+            if (!token) return;
+
+            const now = Date.now();
+            const lastSync = result.lastReplySync || {};
+            
+            // Deduplicate: Don't resend if same URL synced in the last 5 minutes (300,000 ms)
+            if (lastSync.url === message.linkedinUrl && now - lastSync.timestamp < 300000) {
+                return;
+            }
+
+            // Update deduplication log
+            chrome.storage.local.set({
+                lastReplySync: { url: message.linkedinUrl, timestamp: now }
+            });
+
+            console.log(`[Webhook Dispatch] Posting reply for ${message.linkedinUrl} to backend...`);
+
+            for (const base of BACKEND_URLS) {
+                try {
+                    const hostBase = base.replace(/\/api\/v1\/?$/, '');
+                    const webhookUrl = `${hostBase}/api/webhooks/linkedin-reply`;
+                    
+                    const resp = await directFetch(webhookUrl, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                        },
+                        body: JSON.stringify({
+                            linkedinUrl: message.linkedinUrl,
+                            newStatus: message.newStatus
+                        })
+                    });
+
+                    if (resp && resp.success) {
+                        console.log(`[Webhook Dispatch] Successfully notified ${webhookUrl} for reply`);
+                        break; // Stop at first successful host sync
+                    }
+                } catch (e) {
+                    console.error(`[Webhook Dispatch] Failed posting to ${base}:`, e.message);
+                }
+            }
+        });
+    }
 });
 
 // Hourly background sync

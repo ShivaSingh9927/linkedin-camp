@@ -332,6 +332,10 @@ model User {
   updatedAt               DateTime         @default(now())
   linkedinUrl             String?
   lastOnboardingEmailAt   DateTime?
+  hubspotToken            String?  // Encrypted HubSpot Private Access Token
+  pipedriveToken          String?  // Encrypted Pipedrive API Token
+  notionToken             String?  // Encrypted Notion Internal Integration Token
+  notionDatabaseId        String?  // Encrypted Notion Database ID
   profileData             Json?
   sessionInvalid          Boolean           @default(false)
   sessionPath             String?

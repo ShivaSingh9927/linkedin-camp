@@ -335,18 +335,11 @@ export default function LeadsPage() {
         e.stopPropagation();
         setActionLoading(true);
         try {
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/leads/${id}/enrich`, {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-            });
-            if (res.ok) {
-                toast.success('Enrichment queued! Results will update momentarily.');
-            } else {
-                const data = await res.json();
-                toast.error(data.error || 'Enrichment trigger failed');
-            }
-        } catch (error) {
-            toast.error('Network error triggering enrichment');
+            await api.post(`/leads/${id}/enrich`);
+            toast.success('Enrichment queued! Results will update momentarily.');
+        } catch (error: any) {
+            const errorMsg = error.response?.data?.error || 'Enrichment trigger failed';
+            toast.error(errorMsg);
         } finally {
             setActionLoading(false);
         }

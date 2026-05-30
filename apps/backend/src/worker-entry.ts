@@ -18,12 +18,14 @@ const bootstrap = async () => {
         const { initCampaignWorker } = await import('./workers/campaign-worker');
         const { initProxyHealthWorker } = await import('./workers/proxy.worker');
         const { initInboxWorker } = await import('./workers/inbox.worker');
+        const { initCRMWorker } = await import('./workers/crm.worker');
 
         initScheduler();
         initWorker();
         initCampaignWorker();
         initProxyHealthWorker();
         initInboxWorker();
+        initCRMWorker();
 
         console.log('[WORKER-READY] All background services ready');
     } catch (err) {
