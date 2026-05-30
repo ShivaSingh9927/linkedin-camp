@@ -4,10 +4,12 @@ const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 12; // GCM standard IV length
 const AUTH_TAG_LENGTH = 16; // GCM standard auth tag length
 
-// Ensure key is 32 bytes (256 bits). Use CRM_ENCRYPTION_KEY if provided, fallback to dev key.
-const ENCRYPTION_KEY = process.env.CRM_ENCRYPTION_KEY
-  ? crypto.createHash('sha256').update(process.env.CRM_ENCRYPTION_KEY).digest()
-  : Buffer.from('d6f3e1a0b5c4d3e2f1a0b9c8d7e6f5a4d6f3e1a0b5c4d3e2f1a0b9c8d7e6f5a4', 'hex');
+// Refuse to boot without a real key. A committed fallback would mean every
+// "encrypted" token is decryptable by anyone who can read this repo.
+if (!process.env.CRM_ENCRYPTION_KEY) {
+    throw new Error('CRM_ENCRYPTION_KEY env var is required');
+}
+const ENCRYPTION_KEY = crypto.createHash('sha256').update(process.env.CRM_ENCRYPTION_KEY).digest();
 
 /**
  * Encrypts cleartext using AES-256-GCM.
