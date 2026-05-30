@@ -107,21 +107,27 @@ model CampaignLead {
 }
 
 model CampaignLeadProgress {
-  id                  String     @id @default(cuid())
+  id                  String        @id @default(cuid())
   campaignId          String
   leadId              String
-  connectionStatus   String     @default("not_connected")
+  connectionStatus    String        @default("not_connected")
   lastConnectionCheck DateTime?
-  currentNodeIndex    Int        @default(0)
-  needsRetry          Boolean    @default(false)
+  currentNodeIndex    Int           @default(0)
+  needsRetry          Boolean       @default(false)
   nextRetryAt         DateTime?
   completedAt         DateTime?
-  createdAt           DateTime   @default(now())
-  updatedAt           DateTime   @default(now())
-  Campaign            Campaign   @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  Lead                Lead       @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  status              LeadRunStatus @default(PENDING)
+  statusReason        String?
+  deferralCount       Int           @default(0)
+  terminalAt          DateTime?
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @default(now())
+  Campaign            Campaign      @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  Lead                Lead          @relation(fields: [leadId], references: [id], onDelete: Cascade)
 
   @@unique([campaignId, leadId])
+  @@index([status, nextRetryAt])
+  @@index([campaignId, status])
 }
 
 model LeadTag {
@@ -330,6 +336,14 @@ model User {
   sessionInvalid          Boolean           @default(false)
   sessionPath             String?
   sessionValidatedAt      DateTime?
+  // Account health: richer than the binary sessionInvalid flag — distinguishes
+  // "session expired" (re-login fine) from "OTP_REQUIRED" (need user-side
+  // verification code) from "RESTRICTED" (LinkedIn punted the account, manual
+  // recovery). The engine refuses to launch unless this is HEALTHY; the
+  // recovery flow flips it back via loginWithOtp.
+  accountHealth           AccountHealth     @default(HEALTHY)
+  accountHealthReason     String?
+  accountHealthAt         DateTime?
   ActionLog               ActionLog[]
   BusinessProfile         BusinessProfile?
   StrategyHistory         StrategyHistory[]
@@ -366,6 +380,25 @@ enum CampaignStatus {
   ACTIVE
   PAUSED
   COMPLETED
+  CANCELLED
+}
+
+enum LeadRunStatus {
+  PENDING
+  IN_PROGRESS
+  DEFERRED
+  REPLIED
+  COMPLETED
+  STALLED
+  FAILED
+}
+
+enum AccountHealth {
+  HEALTHY
+  OTP_REQUIRED
+  SESSION_EXPIRED
+  RESTRICTED
+  NEEDS_LOGIN
 }
 
 enum InviteStatus {

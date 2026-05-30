@@ -239,11 +239,14 @@ const isUserActive = redisPresence === 'ACTIVE' || (now - lastActivity < twoMins
     try {
       const now = new Date();
       
+      // DEFERRED is the canonical "waiting for cron" state. We still match
+      // `needsRetry` for rows that predate the lifecycle migration on prod;
+      // the backfill SQL flips legacy needsRetry=true rows to DEFERRED, so
+      // both clauses converge on the same set going forward.
       const delayedLeads = await prisma.campaignLeadProgress.findMany({
         where: {
-          needsRetry: true,
+          status: 'DEFERRED',
           nextRetryAt: { lte: now },
-          completedAt: null
         },
         take: 10,
         orderBy: { nextRetryAt: 'asc' }

@@ -2,6 +2,7 @@
 
 import { usePathname } from 'next/navigation';
 import { TopNav } from './TopNav';
+import { AccountHealthBanner } from './AccountHealthBanner';
 
 export function SidebarWrapper({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -12,6 +13,7 @@ export function SidebarWrapper({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-muted/30 flex flex-col">
       <TopNav />
+      <AccountHealthBanner />
       <main className="flex-1">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8 lg:py-10 max-w-[1800px]">
           {children}

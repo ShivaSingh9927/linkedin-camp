@@ -39,6 +39,8 @@ import { ifElse } from './nodes/if-else';
 import { checkConnection } from './nodes/check-connection';
 import { readNodeOutputs, writeNodeOutput, updateLeadEnrichment } from './storage';
 import { checkQuota, nextDayRetryAt, DAILY_CAPS, GovernedAction, isWithinWorkingHours, nextWorkingHourAt } from './safety/quota';
+import { transitionLead, recomputeCampaignStatus } from './safety/lifecycle';
+import { classifyPage, handleCheckpoint, isCheckpoint } from './safety/checkpoint';
 
 const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
 const randomRange = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1) + min);
@@ -276,6 +278,23 @@ async function runLead(
             return execResult;
         }
 
+        // Account-health gate. If the account is in any non-HEALTHY state
+        // (OTP_REQUIRED / SESSION_EXPIRED / RESTRICTED / NEEDS_LOGIN), refuse
+        // to launch a browser at all — running through a bad session burns
+        // proxy budget and risks escalating the LinkedIn flag from "OTP
+        // please" to "account restricted". Defer the lead instead; cron will
+        // skip it as long as health stays non-HEALTHY.
+        if ((user as any).accountHealth && (user as any).accountHealth !== 'HEALTHY') {
+            console.warn(`[ENGINE] user=${userId} accountHealth=${(user as any).accountHealth} — refusing to launch`);
+            await transitionLead(campaignId, lead.id, 'DEFERRED', {
+                reason: `account_${String((user as any).accountHealth).toLowerCase()}`,
+                nextRetryAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+            }).catch(() => {});
+            execResult.status = 'paused';
+            execResult.pausedReason = 'stalled';
+            return execResult;
+        }
+
         // Proxy at LAUNCH level so every Chrome subprocess (DNS, telemetry,
         // stealth probes) egresses through the same IP as the cookies were
         // captured under. Context-level proxy alone leaks.
@@ -349,6 +368,28 @@ async function runLead(
             const nodeConfig = flow[i];
             const nodeType = nodeConfig.node;
 
+            // Checkpoint detection. After any navigation done inside the
+            // previous node, LinkedIn may have served a /checkpoint/ page
+            // (challenge spawned mid-flow). Catch it before we waste the next
+            // node trying to interact with a non-existent UI. Cheap — URL
+            // check + a single $('input[name="pin"]') probe.
+            const checkpointInfo = await classifyPage(page);
+            if (isCheckpoint(checkpointInfo)) {
+                console.warn(`[ENGINE] Checkpoint mid-flow for lead ${lead.firstName}: kind=${checkpointInfo.kind} url=${checkpointInfo.url}`);
+                const shotPath = `/tmp/test-sessions/engine_checkpoint_${userId}_${Date.now()}.png`;
+                await page.screenshot({ path: shotPath, fullPage: false }).catch(() => {});
+                await handleCheckpoint({
+                    userId,
+                    campaignId,
+                    leadId: lead.id,
+                    info: checkpointInfo,
+                    screenshotPath: shotPath,
+                });
+                execResult.status = 'paused';
+                execResult.pausedReason = 'stalled';
+                return execResult;
+            }
+
             // Reply-pause check. Fires before every node (including warmup)
             // so a reply that landed between the previous step and this one
             // halts the campaign for this lead. Cheap indexed lookup; runs at
@@ -363,6 +404,10 @@ async function runLead(
                     where: { id: lead.id },
                     data: { status: 'REPLIED' },
                 }).catch(() => {});
+                await transitionLead(campaignId, lead.id, 'REPLIED', {
+                    reason: 'lead_replied',
+                    currentNodeIndex: i,
+                }).catch(err => console.error(`[ENGINE] transitionLead REPLIED failed: ${err.message}`));
                 execResult.status = 'paused';
                 execResult.pausedReason = 'lead_replied';
                 return execResult;
@@ -424,25 +469,16 @@ async function runLead(
                 if (!quota.allowed) {
                     const retryAt = nextDayRetryAt();
                     console.log(`[ENGINE] Lead ${lead.firstName}: daily cap reached for ${nodeType} (${quota.used}/${quota.cap}). Rescheduling to ${retryAt.toISOString()}.`);
-                    await prisma.campaignLeadProgress.upsert({
-                        where: { campaignId_leadId: { campaignId, leadId: lead.id } },
-                        create: {
-                            campaignId,
-                            leadId: lead.id,
-                            connectionStatus: 'not_connected',
-                            currentNodeIndex: i,
-                            needsRetry: true,
-                            nextRetryAt: retryAt,
-                        },
-                        update: {
-                            currentNodeIndex: i,
-                            needsRetry: true,
-                            nextRetryAt: retryAt,
-                            updatedAt: new Date(),
-                        },
-                    }).catch(err => console.error(`[ENGINE] Cap-reschedule progress update failed: ${err.message}`));
+                    const t = await transitionLead(campaignId, lead.id, 'DEFERRED', {
+                        reason: 'daily_cap',
+                        nextRetryAt: retryAt,
+                        currentNodeIndex: i,
+                    }).catch(err => {
+                        console.error(`[ENGINE] transitionLead DEFERRED failed: ${err.message}`);
+                        return null;
+                    });
                     execResult.status = 'paused';
-                    execResult.pausedReason = 'daily_cap';
+                    execResult.pausedReason = t?.to === 'STALLED' ? 'stalled' : 'daily_cap';
                     return execResult;
                 }
             }
@@ -587,37 +623,28 @@ async function runLead(
             // If delay node, set warmup needed for next node and mark lead for retry
             if (nodeType === 'delay') {
                 needsWarmup = true;
-                
+
                 const hours = nodeConfig.hours || 24;
                 const nextRetryAt = new Date(Date.now() + hours * 60 * 60 * 1000);
-                
-                try {
-                    await prisma.campaignLeadProgress.upsert({
-                        where: {
-                            campaignId_leadId: {
-                                campaignId,
-                                leadId: lead.id
-                            }
-                        },
-                        create: {
-                            campaignId,
-                            leadId: lead.id,
-                            connectionStatus: 'not_connected',
-                            currentNodeIndex: i + 1,
-                            needsRetry: true,
-                            nextRetryAt,
-                        },
-                        update: {
-                            currentNodeIndex: i + 1,
-                            needsRetry: true,
-                            nextRetryAt,
-                            updatedAt: new Date()
-                        }
+
+                // Delay is a scheduled-resume, not a forced retry — reset
+                // deferralCount so a long-but-healthy sequence doesn't trip
+                // the STALLED ceiling.
+                await transitionLead(campaignId, lead.id, 'DEFERRED', {
+                    reason: 'delay_node',
+                    nextRetryAt,
+                    currentNodeIndex: i + 1,
+                }).then(() => {
+                    // Delays shouldn't count toward the STALLED ceiling — zero it.
+                    return prisma.campaignLeadProgress.update({
+                        where: { campaignId_leadId: { campaignId, leadId: lead.id } },
+                        data: { deferralCount: 0 },
                     });
+                }).then(() => {
                     console.log(`[ENGINE] Lead marked for retry at ${nextRetryAt.toISOString()}`);
-                } catch (err) {
+                }).catch(err => {
                     console.log(`[ENGINE] Could not update progress for delay: ${err}`);
-                }
+                });
             }
 
             // Safety gap between nodes
@@ -719,21 +746,9 @@ export async function runCampaign(
         if (!isWithinWorkingHours()) {
             const retryAt = nextWorkingHourAt();
             console.log(`[CAMPAIGN] Outside working hours — rescheduling lead ${cl.leadId} to ${retryAt.toISOString()}.`);
-            await prisma.campaignLeadProgress.upsert({
-                where: { campaignId_leadId: { campaignId, leadId: cl.leadId } },
-                create: {
-                    campaignId,
-                    leadId: cl.leadId,
-                    connectionStatus: 'not_connected',
-                    currentNodeIndex: 0,
-                    needsRetry: true,
-                    nextRetryAt: retryAt,
-                },
-                update: {
-                    needsRetry: true,
-                    nextRetryAt: retryAt,
-                    updatedAt: new Date(),
-                },
+            await transitionLead(campaignId, cl.leadId, 'DEFERRED', {
+                reason: 'off_hours',
+                nextRetryAt: retryAt,
             }).catch(err => console.error(`[CAMPAIGN] Off-hours reschedule failed: ${err.message}`));
             continue;
         }
@@ -773,7 +788,19 @@ export async function runCampaign(
                 where: { id: cl.id },
                 data: { isCompleted: true, lastActionAt: new Date() },
             }).catch(() => {});
+            await transitionLead(campaignId, cl.leadId, 'COMPLETED', {
+                reason: 'sequence_finished',
+            }).catch(err => console.error(`[CAMPAIGN] transitionLead COMPLETED failed: ${err.message}`));
+        } else if (result.status === 'failed') {
+            summary.failed++;
+            // Engine-level failure (warmup-fatal, browser-crashed, etc.).
+            // Lead-level paused statuses (replied / deferred) are already
+            // transitioned by the runLead body and shouldn't be overwritten.
+            await transitionLead(campaignId, cl.leadId, 'FAILED', {
+                reason: result.failedAt || 'unknown',
+            }).catch(err => console.error(`[CAMPAIGN] transitionLead FAILED failed: ${err.message}`));
         } else {
+            // 'paused' — runLead already transitioned (REPLIED / DEFERRED / STALLED).
             summary.failed++;
         }
 
@@ -814,11 +841,13 @@ export async function runCampaign(
 
     console.log(`${'='.repeat(50)}\n`);
 
-    // Mark campaign as completed if all leads done
-    await prisma.campaign.update({
-        where: { id: campaignId },
-        data: { status: 'COMPLETED' },
-    }).catch(() => {});
+    // Status is computed from lead aggregates by `recomputeCampaignStatus`,
+    // which runs on every terminal lead transition. Leads that are deferred
+    // (cap / off-hours / delay) remain non-terminal — the campaign stays
+    // ACTIVE and the cron picks them up later. We trigger one final recompute
+    // here as a safety net for the all-terminal case where the last
+    // transition slipped past the inline call (e.g. fire-and-forget races).
+    await recomputeCampaignStatus(campaignId).catch(() => {});
 
     return summary;
 }

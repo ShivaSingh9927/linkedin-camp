@@ -217,7 +217,10 @@ export interface LeadExecutionResult {
     //   'daily_cap'    — the next governed action would exceed today's per-user
     //                    cap (see safety/quota.ts). Lead is rescheduled, not
     //                    failed; engine returns paused so the worker can move on.
-    pausedReason?: 'lead_replied' | 'daily_cap';
+    //   'off_hours'    — outside the working-hours window; lead deferred to
+    //                    next 09:00 IST + jitter.
+    //   'stalled'      — exceeded the deferral ceiling; needs human review.
+    pausedReason?: 'lead_replied' | 'daily_cap' | 'off_hours' | 'stalled';
 }
 
 export interface CampaignSummary {

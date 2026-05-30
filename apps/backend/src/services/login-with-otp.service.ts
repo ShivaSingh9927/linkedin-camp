@@ -1,0 +1,229 @@
+import { chromium } from 'playwright-extra';
+import type { Page } from 'playwright';
+import { prisma } from '@repo/db';
+import { classifyPage, markAccountHealthy, handleCheckpoint, type CheckpointInfo } from '../campaign-engine/safety/checkpoint';
+
+const stealth = require('puppeteer-extra-plugin-stealth')();
+chromium.use(stealth);
+
+// Production port of testscripts/auto_login_with_otp.js. Headless, proxy at
+// LAUNCH level (sticky-proxy invariant), pluggable OTP resolver — for the
+// recovery API the resolver is Redis-backed (see otp-relay.service.ts).
+//
+// On success, persists the new session blobs back to the User row and flips
+// accountHealth → HEALTHY. Idempotent enough to retry on transient failures.
+
+const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
+
+const MAX_OTP_ATTEMPTS = 3;
+
+export interface ProxyConfig {
+    server: string;
+    username?: string;
+    password?: string;
+}
+
+export type OtpResolver = (attempt: number) => Promise<string>;
+
+export interface LoginInput {
+    userId: string;
+    email: string;
+    password: string;
+    proxy: ProxyConfig;
+    otpResolver: OtpResolver;
+    /** UA to use. If omitted, falls back to the canonical Chrome UA. */
+    userAgent?: string;
+}
+
+export type LoginOutcomeKind =
+    | 'success'
+    | 'otp_failed'
+    | 'still_login'         // creds rejected or LinkedIn forbade the IP
+    | 'challenge_other'     // captcha / phone / app — out of scope for auto
+    | 'unknown';
+
+export interface LoginOutcome {
+    kind: LoginOutcomeKind;
+    finalUrl?: string;
+    error?: string;
+    /** Cookie count on success — useful for sanity-checking persistence. */
+    cookieCount?: number;
+}
+
+const DEFAULT_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36';
+
+/**
+ * Solve the email-OTP challenge with the supplied resolver. Identical logic
+ * to the test-script version, with the secondary-challenge fallthrough.
+ */
+async function solveOtp(page: Page, otpResolver: OtpResolver): Promise<boolean> {
+    let prevUrl = page.url();
+
+    for (let attempt = 1; attempt <= MAX_OTP_ATTEMPTS; attempt++) {
+        const code = await otpResolver(attempt);
+        if (!code || code.length < 4) {
+            console.log('[login-otp] empty code — aborting');
+            return false;
+        }
+
+        const pin = await page.$('#input__email_verification_pin, input[name="pin"]').catch(() => null);
+        if (!pin) {
+            console.log('[login-otp] no pin input — may have advanced past OTP step');
+            return false;
+        }
+        await pin.fill(code);
+        await wait(500);
+
+        const submit = page.getByRole('button', { name: /^Submit$/i }).first();
+        if (await submit.count() > 0) await submit.click();
+        else await page.click('button[type="submit"]').catch(() => {});
+
+        await wait(6000);
+        try { await page.waitForLoadState('networkidle', { timeout: 12000 }); } catch {}
+
+        const info = await classifyPage(page);
+        console.log(`[login-otp] post-submit attempt=${attempt} kind=${info.kind} url=${info.url}`);
+
+        if (info.kind === 'feed') return true;
+
+        const errVisible = await page.$('text=/Hmm.*not the right code/i, text=/incorrect/i').catch(() => null);
+        if (errVisible && info.url === prevUrl) {
+            console.log('[login-otp] code rejected — looping');
+            continue;
+        }
+
+        if (info.kind === 'otp' && info.url !== prevUrl) {
+            console.log('[login-otp] secondary OTP page — looping for next code');
+            prevUrl = info.url;
+            continue;
+        }
+
+        // Non-OTP follow-up — try a primary button if there is one.
+        if (info.kind !== 'otp') {
+            const candidates = [/Yes.*was me/i, /Confirm/i, /Continue/i, /Done/i];
+            for (const re of candidates) {
+                const b = page.getByRole('button', { name: re }).first();
+                if (await b.count() > 0 && await b.isVisible().catch(() => false)) {
+                    console.log(`[login-otp] clicking "${re.source}"`);
+                    await b.click().catch(() => {});
+                    await wait(6000);
+                    const next = await classifyPage(page);
+                    if (next.kind === 'feed') return true;
+                    break;
+                }
+            }
+            return false;
+        }
+    }
+    return false;
+}
+
+export async function loginWithOtp(input: LoginInput): Promise<LoginOutcome> {
+    const { userId, email, password, proxy, otpResolver, userAgent } = input;
+    console.log(`[login-otp] user=${userId} email=${email} proxy=${proxy.server}`);
+
+    const browser = await chromium.launch({
+        headless: true,
+        proxy,
+        args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-blink-features=AutomationControlled',
+        ],
+    });
+
+    const context = await browser.newContext({
+        userAgent: userAgent || DEFAULT_UA,
+        viewport: { width: 1920, height: 1080 },
+        locale: 'en-IN',
+        timezoneId: 'Asia/Kolkata',
+        proxy,
+    });
+
+    let outcome: LoginOutcome = { kind: 'unknown' };
+
+    try {
+        const page = await context.newPage();
+        await page.goto('https://www.linkedin.com/login', { waitUntil: 'domcontentloaded', timeout: 60000 });
+        await wait(3000);
+
+        // LinkedIn's 2026 sign-in renders a hidden duplicate of each input;
+        // the visible username has autocomplete="username webauthn".
+        await page.locator('input[autocomplete="username webauthn"]').fill(email);
+        await wait(600);
+        await page.locator('input[autocomplete="current-password"]').last().fill(password);
+        await wait(600);
+        await page.getByRole('button', { name: /^Sign in$/i }).click();
+        await wait(8000);
+        try { await page.waitForLoadState('networkidle', { timeout: 12000 }); } catch {}
+
+        let info: CheckpointInfo = await classifyPage(page);
+        console.log(`[login-otp] post-submit kind=${info.kind} url=${info.url}`);
+
+        if (info.kind === 'otp') {
+            const solved = await solveOtp(page, otpResolver);
+            if (!solved) {
+                outcome = { kind: 'otp_failed', finalUrl: page.url(), error: 'OTP unresolved' };
+                throw new Error('OTP unresolved');
+            }
+            info = await classifyPage(page);
+        }
+
+        if (info.kind !== 'feed') {
+            outcome = { kind: info.kind as LoginOutcomeKind, finalUrl: info.url, error: `landed on ${info.kind}` };
+            throw new Error(`final state ${info.kind}`);
+        }
+
+        // Settle on /feed so all post-login cookies (CSRF, etc.) land.
+        await wait(4000);
+
+        const cookies = await context.cookies();
+        const livedUa = await page.evaluate(() => navigator.userAgent);
+        const lsObj = await page.evaluate(() => {
+            const out: Record<string, string> = {};
+            for (let i = 0; i < window.localStorage.length; i++) {
+                const k = window.localStorage.key(i);
+                if (k) out[k] = window.localStorage.getItem(k) || '';
+            }
+            return out;
+        });
+
+        // Persist on User. Mirrors the existing session-manager save shape so
+        // engine.ts and session-validator pick the new blobs up unchanged.
+        await prisma.user.update({
+            where: { id: userId },
+            data: {
+                linkedinCookie: JSON.stringify(cookies),
+                linkedinFingerprint: JSON.stringify({ userAgent: livedUa }),
+                linkedinLocalStorage: JSON.stringify(lsObj),
+                linkedinProxySnapshot: {
+                    server: proxy.server,
+                    username: proxy.username,
+                    password: proxy.password,
+                },
+            },
+        });
+
+        await markAccountHealthy(userId);
+
+        outcome = { kind: 'success', finalUrl: info.url, cookieCount: cookies.length };
+        console.log(`[login-otp] user=${userId} SUCCESS, ${cookies.length} cookies`);
+    } catch (err: any) {
+        console.error(`[login-otp] user=${userId} failed: ${err.message}`);
+        if (outcome.kind === 'unknown') outcome.error = err.message;
+
+        // If the run failed in a known checkpoint state, push the user into
+        // the right account-health bucket so the UI shows the right CTA.
+        if (outcome.kind && outcome.kind !== 'unknown' && outcome.kind !== 'success') {
+            await handleCheckpoint({
+                userId,
+                info: { kind: outcome.kind as any, url: outcome.finalUrl || '' },
+            }).catch(() => {});
+        }
+    } finally {
+        await context.close().catch(() => {});
+        await browser.close().catch(() => {});
+    }
+
+    return outcome;
+}
