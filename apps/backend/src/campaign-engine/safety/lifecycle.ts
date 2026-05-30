@@ -22,7 +22,7 @@ export type LeadRunStatus =
     | 'FAILED';
 
 const ALLOWED: Record<LeadRunStatus, LeadRunStatus[]> = {
-    PENDING:     ['IN_PROGRESS', 'FAILED', 'REPLIED'],
+    PENDING:     ['IN_PROGRESS', 'DEFERRED', 'FAILED', 'REPLIED'],
     IN_PROGRESS: ['DEFERRED', 'REPLIED', 'COMPLETED', 'FAILED'],
     DEFERRED:    ['IN_PROGRESS', 'REPLIED', 'STALLED'],
     REPLIED:     [],

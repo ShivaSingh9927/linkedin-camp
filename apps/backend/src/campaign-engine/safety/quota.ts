@@ -71,6 +71,10 @@ function nowInTZ(): Date {
 }
 
 export function isWithinWorkingHours(): boolean {
+    // Test/ops escape hatch: prod smoke tests and on-call retries need to
+    // bypass the daypart gate without faking the system clock. Keep the
+    // env name explicit so accidental sets don't slip through.
+    if (process.env.QAMPI_DISABLE_WORKING_HOURS === '1') return true;
     const h = nowInTZ().getUTCHours(); // hours-in-IST (we shifted the clock)
     return h >= WINDOW_OPEN_HOUR && h < WINDOW_CLOSE_HOUR;
 }
