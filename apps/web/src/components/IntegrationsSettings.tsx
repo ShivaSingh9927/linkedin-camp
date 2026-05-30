@@ -226,8 +226,11 @@ export default function IntegrationsSettings() {
                             <div className="space-y-4 relative z-10">
                                 <div className="flex items-center justify-between">
                                     <div className="flex items-center space-x-3">
-                                        <div className="w-12 h-12 bg-gradient-to-tr from-orange-500 to-amber-600 rounded-2xl flex items-center justify-center text-white font-black shadow-lg shadow-orange-500/10">
-                                            HS
+                                        <div className="w-12 h-12 bg-gradient-to-tr from-orange-500 to-amber-600 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-orange-500/10">
+                                            <svg fill="currentColor" role="img" viewBox="0 0 24 24" className="w-6 h-6" xmlns="http://www.w3.org/2000/svg">
+                                                <title>HubSpot</title>
+                                                <path d="M18.164 7.93V5.084a2.198 2.198 0 001.267-1.978v-.067A2.2 2.2 0 0017.238.845h-.067a2.2 2.2 0 00-2.193 2.193v.067a2.196 2.196 0 001.252 1.973l.013.006v2.852a6.22 6.22 0 00-2.969 1.31l.012-.01-7.828-6.095A2.497 2.497 0 104.3 4.656l-.012.006 7.697 5.991a6.176 6.176 0 00-1.038 3.446c0 1.343.425 2.588 1.147 3.607l-.013-.02-2.342 2.343a1.968 1.968 0 00-.58-.095h-.002a2.033 2.033 0 102.033 2.033 1.978 1.978 0 00-.1-.595l.005.014 2.317-2.317a6.247 6.247 0 104.782-11.134l-.036-.005zm-.964 9.378a3.206 3.206 0 113.215-3.207v.002a3.206 3.206 0 01-3.207 3.207z"/>
+                                            </svg>
                                         </div>
                                         <div>
                                             <h4 className="font-black text-slate-800">HubSpot</h4>
@@ -308,8 +311,11 @@ export default function IntegrationsSettings() {
                             <div className="space-y-4 relative z-10">
                                 <div className="flex items-center justify-between">
                                     <div className="flex items-center space-x-3">
-                                        <div className="w-12 h-12 bg-gradient-to-tr from-emerald-500 to-teal-600 rounded-2xl flex items-center justify-center text-white font-black shadow-lg shadow-emerald-500/10">
-                                            PD
+                                        <div className="w-12 h-12 bg-gradient-to-tr from-emerald-500 to-teal-600 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-emerald-500/10">
+                                            <svg viewBox="0 0 24 24" className="w-6 h-6" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                                                <rect x="6.5" y="5" width="3" height="14" rx="1.5" />
+                                                <circle cx="13.5" cy="9.5" r="4.5" stroke="currentColor" strokeWidth="3" fill="none" />
+                                            </svg>
                                         </div>
                                         <div>
                                             <h4 className="font-black text-slate-800">Pipedrive</h4>
@@ -390,8 +396,11 @@ export default function IntegrationsSettings() {
                             <div className="space-y-4 relative z-10">
                                 <div className="flex items-center justify-between">
                                     <div className="flex items-center space-x-3">
-                                        <div className="w-12 h-12 bg-gradient-to-tr from-violet-500 to-indigo-600 rounded-2xl flex items-center justify-center text-white font-black shadow-lg shadow-violet-500/10">
-                                            N
+                                        <div className="w-12 h-12 bg-gradient-to-tr from-violet-500 to-indigo-600 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-violet-500/10">
+                                            <svg fill="currentColor" role="img" viewBox="0 0 24 24" className="w-6 h-6" xmlns="http://www.w3.org/2000/svg">
+                                                <title>Notion</title>
+                                                <path d="M4.459 4.208c.746.606 1.026.56 2.428.466l13.215-.793c.28 0 .047-.28-.046-.326L17.86 1.968c-.42-.326-.981-.7-2.055-.607L3.01 2.295c-.466.046-.56.28-.374.466zm.793 3.08v13.904c0 .747.373 1.027 1.214.98l14.523-.84c.841-.046.935-.56.935-1.167V6.354c0-.606-.233-.933-.748-.887l-15.177.887c-.56.047-.747.327-.747.933zm14.337.745c.093.42 0 .84-.42.888l-.7.14v10.264c-.608.327-1.168.514-1.635.514-.748 0-.935-.234-1.495-.933l-4.577-7.186v6.952L12.21 19s0 .84-1.168.84l-3.222.186c-.093-.186 0-.653.327-.746l.84-.233V9.854L7.822 9.76c-.094-.42.14-1.026.793-1.073l3.456-.233 4.764 7.279v-6.44l-1.215-.139c-.093-.514.28-.887.747-.933zM1.936 1.035l13.31-.98c1.634-.14 2.055-.047 3.082.7l4.249 2.986c.7.513.934.653.934 1.213v16.378c0 1.026-.373 1.634-1.68 1.726l-15.458.934c-.98.047-1.448-.093-1.962-.747l-3.129-4.06c-.56-.747-.793-1.306-.793-1.96V2.667c0-.839.374-1.54 1.447-1.632z"/>
+                                            </svg>
                                         </div>
                                         <div>
                                             <h4 className="font-black text-slate-800">Notion</h4>
