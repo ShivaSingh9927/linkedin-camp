@@ -501,3 +501,59 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return false;
     }
 });
+
+// --- Reply Detection for CRM Sync ---
+function watchForMessageReplies() {
+    // Only monitor on messaging pages
+    if (!window.location.href.includes('linkedin.com/messaging')) return;
+
+    // Find the messaging thread container
+    const threadContainer = document.querySelector('.msg-thread, .msg-s-message-list-container, [data-view-name="messaging-thread-chat-view"]');
+    if (!threadContainer) return;
+
+    // Find the participant's profile link in the active thread header
+    const profileLinkEl = document.querySelector(
+        '.msg-entity-lockup__link, ' +
+        '.msg-thread a[href*="/in/"], ' +
+        '[data-view-name="messaging-thread-chat-view"] a[href*="/in/"], ' +
+        '.msg-conversation-thread__profile-link'
+    );
+    if (!profileLinkEl) return;
+
+    const rawUrl = profileLinkEl.href || '';
+    if (!rawUrl.includes('/in/')) return;
+    const cleanUrl = rawUrl.split('?')[0].replace(/\/$/, '');
+
+    // Get all message events in the list
+    const messageEvents = document.querySelectorAll(
+        '.msg-s-message-list__event, ' +
+        'li.msg-s-message-list__event, ' +
+        '.msg-s-event-listitem'
+    );
+    if (messageEvents.length === 0) return;
+
+    // Get the last message event
+    const lastMessage = messageEvents[messageEvents.length - 1];
+
+    // Check if the last message has a text body (is an actual message, not a system event)
+    const bodyNode = lastMessage.querySelector('.msg-s-event-listitem__body, .msg-s-event__content, .msg-s-event-listitem__message-bubble');
+    if (!bodyNode) return;
+
+    // Check if the last message was sent by us (outgoing)
+    const isOutgoing = lastMessage.querySelector('.msg-s-event-with-indicator__sending-indicator') || 
+                       lastMessage.classList.contains('msg-s-event-listitem--message-bubble-outgoing') ||
+                       lastMessage.querySelector('[aria-label*="Options for your message"]');
+
+    if (!isOutgoing) {
+        // Last message was sent by the prospect -> they replied!
+        console.log(`AutoConnect Reply Detector: Detected reply from ${cleanUrl}`);
+        chrome.runtime.sendMessage({
+            type: 'DETECTED_REPLY',
+            linkedinUrl: cleanUrl,
+            newStatus: 'REPLIED'
+        });
+    }
+}
+
+// Start reply watcher
+setInterval(watchForMessageReplies, 5000);

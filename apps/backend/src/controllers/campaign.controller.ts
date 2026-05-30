@@ -254,9 +254,9 @@ export const getCampaignStatus = async (req: any, res: Response) => {
                 firstName: cl.lead.firstName || '',
                 lastName: cl.lead.lastName || '',
                 linkedinUrl: cl.lead.linkedinUrl,
-                status: cl.lead.status || 'UNCONNECTED',
+                status: cl.lead.status || 'PENDING',
             },
-            status: cl.lead.status || 'UNCONNECTED',
+            status: cl.lead.status || 'PENDING',
             currentStepId: cl.currentStepId || '',
             nextActionDate: cl.nextActionDate,
             isCompleted: cl.isCompleted || false,
@@ -268,7 +268,7 @@ export const getCampaignStatus = async (req: any, res: Response) => {
         // Calculate stats for this specific campaign using lead status
         const stats = {
             total: campaign.leads.length,
-            pending: campaign.leads.filter(l => l.lead.status === 'UNCONNECTED' || l.lead.status === 'INVITE_PENDING').length,
+            pending: campaign.leads.filter(l => l.lead.status === 'PENDING' || l.lead.status === 'IMPORTED').length,
             connected: campaign.leads.filter(l => l.lead.status === 'CONNECTED' || l.lead.status === 'REPLIED').length,
             replied: campaign.leads.filter(l => l.lead.status === 'REPLIED').length,
         };

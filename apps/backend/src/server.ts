@@ -60,11 +60,13 @@ app.listen(serverPort, '0.0.0.0', () => {
             const smartListRoutes = (await import('./routes/smart-list.routes')).default;
             const aiRoutes = (await import('./routes/ai.routes')).default;
             const userRoutes = (await import('./routes/user.routes')).default;
+            const webhookRoutes = (await import('./routes/webhook.routes')).default;
             const { initScheduler } = await import('./cron/scheduler');
             const { initWorker } = await import('./workers/linkedin.worker');
             const { initProxyHealthWorker } = await import('./workers/proxy.worker');
             const { downgradeExpiredTrials } = await import('./services/trial.service');
             const { initCampaignWorker, enqueueCampaign } = await import('./workers/campaign-worker');
+            const { initCRMWorker } = await import('./workers/crm.worker');
 
             app.use('/api/v1/auth', authRoutes);
             app.use('/api/v1/leads', leadRoutes);
@@ -78,6 +80,7 @@ app.listen(serverPort, '0.0.0.0', () => {
             app.use('/api/v1/smart-lists', smartListRoutes);
             app.use('/api/v1/ai', aiRoutes);
             app.use('/api/v1/users', userRoutes);
+            app.use('/api/webhooks', webhookRoutes);
 
             initScheduler();
 
@@ -104,6 +107,7 @@ app.listen(serverPort, '0.0.0.0', () => {
 
             initWorker(); // Required for scheduler to work
             initCampaignWorker();
+            initCRMWorker();
             initProxyHealthWorker();
             const { initInboxWorker } = await import('./workers/inbox.worker');
             initInboxWorker();

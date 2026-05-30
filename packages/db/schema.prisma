@@ -78,6 +78,10 @@ model User {
 
   linkedinUrl           String?  // Target profile for automation
   lastOnboardingEmailAt DateTime? // Tracks one-time nudge for abandoned signups
+  hubspotToken          String?  // Encrypted HubSpot Private Access Token
+  pipedriveToken        String?  // Encrypted Pipedrive API Token
+  notionToken           String?  // Encrypted Notion Internal Integration Token
+  notionDatabaseId      String?  // Encrypted Notion Database ID
 }
 
 // --- CORE MODELS ---
