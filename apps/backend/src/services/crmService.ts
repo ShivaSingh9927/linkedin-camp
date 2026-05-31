@@ -141,10 +141,13 @@ export async function syncLeadToCRMs(userId: string, leadId: string): Promise<Sy
                     headers: {
                         'Content-Type': 'application/json'
                     },
+                    // Pipedrive's `org_id` expects an integer ID of an existing
+                    // organization — not a `{name}` object. Creating an org by
+                    // name requires a separate POST /v1/organizations call first.
+                    // Skipping the org link until we wire that flow.
                     body: JSON.stringify({
                         name: `${lead.firstName || ''} ${lead.lastName || ''}`.trim() || 'LinkedIn Contact',
                         email: lead.email ? [{ value: lead.email, primary: true }] : undefined,
-                        org_id: lead.company ? { name: lead.company } : undefined
                     })
                 });
 
