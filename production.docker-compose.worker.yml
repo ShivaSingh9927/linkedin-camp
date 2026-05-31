@@ -42,6 +42,7 @@ services:
       DEFAULT_PROXY_PORT: ${DEFAULT_PROXY_PORT}
       DEFAULT_PROXY_USERNAME: ${DEFAULT_PROXY_USERNAME}
       DEFAULT_PROXY_PASSWORD: ${DEFAULT_PROXY_PASSWORD}
+      CRM_ENCRYPTION_KEY: ${CRM_ENCRYPTION_KEY}
       SESSION_STORAGE_PATH: ${SESSION_STORAGE_PATH:-/app/sessions}
       INBOX_DIAG: ${INBOX_DIAG:-}
     # Bind the API only to the private-net IP so the public IP never exposes :3001.
@@ -89,6 +90,7 @@ services:
       DEFAULT_PROXY_PORT: ${DEFAULT_PROXY_PORT}
       DEFAULT_PROXY_USERNAME: ${DEFAULT_PROXY_USERNAME}
       DEFAULT_PROXY_PASSWORD: ${DEFAULT_PROXY_PASSWORD}
+      CRM_ENCRYPTION_KEY: ${CRM_ENCRYPTION_KEY}
       SESSION_STORAGE_PATH: ${SESSION_STORAGE_PATH:-/app/sessions}
       INBOX_DIAG: ${INBOX_DIAG:-}
     # Local sessions volume (transitional — replaced by object storage in Phase 2).

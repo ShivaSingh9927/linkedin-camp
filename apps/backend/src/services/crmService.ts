@@ -80,24 +80,45 @@ export async function syncLeadToCRMs(userId: string, leadId: string): Promise<Sy
         syncPromises.push((async (): Promise<SyncResult> => {
             try {
                 console.log(`[CRM-SERVICE] Syncing lead ${leadId} to HubSpot...`);
-                const response = await fetch('https://api.hubapi.com/crm/v3/objects/contacts', {
+                const properties = {
+                    email: lead.email || undefined,
+                    firstname: lead.firstName || undefined,
+                    lastname: lead.lastName || undefined,
+                    website: lead.linkedinUrl || undefined,
+                    jobtitle: lead.jobTitle || undefined,
+                    company: lead.company || undefined,
+                    address: lead.location || undefined,
+                };
+                const hsHeaders = {
+                    'Authorization': `Bearer ${hubspotToken}`,
+                    'Content-Type': 'application/json',
+                };
+
+                let response = await fetch('https://api.hubapi.com/crm/v3/objects/contacts', {
                     method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${hubspotToken}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        properties: {
-                            email: lead.email || undefined,
-                            firstname: lead.firstName || undefined,
-                            lastname: lead.lastName || undefined,
-                            website: lead.linkedinUrl || undefined,
-                            jobtitle: lead.jobTitle || undefined,
-                            company: lead.company || undefined,
-                            address: lead.location || undefined
-                        }
-                    })
+                    headers: hsHeaders,
+                    body: JSON.stringify({ properties }),
                 });
+
+                // Upsert: HubSpot returns 409 with the existing contact ID in
+                // the error body when the email is already a known contact.
+                // Parse the id and PATCH so reply-driven re-syncs keep the
+                // contact fresh instead of permanently failing on duplicates.
+                if (response.status === 409) {
+                    const errBody = await response.text();
+                    const m = errBody.match(/Existing ID:\s*(\d+)/);
+                    if (m) {
+                        const existingId = m[1];
+                        console.log(`[CRM-SERVICE] HubSpot contact ${existingId} already exists — PATCHing instead`);
+                        response = await fetch(`https://api.hubapi.com/crm/v3/objects/contacts/${existingId}`, {
+                            method: 'PATCH',
+                            headers: hsHeaders,
+                            body: JSON.stringify({ properties }),
+                        });
+                    } else {
+                        throw new Error(`HubSpot 409 without existing ID in body: ${errBody}`);
+                    }
+                }
 
                 if (!response.ok) {
                     const responseText = await response.text();
