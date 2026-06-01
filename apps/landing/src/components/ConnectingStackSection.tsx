@@ -9,7 +9,7 @@ export function ConnectingStackSection() {
 
   const { scrollYProgress } = useScroll({
     target: containerRef,
-    offset: ["start end", "end end"],
+    offset: ["start start", "end end"],
   });
 
   useMotionValueEvent(scrollYProgress, "change", (latest) => {
@@ -23,7 +23,7 @@ export function ConnectingStackSection() {
     return () => window.removeEventListener("resize", checkMobile);
   }, []);
 
-  const maxRadius = isMobile ? 100 : 260;
+  const maxRadius = isMobile ? 100 : 250;
   const expandRadius = progress * maxRadius;
 
   const items = [
@@ -82,34 +82,60 @@ export function ConnectingStackSection() {
   ];
 
   return (
-    <div ref={containerRef} className="relative min-h-[150vh] bg-transparent w-full">
+    <div ref={containerRef} className="relative min-h-[130vh] bg-transparent w-full">
       <div className="sticky top-0 h-screen w-full flex items-center justify-center p-4 overflow-hidden z-10">
         <div className="relative">
+          
+          {/* Glowing pulse effect under the center hub */}
+          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 rounded-full bg-blue-500/5 animate-pulse pointer-events-none z-0" />
+          
           <div
             className={`w-[290px] h-[290px] md:w-[600px] md:h-[600px] rounded-full flex items-center justify-center transition-all duration-700 ease-out ${
-              progress > 0.6 ? "border-2 border-slate-100 dark:border-slate-800/60" : "border-2 border-transparent"
+              progress > 0.6 ? "border border-slate-100/80 dark:border-slate-800/40 shadow-inner" : "border border-transparent"
             }`}
           >
             <div
               className={`w-[240px] h-[240px] md:w-[500px] md:h-[500px] rounded-full flex items-center justify-center relative transition-all duration-700 ease-out ${
-                progress > 0.2 ? "border-2 border-blue-50/50 dark:border-blue-950/20" : "border-2 border-transparent"
+                progress > 0.2 ? "border border-blue-50/40 dark:border-blue-950/15" : "border border-transparent"
               }`}
             >
-              <div className="w-[190px] h-[190px] md:w-[400px] md:h-[400px] rounded-full bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500 p-0.5 flex items-center justify-center relative shadow-2xl">
-                <div className="w-full h-full rounded-full bg-white dark:bg-slate-900 flex items-center justify-center relative overflow-hidden">
+              
+              {/* Dynamic Expanding Connector Lines */}
+              {items.map((_, idx) => {
+                const angle = (idx * Math.PI) / 4;
+                return (
+                  <div
+                    key={`line-${idx}`}
+                    className="absolute left-1/2 top-1/2 origin-left h-[1.5px] border-t border-dashed border-blue-500/20 pointer-events-none z-0"
+                    style={{
+                      width: `${expandRadius}px`,
+                      transform: `rotate(${angle}rad) translateY(-50%)`,
+                      opacity: progress,
+                    }}
+                  />
+                );
+              })}
+
+              <div className="w-[190px] h-[190px] md:w-[400px] md:h-[400px] rounded-full bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500 p-0.5 flex items-center justify-center relative shadow-2xl z-10">
+                <div className="w-full h-full rounded-full bg-white dark:bg-slate-900 flex items-center justify-center relative">
                   
                   {/* Dynamic Expanding Floating Items */}
                   {items.map((item, idx) => {
                     const angle = (idx * Math.PI) / 4;
                     const xTranslation = expandRadius * Math.cos(angle);
                     const yTranslation = expandRadius * Math.sin(angle);
+                    
+                    // Scale and opacity starts small and increases as the circle expands
+                    const scale = 0.4 + progress * 0.6;
+                    const opacity = progress;
 
                     return (
                       <div
                         key={idx}
-                        className="absolute w-12 h-12 md:w-20 md:h-20 rounded-xl md:rounded-2xl overflow-hidden border-2 md:border-4 border-white dark:border-slate-800 shadow-md md:shadow-xl transition-transform duration-300 ease-out z-10 bg-slate-50 flex items-center justify-center"
+                        className="absolute w-12 h-12 md:w-20 md:h-20 rounded-xl md:rounded-2xl overflow-hidden border-2 md:border-4 border-white dark:border-slate-800 shadow-md md:shadow-xl transition-all duration-300 ease-out z-20 bg-slate-50 flex items-center justify-center"
                         style={{
-                          transform: `translate(${xTranslation}px, ${yTranslation}px)`,
+                          transform: `translate(${xTranslation}px, ${yTranslation}px) scale(${scale})`,
+                          opacity: opacity,
                         }}
                       >
                         {item.type === "profile" ? (
@@ -119,7 +145,7 @@ export function ConnectingStackSection() {
                             className="w-full h-full object-cover select-none pointer-events-none"
                           />
                         ) : (
-                          <div className="flex items-center justify-center w-full h-full bg-white p-2">
+                          <div className="flex items-center justify-center w-full h-full bg-white p-2 md:p-4">
                             {item.icon}
                           </div>
                         )}
@@ -129,8 +155,8 @@ export function ConnectingStackSection() {
 
                   {/* Center Text Fades in as progress increases */}
                   <div
-                    className={`flex flex-col items-center justify-center px-4 relative z-20 transition-opacity duration-700 ease-out select-none ${
-                      progress > 0.45 ? "opacity-100" : "opacity-0"
+                    className={`flex flex-col items-center justify-center px-4 relative z-20 transition-all duration-700 ease-out select-none ${
+                      progress > 0.45 ? "opacity-100 translate-y-0 scale-100" : "opacity-0 translate-y-4 scale-95"
                     }`}
                   >
                     <h3 className="text-xl md:text-3xl font-extrabold text-slate-800 dark:text-white text-center tracking-tight mb-1">
