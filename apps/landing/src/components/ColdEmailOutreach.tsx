@@ -14,7 +14,7 @@ export function ColdEmailOutreach() {
   };
 
   return (
-    <section id="email" className="py-24 bg-slate-50/50">
+    <section id="email" className="py-24 bg-transparent">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex flex-col lg:flex-row-reverse items-center gap-16">
           

@@ -126,7 +126,7 @@ function Hero() {
   }, [titleNumber, titles]);
 
   return (
-    <div className="relative min-h-screen w-full flex items-center justify-center overflow-hidden bg-gradient-to-br from-white via-blue-50/20 to-purple-50/15 pt-20">
+    <div className="relative min-h-screen w-full flex items-center justify-center overflow-hidden bg-transparent pt-20">
       
       {/* Background Floating Message/Mail/LinkedIn Icons */}
       <FloatingMessages />

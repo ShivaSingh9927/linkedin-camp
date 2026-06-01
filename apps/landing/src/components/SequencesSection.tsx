@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 
 export function SequencesSection() {
   return (
-    <section id="sequences" className="py-24 bg-white">
+    <section id="sequences" className="py-24 bg-transparent">
       <div className="max-w-4xl mx-auto px-4 sm:px-6">
         
         {/* Header */}

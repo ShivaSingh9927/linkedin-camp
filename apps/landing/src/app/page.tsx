@@ -11,20 +11,23 @@ import { CRMAnalyticsSection } from '@/components/CRMAnalyticsSection';
 import AboutUsSection from '@/components/AboutUsSection';
 import { CTASection } from '@/components/CTASection';
 import { Footer } from '@/components/Footer';
+import { AuroraBackground } from '@/components/AuroraBackground';
 
 export default function LandingPage() {
   return (
     <main className="min-h-screen bg-white">
       <Navbar />
-      <Hero />
-      <SocialProof />
-      <HowItWorks />
-      <LinkedInAutomation />
-      <ColdEmailOutreach />
-      <SequencesSection />
-      <CRMAnalyticsSection />
-      <AboutUsSection />
-      <CTASection />
+      <AuroraBackground>
+        <Hero />
+        <SocialProof />
+        <HowItWorks />
+        <LinkedInAutomation />
+        <ColdEmailOutreach />
+        <SequencesSection />
+        <CRMAnalyticsSection />
+        <AboutUsSection />
+        <CTASection />
+      </AuroraBackground>
       <Footer />
     </main>
   );

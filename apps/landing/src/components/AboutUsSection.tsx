@@ -124,7 +124,7 @@ export default function AboutUsSection() {
     <section
       id="about-section"
       ref={sectionRef}
-      className="w-full py-24 px-4 bg-gradient-to-b from-white via-slate-50/50 to-slate-50 text-slate-800 overflow-hidden relative border-t border-slate-100"
+      className="w-full py-24 px-4 bg-transparent text-slate-800 overflow-hidden relative border-t border-slate-100"
     >
       {/* Decorative background elements */}
       <motion.div
