@@ -1,12 +1,15 @@
+@import url('https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@800,700,500&f[]=satoshi@700,500,400&display=swap');
 @import "tailwindcss";
 
 @theme {
-  --color-primary: #8b5cf6;
+  --color-primary: #225aea;
+  --color-primary-light: #4c7df5;
+  --color-primary-hover: #1a48c7;
   --color-primary-foreground: #ffffff;
-  --color-secondary: #f3f0ff;
+  --color-secondary: #f8fafc;
   --color-background: #ffffff;
   --color-foreground: #0f172a;
-  --color-muted: #f5f3ff;
+  --color-muted: #f8fafc;
   --color-muted-foreground: #64748b;
   --color-accent: #dbeafe;
   --color-accent-foreground: #1e1b4b;
@@ -14,8 +17,8 @@
   --color-destructive: #ef4444;
   --color-destructive-foreground: #ffffff;
   --color-card: #ffffff;
-  --color-ring: #8b5cf6;
-  --color-input: #e0e7ff;
+  --color-ring: #225aea;
+  --color-input: #e2e8f0;
 
   --color-slate-50: #f8fafc;
   --color-slate-100: #f1f5f9;
@@ -41,7 +44,10 @@
   --color-amber-600: #d97706;
   --color-amber-700: #b45309;
 
+  --color-blue-50: #eff6ff;
   --color-blue-100: #dbeafe;
+  --color-blue-200: #bfdbfe;
+  --color-blue-400: #60a5fa;
   --color-blue-500: #3b82f6;
   --color-blue-600: #2563eb;
 
@@ -69,7 +75,8 @@
   --color-red-400: #f87171;
   --color-red-500: #ef4444;
 
-  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-sans: 'Satoshi', system-ui, -apple-system, sans-serif;
+  --font-cabinet: 'Cabinet Grotesk', sans-serif;
 
   --shadow-soft: 0 4px 20px -2px rgba(0, 0, 0, 0.05), 0 2px 10px -2px rgba(0, 0, 0, 0.03);
 }
@@ -81,10 +88,14 @@
 
   body {
     @apply font-sans bg-background text-foreground antialiased;
+    font-family: 'Satoshi', sans-serif;
+    color: #0f172a;
   }
 
   h1, h2, h3, h4, h5, h6 {
     @apply tracking-tight;
+    font-family: 'Cabinet Grotesk', sans-serif;
+    letter-spacing: -0.02em;
   }
 
   html {
@@ -92,17 +103,72 @@
   }
 }
 
-@keyframes scroll {
-  0% {
-    transform: translateX(0);
+/* Custom styles from design template */
+.btn-primary {
+  background-color: #225aea;
+  color: white;
+  transition: all 0.3s ease;
+}
+
+.btn-primary:hover {
+  background-color: #1a48c7;
+  transform: translateY(-2px);
+  box-shadow: 0 10px 20px -5px rgba(34, 90, 234, 0.3);
+}
+
+.animate-float {
+  animation: float 6s ease-in-out infinite;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-20px); }
+}
+
+.gradient-text {
+  background: linear-gradient(135deg, #225aea 0%, #a855f7 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.card-shadow {
+  box-shadow: 0 20px 50px -12px rgba(0, 0, 0, 0.05);
+}
+
+.glass-nav {
+  background-color: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(8px);
+}
+
+@keyframes slideInUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
   }
-  100% {
-    transform: translateX(-50%);
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
-.animate-scroll {
-  animation: scroll 30s linear infinite;
+.reveal {
+  animation: slideInUp 0.8s ease-out forwards;
+}
+
+.sequence-dot::before {
+  content: '';
+  position: absolute;
+  left: 2rem;
+  top: 2rem;
+  bottom: -2rem;
+  width: 2px;
+  background: #e2e8f0;
+  transform: translateX(-50%);
+  z-index: -1;
+}
+
+.sequence-dot-last::before {
+  display: none;
 }
 
 /* Custom scrollbar */

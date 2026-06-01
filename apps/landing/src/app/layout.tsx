@@ -1,12 +1,9 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
 import "./globals.css";
 
-const inter = Inter({ subsets: ["latin"] });
-
 export const metadata: Metadata = {
-  title: "Qampi - Smart LinkedIn Automation That Gets Replies",
-  description: "Automate your LinkedIn outreach with AI-powered campaigns. Reach 800+ prospects monthly, auto follow-up until they reply. No complex setup. Start free today.",
+  title: "Qampi | B2B Lead Gen & Automated Sales Assistant",
+  description: "A powerhouse B2B lead generation tool. Browser Extension + Web Dashboard designed to automate LinkedIn outreach and cold email at scale.",
   icons: {
     icon: [
       { url: '/favicon-16x16.png', sizes: '16x16', type: 'image/png' },
@@ -24,7 +21,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="scroll-smooth">
-      <body className={`${inter.className} antialiased`}>
+      <body className="antialiased">
         {children}
       </body>
     </html>

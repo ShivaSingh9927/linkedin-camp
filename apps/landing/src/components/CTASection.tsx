@@ -1,75 +1,53 @@
 'use client';
 
-import { ArrowRight, Sparkles } from "lucide-react";
 import { motion } from "framer-motion";
-import { GlowButton } from "./GlowButton";
+import { MagneticButton } from "./MagneticButton";
 
 export function CTASection() {
   return (
-    <section className="relative py-24 lg:py-32 overflow-hidden">
-      {/* Background image */}
-      <div
-        className="absolute inset-0 bg-cover bg-center"
-        style={{ backgroundImage: "url('https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=1920&h=1080&auto=format&fit=crop&q=80')" }}
-      />
-      <div className="absolute inset-0 bg-gradient-to-br from-primary/95 via-indigo-600/95 to-purple-700/95" />
-
-      {/* Grid pattern */}
-      <div className="absolute inset-0 opacity-[0.05]" style={{
-        backgroundImage: `linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)`,
-        backgroundSize: '60px 60px'
-      }} />
-
-      <div className="relative max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+    <section className="py-24 bg-white">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <motion.div
-          initial={{ opacity: 0, y: 30 }}
+          initial={{ opacity: 0, y: 35 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
+          transition={{ duration: 0.8 }}
+          className="relative bg-primary rounded-[3rem] p-12 lg:p-24 overflow-hidden text-center text-white shadow-2xl"
         >
-          <div className="inline-flex items-center gap-2 bg-white/10 text-white px-4 py-1.5 rounded-full text-sm font-bold mb-6 backdrop-blur-sm border border-white/20">
-            <Sparkles className="w-4 h-4" />
-            Powered by Aigeon AI
-          </div>
-
-          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-black text-white tracking-tight">
-            Ready to 3x your LinkedIn reply rate?
+          {/* Background Blobs */}
+          <div className="absolute top-0 right-0 w-96 h-96 bg-white/10 blur-[100px] rounded-full translate-x-1/2 -translate-y-1/2 pointer-events-none"></div>
+          <div className="absolute bottom-0 left-0 w-64 h-64 bg-blue-400/20 blur-[80px] rounded-full -translate-x-1/2 translate-y-1/2 pointer-events-none"></div>
+          
+          <h2 className="text-4xl md:text-6xl font-bold mb-8 relative z-10 leading-[1.15] tracking-tight">
+            Turn your browser into a <br className="hidden md:block"/> sales generating machine
           </h2>
-
-          <p className="mt-6 text-lg text-white/80 max-w-2xl mx-auto leading-relaxed">
-            Join 3,000+ founders and sales teams using Aigeon AI to turn cold outreach into warm conversations. Start free with 25 AI messages/week — no credit card required.
+          
+          <p className="text-xl text-blue-100 mb-12 max-w-2xl mx-auto relative z-10 font-medium">
+            Join 2,500+ teams using Qampi to automate their growth today.
           </p>
-
-          <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
-            <GlowButton
-              size="lg"
-              href="https://app.qampi.com/register"
-              className="bg-white text-primary hover:bg-white/90 border-white"
-            >
-              Start Free — 25 AI messages/week
-              <ArrowRight className="w-5 h-5 ml-2" />
-            </GlowButton>
+          
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-6 relative z-10">
+            <MagneticButton>
+              <a
+                href="https://app.qampi.com/register"
+                id="bottom-cta-primary"
+                className="w-full sm:w-auto bg-white text-primary px-10 py-5 rounded-2xl text-lg font-bold hover:bg-blue-50 transition-colors shadow-lg shadow-black/10 inline-flex items-center justify-center hover:-translate-y-0.5 active:scale-98 duration-200"
+              >
+                Start Free Trial
+              </a>
+            </MagneticButton>
             <a
-              href="#pricing"
-              className="text-white/70 hover:text-white font-medium text-sm transition-colors underline underline-offset-4"
+              href="#"
+              id="bottom-cta-secondary"
+              className="w-full sm:w-auto border-2 border-white/30 text-white px-10 py-5 rounded-2xl text-lg font-bold hover:bg-white/10 transition-colors inline-flex items-center justify-center hover:-translate-y-0.5 active:scale-98 duration-200"
             >
-              See all pricing plans
+              Talk to Sales
             </a>
           </div>
-
-          <div className="mt-8 flex items-center justify-center space-x-6 text-sm text-white/60">
-            <div className="flex items-center space-x-2">
-              <div className="w-2 h-2 bg-emerald-400 rounded-full" />
-              <span>14-day free trial</span>
-            </div>
-            <div className="flex items-center space-x-2">
-              <div className="w-2 h-2 bg-emerald-400 rounded-full" />
-              <span>No credit card</span>
-            </div>
-            <div className="flex items-center space-x-2">
-              <div className="w-2 h-2 bg-emerald-400 rounded-full" />
-              <span>Cancel anytime</span>
-            </div>
-          </div>
+          
+          <p className="mt-10 text-blue-200 text-sm font-semibold opacity-80 relative z-10">
+            No credit card required. Chrome v110+ compatible.
+          </p>
         </motion.div>
       </div>
     </section>

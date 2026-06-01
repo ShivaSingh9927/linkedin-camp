@@ -1,9 +1,7 @@
 'use client';
 
-import { Logo } from "./Logo";
 import { Menu, X } from "lucide-react";
 import { useState, useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 
 export function Navbar() {
@@ -19,68 +17,59 @@ export function Navbar() {
   }, []);
 
   const navLinks = [
-    { label: "Features", href: "#features" },
-    { label: "How It Works", href: "#how-it-works" },
-    { label: "Pricing", href: "#pricing" },
-    { label: "FAQ", href: "#faq" },
+    { label: "LinkedIn", href: "#linkedin", id: "nav-linkedin" },
+    { label: "Email", href: "#email", id: "nav-email" },
+    { label: "Sequences", href: "#sequences", id: "nav-sequences" },
+    { label: "CRM", href: "#crm", id: "nav-crm" },
   ];
 
   return (
-    <motion.nav
-      initial={{ y: -100 }}
-      animate={{ y: 0 }}
-      transition={{ duration: 0.6, ease: "easeOut" }}
-      className={cn(
-        "fixed top-0 left-0 right-0 z-50 transition-all duration-500",
-        scrolled
-          ? "bg-white/80 backdrop-blur-xl shadow-lg shadow-slate-200/50 border-b border-slate-100"
-          : "bg-transparent"
-      )}
-    >
+    <nav className="fixed top-0 left-0 right-0 z-50 glass-nav border-b border-gray-100 transition-all duration-300">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16 lg:h-20">
-          <a href="/" className="flex items-center space-x-2">
-            <Logo size="md" />
+        <div className="flex justify-between items-center h-20">
+          {/* Logo */}
+          <a href="#" className="flex items-center gap-2">
+            <img src="/logo.png" alt="Qampi Logo" className="w-10 h-10 object-contain rounded-xl" />
+            <span className="text-2xl font-bold tracking-tight text-slate-900">Qampi</span>
           </a>
 
-          {/* Desktop Nav */}
-          <div className="hidden lg:flex items-center space-x-8">
+          {/* Desktop Navigation Links */}
+          <div className="hidden md:flex items-center space-x-10">
             {navLinks.map((link) => (
               <a
                 key={link.label}
+                id={link.id}
                 href={link.href}
-                className={cn(
-                  "text-sm font-semibold transition-colors hover:text-primary",
-                  scrolled ? "text-slate-600" : "text-slate-700"
-                )}
+                className="text-sm font-medium text-slate-600 hover:text-primary transition-colors"
               >
                 {link.label}
               </a>
             ))}
           </div>
 
-          <div className="hidden lg:flex items-center space-x-4">
+          {/* Desktop CTAs */}
+          <div className="hidden md:flex items-center gap-4">
             <a
               href="https://app.qampi.com/login"
-              className={cn(
-                "text-sm font-semibold transition-colors hover:text-primary",
-                scrolled ? "text-slate-600" : "text-slate-700"
-              )}
+              id="nav-login"
+              className="text-sm font-semibold text-slate-900 hover:text-primary transition-colors"
             >
               Log in
             </a>
             <a
               href="https://app.qampi.com/register"
-              className="bg-primary text-white px-6 py-2.5 rounded-2xl text-sm font-bold shadow-lg shadow-primary/25 hover:shadow-xl hover:shadow-primary/30 hover:bg-primary/90 transition-all hover:-translate-y-0.5 active:scale-95"
+              id="nav-cta-btn"
+              className="btn-primary px-6 py-2.5 rounded-full text-sm font-semibold inline-flex items-center justify-center"
             >
-              Start Free Trial
+              Get Started Free
             </a>
           </div>
 
           {/* Mobile menu button */}
           <button
-            className="lg:hidden p-2 rounded-xl hover:bg-slate-100 transition-colors"
+            className="md:hidden p-2 rounded-xl hover:bg-slate-100 transition-colors"
             onClick={() => setIsOpen(!isOpen)}
+            aria-label="Toggle menu"
           >
             {isOpen ? (
               <X className="w-6 h-6 text-slate-700" />
@@ -91,45 +80,39 @@ export function Navbar() {
         </div>
       </div>
 
-      {/* Mobile Nav */}
-      <AnimatePresence>
-        {isOpen && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.3 }}
-            className="lg:hidden bg-white border-t border-slate-100 shadow-xl overflow-hidden"
-          >
-            <div className="px-4 py-6 space-y-4">
-              {navLinks.map((link) => (
-                <a
-                  key={link.label}
-                  href={link.href}
-                  className="block text-base font-semibold text-slate-700 hover:text-primary transition-colors py-2"
-                  onClick={() => setIsOpen(false)}
-                >
-                  {link.label}
-                </a>
-              ))}
-              <div className="pt-4 space-y-3 border-t border-slate-100">
-                <a
-                  href="https://app.qampi.com/login"
-                  className="block text-center text-base font-semibold text-slate-700 hover:text-primary py-2"
-                >
-                  Log in
-                </a>
-                <a
-                  href="https://app.qampi.com/register"
-                  className="block text-center bg-primary text-white px-6 py-3 rounded-2xl text-base font-bold shadow-lg shadow-primary/25"
-                >
-                  Start Free Trial
-                </a>
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </motion.nav>
+      {/* Mobile Drawer */}
+      {isOpen && (
+        <div className="md:hidden bg-white border-t border-slate-100 shadow-xl py-6 px-4 space-y-4">
+          <div className="flex flex-col space-y-4">
+            {navLinks.map((link) => (
+              <a
+                key={link.label}
+                href={link.href}
+                className="text-base font-semibold text-slate-700 hover:text-primary transition-colors py-2"
+                onClick={() => setIsOpen(false)}
+              >
+                {link.label}
+              </a>
+            ))}
+          </div>
+          <div className="pt-4 space-y-3 border-t border-slate-100 flex flex-col">
+            <a
+              href="https://app.qampi.com/login"
+              className="text-center text-base font-semibold text-slate-700 hover:text-primary py-2"
+              onClick={() => setIsOpen(false)}
+            >
+              Log in
+            </a>
+            <a
+              href="https://app.qampi.com/register"
+              className="btn-primary text-center px-6 py-3 rounded-full text-base font-semibold"
+              onClick={() => setIsOpen(false)}
+            >
+              Get Started Free
+            </a>
+          </div>
+        </div>
+      )}
+    </nav>
   );
 }
