@@ -8,6 +8,7 @@ import { LinkedInAutomation } from '@/components/LinkedInAutomation';
 import { ColdEmailOutreach } from '@/components/ColdEmailOutreach';
 import { SequencesSection } from '@/components/SequencesSection';
 import { CRMAnalyticsSection } from '@/components/CRMAnalyticsSection';
+import { ConnectingStackSection } from '@/components/ConnectingStackSection';
 import AboutUsSection from '@/components/AboutUsSection';
 import { CTASection } from '@/components/CTASection';
 import { Footer } from '@/components/Footer';
@@ -25,6 +26,7 @@ export default function LandingPage() {
         <ColdEmailOutreach />
         <SequencesSection />
         <CRMAnalyticsSection />
+        <ConnectingStackSection />
         <AboutUsSection />
         <CTASection />
       </AuroraBackground>
