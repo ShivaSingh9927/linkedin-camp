@@ -182,6 +182,15 @@ export const startCampaign = async (req: any, res: Response) => {
 
         console.log('Campaign status updated to ACTIVE');
 
+        // Create the per-campaign CRM sync policy row (idempotent). Lives
+        // OUTSIDE the enrollment block on purpose — the policy is per-campaign,
+        // not per-newly-enrolled-lead. If anti-spam skips every lead because
+        // they're already enrolled elsewhere, the policy still needs to exist
+        // for the campaign so future lifecycle events (messaged/replied) sync.
+        ensureCampaignCrmPolicy(id, userId)
+            .then(() => console.log(`[Campaign] ensureCrmPolicy completed for ${id}`))
+            .catch(err => console.error(`[Campaign] ensureCrmPolicy failed for ${id}:`, err.message));
+
         // Identify the start node from WorkflowJson.
         // Accept three shapes: { nodes:[...], edges:[...] } (React Flow),
         // [...] (plain array), and { flow:[...] } (engine's linear form).
@@ -275,22 +284,14 @@ export const startCampaign = async (req: any, res: Response) => {
                                     status: 'PENDING'
                                 }
                             });
+                            // Fire lead.added only for genuinely new
+                            // CampaignLead rows (not re-enrollments).
+                            emitCrmEvent({ event: 'lead.added', userId, campaignId: id, leadId });
                         }
                     }
 
                     if (safeLeadIdsToStart.length > 0) {
                         await enqueueCampaign(userId, id);
-
-                        // Create the CRM sync policy row (idempotent) and
-                        // emit lead.added per enrolled lead. Fire-and-forget;
-                        // policy-driven, so users with no CRM connected
-                        // produce zero downstream work.
-                        ensureCampaignCrmPolicy(id, userId).catch(err =>
-                            console.error('[Campaign] ensureCrmPolicy failed:', err.message)
-                        );
-                        for (const leadId of safeLeadIdsToStart) {
-                            emitCrmEvent({ event: 'lead.added', userId, campaignId: id, leadId });
-                        }
                     }
 
                     console.log(`[Campaign] Successfully started/enrolled ${safeLeadIdsToStart.length} leads.`);
