@@ -63,8 +63,13 @@ export async function checkQuota(userId: string, actionType: GovernedAction): Pr
 // Window: 09:00–18:00 IST. Outside the window, leads are rescheduled to
 // the next window open + jitter rather than processed.
 const TZ_OFFSET_MIN = 5 * 60 + 30; // IST = UTC+05:30
-const WINDOW_OPEN_HOUR = 9;
-const WINDOW_CLOSE_HOUR = 18;
+// Window opened to 24h. Was 09–18 IST — a LinkedIn-safety heuristic — but
+// product decision: users in different timezones (and the AI message cadence
+// itself, which already paces ~30–120s between actions) make a hard daypart
+// gate the wrong shape. If we ever re-add daypart, do it as a per-user
+// preference, not a global constant.
+const WINDOW_OPEN_HOUR = 0;
+const WINDOW_CLOSE_HOUR = 24;
 
 function nowInTZ(): Date {
     return new Date(Date.now() + TZ_OFFSET_MIN * 60 * 1000);

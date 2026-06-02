@@ -8,8 +8,8 @@ export const canWorkNow = async (userId: string): Promise<{ allowed: boolean; ne
     const user = await prisma.user.findUnique({ where: { id: userId } });
 
     // Waalaxy Strategy: Advanced Wait States (Respect custom business hours)
-    const workingDays = user?.workingDays || [1, 2, 3, 4, 5]; // Default Mon-Fri
-    const hours = (user?.workingHours as any) || { start: 9, end: 18 };
+    const workingDays = user?.workingDays || [0, 1, 2, 3, 4, 5, 6]; // Default: all days
+    const hours = (user?.workingHours as any) || { start: 0, end: 24 };
     const startHour = hours.start;
     const endHour = hours.end;
 
