@@ -1,48 +1,54 @@
 # --------- BUILDER STAGE ---------
+# Full monorepo install + build. Heavy (~3 GB) but never shipped.
 FROM node:20-bookworm-slim AS builder
 
-# Set the working directory
 WORKDIR /app
 
-# Install openssl (required for Prisma to build the query engine properly)
 RUN apt-get update && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
 
-# Copy package dependencies
-COPY package.json package-lock.json* ./
-
-# Copy all the monorepo files
+# Copy everything (.dockerignore strips node_modules / dist / .next).
 COPY . .
 
-# Install dependencies (respecting lockfile if present)
 RUN npm install
-
-# Generate Prisma Client natively
 RUN npx prisma generate --schema=packages/db/schema.prisma
-
-# Build the backend workspace using Turbo
 RUN npx turbo run build --filter=backend
 
+# Strip devDependencies across all workspaces — drops tsup, typescript,
+# @types/*, ts-node-dev, etc. so the runtime image carries only what the
+# running process actually needs.
+RUN npm prune --omit=dev
+
 # --------- RUNNER STAGE ---------
+# Slim runtime: pruned node_modules + built dist + Playwright Chromium.
+# Result: ~700 MB instead of ~3.7 GB.
 FROM node:20-bookworm-slim AS runner
 
 WORKDIR /app
 
-# Install ONLY XVFB and Chromium's specific headless dependencies (ignoring Firefox/WebKit bloat)
-# Adding openssl because Prisma Client requires it to query the Database at runtime
+# xvfb for headed Playwright in cloud; openssl for Prisma runtime.
 RUN apt-get update && apt-get install -y \
-    xvfb \
-    openssl \
+        xvfb \
+        openssl \
+        ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy node_modules from builder to ensure playwright is available
+# Production node_modules only.
 COPY --from=builder /app/node_modules ./node_modules
 
-# Install Playwright browsers
+# Workspace package.jsons — npm + Prisma resolve paths off these.
+COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/apps/backend/package.json ./apps/backend/package.json
+COPY --from=builder /app/packages/db/package.json ./packages/db/package.json
+COPY --from=builder /app/packages/types/package.json ./packages/types/package.json
+
+# Prisma schema — needed if any runtime path triggers a generate or push.
+COPY --from=builder /app/packages/db/schema.prisma ./packages/db/schema.prisma
+
+# Built backend bundle. tsup bundles @repo/db + @repo/types in, so the
+# packages' own dist dirs aren't needed at runtime.
+COPY --from=builder /app/apps/backend/dist ./apps/backend/dist
+
+# Playwright Chromium. Install last — heavy browser layer rarely changes.
 RUN npx playwright install chromium && npx playwright install-deps chromium
 
-# Copy the built source and installed node_modules from the builder stage
-# This ensures we don't carry over npm caches or temporary build files from ~/.npm
-COPY --from=builder /app ./
-
-# Start the backend with xvfb-run to support headed browser mode in cloud seamlessly
 CMD ["sh", "-c", "echo '🚀 STARTING BACKEND WITH XVFB' && xvfb-run -a node apps/backend/dist/server.js"]
