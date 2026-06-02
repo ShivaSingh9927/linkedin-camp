@@ -30,6 +30,7 @@ export interface ProviderContext {
     lead: {
         id: string;
         email: string | null;
+        phone: string | null;
         firstName: string | null;
         lastName: string | null;
         jobTitle: string | null;
@@ -98,6 +99,7 @@ export async function syncHubSpot(
         email: ctx.lead.email,
         firstname: ctx.lead.firstName || undefined,
         lastname: ctx.lead.lastName || undefined,
+        phone: ctx.lead.phone || undefined,
         website: ctx.lead.linkedinUrl,
         jobtitle: ctx.lead.jobTitle || undefined,
         company: ctx.lead.company || undefined,
@@ -209,6 +211,7 @@ export async function syncPipedrive(
     const body: Record<string, any> = {
         name: fullName(ctx.lead),
         email: ctx.lead.email ? [{ value: ctx.lead.email, primary: true }] : undefined,
+        phone: ctx.lead.phone ? [{ value: ctx.lead.phone, primary: true }] : undefined,
         job_title: ctx.lead.jobTitle || undefined,
     };
 

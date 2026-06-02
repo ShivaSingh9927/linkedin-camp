@@ -69,6 +69,7 @@ export async function updateLeadEnrichment(
     if (output.jobTitle) updateData.jobTitle = output.jobTitle;
     if (output.about) updateData.aboutInfo = output.about;
     if (output.email) updateData.email = output.email;
+    if (output.phone) updateData.phone = output.phone;
 
     if (Object.keys(updateData).length > 0) {
         await prisma.lead.update({

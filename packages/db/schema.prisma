@@ -172,6 +172,7 @@ model Lead {
   company              String?
   location             String?
   email                String?
+  phone                String?
   country              String?
   gender               String?
   tags                 String[]               @default([])

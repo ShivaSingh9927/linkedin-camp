@@ -63,6 +63,7 @@ export async function handleCrmEvent(payload: CrmEventPayload): Promise<void> {
         lead: {
             id: lead.id,
             email: lead.email,
+            phone: lead.phone,
             firstName: lead.firstName,
             lastName: lead.lastName,
             jobTitle: lead.jobTitle,
