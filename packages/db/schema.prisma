@@ -22,69 +22,74 @@ model ActionLog {
 }
 
 model BusinessProfile {
-  id                   String    @id @default(cuid())
-  userId               String    @unique
-  name                 String?
-  company              String?
-  persona              String?
-  valueProp            String?
-  style                String?
-  keywords             String[]  @default([])
-  targetAudience       String?
-  industry             String?
-  website              String?
-  heardFrom            String?
-  mainPainPoint        String?
-  usp                  String?
-  companyDescription   String?
-  products             String?
-  differentiators      String?
-  caseStudies          String?
-  communicationStyle   String?
-  writingSamples       Json?
-  tonePreferences      String[]  @default([])
-  aiStrategy           Json?
+  id                    String    @id @default(cuid())
+  userId                String    @unique
+  name                  String?
+  company               String?
+  persona               String?
+  valueProp             String?
+  style                 String?
+  keywords              String[]  @default([])
+  targetAudience        String?
+  industry              String?
+  website               String?
+  heardFrom             String?
+  mainPainPoint         String?
+  usp                   String?
+  companyDescription    String?
+  products              String?
+  differentiators       String?
+  caseStudies           String?
+  communicationStyle    String?
+  writingSamples        Json?
+  tonePreferences       String[]  @default([])
+  aiStrategy            Json?
   aiStrategyGeneratedAt DateTime?
-  websiteScrapedAt     DateTime?
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
-  User                 User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  websiteScrapedAt      DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  User                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model StrategyHistory {
-  id              String   @id @default(cuid())
-  userId          String
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  version         Int
-  generatedAt     DateTime @default(now())
-  trigger         String
-  inputSnapshot   Json
-  outputStrategy  Json
-  reviewIssues    Json?
-  performance     Json?
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  version        Int
+  generatedAt    DateTime @default(now())
+  trigger        String
+  inputSnapshot  Json
+  outputStrategy Json
+  reviewIssues   Json?
+  performance    Json?
 
   @@index([userId, version])
 }
 
 model Campaign {
-  id           String         @id @default(cuid())
-  userId       String
-  name        String
-  status      CampaignStatus @default(DRAFT)
-  workflow    Json?
-  workflowJson Json?
-  objective   String?
-  description String?    // Campaign description for AI-generated messages
-  cta         String?
-  toneOverride String?
-  createdAt   DateTime     @default(now())
-  ActionLog   ActionLog[]
-  User       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  CampaignLead CampaignLead[]
+  id                   String                 @id @default(cuid())
+  userId               String
+  name                 String
+  status               CampaignStatus         @default(DRAFT)
+  // Position in the user's FIFO queue when status=QUEUED. Null when not queued.
+  // Lower = earlier promotion. Only one ACTIVE per user; QUEUED campaigns
+  // promote one-at-a-time as the active campaign terminates.
+  queuePosition        Int?
+  workflow             Json?
+  workflowJson         Json?
+  objective            String?
+  description          String? // Campaign description for AI-generated messages
+  cta                  String?
+  toneOverride         String?
+  createdAt            DateTime               @default(now())
+  ActionLog            ActionLog[]
+  User                 User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  CampaignLead         CampaignLead[]
   CampaignLeadProgress CampaignLeadProgress[]
-  WorkerLog  WorkerLog[]
+  WorkerLog            WorkerLog[]
 
   @@index([userId, status])
+  @@index([userId, queuePosition])
   @@index([status])
 }
 
@@ -135,7 +140,7 @@ model LeadTag {
   leadId    String
   tag       String
   createdAt DateTime @default(now())
-  Lead      Lead    @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  Lead      Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
 
   @@unique([leadId, tag])
 }
@@ -155,32 +160,32 @@ model Integration {
 }
 
 model Lead {
-  id            String         @id @default(cuid())
-  userId        String
-  linkedinUrl   String
-  firstName     String?
-  lastName      String?
-  headline      String?
-  jobTitle      String?
-  company       String?
-  location      String?
-  email         String?
-  country       String?
-  gender        String?
-  tags          String[]       @default([])
-  status        LeadStatus     @default(IMPORTED)
-  aboutInfo     String?
-  latestPost    String?
-  latestPostUrl String?
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime @updatedAt
-  ActionLog     ActionLog[]
-  CampaignLead  CampaignLead[]
+  id                   String                 @id @default(cuid())
+  userId               String
+  linkedinUrl          String
+  firstName            String?
+  lastName             String?
+  headline             String?
+  jobTitle             String?
+  company              String?
+  location             String?
+  email                String?
+  country              String?
+  gender               String?
+  tags                 String[]               @default([])
+  status               LeadStatus             @default(IMPORTED)
+  aboutInfo            String?
+  latestPost           String?
+  latestPostUrl        String?
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+  ActionLog            ActionLog[]
+  CampaignLead         CampaignLead[]
   CampaignLeadProgress CampaignLeadProgress[]
-  LeadTag        LeadTag[]
-  User          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  Message       Message[]
-  WorkerLog     WorkerLog[]
+  LeadTag              LeadTag[]
+  User                 User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  Message              Message[]
+  WorkerLog            WorkerLog[]
 
   @@unique([userId, linkedinUrl])
   @@index([userId])
@@ -246,7 +251,7 @@ model Proxy {
   linkedinBanned Boolean   @default(false)
   bannedAt       DateTime?
   createdAt      DateTime  @default(now())
-  updatedAt      DateTime @updatedAt
+  updatedAt      DateTime  @updatedAt
   User           User[]
 }
 
@@ -329,13 +334,13 @@ model User {
   lastCloudActionAt       DateTime?
   proxyId                 String?
   createdAt               DateTime          @default(now())
-  updatedAt               DateTime         @default(now())
+  updatedAt               DateTime          @default(now())
   linkedinUrl             String?
   lastOnboardingEmailAt   DateTime?
-  hubspotToken            String?  // Encrypted HubSpot Private Access Token
-  pipedriveToken          String?  // Encrypted Pipedrive API Token
-  notionToken             String?  // Encrypted Notion Internal Integration Token
-  notionDatabaseId        String?  // Encrypted Notion Database ID
+  hubspotToken            String? // Encrypted HubSpot Private Access Token
+  pipedriveToken          String? // Encrypted Pipedrive API Token
+  notionToken             String? // Encrypted Notion Internal Integration Token
+  notionDatabaseId        String? // Encrypted Notion Database ID
   profileData             Json?
   sessionInvalid          Boolean           @default(false)
   sessionPath             String?
@@ -381,6 +386,7 @@ model WorkerLog {
 
 enum CampaignStatus {
   DRAFT
+  QUEUED
   ACTIVE
   PAUSED
   COMPLETED

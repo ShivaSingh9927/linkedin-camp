@@ -189,9 +189,19 @@ export async function recomputeCampaignStatus(campaignId: string): Promise<void>
     if (campaign.status === 'PAUSED' || campaign.status === 'CANCELLED') return;
     if (campaign.status === 'COMPLETED') return;
 
-    await prisma.campaign.update({
+    const completed = await prisma.campaign.update({
         where: { id: campaignId },
         data: { status: 'COMPLETED' },
+        select: { userId: true },
     });
     console.log(`[lifecycle] campaign ${campaignId} → COMPLETED (all ${terminalRows} leads terminal)`);
+
+    // Promote the user's next queued campaign, if any. Lazy-imported to
+    // avoid the worker → engine → worker import cycle at module load.
+    try {
+        const { promoteNextQueuedCampaign } = await import('../../services/campaign-queue.service');
+        await promoteNextQueuedCampaign(completed.userId);
+    } catch (err: any) {
+        console.error(`[lifecycle] promotion failed for user ${completed.userId}:`, err.message);
+    }
 }

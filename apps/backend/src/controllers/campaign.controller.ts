@@ -2,6 +2,9 @@ import { Response } from 'express';
 import { prisma } from '@repo/db';
 import { getOrAssignProxy } from '../services/proxy.service';
 import { enqueueCampaign } from '../workers/campaign-worker';
+import { leadCapForTier } from '../config/plans';
+import { queueCampaign as queueCampaignSvc, unqueueCampaign as unqueueCampaignSvc, reorderQueue } from '../services/campaign-queue.service';
+import { estimateCampaignEta } from '../campaign-engine/safety/eta';
 
 export const createCampaign = async (req: any, res: Response) => {
     const { name, workflow, workflowJson, leads, objective, description, cta, toneOverride } = req.body;
@@ -132,9 +135,47 @@ export const startCampaign = async (req: any, res: Response) => {
         console.log('Campaign found:', campaign ? 'yes' : 'no');
         if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
 
+        // Resolve the effective lead set up front so caps + queue decisions
+        // can be made before any DB write.
+        const user = await prisma.user.findUnique({
+            where: { id: userId },
+            select: { tier: true },
+        });
+        const leadCap = leadCapForTier(user?.tier as any);
+
+        let effectiveLeadCount = leadIds.length;
+        if (effectiveLeadCount === 0) {
+            effectiveLeadCount = await prisma.campaignLead.count({ where: { campaignId: id } });
+        }
+
+        if (effectiveLeadCount > leadCap) {
+            return res.status(400).json({
+                error: 'LEAD_CAP_EXCEEDED',
+                message: `Your plan allows ${leadCap} leads per campaign (got ${effectiveLeadCount}). Reduce the lead count or upgrade your plan.`,
+                cap: leadCap,
+                provided: effectiveLeadCount,
+            });
+        }
+
+        // 1-active-per-user invariant. LinkedIn caps an account at ~58
+        // actions/day, so running multiple campaigns in parallel doesn't
+        // raise throughput — it just confuses progress reporting. The user
+        // should explicitly queue the campaign instead.
+        const existingActive = await prisma.campaign.findFirst({
+            where: { userId, status: 'ACTIVE', id: { not: id } },
+            select: { id: true, name: true },
+        });
+        if (existingActive) {
+            return res.status(409).json({
+                error: 'ACTIVE_CAMPAIGN_EXISTS',
+                message: `You already have an active campaign ("${existingActive.name}"). Pause it, wait for it to finish, or queue this campaign to run next.`,
+                activeCampaignId: existingActive.id,
+            });
+        }
+
         const updatedCampaign = await prisma.campaign.update({
             where: { id, userId },
-            data: { status: 'ACTIVE' },
+            data: { status: 'ACTIVE', queuePosition: null },
         });
 
         console.log('Campaign status updated to ACTIVE');
@@ -271,6 +312,49 @@ export const pauseCampaign = async (req: any, res: Response) => {
     } catch (error) {
         res.status(500).json({ error: 'Failed to pause campaign' });
     }
+};
+
+export const queueCampaign = async (req: any, res: Response) => {
+    const { id } = req.params;
+    const userId = req.user.id;
+    try {
+        const updated = await queueCampaignSvc(userId, id);
+        res.json(updated);
+    } catch (err: any) {
+        res.status(400).json({ error: err.message });
+    }
+};
+
+export const unqueueCampaign = async (req: any, res: Response) => {
+    const { id } = req.params;
+    const userId = req.user.id;
+    try {
+        const updated = await unqueueCampaignSvc(userId, id);
+        res.json(updated);
+    } catch (err: any) {
+        res.status(400).json({ error: err.message });
+    }
+};
+
+export const reorderQueueHandler = async (req: any, res: Response) => {
+    const userId = req.user.id;
+    const { order } = req.body || {};
+    if (!Array.isArray(order)) return res.status(400).json({ error: 'order must be an array of campaign IDs' });
+    try {
+        const final = await reorderQueue(userId, order);
+        res.json({ order: final });
+    } catch (err: any) {
+        res.status(400).json({ error: err.message });
+    }
+};
+
+export const getCampaignEta = async (req: any, res: Response) => {
+    const { id } = req.params;
+    const userId = req.user.id;
+    const leadCount = await prisma.campaignLead.count({
+        where: { campaignId: id, Campaign: { userId } },
+    });
+    res.json({ leadCount, ...estimateCampaignEta(leadCount) });
 };
 
 export const deleteCampaign = async (req: any, res: Response) => {

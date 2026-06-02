@@ -404,7 +404,11 @@ export const initCampaignWorker = () => {
         }
     }, {
         connection: redisConnection as any,
-        concurrency: 1, // Stay safe: One campaign at a time to avoid IP flags
+        // Worker box: 4 cores, 7.6 GB RAM. 6 gives ~9-11 Chromium headroom
+        // and stays under the CPU ceiling (4 cores × 2). Per-account Redis
+        // lock still serializes jobs for the SAME user — concurrency only
+        // unlocks parallelism across different users.
+        concurrency: parseInt(process.env.WORKER_CONCURRENCY || '6', 10),
     });
 
     worker.on('failed', (job, err) => {

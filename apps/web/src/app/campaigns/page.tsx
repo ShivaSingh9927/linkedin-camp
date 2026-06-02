@@ -32,6 +32,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import api from '@/lib/api';
 import { SafetyQuotaBadge } from '@/components/SafetyQuotaBadge';
+import { CampaignEta } from '@/components/CampaignEta';
 import { CampaignNameModal } from '@/components/CampaignNameModal';
 import { io, Socket } from 'socket.io-client';
 import { toast } from 'sonner';
@@ -203,12 +204,41 @@ export default function CampaignsPage() {
         try {
             if (currentStatus === 'ACTIVE') {
                 await api.post(`/campaigns/${id}/pause`);
+            } else if (currentStatus === 'QUEUED') {
+                // Pulling out of the queue → DRAFT
+                await api.post(`/campaigns/${id}/unqueue`);
             } else {
                 await api.post(`/campaigns/${id}/start`);
             }
             fetchCampaigns();
-        } catch (error) {
+        } catch (error: any) {
+            // 409 ACTIVE_CAMPAIGN_EXISTS — offer to queue this one instead.
+            if (error?.response?.status === 409 && error.response.data?.error === 'ACTIVE_CAMPAIGN_EXISTS') {
+                const activeName = error.response.data?.message?.match(/"([^"]+)"/)?.[1] || 'another campaign';
+                const shouldQueue = confirm(
+                    `You already have an active campaign (${activeName}). ` +
+                    `Only one campaign can run at a time on LinkedIn.\n\n` +
+                    `Queue this campaign to run next when the current one finishes?`
+                );
+                if (shouldQueue) {
+                    try {
+                        await api.post(`/campaigns/${id}/queue`);
+                        toast.success('Campaign queued. It will start automatically when the active one completes.');
+                        fetchCampaigns();
+                    } catch (qErr: any) {
+                        toast.error('Failed to queue campaign: ' + (qErr?.response?.data?.error || qErr.message));
+                    }
+                }
+                return;
+            }
+            // 400 LEAD_CAP_EXCEEDED — show the cap clearly.
+            if (error?.response?.status === 400 && error.response.data?.error === 'LEAD_CAP_EXCEEDED') {
+                const { cap, provided } = error.response.data;
+                toast.error(`Too many leads (${provided}/${cap}). Remove some leads or upgrade your plan.`);
+                return;
+            }
             console.error('Failed to toggle campaign status:', error);
+            toast.error('Failed to update campaign');
         }
     };
 
@@ -394,13 +424,27 @@ const removeLeadFromCampaign = async (campaignId: string, leadId: string) => {
         }
     };
 
+    // Order: ACTIVE first (one of), then QUEUED by queuePosition asc, then
+    // everything else by createdAt desc. This makes the user's pipeline
+    // obvious at a glance: what's running, what's next, what's done.
+    const sortedCampaigns = [...campaigns].sort((a, b) => {
+        const rank = (s: string) => s === 'ACTIVE' ? 0 : s === 'QUEUED' ? 1 : 2;
+        const ra = rank(a.status), rb = rank(b.status);
+        if (ra !== rb) return ra - rb;
+        if (a.status === 'QUEUED' && b.status === 'QUEUED') {
+            return (a.queuePosition ?? 999) - (b.queuePosition ?? 999);
+        }
+        return (b.createdAt || '').localeCompare(a.createdAt || '');
+    });
+
     const filteredCampaigns = filter === 'ALL'
-        ? campaigns
-        : campaigns.filter(c => c.status === filter);
+        ? sortedCampaigns
+        : sortedCampaigns.filter(c => c.status === filter);
 
     const statusCounts = {
         ALL: campaigns.length,
         ACTIVE: campaigns.filter(c => c.status === 'ACTIVE').length,
+        QUEUED: campaigns.filter(c => c.status === 'QUEUED').length,
         PAUSED: campaigns.filter(c => c.status === 'PAUSED').length,
         DRAFT: campaigns.filter(c => c.status === 'DRAFT').length,
     };
@@ -505,12 +549,13 @@ const removeLeadFromCampaign = async (campaignId: string, leadId: string) => {
 
             {/* Filter Tabs */}
             <div className="flex flex-wrap items-center gap-2">
-                {(['ALL', 'ACTIVE', 'PAUSED', 'DRAFT'] as const).map((tab) => {
-                    const icons: Record<string, any> = { ALL: Target, ACTIVE: Play, PAUSED: Pause, DRAFT: Clock };
+                {(['ALL', 'ACTIVE', 'QUEUED', 'PAUSED', 'DRAFT'] as const).map((tab) => {
+                    const icons: Record<string, any> = { ALL: Target, ACTIVE: Play, QUEUED: Clock, PAUSED: Pause, DRAFT: Clock };
                     const Icon = icons[tab];
                     const colors: Record<string, string> = {
                         ALL: 'text-primary',
                         ACTIVE: 'text-emerald-500',
+                        QUEUED: 'text-blue-500',
                         PAUSED: 'text-amber-500',
                         DRAFT: 'text-muted-foreground',
                     };
@@ -596,12 +641,17 @@ const removeLeadFromCampaign = async (campaignId: string, leadId: string) => {
                                                 "text-[10px] font-black px-4 py-1.5 rounded-full uppercase tracking-widest border shadow-sm",
                                                 campaign.status === 'ACTIVE'
                                                     ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20'
-                                                    : campaign.status === 'PAUSED'
-                                                        ? 'bg-amber-500/10 text-amber-600 border-amber-500/20'
-                                                        : 'bg-muted text-muted-foreground border-border'
+                                                    : campaign.status === 'QUEUED'
+                                                        ? 'bg-blue-500/10 text-blue-600 border-blue-500/20'
+                                                        : campaign.status === 'PAUSED'
+                                                            ? 'bg-amber-500/10 text-amber-600 border-amber-500/20'
+                                                            : 'bg-muted text-muted-foreground border-border'
                                             )}>
-                                                {campaign.status}
+                                                {campaign.status}{campaign.status === 'QUEUED' && campaign.queuePosition ? ` #${campaign.queuePosition}` : ''}
                                             </span>
+                                            {(campaign.status === 'ACTIVE' || campaign.status === 'QUEUED') && (
+                                                <CampaignEta campaignId={campaign.id} />
+                                            )}
                                         </div>
                                     </td>
                                     <td className="px-10 py-8">
@@ -700,9 +750,11 @@ const removeLeadFromCampaign = async (campaignId: string, leadId: string) => {
                                 </Link>
                                 <span className={cn(
                                     "text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-widest border shrink-0",
-                                    campaign.status === 'ACTIVE' ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20' : 'bg-muted text-muted-foreground'
+                                    campaign.status === 'ACTIVE' ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20'
+                                        : campaign.status === 'QUEUED' ? 'bg-blue-500/10 text-blue-600 border-blue-500/20'
+                                        : 'bg-muted text-muted-foreground'
                                 )}>
-                                    {campaign.status}
+                                    {campaign.status}{campaign.status === 'QUEUED' && campaign.queuePosition ? ` #${campaign.queuePosition}` : ''}
                                 </span>
                             </div>
                             <div className="flex items-center justify-between">
