@@ -5,6 +5,7 @@ import { enqueueCampaign } from '../workers/campaign-worker';
 import { leadCapForTier } from '../config/plans';
 import { queueCampaign as queueCampaignSvc, unqueueCampaign as unqueueCampaignSvc, reorderQueue } from '../services/campaign-queue.service';
 import { estimateCampaignEta } from '../campaign-engine/safety/eta';
+import { syncLeadToCRMs } from '../services/crmService';
 
 export const createCampaign = async (req: any, res: Response) => {
     const { name, workflow, workflowJson, leads, objective, description, cta, toneOverride } = req.body;
@@ -346,6 +347,474 @@ export const reorderQueueHandler = async (req: any, res: Response) => {
     } catch (err: any) {
         res.status(400).json({ error: err.message });
     }
+};
+
+/**
+ * Compact overview payload for the dedicated campaign detail page:
+ * header strip data, KPI counts, progress, and the most-recent action
+ * (used to power the "Currently …" live ribbon — falls back to flavor
+ * copy on the frontend when null).
+ */
+export const getCampaignOverview = async (req: any, res: Response) => {
+    const { id } = req.params;
+    const userId = req.user.id;
+    try {
+        const campaign = await prisma.campaign.findUnique({
+            where: { id, userId },
+            select: {
+                id: true, name: true, status: true, queuePosition: true,
+                createdAt: true, objective: true,
+            },
+        });
+        if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+
+        const totalLeads = await prisma.campaignLead.count({ where: { campaignId: id } });
+        const completedLeads = await prisma.campaignLead.count({
+            where: { campaignId: id, isCompleted: true },
+        });
+
+        // Per-action-type tallies from ActionLog scoped to this campaign.
+        // groupBy keeps this cheap even on large campaigns.
+        const actionTallies = await prisma.actionLog.groupBy({
+            by: ['actionType'],
+            where: { campaignId: id, status: 'SUCCESS' },
+            _count: { _all: true },
+        });
+        const tally = (t: string) => actionTallies.find(a => a.actionType === t)?._count._all ?? 0;
+
+        const repliedLeads = await prisma.lead.count({
+            where: {
+                status: 'REPLIED',
+                CampaignLead: { some: { campaignId: id } },
+            },
+        });
+
+        const kpis = {
+            totalLeads,
+            invited: tally('connect'),
+            connected: tally('connect-accept'),
+            messaged: tally('send-message'),
+            replied: repliedLeads,
+            replyRatePct: totalLeads ? Math.round((repliedLeads / totalLeads) * 100) : 0,
+        };
+
+        const progressPct = totalLeads ? Math.round((completedLeads / totalLeads) * 100) : 0;
+        const eta = estimateCampaignEta(totalLeads, campaign.createdAt);
+
+        // "Currently" = most recent SUCCESS action in the last 60s. Older
+        // than that and we treat the worker as idle so the frontend swaps
+        // in flavor copy.
+        const recentCutoff = new Date(Date.now() - 60 * 1000);
+        const latest = await prisma.actionLog.findFirst({
+            where: { campaignId: id, executedAt: { gte: recentCutoff } },
+            orderBy: { executedAt: 'desc' },
+            select: { actionType: true, executedAt: true, leadId: true },
+        });
+        let currentlyProcessing: any = null;
+        if (latest?.leadId) {
+            const lead = await prisma.lead.findUnique({
+                where: { id: latest.leadId },
+                select: { firstName: true, lastName: true, company: true },
+            });
+            currentlyProcessing = {
+                action: latest.actionType,
+                leadName: lead ? `${lead.firstName ?? ''} ${lead.lastName ?? ''}`.trim() : 'lead',
+                leadCompany: lead?.company || null,
+                at: latest.executedAt,
+            };
+        }
+
+        res.json({
+            id: campaign.id,
+            name: campaign.name,
+            status: campaign.status,
+            queuePosition: campaign.queuePosition,
+            objective: campaign.objective,
+            startedAt: campaign.createdAt,
+            estimatedCompletionAt: eta.completionDate,
+            estimatedTotalDays: eta.calendarDays,
+            progressPct,
+            kpis,
+            currentlyProcessing,
+        });
+    } catch (err: any) {
+        console.error('getCampaignOverview error:', err);
+        res.status(500).json({ error: 'Failed to fetch overview: ' + err.message });
+    }
+};
+
+/**
+ * Funnel + 7-day actions series for the campaign detail page chart row.
+ * - stages: 6 horizontal bars (Total → Visited → Invited → Connected →
+ *           Messaged → Replied). Counts are SUCCESS-only from ActionLog
+ *           except `total` (from CampaignLead) and `replied` (Lead.status).
+ * - dailySeries: per-day invite/message/reply counts over the last 7 days
+ *           for the line chart.
+ */
+export const getCampaignFunnel = async (req: any, res: Response) => {
+    const { id } = req.params;
+    const userId = req.user.id;
+    try {
+        const exists = await prisma.campaign.findFirst({ where: { id, userId }, select: { id: true } });
+        if (!exists) return res.status(404).json({ error: 'Campaign not found' });
+
+        const totalLeads = await prisma.campaignLead.count({ where: { campaignId: id } });
+
+        const tallies = await prisma.actionLog.groupBy({
+            by: ['actionType'],
+            where: { campaignId: id, status: 'SUCCESS' },
+            _count: { _all: true },
+        });
+        const t = (k: string) => tallies.find(a => a.actionType === k)?._count._all ?? 0;
+
+        const repliedLeads = await prisma.lead.count({
+            where: { status: 'REPLIED', CampaignLead: { some: { campaignId: id } } },
+        });
+
+        const stages = [
+            { key: 'total',     label: 'Leads',           count: totalLeads },
+            { key: 'visited',   label: 'Profile visited', count: t('profile-visit') },
+            { key: 'invited',   label: 'Invite sent',     count: t('connect') },
+            { key: 'connected', label: 'Connection made', count: t('connect-accept') },
+            { key: 'messaged',  label: 'Message sent',    count: t('send-message') },
+            { key: 'replied',   label: 'Replied',         count: repliedLeads },
+        ];
+
+        // 7-day rolling series for invites / messages / replies. Compute
+        // bucket keys client-side-safely (UTC dates) so the timezone of
+        // the API host doesn't shift bars under the user.
+        const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+        since.setUTCHours(0, 0, 0, 0);
+        const logs = await prisma.actionLog.findMany({
+            where: {
+                campaignId: id, status: 'SUCCESS',
+                executedAt: { gte: since },
+                actionType: { in: ['connect', 'send-message'] },
+            },
+            select: { actionType: true, executedAt: true },
+        });
+        const byDay: Record<string, { invites: number; messages: number; replies: number }> = {};
+        for (let i = 0; i < 7; i++) {
+            const d = new Date(since.getTime() + i * 24 * 60 * 60 * 1000);
+            byDay[d.toISOString().slice(0, 10)] = { invites: 0, messages: 0, replies: 0 };
+        }
+        for (const l of logs) {
+            const k = new Date(l.executedAt).toISOString().slice(0, 10);
+            if (!byDay[k]) continue;
+            if (l.actionType === 'connect') byDay[k].invites++;
+            if (l.actionType === 'send-message') byDay[k].messages++;
+        }
+        // Replies don't have an ActionLog of their own — proxy via Lead
+        // status change timestamps would be ideal but we don't track that
+        // yet. Leave replies=0 in dailySeries for now; the funnel still
+        // shows the total. (Followup: add Lead.statusChangedAt.)
+        const dailySeries = Object.entries(byDay).map(([date, v]) => ({ date, ...v }));
+
+        res.json({ stages, dailySeries });
+    } catch (err: any) {
+        console.error('getCampaignFunnel error:', err);
+        res.status(500).json({ error: 'Failed to fetch funnel: ' + err.message });
+    }
+};
+
+/**
+ * Paginated lead list for the campaign Leads tab.
+ * Filters:
+ *   stage  — 'all' | 'pending' | 'in_progress' | 'replied' | 'completed' | 'failed'
+ *   q      — substring search across firstName/lastName/company/jobTitle
+ *   page, limit
+ */
+export const getCampaignLeads = async (req: any, res: Response) => {
+    const { id } = req.params;
+    const userId = req.user.id;
+    const stage = (req.query.stage as string) || 'all';
+    const q = (req.query.q as string)?.trim();
+    const page = Math.max(1, parseInt((req.query.page as string) || '1', 10));
+    const limit = Math.min(100, Math.max(10, parseInt((req.query.limit as string) || '50', 10)));
+
+    try {
+        const campaign = await prisma.campaign.findFirst({ where: { id, userId }, select: { id: true } });
+        if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+
+        // CampaignLead.status is LeadStatus: IMPORTED | PENDING | CONNECTED
+        // | REPLIED | BOUNCED. We translate UI buckets onto these:
+        //   in_progress = has run but not terminal (CONNECTED, has acted)
+        //   failed = BOUNCED
+        const where: any = { campaignId: id };
+        switch (stage) {
+            case 'pending':     where.status = 'PENDING'; where.isCompleted = false; break;
+            case 'in_progress': where.status = 'CONNECTED'; where.isCompleted = false; break;
+            case 'replied':     where.status = 'REPLIED'; break;
+            case 'completed':   where.isCompleted = true; break;
+            case 'failed':      where.status = 'BOUNCED'; break;
+            // 'all' → no extra filter
+        }
+        if (q) {
+            where.Lead = {
+                OR: [
+                    { firstName: { contains: q, mode: 'insensitive' } },
+                    { lastName:  { contains: q, mode: 'insensitive' } },
+                    { company:   { contains: q, mode: 'insensitive' } },
+                    { jobTitle:  { contains: q, mode: 'insensitive' } },
+                ],
+            };
+        }
+
+        const total = await prisma.campaignLead.count({ where });
+        const rows = await prisma.campaignLead.findMany({
+            where,
+            include: { Lead: true },
+            orderBy: [{ lastActionAt: 'desc' }, { id: 'desc' }],
+            skip: (page - 1) * limit,
+            take: limit,
+        });
+
+        // Stage filter chip counts so the UI doesn't need a second roundtrip.
+        // groupBy across all leads in this campaign — cheap, single query.
+        const counts = await prisma.campaignLead.groupBy({
+            by: ['status', 'isCompleted'],
+            where: { campaignId: id },
+            _count: { _all: true },
+        });
+        const stageCounts = { all: 0, pending: 0, in_progress: 0, replied: 0, completed: 0, failed: 0 };
+        for (const c of counts) {
+            stageCounts.all += c._count._all;
+            if (c.isCompleted) stageCounts.completed += c._count._all;
+            else if (c.status === 'PENDING')   stageCounts.pending     += c._count._all;
+            else if (c.status === 'CONNECTED') stageCounts.in_progress += c._count._all;
+            if (c.status === 'REPLIED') stageCounts.replied += c._count._all;
+            if (c.status === 'BOUNCED') stageCounts.failed  += c._count._all;
+        }
+
+        const leads = rows.map(r => ({
+            id: r.Lead.id,
+            campaignLeadId: r.id,
+            name: `${r.Lead.firstName ?? ''} ${r.Lead.lastName ?? ''}`.trim() || 'Unknown',
+            company: r.Lead.company,
+            jobTitle: r.Lead.jobTitle,
+            linkedinUrl: r.Lead.linkedinUrl,
+            stage: r.isCompleted ? 'completed' : r.status.toLowerCase(),
+            lastActionAt: r.lastActionAt,
+            nextActionAt: r.nextActionDate,
+        }));
+
+        res.json({ leads, total, page, limit, stageCounts });
+    } catch (err: any) {
+        console.error('getCampaignLeads error:', err);
+        res.status(500).json({ error: 'Failed to fetch leads: ' + err.message });
+    }
+};
+
+/**
+ * Bulk-sync selected leads to the user's configured CRMs. Iterates the
+ * existing per-lead syncLeadToCRMs (HubSpot/Pipedrive/Notion). Capped
+ * at 200 IDs per call so a runaway selection can't hammer the providers.
+ */
+export const bulkSyncLeadsToCRM = async (req: any, res: Response) => {
+    const userId = req.user.id;
+    const { id } = req.params;
+    const { leadIds } = req.body || {};
+    if (!Array.isArray(leadIds) || leadIds.length === 0) {
+        return res.status(400).json({ error: 'leadIds must be a non-empty array' });
+    }
+    if (leadIds.length > 200) return res.status(400).json({ error: 'Maximum 200 leads per bulk sync' });
+
+    const exists = await prisma.campaign.findFirst({ where: { id, userId }, select: { id: true } });
+    if (!exists) return res.status(404).json({ error: 'Campaign not found' });
+
+    // Defensive — only sync leads that actually belong to this campaign.
+    const valid = await prisma.campaignLead.findMany({
+        where: { campaignId: id, leadId: { in: leadIds } },
+        select: { leadId: true },
+    });
+    const validIds = valid.map(v => v.leadId);
+
+    const results: Array<{ leadId: string; providers: any[] }> = [];
+    let ok = 0, failed = 0;
+    for (const leadId of validIds) {
+        try {
+            const r = await syncLeadToCRMs(userId, leadId);
+            results.push({ leadId, providers: r });
+            if (r.every(p => p.success)) ok++; else failed++;
+        } catch (err: any) {
+            results.push({ leadId, providers: [{ error: err.message }] });
+            failed++;
+        }
+    }
+    res.json({ ok, failed, total: validIds.length, results });
+};
+
+/**
+ * Move a set of leads from this campaign into a target campaign. The
+ * target must belong to the same user. Respects the anti-spam rule —
+ * a lead currently active in any OTHER campaign is rejected for that
+ * lead only (not the whole batch).
+ */
+export const bulkMoveLeadsToCampaign = async (req: any, res: Response) => {
+    const userId = req.user.id;
+    const { id } = req.params;
+    const { leadIds, targetCampaignId } = req.body || {};
+    if (!Array.isArray(leadIds) || !leadIds.length || !targetCampaignId) {
+        return res.status(400).json({ error: 'leadIds[] and targetCampaignId required' });
+    }
+    if (leadIds.length > 200) return res.status(400).json({ error: 'Maximum 200 leads per bulk move' });
+    if (targetCampaignId === id) return res.status(400).json({ error: 'Target campaign must differ from source' });
+
+    const [src, tgt] = await Promise.all([
+        prisma.campaign.findFirst({ where: { id, userId }, select: { id: true } }),
+        prisma.campaign.findFirst({ where: { id: targetCampaignId, userId }, select: { id: true } }),
+    ]);
+    if (!src) return res.status(404).json({ error: 'Source campaign not found' });
+    if (!tgt) return res.status(404).json({ error: 'Target campaign not found' });
+
+    // Anti-spam: lead already active elsewhere (other than source) is blocked.
+    const activeElsewhere = await prisma.campaignLead.findMany({
+        where: { leadId: { in: leadIds }, isCompleted: false, campaignId: { notIn: [id] } },
+        select: { leadId: true },
+    });
+    const blocked = new Set(activeElsewhere.map(a => a.leadId));
+    const movable = leadIds.filter((x: string) => !blocked.has(x));
+
+    let moved = 0;
+    for (const leadId of movable) {
+        try {
+            await prisma.campaignLead.upsert({
+                where: { campaignId_leadId: { campaignId: targetCampaignId, leadId } },
+                create: { id: require('crypto').randomUUID(), campaignId: targetCampaignId, leadId, isCompleted: false, status: 'PENDING' },
+                update: { isCompleted: false, status: 'PENDING' },
+            });
+            moved++;
+        } catch (e) {
+            // Skip individual failures; reported in summary.
+        }
+    }
+    res.json({ moved, blocked: blocked.size, total: leadIds.length });
+};
+
+/**
+ * Audit log of messages sent in this campaign. Used by the Messages tab.
+ * Joins Lead for name/company headers; correlates outbound messages with
+ * any inbound reply for the same lead by closest timestamp.
+ */
+export const getCampaignMessages = async (req: any, res: Response) => {
+    const { id } = req.params;
+    const userId = req.user.id;
+    const page = Math.max(1, parseInt((req.query.page as string) || '1', 10));
+    const limit = Math.min(100, Math.max(10, parseInt((req.query.limit as string) || '50', 10)));
+
+    const exists = await prisma.campaign.findFirst({ where: { id, userId }, select: { id: true } });
+    if (!exists) return res.status(404).json({ error: 'Campaign not found' });
+
+    const where = { campaignId: id, userId };
+    const total = await prisma.message.count({ where });
+    const rows = await prisma.message.findMany({
+        where,
+        include: { Lead: { select: { id: true, firstName: true, lastName: true, company: true, jobTitle: true, linkedinUrl: true, status: true } } },
+        orderBy: { sentAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+    });
+
+    // For each OUTBOUND message, find the FIRST inbound message from the
+    // same lead afterwards — that's the "reply" we display next to it.
+    // One query for all replies, grouped client-side.
+    const leadIds = [...new Set(rows.map(r => r.leadId))];
+    const inbound = await prisma.message.findMany({
+        where: { userId, leadId: { in: leadIds }, direction: 'INBOUND' },
+        orderBy: { sentAt: 'asc' },
+        select: { leadId: true, content: true, sentAt: true },
+    });
+    const firstReplyAfter: Record<string, { content: string; sentAt: Date } | null> = {};
+    const messages = rows.map(m => {
+        let reply: { content: string; sentAt: Date } | null = null;
+        if (m.direction === 'OUTBOUND') {
+            reply = inbound.find(r => r.leadId === m.leadId && r.sentAt > m.sentAt) || null;
+        }
+        return {
+            id: m.id,
+            leadId: m.leadId,
+            leadName: `${m.Lead?.firstName ?? ''} ${m.Lead?.lastName ?? ''}`.trim() || 'Unknown',
+            leadCompany: m.Lead?.company,
+            leadJobTitle: m.Lead?.jobTitle,
+            linkedinUrl: m.Lead?.linkedinUrl,
+            direction: m.direction,
+            content: m.content,
+            source: m.source, // AI / MANUAL / TEMPLATE
+            sentAt: m.sentAt,
+            reply,
+        };
+    });
+
+    res.json({ messages, total, page, limit });
+};
+
+/**
+ * Performance analytics. Three angles:
+ *   - replyRateOverTime: 7-day reply rate by day
+ *   - byJobTitle: top 5 job titles by reply rate (min 3 leads)
+ *   - byCompanyDomain: top 5 company-buckets by reply rate (min 3 leads)
+ * Best-message analysis requires per-variant tracking we don't yet have;
+ * deferred until message variants are first-class.
+ */
+export const getCampaignPerformance = async (req: any, res: Response) => {
+    const { id } = req.params;
+    const userId = req.user.id;
+
+    const exists = await prisma.campaign.findFirst({ where: { id, userId }, select: { id: true } });
+    if (!exists) return res.status(404).json({ error: 'Campaign not found' });
+
+    const leads = await prisma.campaignLead.findMany({
+        where: { campaignId: id },
+        include: { Lead: { select: { status: true, jobTitle: true, company: true } } },
+    });
+    const total = leads.length;
+    const replied = leads.filter(l => l.Lead?.status === 'REPLIED').length;
+    const overallReplyRate = total ? Math.round((replied / total) * 1000) / 10 : 0;
+
+    // Group helper
+    function group(key: 'jobTitle' | 'company') {
+        const map: Record<string, { total: number; replied: number }> = {};
+        for (const l of leads) {
+            const k = (l.Lead?.[key] || 'Unspecified').trim();
+            if (!map[k]) map[k] = { total: 0, replied: 0 };
+            map[k].total++;
+            if (l.Lead?.status === 'REPLIED') map[k].replied++;
+        }
+        return Object.entries(map)
+            .filter(([_, v]) => v.total >= 3)
+            .map(([label, v]) => ({ label, leads: v.total, replied: v.replied, rate: Math.round((v.replied / v.total) * 1000) / 10 }))
+            .sort((a, b) => b.rate - a.rate)
+            .slice(0, 5);
+    }
+
+    // Reply timeline: count of newly-REPLIED leads per day over last 14 days.
+    // Proxied via Message INBOUND timestamps since we don't have Lead.statusChangedAt.
+    const since = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+    const replies = await prisma.message.findMany({
+        where: { userId, direction: 'INBOUND', sentAt: { gte: since }, Lead: { CampaignLead: { some: { campaignId: id } } } },
+        select: { sentAt: true, leadId: true },
+    });
+    const byDay: Record<string, number> = {};
+    for (let i = 0; i < 14; i++) {
+        const d = new Date(since.getTime() + i * 86400000);
+        byDay[d.toISOString().slice(0, 10)] = 0;
+    }
+    // Count distinct leads per day (multiple inbound msgs same day = 1)
+    const seen: Record<string, Set<string>> = {};
+    for (const r of replies) {
+        const k = r.sentAt.toISOString().slice(0, 10);
+        if (!seen[k]) seen[k] = new Set();
+        seen[k].add(r.leadId);
+    }
+    for (const k of Object.keys(byDay)) byDay[k] = seen[k]?.size ?? 0;
+    const replyTimeline = Object.entries(byDay).map(([date, count]) => ({ date, replies: count }));
+
+    res.json({
+        overall: { totalLeads: total, replies: replied, replyRatePct: overallReplyRate },
+        byJobTitle: group('jobTitle'),
+        byCompany: group('company'),
+        replyTimeline,
+    });
 };
 
 export const getCampaignEta = async (req: any, res: Response) => {

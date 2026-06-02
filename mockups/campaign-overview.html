@@ -1,0 +1,430 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Campaign Overview — Mockup</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --primary: #8b5cf6;
+    --primary-fg: #ffffff;
+    --bg: #ffffff;
+    --fg: #0f172a;
+    --muted: #f8fafc;
+    --muted-fg: #64748b;
+    --border: #e2e8f0;
+  }
+  body { font-family: 'Inter', sans-serif; background: var(--muted); color: var(--fg); }
+  .card { background: var(--bg); border: 1px solid var(--border); border-radius: 1.5rem; }
+  .pill { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.35rem 0.85rem; border-radius: 999px; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; border: 1px solid; }
+  .pill-active { background: rgb(16 185 129 / 0.1); color: rgb(5 150 105); border-color: rgb(16 185 129 / 0.2); }
+  .pill-queued { background: rgb(59 130 246 / 0.1); color: rgb(37 99 235); border-color: rgb(59 130 246 / 0.2); }
+  .pill-paused { background: rgb(245 158 11 / 0.1); color: rgb(217 119 6); border-color: rgb(245 158 11 / 0.2); }
+  .pill-replied { background: rgb(168 85 247 / 0.1); color: rgb(126 34 206); border-color: rgb(168 85 247 / 0.2); }
+  .dot-pulse { position: relative; width: 8px; height: 8px; border-radius: 999px; background: rgb(16 185 129); }
+  .dot-pulse::after { content: ''; position: absolute; inset: -3px; border-radius: 999px; background: rgb(16 185 129 / 0.4); animation: ping 1.5s infinite; }
+  @keyframes ping { 0% { transform: scale(0.8); opacity: 0.8; } 80%, 100% { transform: scale(2); opacity: 0; } }
+  .flavor-fade { animation: fade 5s ease-in-out infinite; }
+  @keyframes fade {
+    0%, 90%, 100% { opacity: 1; }
+    95% { opacity: 0.2; }
+  }
+  .funnel-bar { height: 36px; border-radius: 0.75rem; display: flex; align-items: center; padding: 0 1rem; transition: all 0.2s; cursor: pointer; }
+  .funnel-bar:hover { filter: brightness(0.95); transform: translateX(2px); }
+  .h2 { font-weight: 900; font-style: italic; text-transform: uppercase; letter-spacing: -0.025em; }
+  .label-tiny { font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.2em; color: var(--muted-fg); }
+  .tab { padding: 0.75rem 1.5rem; font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.15em; cursor: pointer; border-bottom: 3px solid transparent; transition: all 0.15s; }
+  .tab:hover { color: var(--primary); }
+  .tab.active { color: var(--fg); border-bottom-color: var(--primary); }
+  .sparkline { stroke: var(--primary); fill: none; stroke-width: 2; }
+  .sparkline-fill { fill: var(--primary); opacity: 0.1; }
+</style>
+</head>
+<body class="p-6 lg:p-10">
+
+<div class="max-w-7xl mx-auto space-y-6">
+
+  <!-- Breadcrumb + back -->
+  <div class="flex items-center gap-3 text-xs font-bold text-slate-500 uppercase tracking-widest">
+    <a href="#" class="hover:text-slate-900">← My Campaigns</a>
+    <span class="opacity-30">/</span>
+    <span class="text-slate-900">Q3 outbound to FinTech CTOs</span>
+  </div>
+
+  <!-- HEADER STRIP -->
+  <div class="card p-8 lg:p-10 space-y-8">
+    <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
+      <div class="space-y-3">
+        <div class="flex items-center gap-4 flex-wrap">
+          <h1 class="text-3xl lg:text-4xl h2">Q3 outbound to FinTech CTOs</h1>
+          <button class="text-xs font-bold text-slate-400 hover:text-slate-700">✎ edit</button>
+        </div>
+        <div class="flex items-center gap-3 flex-wrap">
+          <span class="pill pill-active"><span class="dot-pulse"></span> Active</span>
+          <span class="label-tiny opacity-60">Day 6 of ~12 · Started May 28 · Est. finish Jun 14</span>
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <button class="px-5 py-3 bg-amber-500/10 text-amber-600 rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-amber-500/20">⏸ Pause</button>
+        <button class="px-5 py-3 bg-slate-100 text-slate-700 rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-slate-200">↓ Export</button>
+        <button class="px-5 py-3 bg-red-50 text-red-600 rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-red-100">Delete</button>
+      </div>
+    </div>
+
+    <!-- KPI strip -->
+    <div class="grid grid-cols-2 lg:grid-cols-5 gap-4">
+      <div class="bg-slate-50 rounded-2xl p-5 space-y-2">
+        <div class="label-tiny">Leads</div>
+        <div class="flex items-end justify-between">
+          <div class="text-3xl font-black tracking-tight">73</div>
+          <svg width="50" height="22" viewBox="0 0 50 22"><polyline class="sparkline" points="0,18 10,15 20,13 30,10 40,8 50,5" /></svg>
+        </div>
+      </div>
+      <div class="bg-slate-50 rounded-2xl p-5 space-y-2">
+        <div class="label-tiny">Invited</div>
+        <div class="flex items-end justify-between">
+          <div class="text-3xl font-black tracking-tight">47</div>
+          <svg width="50" height="22" viewBox="0 0 50 22"><polyline class="sparkline" points="0,20 10,18 20,15 30,12 40,9 50,6" /></svg>
+        </div>
+      </div>
+      <div class="bg-slate-50 rounded-2xl p-5 space-y-2">
+        <div class="label-tiny">Connected</div>
+        <div class="flex items-end justify-between">
+          <div class="text-3xl font-black tracking-tight">31</div>
+          <svg width="50" height="22" viewBox="0 0 50 22"><polyline class="sparkline" points="0,21 10,19 20,17 30,14 40,11 50,8" /></svg>
+        </div>
+      </div>
+      <div class="bg-slate-50 rounded-2xl p-5 space-y-2">
+        <div class="label-tiny">Replied</div>
+        <div class="flex items-end justify-between">
+          <div class="text-3xl font-black tracking-tight text-purple-600">12</div>
+          <svg width="50" height="22" viewBox="0 0 50 22"><polyline class="sparkline" points="0,22 10,20 20,17 30,14 40,11 50,7" style="stroke: #9333ea;" /></svg>
+        </div>
+      </div>
+      <div class="bg-emerald-50 rounded-2xl p-5 space-y-2 border border-emerald-200">
+        <div class="label-tiny text-emerald-700">Reply rate</div>
+        <div class="flex items-end justify-between">
+          <div class="text-3xl font-black tracking-tight text-emerald-600">18%</div>
+          <span class="text-xs font-bold text-emerald-600">↑ 3pts</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Progress bar -->
+    <div class="space-y-2">
+      <div class="flex justify-between items-end">
+        <span class="label-tiny">Progress</span>
+        <span class="text-xs font-black text-slate-700">58%</span>
+      </div>
+      <div class="h-2 bg-slate-100 rounded-full overflow-hidden">
+        <div class="h-full bg-gradient-to-r from-violet-500 to-purple-600 rounded-full" style="width:58%"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- LIVE STATUS RIBBON -->
+  <div class="card p-6 bg-gradient-to-r from-violet-50 via-white to-emerald-50 border-violet-200/50">
+    <div class="flex items-center gap-4">
+      <div class="w-12 h-12 rounded-2xl bg-violet-500/10 flex items-center justify-center flex-shrink-0">
+        <span class="text-2xl flavor-fade" id="flavorEmoji">🤖</span>
+      </div>
+      <div class="min-w-0 flex-1">
+        <div class="label-tiny mb-1 text-violet-600">Currently</div>
+        <div class="text-base lg:text-lg font-bold text-slate-800 truncate flavor-fade" id="flavorText">
+          Drafting AI message for Priya Sharma · Step 3/5 · Day 2 follow-up
+        </div>
+      </div>
+      <div class="hidden lg:flex items-center gap-2 text-xs font-bold text-slate-500">
+        <span class="dot-pulse"></span>
+        <span>LIVE</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- TWO-COLUMN: funnel + activity -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+    <!-- FUNNEL (2 cols) -->
+    <div class="card p-8 space-y-6 lg:col-span-2">
+      <div class="flex items-center justify-between">
+        <h3 class="text-xl h2">The funnel</h3>
+        <span class="label-tiny">Click any stage to filter leads</span>
+      </div>
+      <div class="space-y-3">
+        <div>
+          <div class="flex justify-between items-center mb-1.5">
+            <span class="text-xs font-black text-slate-700 uppercase tracking-widest">Total leads</span>
+            <span class="text-xs font-black text-slate-500">73 (100%)</span>
+          </div>
+          <div class="funnel-bar bg-violet-500" style="width:100%"><span class="text-white text-xs font-black">73</span></div>
+        </div>
+        <div>
+          <div class="flex justify-between items-center mb-1.5">
+            <span class="text-xs font-black text-slate-700 uppercase tracking-widest">Profile visited</span>
+            <span class="text-xs font-black text-slate-500">68 (93%)</span>
+          </div>
+          <div class="funnel-bar bg-violet-400" style="width:93%"><span class="text-white text-xs font-black">68</span></div>
+        </div>
+        <div>
+          <div class="flex justify-between items-center mb-1.5">
+            <span class="text-xs font-black text-slate-700 uppercase tracking-widest">Invite sent</span>
+            <span class="text-xs font-black text-slate-500">47 (64%)</span>
+          </div>
+          <div class="funnel-bar bg-blue-400" style="width:64%"><span class="text-white text-xs font-black">47</span></div>
+        </div>
+        <div>
+          <div class="flex justify-between items-center mb-1.5">
+            <span class="text-xs font-black text-slate-700 uppercase tracking-widest">Connection made</span>
+            <span class="text-xs font-black text-slate-500">31 (42%)</span>
+          </div>
+          <div class="funnel-bar bg-cyan-400" style="width:42%"><span class="text-white text-xs font-black">31</span></div>
+        </div>
+        <div>
+          <div class="flex justify-between items-center mb-1.5">
+            <span class="text-xs font-black text-slate-700 uppercase tracking-widest">Message sent</span>
+            <span class="text-xs font-black text-slate-500">24 (33%)</span>
+          </div>
+          <div class="funnel-bar bg-teal-400" style="width:33%"><span class="text-white text-xs font-black">24</span></div>
+        </div>
+        <div>
+          <div class="flex justify-between items-center mb-1.5">
+            <span class="text-xs font-black text-purple-700 uppercase tracking-widest">⭐ Replied</span>
+            <span class="text-xs font-black text-purple-600">12 (16%)</span>
+          </div>
+          <div class="funnel-bar bg-emerald-500" style="width:16%"><span class="text-white text-xs font-black">12</span></div>
+        </div>
+      </div>
+      <div class="text-xs text-slate-500 italic">Biggest drop: <strong class="text-slate-700">Invite → Connection (47 → 31, 34% drop)</strong>. Consider tightening your audience filter or testing a new invite line.</div>
+    </div>
+
+    <!-- ACTIVITY FEED (1 col) -->
+    <div class="card p-8 space-y-5">
+      <div class="flex items-center justify-between">
+        <h3 class="text-xl h2">Live activity</h3>
+        <span class="text-[10px] font-black text-emerald-600 flex items-center gap-1.5"><span class="dot-pulse"></span>LIVE</span>
+      </div>
+      <div class="space-y-3">
+        <div class="flex items-start gap-3 text-sm">
+          <div class="w-2 h-2 rounded-full bg-emerald-500 mt-2 flex-shrink-0"></div>
+          <div class="min-w-0 flex-1">
+            <div class="font-bold text-slate-800 truncate">Sent message to Priya Sharma</div>
+            <div class="text-xs text-slate-500">12:04 · CTO @ Acme</div>
+          </div>
+        </div>
+        <div class="flex items-start gap-3 text-sm">
+          <div class="w-2 h-2 rounded-full bg-purple-500 mt-2 flex-shrink-0"></div>
+          <div class="min-w-0 flex-1">
+            <div class="font-bold text-slate-800 truncate">🎉 Reply from Arjun Mehta</div>
+            <div class="text-xs text-purple-600 italic truncate">"Hi Shiva — happy to chat next week..."</div>
+          </div>
+        </div>
+        <div class="flex items-start gap-3 text-sm">
+          <div class="w-2 h-2 rounded-full bg-blue-500 mt-2 flex-shrink-0"></div>
+          <div class="min-w-0 flex-1">
+            <div class="font-bold text-slate-800 truncate">Connected with Rohan K.</div>
+            <div class="text-xs text-slate-500">11:58 · CTO @ Finflow</div>
+          </div>
+        </div>
+        <div class="flex items-start gap-3 text-sm">
+          <div class="w-2 h-2 rounded-full bg-emerald-500 mt-2 flex-shrink-0"></div>
+          <div class="min-w-0 flex-1">
+            <div class="font-bold text-slate-800 truncate">Sent invite to 4 leads</div>
+            <div class="text-xs text-slate-500">11:42 · batch</div>
+          </div>
+        </div>
+        <div class="flex items-start gap-3 text-sm">
+          <div class="w-2 h-2 rounded-full bg-amber-500 mt-2 flex-shrink-0"></div>
+          <div class="min-w-0 flex-1">
+            <div class="font-bold text-slate-800 truncate">Profile not loaded for Sameer T.</div>
+            <div class="text-xs text-amber-600">11:30 · retry queued</div>
+          </div>
+        </div>
+        <div class="flex items-start gap-3 text-sm opacity-60">
+          <div class="w-2 h-2 rounded-full bg-slate-400 mt-2 flex-shrink-0"></div>
+          <div class="min-w-0 flex-1">
+            <div class="font-bold text-slate-800 truncate">Visited profile of Neha S.</div>
+            <div class="text-xs text-slate-500">11:15</div>
+          </div>
+        </div>
+      </div>
+      <button class="w-full text-xs font-black text-violet-600 uppercase tracking-widest py-2 hover:bg-violet-50 rounded-xl">View full log →</button>
+    </div>
+  </div>
+
+  <!-- 7-day chart -->
+  <div class="card p-8 space-y-6">
+    <div class="flex items-center justify-between">
+      <h3 class="text-xl h2">Last 7 days</h3>
+      <div class="flex items-center gap-4 text-xs">
+        <span class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-violet-500"></span><span class="font-bold text-slate-600">Invites</span></span>
+        <span class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-blue-500"></span><span class="font-bold text-slate-600">Messages</span></span>
+        <span class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-purple-500"></span><span class="font-bold text-slate-600">Replies</span></span>
+      </div>
+    </div>
+    <svg viewBox="0 0 700 200" class="w-full h-48">
+      <defs>
+        <linearGradient id="grad" x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0%" stop-color="#8b5cf6" stop-opacity="0.3"/>
+          <stop offset="100%" stop-color="#8b5cf6" stop-opacity="0"/>
+        </linearGradient>
+      </defs>
+      <line x1="0" y1="160" x2="700" y2="160" stroke="#e2e8f0" stroke-dasharray="3,3"/>
+      <line x1="0" y1="110" x2="700" y2="110" stroke="#e2e8f0" stroke-dasharray="3,3"/>
+      <line x1="0" y1="60" x2="700" y2="60" stroke="#e2e8f0" stroke-dasharray="3,3"/>
+      <!-- Invites area -->
+      <path d="M 50 140 L 150 110 L 250 90 L 350 70 L 450 95 L 550 80 L 650 60 L 650 180 L 50 180 Z" fill="url(#grad)"/>
+      <polyline points="50,140 150,110 250,90 350,70 450,95 550,80 650,60" stroke="#8b5cf6" stroke-width="3" fill="none"/>
+      <!-- Messages -->
+      <polyline points="50,170 150,160 250,150 350,130 450,120 550,115 650,100" stroke="#3b82f6" stroke-width="3" fill="none"/>
+      <!-- Replies -->
+      <polyline points="50,180 150,178 250,172 350,168 450,160 550,150 650,140" stroke="#a855f7" stroke-width="3" fill="none"/>
+      <!-- Dots -->
+      <g fill="#8b5cf6">
+        <circle cx="50" cy="140" r="4"/><circle cx="150" cy="110" r="4"/><circle cx="250" cy="90" r="4"/>
+        <circle cx="350" cy="70" r="4"/><circle cx="450" cy="95" r="4"/><circle cx="550" cy="80" r="4"/><circle cx="650" cy="60" r="4"/>
+      </g>
+      <g fill="#64748b" font-size="11" font-weight="700" text-anchor="middle">
+        <text x="50" y="200">May 27</text><text x="150" y="200">May 28</text><text x="250" y="200">May 29</text>
+        <text x="350" y="200">May 30</text><text x="450" y="200">May 31</text><text x="550" y="200">Jun 1</text><text x="650" y="200">Jun 2</text>
+      </g>
+    </svg>
+  </div>
+
+  <!-- TABS -->
+  <div class="card overflow-hidden">
+    <div class="border-b border-slate-200 flex items-center gap-2 px-6">
+      <div class="tab active">Overview</div>
+      <div class="tab">Leads <span class="ml-1 px-2 py-0.5 bg-slate-100 rounded-full text-[10px]">73</span></div>
+      <div class="tab">Messages <span class="ml-1 px-2 py-0.5 bg-slate-100 rounded-full text-[10px]">96</span></div>
+      <div class="tab">Performance</div>
+      <div class="tab">Settings</div>
+    </div>
+
+    <!-- LEADS TABLE PREVIEW -->
+    <div class="p-6 space-y-4">
+      <div class="flex items-center justify-between flex-wrap gap-3">
+        <div class="flex items-center gap-2 flex-wrap">
+          <button class="px-3 py-1.5 bg-slate-900 text-white rounded-full text-[10px] font-black uppercase tracking-widest">All 73</button>
+          <button class="px-3 py-1.5 bg-slate-100 text-slate-600 rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-slate-200">Pending 26</button>
+          <button class="px-3 py-1.5 bg-slate-100 text-slate-600 rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-slate-200">In progress 35</button>
+          <button class="px-3 py-1.5 bg-purple-100 text-purple-700 rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-purple-200">⭐ Replied 12</button>
+          <button class="px-3 py-1.5 bg-slate-100 text-slate-600 rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-slate-200">Failed 0</button>
+        </div>
+        <input type="text" placeholder="Search by name, company…" class="px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm w-64"/>
+      </div>
+
+      <!-- BULK ACTION BAR (shown when items selected) -->
+      <div class="bg-violet-50 border border-violet-200 rounded-2xl p-3 flex items-center justify-between flex-wrap gap-3">
+        <span class="text-sm font-bold text-violet-700 ml-2">3 selected</span>
+        <div class="flex items-center gap-2 flex-wrap">
+          <button class="px-3 py-2 bg-white border border-violet-300 text-violet-700 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-violet-100">↓ Export CSV</button>
+          <button class="px-3 py-2 bg-white border border-orange-300 text-orange-600 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-orange-50">→ Send to HubSpot</button>
+          <button class="px-3 py-2 bg-white border border-blue-300 text-blue-600 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-blue-50">+ Add to campaign</button>
+          <button class="px-3 py-2 bg-white border border-slate-300 text-slate-600 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-slate-100">⊘ Remove</button>
+        </div>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="border-b border-slate-200 text-left">
+              <th class="py-3 px-2"><input type="checkbox" class="rounded"/></th>
+              <th class="py-3 px-2 label-tiny">Lead</th>
+              <th class="py-3 px-2 label-tiny">Stage</th>
+              <th class="py-3 px-2 label-tiny">Last action</th>
+              <th class="py-3 px-2 label-tiny">Next</th>
+              <th class="py-3 px-2 label-tiny">Reply</th>
+              <th class="py-3 px-2 label-tiny">CRM</th>
+              <th class="py-3 px-2"></th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            <tr class="hover:bg-slate-50 cursor-pointer">
+              <td class="py-4 px-2"><input type="checkbox" checked class="rounded"/></td>
+              <td class="py-4 px-2"><div class="font-bold">Priya Sharma</div><div class="text-xs text-slate-500">CTO · Acme</div></td>
+              <td class="py-4 px-2"><span class="pill pill-replied">Replied</span></td>
+              <td class="py-4 px-2 text-xs text-slate-600">Sent msg · 12:04</td>
+              <td class="py-4 px-2 text-xs text-slate-400">—</td>
+              <td class="py-4 px-2 text-xs italic text-slate-700 max-w-xs truncate">"Yes, happy to chat next week!"</td>
+              <td class="py-4 px-2"><span class="text-xs font-bold text-emerald-600">✓ HS</span> <span class="text-xs font-bold text-slate-400">PD</span></td>
+              <td class="py-4 px-2 text-slate-400">›</td>
+            </tr>
+            <tr class="hover:bg-slate-50 cursor-pointer">
+              <td class="py-4 px-2"><input type="checkbox" checked class="rounded"/></td>
+              <td class="py-4 px-2"><div class="font-bold">Arjun Mehta</div><div class="text-xs text-slate-500">Founder · Bolt</div></td>
+              <td class="py-4 px-2"><span class="pill pill-replied">Replied</span></td>
+              <td class="py-4 px-2 text-xs text-slate-600">Reply · 11:48</td>
+              <td class="py-4 px-2 text-xs text-slate-400">—</td>
+              <td class="py-4 px-2 text-xs italic text-slate-700 max-w-xs truncate">"Hi Shiva — interested, what's the…"</td>
+              <td class="py-4 px-2"><span class="text-xs font-bold text-emerald-600">✓ HS</span></td>
+              <td class="py-4 px-2 text-slate-400">›</td>
+            </tr>
+            <tr class="hover:bg-slate-50 cursor-pointer">
+              <td class="py-4 px-2"><input type="checkbox" checked class="rounded"/></td>
+              <td class="py-4 px-2"><div class="font-bold">Rohan K.</div><div class="text-xs text-slate-500">CTO · Finflow</div></td>
+              <td class="py-4 px-2"><span class="pill pill-active"><span class="dot-pulse"></span>Messaged</span></td>
+              <td class="py-4 px-2 text-xs text-slate-600">Sent msg · 11:58</td>
+              <td class="py-4 px-2 text-xs text-slate-600">Day 3 follow-up</td>
+              <td class="py-4 px-2 text-xs text-slate-400">—</td>
+              <td class="py-4 px-2 text-xs text-slate-400">—</td>
+              <td class="py-4 px-2 text-slate-400">›</td>
+            </tr>
+            <tr class="hover:bg-slate-50 cursor-pointer">
+              <td class="py-4 px-2"><input type="checkbox" class="rounded"/></td>
+              <td class="py-4 px-2"><div class="font-bold">Neha S.</div><div class="text-xs text-slate-500">VP Eng · Razorpay</div></td>
+              <td class="py-4 px-2"><span class="pill pill-queued">Invited</span></td>
+              <td class="py-4 px-2 text-xs text-slate-600">Sent invite · 11:42</td>
+              <td class="py-4 px-2 text-xs text-slate-600">Waiting for accept</td>
+              <td class="py-4 px-2 text-xs text-slate-400">—</td>
+              <td class="py-4 px-2 text-xs text-slate-400">—</td>
+              <td class="py-4 px-2 text-slate-400">›</td>
+            </tr>
+            <tr class="hover:bg-slate-50 cursor-pointer">
+              <td class="py-4 px-2"><input type="checkbox" class="rounded"/></td>
+              <td class="py-4 px-2"><div class="font-bold">Sameer T.</div><div class="text-xs text-slate-500">CTO · TaxPilot</div></td>
+              <td class="py-4 px-2"><span class="pill pill-paused">Retrying</span></td>
+              <td class="py-4 px-2 text-xs text-amber-600">Profile load failed · 11:30</td>
+              <td class="py-4 px-2 text-xs text-slate-600">Retry in 30m</td>
+              <td class="py-4 px-2 text-xs text-slate-400">—</td>
+              <td class="py-4 px-2 text-xs text-slate-400">—</td>
+              <td class="py-4 px-2 text-slate-400">›</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="flex items-center justify-between text-xs text-slate-500 pt-2">
+        <span>Showing 1–5 of 73</span>
+        <div class="flex items-center gap-2">
+          <button class="px-3 py-1 border border-slate-200 rounded-lg">← Prev</button>
+          <button class="px-3 py-1 border border-slate-200 rounded-lg">Next →</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  // Flavor loop — cycles every 5s when no real activity.
+  const flavors = [
+    { emoji: '🤖', text: 'Drafting AI message for Priya Sharma · Step 3/5 · Day 2 follow-up' },
+    { emoji: '🧠', text: 'Reading target profile for context…' },
+    { emoji: '✨', text: 'Personalizing message for industry context…' },
+    { emoji: '📊', text: 'Cross-referencing reply patterns from similar leads…' },
+    { emoji: '⏳', text: 'Pacing next action to look human (Anti-detection)…' },
+    { emoji: '🎯', text: 'Scoring lead engagement signals…' },
+    { emoji: '🛡', text: 'Checking account-health budget · 41 of 58 actions used today' },
+    { emoji: '🔄', text: 'Syncing connection states from LinkedIn…' },
+  ];
+  let i = 0;
+  setInterval(() => {
+    i = (i + 1) % flavors.length;
+    document.getElementById('flavorEmoji').textContent = flavors[i].emoji;
+    document.getElementById('flavorText').textContent = flavors[i].text;
+  }, 4500);
+</script>
+
+</body>
+</html>

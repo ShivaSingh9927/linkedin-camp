@@ -619,7 +619,7 @@ const removeLeadFromCampaign = async (campaignId: string, leadId: string) => {
                             ) : filteredCampaigns.map((campaign) => (
                                 <tr key={campaign.id} className="hover:bg-muted/30 transition-all group">
                                     <td className="px-10 py-8">
-                                        <Link href={`/campaigns/${campaign.id}/builder`} className="block">
+                                        <Link href={`/campaigns/${campaign.id}`} className="block">
                                             <span className="text-lg font-black text-foreground hover:text-primary transition-colors tracking-tight uppercase">
                                                 {campaign.name}
                                             </span>
@@ -744,7 +744,7 @@ const removeLeadFromCampaign = async (campaignId: string, leadId: string) => {
                     ) : filteredCampaigns.map((campaign) => (
                         <div key={campaign.id} className="p-6 space-y-6">
                             <div className="flex justify-between items-start">
-                                <Link href={`/campaigns/${campaign.id}/builder`} className="min-w-0 flex-1">
+                                <Link href={`/campaigns/${campaign.id}`} className="min-w-0 flex-1">
                                     <h4 className="text-base font-black text-foreground uppercase truncate tracking-tight">{campaign.name}</h4>
                                     <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mt-0.5">ID: {campaign.id.slice(0, 8)}</p>
                                 </Link>

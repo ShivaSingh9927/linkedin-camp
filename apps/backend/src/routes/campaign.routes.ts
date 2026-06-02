@@ -14,6 +14,13 @@ import {
     unqueueCampaign,
     reorderQueueHandler,
     getCampaignEta,
+    getCampaignOverview,
+    getCampaignFunnel,
+    getCampaignLeads,
+    bulkSyncLeadsToCRM,
+    bulkMoveLeadsToCampaign,
+    getCampaignMessages,
+    getCampaignPerformance,
 } from '../controllers/campaign.controller';
 import { authMiddleware } from '../middleware/auth.middleware';
 
@@ -33,6 +40,13 @@ router.post('/:id/queue', queueCampaign);
 router.post('/:id/unqueue', unqueueCampaign);
 router.post('/queue/reorder', reorderQueueHandler);
 router.get('/:id/eta', getCampaignEta);
+router.get('/:id/overview', getCampaignOverview);
+router.get('/:id/funnel', getCampaignFunnel);
+router.get('/:id/leads', getCampaignLeads);
+router.post('/:id/leads/bulk/crm-sync', bulkSyncLeadsToCRM);
+router.post('/:id/leads/bulk/move', bulkMoveLeadsToCampaign);
+router.get('/:id/messages', getCampaignMessages);
+router.get('/:id/performance', getCampaignPerformance);
 router.get('/:id/status', getCampaignStatus);
 router.delete('/:id/leads/:leadId', removeLeadFromCampaign);
 router.get('/:id/export', exportCampaign);
