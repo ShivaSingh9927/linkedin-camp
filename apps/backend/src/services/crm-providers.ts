@@ -91,6 +91,9 @@ export async function syncHubSpot(
         'Content-Type': 'application/json',
     };
 
+    // Only stock HubSpot properties — custom properties like qampi_campaign
+    // would need to be pre-created in the user's portal, which we can't
+    // assume. Campaign context still flows via the Note attached below.
     const properties: Record<string, any> = {
         email: ctx.lead.email,
         firstname: ctx.lead.firstName || undefined,
@@ -99,8 +102,6 @@ export async function syncHubSpot(
         jobtitle: ctx.lead.jobTitle || undefined,
         company: ctx.lead.company || undefined,
         address: ctx.lead.location || undefined,
-        qampi_campaign: ctx.campaign.name,
-        qampi_last_event: ctx.event,
     };
     const stage = HS_LIFECYCLE[ctx.event];
     if (stage) properties.lifecyclestage = stage;
