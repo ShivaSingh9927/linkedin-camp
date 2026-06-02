@@ -141,6 +141,31 @@ export async function transitionLead(
         recomputeCampaignStatus(campaignId).catch(err =>
             console.error(`[lifecycle] recompute failed for ${campaignId}:`, err.message)
         );
+
+        // Surface terminal lifecycle to the CRM event bus. REPLIED and
+        // COMPLETED map to user-visible CRM activity; STALLED/FAILED are
+        // infra concerns and intentionally excluded.
+        if (effectiveTo === 'REPLIED' || effectiveTo === 'COMPLETED') {
+            (async () => {
+                try {
+                    const cl = await prisma.campaign.findUnique({
+                        where: { id: campaignId },
+                        select: { userId: true },
+                    });
+                    if (!cl) return;
+                    const { emitCrmEvent } = await import('../../services/crm-events');
+                    await emitCrmEvent({
+                        event: effectiveTo === 'REPLIED' ? 'lead.replied' : 'lead.completed',
+                        userId: cl.userId,
+                        campaignId,
+                        leadId,
+                        meta: { reason: patch.reason },
+                    });
+                } catch (err: any) {
+                    console.error(`[lifecycle] crm emit failed: ${err.message}`);
+                }
+            })();
+        }
     }
 
     return {

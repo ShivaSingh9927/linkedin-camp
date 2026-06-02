@@ -514,6 +514,18 @@ async function runLead(
                 });
             }
 
+            // Legacy CRM_SYNC nodes (older templates / saved campaigns) are
+            // no-op'd here. CRM sync is now event-driven via CampaignCrmPolicy;
+            // running the node would either double-sync or fail unknown-type.
+            const ntStr = String(nodeType).toUpperCase();
+            if (ntStr === 'CRM_SYNC' || ntStr === 'CRM-SYNC') {
+                console.log(`[ENGINE] Lead ${lead.firstName}: skipping legacy CRM_SYNC node (event-driven sync handles this).`);
+                nodeExec.status = 'success';
+                nodeExec.output = { skipped: true, reason: 'crm_sync_event_driven' };
+                execResult.nodesExecuted.push(nodeExec);
+                continue;
+            }
+
             const handler = NODE_HANDLERS[nodeType];
             if (!handler) {
                 nodeExec.status = 'failed';
@@ -575,6 +587,17 @@ async function runLead(
                         source: 'CAMPAIGN',
                     },
                 }).catch(err => console.error(`[ENGINE] Message write failed: ${err.message}`));
+
+                // CRM event — policy decides whether this fans out anywhere.
+                import('../services/crm-events').then(({ emitCrmEvent }) =>
+                    emitCrmEvent({
+                        event: 'lead.messaged',
+                        userId,
+                        campaignId,
+                        leadId: lead.id,
+                        meta: { messageContent: result.output?.messageText },
+                    }),
+                ).catch(() => {});
             }
 
             if (result.success) {

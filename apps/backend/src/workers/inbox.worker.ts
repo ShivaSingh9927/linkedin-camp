@@ -358,6 +358,25 @@ export const syncInbox = async (userId: string) => {
                         where: { leadId: lead.id, isCompleted: false },
                         data: { status: 'REPLIED' }
                     });
+
+                    // CRM event — emit for each active campaign the lead is
+                    // currently in. Reply text is the last RECEIVED message.
+                    const activeLinks = await prisma.campaignLead.findMany({
+                        where: { leadId: lead.id, isCompleted: false },
+                        select: { campaignId: true },
+                    });
+                    const lastInbound = [...chatHistory].reverse().find(m => m.direction === 'RECEIVED');
+                    for (const link of activeLinks) {
+                        import('../services/crm-events').then(({ emitCrmEvent }) =>
+                            emitCrmEvent({
+                                event: 'lead.replied',
+                                userId,
+                                campaignId: link.campaignId,
+                                leadId: lead.id,
+                                meta: { replyContent: lastInbound?.text },
+                            }),
+                        ).catch(() => {});
+                    }
                     await prisma.notification.create({
                         data: {
                             userId,

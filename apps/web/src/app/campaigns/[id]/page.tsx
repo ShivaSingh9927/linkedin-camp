@@ -14,6 +14,7 @@ import { SevenDayChart } from '@/components/SevenDayChart';
 import { CampaignLeadsTab } from '@/components/CampaignLeadsTab';
 import { CampaignMessagesTab } from '@/components/CampaignMessagesTab';
 import { CampaignPerformanceTab } from '@/components/CampaignPerformanceTab';
+import { CampaignCrmTab } from '@/components/CampaignCrmTab';
 
 interface Kpis {
     totalLeads: number;
@@ -59,7 +60,7 @@ export default function CampaignOverviewPage() {
     const [overview, setOverview] = useState<Overview | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [activeTab, setActiveTab] = useState<'overview' | 'leads' | 'messages' | 'performance'>('overview');
+    const [activeTab, setActiveTab] = useState<'overview' | 'leads' | 'messages' | 'performance' | 'crm'>('overview');
     const [leadsInitialStage, setLeadsInitialStage] = useState('all');
     const socketRef = useRef<Socket | null>(null);
 
@@ -210,7 +211,7 @@ export default function CampaignOverviewPage() {
             {/* Tabs row */}
             <div className="bg-card border border-border rounded-[2.5rem] overflow-hidden shadow-soft">
                 <div className="border-b border-slate-200 flex items-center gap-1 px-4 lg:px-6 overflow-x-auto">
-                    {(['overview', 'leads', 'messages', 'performance'] as const).map(t => (
+                    {(['overview', 'leads', 'messages', 'performance', 'crm'] as const).map(t => (
                         <button
                             key={t}
                             onClick={() => setActiveTab(t)}
@@ -227,6 +228,7 @@ export default function CampaignOverviewPage() {
                     {activeTab === 'leads' && <CampaignLeadsTab campaignId={id} initialStage={leadsInitialStage} />}
                     {activeTab === 'messages' && <CampaignMessagesTab campaignId={id} />}
                     {activeTab === 'performance' && <CampaignPerformanceTab campaignId={id} />}
+                    {activeTab === 'crm' && <CampaignCrmTab campaignId={id} />}
                     {activeTab === 'overview' && (
                         <div className="p-6 lg:p-8 text-center space-y-3">
                             <p className="text-sm font-bold text-slate-700">Scroll up for the overview, funnel, charts, and recent activity.</p>

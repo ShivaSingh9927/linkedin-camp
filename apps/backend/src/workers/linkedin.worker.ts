@@ -7,6 +7,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { humanMoveAndClick, humanType, warmupSession, randomRange } from '../services/stealth.service';
 import { getOrAssignProxy } from '../services/proxy.service';
+import { emitCrmEvent } from '../services/crm-events';
 
 chromium.use(stealth);
 
@@ -289,10 +290,14 @@ export const processWorkflowStep = async (data: any, job: Job) => {
                 });
             } else if (isConnected) {
                 console.log(`[WORKER] Lead ${lead.firstName} is already a connection. Skipping invite.`);
+                const prev = await prisma.lead.findUnique({ where: { id: lead.id }, select: { status: true } });
                 await prisma.lead.update({
                     where: { id: lead.id },
                     data: { status: 'CONNECTED' }
                 });
+                if (prev?.status !== 'CONNECTED' && campaignId) {
+                    emitCrmEvent({ event: 'lead.connected', userId, campaignId, leadId: lead.id });
+                }
                 // Progress to next step immediately (no need to wait)
             } else if (hasConnect) {
                 // if (await checkInterrupt(userId)) throw new Error('INTERRUPTED: User active in browser');
@@ -455,6 +460,7 @@ export const processWorkflowStep = async (data: any, job: Job) => {
             // Success Case 2: Pop-up box closed (Standard Message Button mode)
             if (afterUrl.includes('/thread/') || !boxRemaining) {
                 console.log(`[WORKER] ✅ SUCCESS: Message sent. URL transitioned to: ${afterUrl}`);
+                const prev = await prisma.lead.findUnique({ where: { id: lead.id }, select: { status: true } });
                 await prisma.lead.update({
                     where: { id: lead.id },
                     data: {
@@ -462,6 +468,9 @@ export const processWorkflowStep = async (data: any, job: Job) => {
                         tags: { push: 'bot:messaged' }
                     }
                 });
+                if (prev?.status !== 'CONNECTED' && campaignId) {
+                    emitCrmEvent({ event: 'lead.connected', userId, campaignId, leadId: lead.id });
+                }
             } else {
                 // In full-page "Compose" mode, the input box might remain visible but empty.
                 // We'll trust the send click but save a screenshot for debug investigation.
@@ -469,10 +478,14 @@ export const processWorkflowStep = async (data: any, job: Job) => {
                 // const endScreenshot = `/tmp/send_final_${userId}_${Date.now()}.png`;
                 // await page.screenshot({ path: endScreenshot }).catch(() => { });
 
+                const prev2 = await prisma.lead.findUnique({ where: { id: lead.id }, select: { status: true } });
                 await prisma.lead.update({
                     where: { id: lead.id },
                     data: { status: 'CONNECTED' } // Assume connected if we reached message box
                 });
+                if (prev2?.status !== 'CONNECTED' && campaignId) {
+                    emitCrmEvent({ event: 'lead.connected', userId, campaignId, leadId: lead.id });
+                }
             }
         } else if (stepType === 'VISIT') {
             console.log(`[WORKER] Initiating Enrichment Visit for ${lead.firstName}...`);

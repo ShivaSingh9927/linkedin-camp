@@ -87,6 +87,8 @@ model Campaign {
   CampaignLead         CampaignLead[]
   CampaignLeadProgress CampaignLeadProgress[]
   WorkerLog            WorkerLog[]
+  CampaignCrmPolicy    CampaignCrmPolicy?
+  CrmSyncEvent         CrmSyncEvent[]
 
   @@index([userId, status])
   @@index([userId, queuePosition])
@@ -382,6 +384,48 @@ model WorkerLog {
   Campaign     Campaign? @relation(fields: [campaignId], references: [id])
   Lead         Lead?     @relation(fields: [leadId], references: [id])
   User         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Per-campaign event-driven CRM sync policy. One row per campaign; absence
+// of a row means "no auto-sync" (legacy CRM_SYNC node behavior, if any node
+// still exists). New campaigns get a row with sensible defaults on first
+// start when the user has any CRM connected.
+model CampaignCrmPolicy {
+  campaignId        String   @id
+  enabled           Boolean  @default(true)
+  syncOnAdded       Boolean  @default(true)
+  syncOnConnected   Boolean  @default(true)
+  syncOnMessaged    Boolean  @default(false)
+  syncOnReplied     Boolean  @default(true)
+  syncOnBounced     Boolean  @default(true)
+  syncOnCompleted   Boolean  @default(false)
+  createTaskOnReply Boolean  @default(true)
+  ownerEmail        String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  Campaign          Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+}
+
+// Audit log of every CRM sync attempt. Powers the "synced 3m ago" UI on the
+// campaign detail CRM tab, and lets us debug per-provider failures without
+// trawling stdout. One row per (event, provider) — a single lead.replied
+// event with both HubSpot and Pipedrive connected produces two rows.
+model CrmSyncEvent {
+  id         String    @id @default(cuid())
+  userId     String
+  campaignId String
+  leadId     String
+  event      String // lead.added | lead.connected | lead.messaged | lead.replied | lead.bounced | lead.completed
+  provider   String // hubspot | pipedrive | notion
+  status     String // SUCCESS | FAILED | SKIPPED
+  externalId String? // CRM-side ID returned on success
+  error      String?
+  meta       Json?
+  createdAt  DateTime  @default(now())
+  Campaign   Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId, createdAt])
+  @@index([leadId, event])
 }
 
 enum CampaignStatus {

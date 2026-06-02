@@ -6,6 +6,7 @@ import { leadCapForTier } from '../config/plans';
 import { queueCampaign as queueCampaignSvc, unqueueCampaign as unqueueCampaignSvc, reorderQueue } from '../services/campaign-queue.service';
 import { estimateCampaignEta } from '../campaign-engine/safety/eta';
 import { syncLeadToCRMs } from '../services/crmService';
+import { emitCrmEvent, ensureCampaignCrmPolicy } from '../services/crm-events';
 
 export const createCampaign = async (req: any, res: Response) => {
     const { name, workflow, workflowJson, leads, objective, description, cta, toneOverride } = req.body;
@@ -279,6 +280,17 @@ export const startCampaign = async (req: any, res: Response) => {
 
                     if (safeLeadIdsToStart.length > 0) {
                         await enqueueCampaign(userId, id);
+
+                        // Create the CRM sync policy row (idempotent) and
+                        // emit lead.added per enrolled lead. Fire-and-forget;
+                        // policy-driven, so users with no CRM connected
+                        // produce zero downstream work.
+                        ensureCampaignCrmPolicy(id, userId).catch(err =>
+                            console.error('[Campaign] ensureCrmPolicy failed:', err.message)
+                        );
+                        for (const leadId of safeLeadIdsToStart) {
+                            emitCrmEvent({ event: 'lead.added', userId, campaignId: id, leadId });
+                        }
                     }
 
                     console.log(`[Campaign] Successfully started/enrolled ${safeLeadIdsToStart.length} leads.`);
@@ -1031,5 +1043,114 @@ export const exportCampaign = async (req: any, res: Response) => {
     } catch (error) {
         console.error('Export campaign error:', error);
         res.status(500).json({ error: 'Failed to export campaign' });
+    }
+};
+
+// ─── CRM sync policy + audit ────────────────────────────────────────────────
+
+const POLICY_FLAGS = [
+    'enabled', 'syncOnAdded', 'syncOnConnected', 'syncOnMessaged',
+    'syncOnReplied', 'syncOnBounced', 'syncOnCompleted', 'createTaskOnReply',
+] as const;
+
+export const getCampaignCrmPolicy = async (req: any, res: Response) => {
+    const { id } = req.params;
+    const userId = req.user.id;
+    try {
+        const campaign = await prisma.campaign.findFirst({ where: { id, userId }, select: { id: true } });
+        if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+
+        const user = await prisma.user.findUnique({
+            where: { id: userId },
+            select: { hubspotToken: true, pipedriveToken: true, notionToken: true, notionDatabaseId: true, email: true },
+        });
+        const connected = {
+            hubspot: !!user?.hubspotToken,
+            pipedrive: !!user?.pipedriveToken,
+            notion: !!(user?.notionToken && user?.notionDatabaseId),
+        };
+
+        let policy = await prisma.campaignCrmPolicy.findUnique({ where: { campaignId: id } });
+        if (!policy) {
+            // Synthesize a default-shaped response without inserting — the row
+            // is created lazily on first start. UI shows the toggles either way.
+            policy = {
+                campaignId: id,
+                enabled: false,
+                syncOnAdded: true,
+                syncOnConnected: true,
+                syncOnMessaged: false,
+                syncOnReplied: true,
+                syncOnBounced: true,
+                syncOnCompleted: false,
+                createTaskOnReply: true,
+                ownerEmail: user?.email || null,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+            } as any;
+        }
+
+        res.json({ policy, connected, hasAnyCrm: connected.hubspot || connected.pipedrive || connected.notion });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+};
+
+export const updateCampaignCrmPolicy = async (req: any, res: Response) => {
+    const { id } = req.params;
+    const userId = req.user.id;
+    try {
+        const campaign = await prisma.campaign.findFirst({ where: { id, userId }, select: { id: true } });
+        if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+
+        const body = req.body || {};
+        const patch: Record<string, any> = {};
+        for (const f of POLICY_FLAGS) {
+            if (typeof body[f] === 'boolean') patch[f] = body[f];
+        }
+        if (typeof body.ownerEmail === 'string') patch.ownerEmail = body.ownerEmail.trim() || null;
+
+        const policy = await prisma.campaignCrmPolicy.upsert({
+            where: { campaignId: id },
+            create: { campaignId: id, ...patch },
+            update: patch,
+        });
+        res.json({ policy });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+};
+
+export const getCampaignCrmEvents = async (req: any, res: Response) => {
+    const { id } = req.params;
+    const userId = req.user.id;
+    const limit = Math.min(parseInt(String(req.query.limit || '50'), 10) || 50, 200);
+    try {
+        const campaign = await prisma.campaign.findFirst({ where: { id, userId }, select: { id: true } });
+        if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+
+        const events = await prisma.crmSyncEvent.findMany({
+            where: { campaignId: id },
+            orderBy: { createdAt: 'desc' },
+            take: limit,
+        });
+
+        const leadIds = Array.from(new Set(events.map(e => e.leadId)));
+        const leads = leadIds.length
+            ? await prisma.lead.findMany({
+                where: { id: { in: leadIds } },
+                select: { id: true, firstName: true, lastName: true, company: true },
+            })
+            : [];
+        const leadMap = new Map(leads.map(l => [l.id, l]));
+
+        res.json({
+            events: events.map(e => ({
+                ...e,
+                lead: leadMap.get(e.leadId) || null,
+            })),
+        });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
     }
 };

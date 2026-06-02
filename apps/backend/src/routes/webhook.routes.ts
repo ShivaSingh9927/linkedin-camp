@@ -72,6 +72,23 @@ router.post('/linkedin-reply', async (req: AuthRequest, res) => {
                 data: { status: 'REPLIED' }
             });
 
+            // CRM event — emit per active campaign link.
+            const activeLinks = await prisma.campaignLead.findMany({
+                where: { leadId: lead.id, isCompleted: false },
+                select: { campaignId: true },
+            });
+            for (const link of activeLinks) {
+                import('../services/crm-events').then(({ emitCrmEvent }) =>
+                    emitCrmEvent({
+                        event: 'lead.replied',
+                        userId,
+                        campaignId: link.campaignId,
+                        leadId: lead.id,
+                        meta: { source: 'webhook' },
+                    }),
+                ).catch(() => {});
+            }
+
             // Create notification if not already done
             await prisma.notification.create({
                 data: {

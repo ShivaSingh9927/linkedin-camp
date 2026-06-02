@@ -21,6 +21,9 @@ import {
     bulkMoveLeadsToCampaign,
     getCampaignMessages,
     getCampaignPerformance,
+    getCampaignCrmPolicy,
+    updateCampaignCrmPolicy,
+    getCampaignCrmEvents,
 } from '../controllers/campaign.controller';
 import { authMiddleware } from '../middleware/auth.middleware';
 
@@ -47,6 +50,9 @@ router.post('/:id/leads/bulk/crm-sync', bulkSyncLeadsToCRM);
 router.post('/:id/leads/bulk/move', bulkMoveLeadsToCampaign);
 router.get('/:id/messages', getCampaignMessages);
 router.get('/:id/performance', getCampaignPerformance);
+router.get('/:id/crm-policy', getCampaignCrmPolicy);
+router.put('/:id/crm-policy', updateCampaignCrmPolicy);
+router.get('/:id/crm-events', getCampaignCrmEvents);
 router.get('/:id/status', getCampaignStatus);
 router.delete('/:id/leads/:leadId', removeLeadFromCampaign);
 router.get('/:id/export', exportCampaign);
