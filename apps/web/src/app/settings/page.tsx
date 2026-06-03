@@ -12,12 +12,14 @@ import {
     ChevronRight,
     Sparkles,
     Trash2,
-    Save
+    Save,
+    Mail
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import LinkedInConnectivity from '@/components/LinkedInConnectivity';
 import BusinessProfileForm from '@/components/BusinessProfileForm';
 import IntegrationsSettings from '@/components/IntegrationsSettings';
+import EmailAccountSettings from '@/components/EmailAccountSettings';
 import { cn } from '@/lib/utils';
 import { TopBar } from '@/components/TopBar';
 
@@ -29,6 +31,7 @@ const settingsNav = [
     { label: 'Notifications', icon: Bell, key: 'notifications' },
     { label: 'Subscription', icon: CreditCard, key: 'billing' },
     { label: 'Integrations', icon: Globe, key: 'integrations' },
+    { label: 'Email Account', icon: Mail, key: 'email' },
 ];
 
 export default function SettingsPage() {
@@ -191,7 +194,11 @@ export default function SettingsPage() {
                                 <IntegrationsSettings />
                             )}
 
-                            {activeSection !== 'account' && activeSection !== 'linkedin' && activeSection !== 'business' && activeSection !== 'integrations' && (
+                            {activeSection === 'email' && (
+                                <EmailAccountSettings />
+                            )}
+
+                            {activeSection !== 'account' && activeSection !== 'linkedin' && activeSection !== 'business' && activeSection !== 'integrations' && activeSection !== 'email' && (
                                 <div className="bg-white rounded-[3rem] border shadow-xl shadow-slate-200/50 p-20 text-center">
                                     <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-8 border-4 border-white shadow-inner">
                                         <Sparkles className="w-10 h-10 text-slate-200" />

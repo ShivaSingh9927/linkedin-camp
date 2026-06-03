@@ -201,11 +201,50 @@ model Message {
   campaignId String?
   templateId String?
   direction  String
+  // Distinguishes LinkedIn DMs from email sends so the inbox UI can
+  // filter by channel and the engine knows which write-path created
+  // the row (audit, replay, reply-pause scope).
+  channel    String   @default("linkedin")
+  // Email-only metadata. Subject is null for LinkedIn messages.
+  // messageId is the RFC-2822 Message-Id we emit, so replies can be
+  // threaded back when we add IMAP/Gmail-inbox sync.
+  subject    String?
+  messageId  String?
   content    String
   source     String   @default("MANUAL")
   sentAt     DateTime @default(now())
   Lead       Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
   User       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, channel, sentAt])
+}
+
+// SMTP credentials for sending email from a campaign EMAIL node. One
+// row per user. Password is encrypted with CRM_ENCRYPTION_KEY (we
+// reuse the existing secret rather than introducing a second one).
+//
+// `provider` is a free-form tag — 'smtp' today, 'gmail-oauth' /
+// 'microsoft-oauth' when those land. OAuth flow will add
+// oauthRefreshToken/oauthAccessToken and zero out smtpPass.
+model EmailAccount {
+  id                String   @id @default(cuid())
+  userId            String   @unique
+  provider          String   @default("smtp")
+  fromEmail         String
+  fromName          String?
+  smtpHost          String?
+  smtpPort          Int?
+  smtpUser          String?
+  smtpPass          String?
+  smtpSecure        Boolean  @default(false)
+  oauthRefreshToken String?
+  oauthAccessToken  String?
+  oauthExpiresAt    DateTime?
+  lastSendAt        DateTime?
+  lastError         String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  User              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model MessageTemplate {
@@ -369,6 +408,7 @@ model User {
   TeamMember              TeamMember[]
   Proxy                   Proxy?            @relation(fields: [proxyId], references: [id])
   WorkerLog               WorkerLog[]
+  EmailAccount            EmailAccount?
 
   @@index([updatedAt])
 }

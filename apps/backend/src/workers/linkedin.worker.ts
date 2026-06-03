@@ -15,6 +15,7 @@ import {
     delayMsFromNode,
     findNode,
 } from '../campaign-engine/workflow-graph';
+import { sendEmail } from '../services/email.service';
 
 chromium.use(stealth);
 
@@ -280,6 +281,62 @@ export const processWorkflowStep = async (data: any, job: Job) => {
                     },
                 });
                 console.log(`[WORKER] Control-flow short-circuit deferred ${lead.firstName} ${Math.round(resolved.delayMs / 1000)}s → ${resolved.nodeId} (${resolved.stepType})`);
+                return;
+            }
+
+            // EMAIL is executable but needs no browser — send via SMTP
+            // and advance, skipping the Playwright launch + profile nav
+            // entirely. Important so an email-only step in an otherwise
+            // LinkedIn campaign doesn't waste a browser boot, and a
+            // pure-email campaign never opens Chrome at all.
+            if (resolved.stepType === 'EMAIL') {
+                const data = resolved.node.data || resolved.node;
+                const rawSubject = data.subject || 'Quick question';
+                const rawBody = data.message || data.body || data.text || `Hi ${lead.firstName || 'there'},`;
+                const sub = (rawSubject as string).replace(/\{\{?firstName\}?\}/g, lead.firstName || '');
+                const body = (rawBody as string).replace(/\{\{?firstName\}?\}/g, lead.firstName || '');
+                // Lead row is the source of truth for the email column;
+                // the worker doesn't carry ctx.storedOutputs since this
+                // path skips the engine.
+                const recipient = lead.email;
+                if (!recipient) {
+                    console.log(`[WORKER] EMAIL ${resolved.nodeId} skipped — lead ${lead.firstName} has no email on file.`);
+                } else {
+                    const send = await sendEmail({
+                        userId,
+                        leadId: lead.id,
+                        campaignId,
+                        to: recipient,
+                        subject: sub,
+                        text: body,
+                    });
+                    console.log(`[WORKER] EMAIL ${resolved.nodeId} → ${recipient}: ${send.success ? `sent (${send.messageId})` : `FAILED (${send.error})`}`);
+                }
+
+                // Advance to the next executable using the same walker so
+                // any downstream NOOP/IF_ELSE/DELAY chain is collapsed
+                // exactly like the post-Playwright path below.
+                const nextEdge = pickNextEdge(parsedWorkflow, resolved.nodeId);
+                let nextId: string | null = null;
+                let isDone = false;
+                let nextAt = new Date(Date.now() + 12_000);
+                if (!nextEdge) {
+                    isDone = true;
+                } else {
+                    const after = await advanceUntilExecutable(parsedWorkflow, nextEdge.target, { campaignId, leadId: lead.id });
+                    if (after.kind === 'complete') {
+                        isDone = true;
+                    } else {
+                        nextId = after.nodeId;
+                        if (after.delayMs > 0) nextAt = new Date(Date.now() + after.delayMs);
+                    }
+                }
+                await prisma.campaignLead.update({
+                    where: updateWhere,
+                    data: isDone
+                        ? { currentStepId: null, lastActionAt: new Date(), isCompleted: true }
+                        : { currentStepId: nextId, lastActionAt: new Date(), nextActionDate: nextAt },
+                });
                 return;
             }
 

@@ -25,6 +25,8 @@ const SUBTYPE_ALIASES: Record<string, CanonicalStepType> = {
     LIKE_POST: 'LIKE_POST',
     COMMENT: 'COMMENT_POST',
     COMMENT_POST: 'COMMENT_POST',
+    EMAIL: 'EMAIL',
+    SEND_EMAIL: 'EMAIL',
 
     IF_ELSE: 'IF_ELSE',
     WAIT: 'DELAY',
@@ -36,7 +38,6 @@ const SUBTYPE_ALIASES: Record<string, CanonicalStepType> = {
 
     FOLLOW: 'NOOP',
     UNFOLLOW: 'NOOP',
-    EMAIL: 'NOOP',
     EMAIL_FINDER: 'NOOP',
     TWITTER_DM: 'NOOP',
     SMS: 'NOOP',
@@ -49,6 +50,7 @@ export type CanonicalStepType =
     | 'MESSAGE'
     | 'LIKE_POST'
     | 'COMMENT_POST'
+    | 'EMAIL'
     | 'IF_ELSE'
     | 'DELAY'
     | 'NOOP'
@@ -192,6 +194,7 @@ const CANONICAL_TO_ENGINE_NODE: Partial<Record<CanonicalStepType, string>> = {
     MESSAGE: 'send-message',
     LIKE_POST: 'like-nth-post',
     COMMENT_POST: 'comment-nth-post',
+    EMAIL: 'email',
     DELAY: 'delay',
     IF_ELSE: 'if-else',
 };

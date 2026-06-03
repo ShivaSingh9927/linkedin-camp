@@ -16,8 +16,9 @@ export interface CampaignFlowNode {
 }
 
 export interface IfElseCondition {
-    field: 'connectionStatus' | 'connected' | 'connectionDegree';
-    operator: 'equals' | 'not_equals' | 'is_true' | 'is_false';
+    source?: 'connectionState' | 'storedOutputs';
+    field: string;
+    operator: 'equals' | 'not_equals' | 'is_true' | 'is_false' | 'is_null' | 'is_not_null' | 'is_empty' | 'is_not_empty';
     value?: string | boolean;
 }
 
@@ -54,7 +55,8 @@ export type NodeType =
     | 'delay'
     | 'inbox-sync'
     | 'if-else'
-    | 'check-connection';
+    | 'check-connection'
+    | 'email';
 
 // ---- Node Output ----
 
@@ -155,6 +157,11 @@ export interface NodeContext {
         company?: string | null;
         location?: string | null;
         aboutInfo?: string | null;
+        // Email is populated by profile-visit enrichment (when LinkedIn
+        // exposes it on the contact-info modal) or seeded at lead import.
+        // The EMAIL node skips sends when null — no error.
+        email?: string | null;
+        phone?: string | null;
     };
     userId: string;
     campaignId: string;

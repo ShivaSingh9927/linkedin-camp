@@ -37,6 +37,7 @@ import { inboxSync } from './nodes/inbox-sync';
 import { delay } from './nodes/delay';
 import { ifElse } from './nodes/if-else';
 import { checkConnection } from './nodes/check-connection';
+import { emailNode } from './nodes/email';
 import { readNodeOutputs, writeNodeOutput, updateLeadEnrichment } from './storage';
 import { checkQuota, nextDayRetryAt, DAILY_CAPS, GovernedAction, isWithinWorkingHours, nextWorkingHourAt } from './safety/quota';
 import { transitionLead, recomputeCampaignStatus } from './safety/lifecycle';
@@ -58,6 +59,7 @@ const NODE_HANDLERS: Record<NodeType, NodeHandler> = {
     'inbox-sync': inboxSync,
     'if-else': ifElse,
     'check-connection': checkConnection,
+    'email': emailNode,
 };
 
 // ---- Execute single node (exported for if-else node) ----
@@ -791,6 +793,8 @@ export async function runCampaign(
             company: leadRecord?.company || null,
             location: leadRecord?.location || null,
             aboutInfo: leadRecord?.aboutInfo || null,
+            email: leadRecord?.email || null,
+            phone: leadRecord?.phone || null,
         };
 
         console.log(`\n[CAMPAIGN] Processing lead: ${leadData.firstName || leadData.linkedinUrl}`);
