@@ -8,6 +8,13 @@ import * as path from 'path';
 import { humanMoveAndClick, humanType, warmupSession, randomRange } from '../services/stealth.service';
 import { getOrAssignProxy } from '../services/proxy.service';
 import { emitCrmEvent } from '../services/crm-events';
+import {
+    getStepType,
+    advanceUntilExecutable,
+    pickNextEdge,
+    delayMsFromNode,
+    findNode,
+} from '../campaign-engine/workflow-graph';
 
 chromium.use(stealth);
 
@@ -198,7 +205,7 @@ export const processWorkflowStep = async (data: any, job: Job) => {
         const parsedWorkflow = typeof rawWorkflow === 'string' ? JSON.parse(rawWorkflow) : rawWorkflow;
 
         // Resolve the step identifier: prefer currentStepId (node-based), fallback to legacyStepIndex
-        const stepId = currentStepId ?? legacyStepIndex;
+        let stepId = currentStepId ?? legacyStepIndex;
 
         let step: any = null;
         let isNodeBased = false;
@@ -235,12 +242,54 @@ export const processWorkflowStep = async (data: any, job: Job) => {
             return;
         }
 
-        // ReactFlow stores custom data under node.data, so resolve from both locations
-        const stepData = step.data || step; // step.data for ReactFlow nodes, step itself for flat format
-        let stepType = (stepData.subType || step.subType || step.type || '').toUpperCase();
-        if ((stepType === 'START' || stepType === 'ACTION') && step.type === 'ACTION' && !stepData.subType && !step.subType) stepType = 'VISIT';
-        // Handle case where subType is stored as PROFILE_VISIT
-        if (stepType === 'PROFILE_VISIT') stepType = 'VISIT';
+        // --- CONTROL-FLOW SHORT-CIRCUIT ---
+        // If the resolved step is a sentinel (START/END), an IF_ELSE branch,
+        // a DELAY, or a not-yet-implemented action (FOLLOW/EMAIL/etc.), walk
+        // the DAG forward without launching Playwright. Skipping the browser
+        // boot for control-flow saves ~5s per non-action node and avoids
+        // navigating to the lead's profile when there's nothing to do there.
+        let stepData = step.data || step;
+        let stepType: string = getStepType(step);
+        const updateWhere: any = campaignLeadId
+            ? { id: campaignLeadId }
+            : { campaignId_leadId: { campaignId: campaign.id, leadId: lead.id } };
+
+        if (isNodeBased && stepType !== 'VISIT' && stepType !== 'INVITE' && stepType !== 'MESSAGE' && stepType !== 'LIKE_POST' && stepType !== 'COMMENT_POST') {
+            console.log(`[WORKER] Step ${stepId} is non-executable (${stepType}). Walking DAG without Playwright.`);
+            const resolved = await advanceUntilExecutable(parsedWorkflow, stepId, { campaignId, leadId: lead.id });
+
+            if (resolved.kind === 'complete') {
+                await prisma.campaignLead.update({
+                    where: updateWhere,
+                    data: { currentStepId: null, lastActionAt: new Date(), isCompleted: true },
+                });
+                console.log(`[WORKER] Workflow complete via control-flow short-circuit for ${lead.firstName}`);
+                return;
+            }
+
+            // 'execute' — either run now (delayMs === 0) or defer to the next
+            // scheduler tick (delayMs > 0). Either way, currentStepId points
+            // to the executable so the next invocation lands cleanly.
+            if (resolved.delayMs > 0) {
+                await prisma.campaignLead.update({
+                    where: updateWhere,
+                    data: {
+                        currentStepId: resolved.nodeId,
+                        lastActionAt: new Date(),
+                        nextActionDate: new Date(Date.now() + resolved.delayMs),
+                    },
+                });
+                console.log(`[WORKER] Control-flow short-circuit deferred ${lead.firstName} ${Math.round(resolved.delayMs / 1000)}s → ${resolved.nodeId} (${resolved.stepType})`);
+                return;
+            }
+
+            // Rebind for the rest of the function — fall through to browser launch.
+            step = resolved.node;
+            stepData = step.data || step;
+            stepId = resolved.nodeId;
+            stepType = resolved.stepType;
+            console.log(`[WORKER] Control-flow short-circuit advanced to executable ${stepId} (${stepType})`);
+        }
 
         // --- DIRECT PROFILE NAVIGATION (Phase 2 pattern — no /feed/ warmup) ---
         // Phase 2 test script works because it goes directly to the target page.
@@ -796,22 +845,36 @@ export const processWorkflowStep = async (data: any, job: Job) => {
         }
 
         // --- UPDATE PROGRESS: Find next step ---
+        // Single DAG walk handles NOOP, IF_ELSE branches, and DELAY accumulation.
+        // Replaces three former blocks (next-edge lookup, delay-skip, gap padding).
         let nextStepId: string | null = null;
         let isWorkflowComplete = false;
+        let nextActionDate = new Date();
 
         if (isNodeBased && parsedWorkflow.edges) {
-            // Find the edge going out of the current step
-            const nextEdge = parsedWorkflow.edges.find((e: any) => e.source === stepId);
-            if (nextEdge) {
-                nextStepId = nextEdge.target;
-                console.log(`[WORKER] Next step for lead ${lead.firstName}: ${nextStepId}`);
-            } else {
-                // No outgoing edge = end of workflow
+            const firstEdge = pickNextEdge(parsedWorkflow, stepId);
+            if (!firstEdge) {
                 isWorkflowComplete = true;
-                console.log(`[WORKER] Workflow complete for lead ${lead.firstName} (no next edge from ${stepId})`);
+                console.log(`[WORKER] Workflow complete for ${lead.firstName} (no next edge from ${stepId})`);
+            } else {
+                const resolved = await advanceUntilExecutable(parsedWorkflow, firstEdge.target, { campaignId, leadId: lead.id });
+                if (resolved.kind === 'complete') {
+                    isWorkflowComplete = true;
+                    console.log(`[WORKER] Workflow complete for ${lead.firstName} (walked past ${firstEdge.target} to terminus)`);
+                } else {
+                    nextStepId = resolved.nodeId;
+                    if (resolved.delayMs > 0) {
+                        nextActionDate = new Date(Date.now() + resolved.delayMs);
+                        console.log(`[WORKER] Next executable for ${lead.firstName}: ${nextStepId} in ${Math.round(resolved.delayMs / 1000)}s`);
+                    } else {
+                        const safetyGapMs = (Math.floor(Math.random() * 6) + 10) * 1000;
+                        nextActionDate = new Date(Date.now() + safetyGapMs);
+                        console.log(`[WORKER] Next executable for ${lead.firstName}: ${nextStepId} in ${Math.round(safetyGapMs / 1000)}s (safety gap)`);
+                    }
+                }
             }
         } else {
-            // Legacy: increment numeric index
+            // Legacy array-shape workflows: increment numeric index.
             const nextIndex = (typeof stepId === 'number' ? stepId : 0) + 1;
             if (Array.isArray(parsedWorkflow) && nextIndex < parsedWorkflow.length) {
                 nextStepId = String(nextIndex);
@@ -819,45 +882,6 @@ export const processWorkflowStep = async (data: any, job: Job) => {
                 isWorkflowComplete = true;
             }
         }
-
-        // --- Calculate nextActionDate based on next step type ---
-        let nextActionDate = new Date(); // Default: ready immediately (next scheduler cycle)
-
-        if (nextStepId && isNodeBased && parsedWorkflow.nodes) {
-            const nextNode = parsedWorkflow.nodes.find((n: any) => n.id === nextStepId);
-            if (nextNode) {
-                const nextData = nextNode.data || nextNode;
-                const nextType = (nextData.subType || nextNode.subType || nextNode.type || '').toUpperCase();
-                if (nextType === 'WAIT' || nextType === 'DELAY') {
-                    // Respect the configured delay — builder stores as "days" in data
-                    const delayDays = nextData.delayDays || nextData.days || nextNode.delayDays || 0;
-                    const delayHours = nextData.delayHours || nextData.hours || nextNode.delayHours || 0;
-                    const delayMs = (delayDays * 24 * 60 * 60 * 1000) + (delayHours * 60 * 60 * 1000);
-                    nextActionDate = new Date(Date.now() + (delayMs || 24 * 60 * 60 * 1000)); // fallback 1 day
-                    console.log(`[WORKER] Next step is DELAY node. Scheduling in ${delayDays}d ${delayHours}h for lead ${lead.firstName}`);
-
-                    // For DELAY nodes, skip to the node AFTER the delay
-                    const edgeAfterDelay = parsedWorkflow.edges.find((e: any) => e.source === nextStepId);
-                    if (edgeAfterDelay) {
-                        nextStepId = edgeAfterDelay.target;
-                        console.log(`[WORKER] Skipping delay node, actual next action step: ${nextStepId}`);
-                    } else {
-                        isWorkflowComplete = true;
-                        console.log(`[WORKER] Delay node is last in workflow, marking complete.`);
-                    }
-                } else {
-                    // Non-delay step: add a small random gap (10-15 sec) for human-like pacing
-                    const safetyGapMs = (Math.floor(Math.random() * 6) + 10) * 1000;
-                    nextActionDate = new Date(Date.now() + safetyGapMs);
-                    console.log(`[WORKER] Next step is action node. Scheduling in ${Math.round(safetyGapMs / 1000)}s for lead ${lead.firstName}`);
-                }
-            }
-        }
-
-        // Use campaignLeadId if available for precise update, otherwise fall back to composite key
-        const updateWhere = campaignLeadId
-            ? { id: campaignLeadId }
-            : { campaignId_leadId: { campaignId: campaign.id, leadId: lead.id } };
 
         if (isWorkflowComplete) {
             await prisma.campaignLead.update({

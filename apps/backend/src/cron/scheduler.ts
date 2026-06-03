@@ -5,6 +5,7 @@ import Redis from 'ioredis';
 import { syncInbox, inboxQueue } from '../workers/inbox.worker';
 import { withdrawOldInvites } from '../workers/withdraw.worker';
 import { sessionValidator } from '../services/session-validator.service';
+import { getStepType } from '../campaign-engine/workflow-graph';
 
 let redisConnection: any;
 let actionQueue: any;
@@ -117,7 +118,7 @@ const isUserActive = redisPresence === 'ACTIVE' || (now - lastActivity < twoMins
               : campaign.workflowJson;
 
             const currentNode = parsedWorkflow?.nodes?.find((n: any) => n.id === task.currentStepId);
-            if (currentNode && currentNode.subType === 'MESSAGE') {
+            if (currentNode && getStepType(currentNode) === 'MESSAGE') {
               jobPriority = 2;
             }
           } catch (e) {
