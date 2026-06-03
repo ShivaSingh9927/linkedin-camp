@@ -1,6 +1,8 @@
 import nodemailer, { Transporter } from 'nodemailer';
 import { prisma } from '@repo/db';
 import { encrypt, decrypt } from '../utils/crypto';
+import * as google from './oauth/google.service';
+import * as microsoft from './oauth/microsoft.service';
 
 export interface SendEmailArgs {
     userId: string;
@@ -68,18 +70,50 @@ async function getTransporter(userId: string): Promise<{
 
 export async function sendEmail(args: SendEmailArgs): Promise<SendEmailResult> {
     try {
-        const { transporter, fromEmail, fromName } = await getTransporter(args.userId);
-        const from = fromName ? `"${fromName}" <${fromEmail}>` : fromEmail;
-        const html = args.html || args.text.split('\n\n').map(p => `<p>${p}</p>`).join('\n');
+        const account = await prisma.emailAccount.findUnique({ where: { userId: args.userId } });
+        if (!account) throw new Error('No email account connected');
 
-        const info = await transporter.sendMail({
-            from,
-            to: args.to,
-            replyTo: args.replyTo,
-            subject: args.subject,
-            text: args.text,
-            html,
-        });
+        let messageId: string;
+
+        // Provider dispatch — same record shape, different transports.
+        // OAuth providers go through their respective APIs (Gmail v1,
+        // Graph) so the user's auth context is exactly what they
+        // consented to; SMTP keeps the nodemailer code path for users
+        // on custom domains.
+        if (account.provider === 'gmail-oauth') {
+            messageId = await google.sendViaGmail({
+                userId: args.userId,
+                to: args.to,
+                subject: args.subject,
+                text: args.text,
+                html: args.html,
+                replyTo: args.replyTo,
+                fromName: account.fromName,
+            });
+        } else if (account.provider === 'microsoft-oauth') {
+            messageId = await microsoft.sendViaGraph({
+                userId: args.userId,
+                to: args.to,
+                subject: args.subject,
+                text: args.text,
+                html: args.html,
+                replyTo: args.replyTo,
+                fromName: account.fromName,
+            });
+        } else {
+            const { transporter, fromEmail, fromName } = await getTransporter(args.userId);
+            const from = fromName ? `"${fromName}" <${fromEmail}>` : fromEmail;
+            const html = args.html || args.text.split('\n\n').map(p => `<p>${p}</p>`).join('\n');
+            const info = await transporter.sendMail({
+                from,
+                to: args.to,
+                replyTo: args.replyTo,
+                subject: args.subject,
+                text: args.text,
+                html,
+            });
+            messageId = info.messageId;
+        }
 
         await prisma.emailAccount.update({
             where: { userId: args.userId },
@@ -98,13 +132,13 @@ export async function sendEmail(args: SendEmailArgs): Promise<SendEmailResult> {
                     channel: 'email',
                     subject: args.subject,
                     content: args.text,
-                    messageId: info.messageId,
+                    messageId,
                     source: args.campaignId ? 'CAMPAIGN' : 'MANUAL',
                 },
             });
         }
 
-        return { success: true, messageId: info.messageId };
+        return { success: true, messageId };
     } catch (err: any) {
         const msg = err?.message || String(err);
         await prisma.emailAccount
@@ -119,19 +153,16 @@ export async function sendEmail(args: SendEmailArgs): Promise<SendEmailResult> {
  * subject/body so a user can verify SMTP creds without sending real outreach.
  */
 export async function sendTestEmail(userId: string): Promise<SendEmailResult> {
-    try {
-        const { transporter, fromEmail, fromName } = await getTransporter(userId);
-        const from = fromName ? `"${fromName}" <${fromEmail}>` : fromEmail;
-        const info = await transporter.sendMail({
-            from,
-            to: fromEmail,
-            subject: 'Qampi: SMTP connection works',
-            text: 'This is a Qampi test email. If you received it, your SMTP credentials are valid and the EMAIL node is ready to use in campaigns.',
-        });
-        return { success: true, messageId: info.messageId };
-    } catch (err: any) {
-        return { success: false, error: err?.message || String(err) };
-    }
+    const account = await prisma.emailAccount.findUnique({ where: { userId } });
+    if (!account) return { success: false, error: 'No email account connected' };
+    // sendEmail() picks the right transport for the user's current provider,
+    // so a single call works for SMTP / Gmail OAuth / Microsoft OAuth.
+    return sendEmail({
+        userId,
+        to: account.fromEmail,
+        subject: `Qampi: ${account.provider} connection works`,
+        text: `This is a Qampi test email via ${account.provider}.\n\nIf you received this, your email account is connected and the EMAIL node is ready to use in campaigns.`,
+    });
 }
 
 /**
