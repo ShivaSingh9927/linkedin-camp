@@ -30,6 +30,10 @@ export interface ConnectionState {
     needsConnect: boolean;
     invitePending: boolean;
     isUnknown: boolean;
+    // 1 | 2 | 3 | null — degree extracted from the visible badge on the
+    // profile page header. Falls back to inference from the signals above
+    // when the badge isn't found (isDmable → 1, needsConnect → 3).
+    connectionDegree: number | null;
 }
 
 export function extractSlug(linkedinUrl: string): string {
@@ -62,7 +66,20 @@ export async function detectConnectionState(page: Page, leadLinkedinUrl: string)
             .find(b => /Pending|click to withdraw|Withdraw invitation/i.test(b.getAttribute('aria-label') || ''));
         const pendingAriaLabel = pendingBtn ? pendingBtn.getAttribute('aria-label') : null;
 
-        return { composeUrl, connectHref, pendingAriaLabel };
+        // Degree badge on the profile page sits in the top card next to
+        // the name as text "• 1st" / "• 2nd" / "• 3rd+". Scope the search
+        // to the top card region (within ~3000 chars of the H1 / role=main)
+        // so we don't pick up a degree token from a sidebar "People you may
+        // know" entry.
+        let degreeText: string | null = null;
+        const main = document.querySelector('main, [role="main"]');
+        if (main) {
+            const topSnippet = (main.textContent || '').substring(0, 3000);
+            const dm = topSnippet.match(/•\s*(1st|2nd|3rd\+?)\b/);
+            if (dm) degreeText = dm[1];
+        }
+
+        return { composeUrl, connectHref, pendingAriaLabel, degreeText };
     }, slug);
 
     const isDmable = !!signals.composeUrl;
@@ -70,5 +87,27 @@ export async function detectConnectionState(page: Page, leadLinkedinUrl: string)
     const invitePending = !signals.composeUrl && !signals.connectHref && !!signals.pendingAriaLabel;
     const isUnknown = !isDmable && !needsConnect && !invitePending;
 
-    return { ...signals, isDmable, needsConnect, invitePending, isUnknown };
+    // Prefer the visible badge text when LinkedIn rendered it — that's
+    // the ground truth. Fall back to inference from the action buttons:
+    //   isDmable     → 1 (1st-degree or Open Profile, treat both as DMable)
+    //   needsConnect → 3 (Connect button visible — can't distinguish 2nd
+    //                     vs 3rd from the buttons alone; safe default)
+    //   else         → null (unknown / pending invite — don't write garbage)
+    let connectionDegree: number | null = null;
+    if (signals.degreeText === '1st') connectionDegree = 1;
+    else if (signals.degreeText === '2nd') connectionDegree = 2;
+    else if (signals.degreeText && signals.degreeText.startsWith('3rd')) connectionDegree = 3;
+    else if (isDmable) connectionDegree = 1;
+    else if (needsConnect) connectionDegree = 3;
+
+    return {
+        composeUrl: signals.composeUrl,
+        connectHref: signals.connectHref,
+        pendingAriaLabel: signals.pendingAriaLabel,
+        isDmable,
+        needsConnect,
+        invitePending,
+        isUnknown,
+        connectionDegree,
+    };
 }

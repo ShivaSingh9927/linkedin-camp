@@ -14,6 +14,7 @@ export const abmScoutTemplate: TemplateDefinition = {
     ],
     group: 'action-triggered',
     category: 'linkedin',
+    audience: 'cold',
     icon: '🔍',
     color: 'from-blue-500 to-cyan-500',
     durationDays: 3,

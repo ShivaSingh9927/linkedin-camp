@@ -1,17 +1,22 @@
-// background.js — Service worker for Aulead Extension
-// Manages session synchronization and side panel behavior
+// background.js — Service worker for AutoConnect extension
+//
+// Scope (post-Phase-B.0 cleanup): purely a lead-import + side-panel host.
+// Session sync is handled server-side by the qampi session-manager — the
+// extension no longer captures cookies or pushes them. The old code paths
+// (autoSyncSession, getSessionData, SYNC_COOKIE/SAVE_TOKEN/FORCE_LOGIN_SYNC
+// message types, hourly-cookie-sync alarm) have all been removed.
 
 chrome.sidePanel.setOptions({
     enabled: true
 }).catch(() => {});
 
-// Use Vercel proxy URL to avoid mixed content issues
+// Production backend. localhost stays in the list for dev iteration. The
+// path "/api/v1/..." is appended at call sites, so the base must NOT
+// include /api/v1 itself.
 const BACKEND_URLS = [
-    'https://linkedin-camp-web.vercel.app/api/v1',
-    'http://localhost:3001'
+    'https://api.qampi.com',
+    'http://localhost:3001',
 ];
-
-let syncTabId = null;
 
 // ─── Utility: Network Fetch ──────────────────────────────────
 async function directFetch(url, options) {
@@ -28,171 +33,45 @@ async function directFetch(url, options) {
     }
 }
 
-// ─── Logic: Session Extraction ───────────────────────────────
-async function getSessionData() {
-    let localStorageData = {};
-    let fingerPrint = {
-        userAgent: navigator.userAgent,
-        platform: navigator.platform,
-        language: navigator.language,
-        screen: { width: 1920, height: 1080 } 
-    };
-
-    try {
-        // 1. Find all LinkedIn tabs
-        const allLinkedInTabs = await new Promise(res => 
-            chrome.tabs.query({ url: "*://*.linkedin.com/*" }, res)
-        );
-
-        if (allLinkedInTabs && allLinkedInTabs.length > 0) {
-            // 2. Prioritize the active (focused) tab, fallback to the first one
-            const targetTab = allLinkedInTabs.find(t => t.active) || allLinkedInTabs[0];
-            
-            console.log(`[Sync] Extracting data from Tab ID: ${targetTab.id}`);
-
-            const scriptResults = await chrome.scripting.executeScript({
-                target: { tabId: targetTab.id },
-                func: () => {
-                    // Safety check: only scrape if logged in
-                    if (!document.cookie.includes('li_at')) return null;
-
-                    const lsData = {};
-                    for (let i = 0; i < window.localStorage.length; i++) {
-                        const key = window.localStorage.key(i);
-                        if (key) lsData[key] = window.localStorage.getItem(key);
-                    }
-                    return {
-                        localStorage: lsData,
-                        userAgent: navigator.userAgent,
-                        platform: navigator.platform,
-                        language: navigator.language,
-                        screen: {
-                            width: window.screen.width,
-                            height: window.screen.height,
-                            availWidth: window.screen.availWidth,
-                            availHeight: window.screen.availHeight
-                        }
-                    };
-                }
-            });
-            
-            const res = scriptResults[0]?.result;
-            if (res) {
-                localStorageData = res.localStorage;
-                fingerPrint = {
-                    userAgent: res.userAgent,
-                    platform: res.platform,
-                    language: res.language,
-                    screen: res.screen
-                };
-            }
-        }
-    } catch (e) {
-        console.warn("[Sync] Scrape failed, using background defaults:", e.message);
+// ─── Message Handlers ────────────────────────────────────────
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.type === 'SAVE_TOKEN') {
+        chrome.storage.local.set({ token: message.token });
     }
 
-    // 3. Capture & Normalize Cookies for Playwright
-    const cookies = await new Promise(res => chrome.cookies.getAll({ domain: "linkedin.com" }, res));
-    
-    const playwrightCookies = cookies.map(c => ({
-        name: c.name,
-        value: c.value,
-        domain: c.domain,
-        path: c.path,
-        secure: c.secure,
-        httpOnly: c.httpOnly,
-        // Critical: Mapping sameSite for Server-side Playwright compatibility
-        sameSite: c.sameSite === 'no_restriction' ? 'None' : (c.sameSite === 'unspecified' ? 'Lax' : c.sameSite),
-        expires: c.expirationDate || Math.round(Date.now() / 1000) + (86400 * 30) 
-    }));
-
-    return {
-        cookies: playwrightCookies,
-        fingerprint: fingerPrint,
-        localStorage: localStorageData
-    };
-}
-
-// ─── Action: Auto Sync to Backend ──────────────────────────────
-async function autoSyncSession() {
-    return new Promise((resolve) => {
+    if (message.type === 'IMPORT_LEADS') {
         chrome.storage.local.get(['token'], async (result) => {
             const token = result.token;
-            if (!token) return resolve({ success: false, error: 'Extension not authenticated.' });
-
-            const session = await getSessionData();
-            
-            // Validate we actually have a session to sync
-            if (!session.cookies.find(c => c.name === 'li_at')) {
-                return resolve({ success: false, error: 'Not logged into LinkedIn.' });
+            if (!token) {
+                sendResponse({ success: false, error: 'Not authenticated. Open the Qampi dashboard and log in first.' });
+                return;
             }
 
             let lastErr = null;
-            // Loop through backends (Cloud vs Local)
             for (const base of BACKEND_URLS) {
                 try {
-                    const resp = await directFetch(`${base}/api/v1/auth/sync-extension`, {
+                    const resp = await directFetch(`${base}/api/v1/leads/import`, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${token}`
+                            'Authorization': `Bearer ${token}`,
                         },
-                        body: JSON.stringify({ 
-                            linkedinCookie: JSON.stringify(session.cookies),
-                            linkedinLocalStorage: JSON.stringify(session.localStorage),
-                            fingerprint: session.fingerprint 
-                        })
+                        body: JSON.stringify({ leads: message.leads }),
                     });
-                    
+
                     if (resp && resp.success) {
-                        console.log(`[Sync] Successfully synced to ${base}`);
-                        return resolve(resp);
+                        console.log(`[Import] ${message.leads.length} leads imported via ${base}`);
+                        sendResponse(resp);
+                        return;
                     }
                     lastErr = resp ? (resp.error || `Error ${resp.status}`) : 'Backend unreachable';
                 } catch (e) {
                     lastErr = e.message;
                 }
             }
-            resolve({ success: false, error: lastErr });
+            sendResponse({ success: false, error: lastErr });
         });
-    });
-}
-
-// ─── Event Listeners ──────────────────────────────────────────
-
-// Watch for login success
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-    if (tabId === syncTabId) {
-        const urlToCheck = (changeInfo.url || tab.url || "").toLowerCase();
-        const isLinkedInSuccess = ['/feed', '/mynetwork', '/messaging'].some(path => urlToCheck.includes(path));
-
-        if (isLinkedInSuccess && (changeInfo.status === 'complete' || changeInfo.url)) {
-            setTimeout(() => {
-                autoSyncSession().then(res => {
-                    if (res.success) syncTabId = null;
-                });
-            }, 2000);
-        }
-    }
-});
-
-// Handle incoming messages
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (message.type === 'SAVE_TOKEN') {
-        chrome.storage.local.set({ token: message.token }, () => {
-            if (message.token) autoSyncSession();
-        });
-    }
-
-    if (message.type === 'FORCE_LOGIN_SYNC') {
-        chrome.tabs.create({ url: 'https://www.linkedin.com/login' }, (tab) => {
-            syncTabId = tab.id;
-        });
-    }
-
-    if (message.type === 'SYNC_COOKIE') {
-        autoSyncSession().then(res => sendResponse(res));
-        return true; // Keep channel open for async response
+        return true; // async response
     }
 
     if (message.type === 'OPEN_SIDE_PANEL') {
@@ -200,56 +79,33 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     if (message.type === 'DETECTED_REPLY') {
+        // Inbox-reply webhook ping (kept — unrelated to session sync).
         chrome.storage.local.get(['token', 'lastReplySync'], async (result) => {
             const token = result.token;
             if (!token) return;
-
             const now = Date.now();
             const lastSync = result.lastReplySync || {};
-            
-            // Deduplicate: Don't resend if same URL synced in the last 5 minutes (300,000 ms)
-            if (lastSync.url === message.linkedinUrl && now - lastSync.timestamp < 300000) {
-                return;
-            }
-
-            // Update deduplication log
-            chrome.storage.local.set({
-                lastReplySync: { url: message.linkedinUrl, timestamp: now }
-            });
-
-            console.log(`[Webhook Dispatch] Posting reply for ${message.linkedinUrl} to backend...`);
+            if (lastSync.url === message.linkedinUrl && now - lastSync.timestamp < 300_000) return;
+            chrome.storage.local.set({ lastReplySync: { url: message.linkedinUrl, timestamp: now } });
 
             for (const base of BACKEND_URLS) {
                 try {
-                    const hostBase = base.replace(/\/api\/v1\/?$/, '');
-                    const webhookUrl = `${hostBase}/api/webhooks/linkedin-reply`;
-                    
-                    const resp = await directFetch(webhookUrl, {
+                    const resp = await directFetch(`${base}/api/webhooks/linkedin-reply`, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${token}`
+                            'Authorization': `Bearer ${token}`,
                         },
                         body: JSON.stringify({
                             linkedinUrl: message.linkedinUrl,
-                            newStatus: message.newStatus
-                        })
+                            newStatus: message.newStatus,
+                        }),
                     });
-
-                    if (resp && resp.success) {
-                        console.log(`[Webhook Dispatch] Successfully notified ${webhookUrl} for reply`);
-                        break; // Stop at first successful host sync
-                    }
+                    if (resp && resp.success) break;
                 } catch (e) {
-                    console.error(`[Webhook Dispatch] Failed posting to ${base}:`, e.message);
+                    console.error(`[Webhook] Failed posting to ${base}:`, e.message);
                 }
             }
         });
     }
-});
-
-// Hourly background sync
-chrome.alarms.create('hourly-cookie-sync', { periodInMinutes: 60 });
-chrome.alarms.onAlarm.addListener((alarm) => {
-    if (alarm.name === 'hourly-cookie-sync') autoSyncSession();
 });

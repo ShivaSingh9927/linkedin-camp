@@ -2,7 +2,7 @@
 // Manages the extraction lifecycle: start → scrape → paginate → export
 
 const DASHBOARD_URLS = [
-    'https://linkedin-camp-web.vercel.app',
+    'https://app.qampi.com',
     'http://localhost:3000'
 ];
 
@@ -116,14 +116,13 @@ async function syncSession() {
     if (dashTab) {
         const token = await grabTokenFromTab(dashTab.id);
         if (token) {
-            chrome.runtime.sendMessage({ type: 'SYNC_COOKIE' });
             await updateAuthStatus();
             return;
         }
     }
 
     await updateAuthStatus();
-    alert('❌ Could not find a logged-in dashboard.\n\n1. Open the dashboard & login\n2. Come back here');
+    alert('Could not find a logged-in qampi dashboard tab.\n\n1. Open https://app.qampi.com and log in\n2. Click Connected again');
 }
 
 // ─── Find LinkedIn Tab ──────────────────────────────────────
@@ -269,6 +268,19 @@ function updateControlButtons() {
             exportBtn.addEventListener('click', exportToBackend);
             els.controls.appendChild(exportBtn);
 
+            // Fallback download — generate a CSV from the in-memory leads so
+            // the user always has a local copy if backend export fails.
+            const csvBtn = document.createElement('button');
+            csvBtn.className = 'btn btn-csv';
+            csvBtn.style.cssText = 'background:#0f172a;color:#fff;';
+            csvBtn.title = 'Download as CSV (works even if CRM export fails)';
+            csvBtn.innerHTML = `
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                CSV
+            `;
+            csvBtn.addEventListener('click', downloadCSV);
+            els.controls.appendChild(csvBtn);
+
             const newBtn = document.createElement('button');
             newBtn.className = 'btn btn-start';
             newBtn.style.cssText = 'flex: 0 0 auto; width: 38px;';
@@ -319,14 +331,28 @@ function createLeadCard(lead) {
     // Gender indicator
     const genderIcon = lead.gender === 'female' ? '♀' : lead.gender === 'male' ? '♂' : '';
 
+    // Connection-degree badge — only render when present (extension scrape
+    // captured a visible "• 1st" / "• 2nd" / "• 3rd+" badge).
+    const deg = lead.connectionDegree;
+    const degreeBadge = deg
+        ? `<span class="lead-degree-badge deg-${deg}" style="display:inline-block;padding:2px 6px;border-radius:999px;font-size:10px;font-weight:700;margin-left:6px;background:${deg === 1 ? '#16a34a' : deg === 2 ? '#0ea5e9' : '#64748b'};color:white;">${deg === 1 ? '1st' : deg === 2 ? '2nd' : '3rd+'}</span>`
+        : '';
+
+    // Raw search-result snippet ("info") — collapsed by default, expandable
+    // on click so a 1000-char snippet doesn't dominate the card list.
+    const infoSnippet = lead.info
+        ? `<details class="lead-info-raw" style="margin-top:4px;font-size:10px;color:#94a3b8;"><summary style="cursor:pointer;outline:none;">show search snippet</summary><pre style="white-space:pre-wrap;margin:4px 0 0 0;font-family:inherit;">${escapeHtml(lead.info)}</pre></details>`
+        : '';
+
     card.innerHTML = `
         <div class="lead-avatar ${isMember ? 'member' : ''}">${initials}</div>
         <div class="lead-info">
-            <div class="lead-name">${escapeHtml(lead.firstName + ' ' + lead.lastName)} ${genderIcon ? `<span class="gender-icon">${genderIcon}</span>` : ''}</div>
+            <div class="lead-name">${escapeHtml(lead.firstName + ' ' + lead.lastName)} ${genderIcon ? `<span class="gender-icon">${genderIcon}</span>` : ''}${degreeBadge}</div>
             <div class="lead-title">${escapeHtml(lead.jobTitle || 'No title')}</div>
             ${lead.company ? `<div class="lead-company">🏢 ${escapeHtml(lead.company)}</div>` : ''}
             ${lead.location ? `<div class="lead-location">📍 ${escapeHtml(lead.location)}</div>` : ''}
             ${lead.linkedinUrl ? `<div class="lead-url">${escapeHtml(lead.linkedinUrl.replace('https://www.linkedin.com', ''))}</div>` : ''}
+            ${infoSnippet}
         </div>
     `;
 
@@ -669,6 +695,39 @@ function resetExtraction() {
     els.emptyState = document.getElementById('empty-state');
 
     updateUI();
+}
+
+// ─── Local CSV Download ─────────────────────────────────────
+// Lets the user save the extracted leads as a CSV file regardless of
+// whether the CRM export succeeded. They can then re-import via the
+// qampi web UI's CSV upload, or use elsewhere. No backend round-trip.
+function csvEscape(v) {
+    if (v == null) return '';
+    const s = String(v);
+    if (/[",\n\r]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+    return s;
+}
+
+function downloadCSV() {
+    const s = extractionState;
+    if (s.leads.length === 0) { alert('No leads to download.'); return; }
+    const cols = [
+        'firstName', 'lastName', 'connectionDegree', 'jobTitle', 'company',
+        'location', 'country', 'gender', 'linkedinUrl', 'info',
+    ];
+    const header = cols.join(',');
+    const rows = s.leads.map(l => cols.map(c => csvEscape(l[c])).join(','));
+    const csv = [header, ...rows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const safeName = (s.listName || 'qampi-leads').replace(/[^a-z0-9-_]+/gi, '_');
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${safeName}-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
 }
 
 // ─── Export ─────────────────────────────────────────────────

@@ -10,6 +10,7 @@ export const vcAttentionGrabberTemplate: TemplateDefinition = {
     recommendedFor: ['Founders seeking funding', 'Startup CEOs'],
     group: 'objective-based',
     category: 'multi-channel',
+    audience: 'cold',
     persona: 'vc-founder',
     icon: '🚀',
     color: 'from-amber-500 to-orange-600',

@@ -19,7 +19,13 @@ export interface IfElseCondition {
     source?: 'connectionState' | 'storedOutputs';
     field: string;
     operator: 'equals' | 'not_equals' | 'is_true' | 'is_false' | 'is_null' | 'is_not_null' | 'is_empty' | 'is_not_empty';
-    value?: string | boolean;
+    value?: string | boolean | number;
+    // When true AND the resolved field value is null AND the engine has
+    // a live Page available, run CHECK_CONNECTION first to populate the
+    // Lead.connectionDegree column, then re-read. Lets templates branch
+    // correctly when scrape-time degree data was missing without forcing
+    // users to author an explicit "if null" branch upstream.
+    probeOnNull?: boolean;
 }
 
 export interface SessionContext {
@@ -81,6 +87,10 @@ export interface ProfileVisitOutput {
     email: string | null;
     phone: string | null;
     connected: boolean;
+    // 1 | 2 | 3 | null — from the visible degree badge on the profile.
+    // Also persisted to Lead.connectionDegree as a side effect so future
+    // campaign runs can branch via IF_ELSE without re-probing.
+    connectionDegree?: number | null;
     connectedDate: string | null;
     experience: Experience[];
     education: Education[];
@@ -138,6 +148,7 @@ export interface IfElseOutput {
 export interface CheckConnectionOutput {
     connectionStatus: 'not_connected' | 'pending' | 'connected';
     connected: boolean;
+    connectionDegree?: number | null;
 }
 
 // ---- Context passed to each node ----

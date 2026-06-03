@@ -14,6 +14,7 @@ export const warmEngagerLoopTemplate: TemplateDefinition = {
     ],
     group: 'my-network',
     category: 'linkedin',
+    audience: 'mixed',
     icon: '♻️',
     color: 'from-teal-400 to-cyan-500',
     durationDays: 5,

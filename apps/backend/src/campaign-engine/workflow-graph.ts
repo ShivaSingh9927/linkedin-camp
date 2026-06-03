@@ -117,6 +117,13 @@ export interface IfElseCondition {
     field: string;
     operator: string;
     value?: any;
+    // When the resolved field value is null AND the engine has a live page
+    // available, run a CHECK_CONNECTION-style DOM probe to populate the
+    // Lead.connectionDegree column, then re-read the field. Lets templates
+    // stay simple (no explicit "if null" branch) while still routing
+    // correctly when scrape-time data is missing. Only honored for fields
+    // backed by Lead row columns (connectionDegree, connected, etc.).
+    probeOnNull?: boolean;
 }
 
 /**
@@ -150,11 +157,23 @@ export async function evaluateIfElseCondition(
         const lead = await prisma.lead.findUnique({ where: { id: ctx.leadId } });
         const status = lead?.status || 'IMPORTED';
         const connected = status === 'CONNECTED';
-        if (condition.field === 'connected') fieldValue = connected;
-        else if (condition.field === 'connectionDegree') fieldValue = connected ? '1st' : '3rd+';
-        else if (condition.field === 'connectionStatus')
+        if (condition.field === 'connected') {
+            fieldValue = connected;
+        } else if (condition.field === 'connectionDegree') {
+            // Prefer the column when populated (canonical: written by
+            // extension scrape, profile-visit, or check-connection).
+            // Fall back to the binary inference from Lead.status only
+            // when the column is null AND probeOnNull wasn't requested.
+            fieldValue = lead?.connectionDegree ?? null;
+            if (fieldValue == null) fieldValue = connected ? 1 : null;
+        } else if (condition.field === 'connectionStatus') {
             fieldValue = connected ? 'connected' : 'not_connected';
+        }
     }
+    // NOTE: probeOnNull lives on the condition but is honored by the
+    // engine handler, not here — this function has no Page reference.
+    // The engine's if-else node will invoke CHECK_CONNECTION before
+    // calling us when probeOnNull && fieldValue == null.
 
     const { operator, value } = condition;
     let result: boolean;

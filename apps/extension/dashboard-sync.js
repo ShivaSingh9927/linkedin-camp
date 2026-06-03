@@ -4,8 +4,7 @@
 const hostname = window.location.hostname;
 if (
     hostname !== 'localhost' &&
-    hostname !== '204.168.167.198' &&
-    !hostname.startsWith('linkedin-camp-web')
+    hostname !== 'app.qampi.com'
 ) {
     // Not our app, bail out
     console.log('AutoConnect: Skipping non-matching deployment:', hostname);

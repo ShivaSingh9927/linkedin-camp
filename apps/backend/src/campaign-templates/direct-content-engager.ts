@@ -14,6 +14,7 @@ export const directContentEngagerTemplate: TemplateDefinition = {
     ],
     group: 'my-network',
     category: 'linkedin',
+    audience: 'connected',
     icon: '💡',
     color: 'from-amber-400 to-orange-500',
     durationDays: 2,

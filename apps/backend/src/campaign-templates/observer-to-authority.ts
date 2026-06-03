@@ -14,6 +14,7 @@ export const observerToAuthorityTemplate: TemplateDefinition = {
     ],
     group: 'my-network',
     category: 'linkedin',
+    audience: 'mixed',
     icon: '👁️',
     color: 'from-sky-400 to-indigo-500',
     durationDays: 4,

@@ -14,6 +14,7 @@ export const softFollowAudienceTemplate: TemplateDefinition = {
     ],
     group: 'action-triggered',
     category: 'linkedin',
+    audience: 'mixed',
     icon: '👣',
     color: 'from-gray-400 to-slate-500',
     durationDays: 2,

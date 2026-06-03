@@ -1,5 +1,6 @@
 import { NodeHandler, NodeResult, ProfileVisitOutput } from '../types';
 import { detectConnectionState } from '../connection-state';
+import { prisma } from '@repo/db';
 
 const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
 const randomRange = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1) + min);
@@ -82,6 +83,17 @@ export const profileVisit: NodeHandler = async (ctx): Promise<NodeResult> => {
         try {
             const state = await detectConnectionState(page, lead.linkedinUrl);
             output.connected = state.isDmable;
+            // Persist connectionDegree onto the Lead row when we have a
+            // confident reading. Only write non-null degree — a probe that
+            // failed to read the badge shouldn't wipe out a previously-known
+            // value (e.g. one captured at extension scrape time).
+            if (state.connectionDegree != null) {
+                output.connectionDegree = state.connectionDegree;
+                await prisma.lead.update({
+                    where: { id: lead.id },
+                    data: { connectionDegree: state.connectionDegree },
+                }).catch((err: any) => console.log(`[PROFILE-VISIT] Lead.connectionDegree write failed: ${err.message}`));
+            }
         } catch {}
 
         // --- EXTRACT TOP CARD (exact from testscript) ---

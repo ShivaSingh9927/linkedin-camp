@@ -14,6 +14,7 @@ export const twoStepNurtureTemplate: TemplateDefinition = {
     ],
     group: 'my-network',
     category: 'linkedin',
+    audience: 'connected',
     icon: '🌱',
     color: 'from-green-400 to-emerald-500',
     durationDays: 5,

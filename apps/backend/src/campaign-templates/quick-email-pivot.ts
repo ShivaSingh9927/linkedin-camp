@@ -14,6 +14,7 @@ export const quickEmailPivotTemplate: TemplateDefinition = {
     ],
     group: 'my-network',
     category: 'email',
+    audience: 'connected',
     icon: '📨',
     color: 'from-violet-400 to-purple-500',
     durationDays: 1,

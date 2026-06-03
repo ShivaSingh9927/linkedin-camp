@@ -39,6 +39,7 @@ export const warmConnectTemplate: TemplateDefinition = {
     ],
     group: 'out-of-network',
     category: 'linkedin',
+    audience: 'cold',
     icon: '✍️',
     color: 'from-indigo-500 to-purple-600',
     durationDays: 9,

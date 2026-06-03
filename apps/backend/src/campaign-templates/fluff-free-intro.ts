@@ -13,6 +13,7 @@ export const fluffFreeIntroTemplate: TemplateDefinition = {
     ],
     group: 'out-of-network',
     category: 'linkedin',
+    audience: 'cold',
     icon: '⚡',
     color: 'from-amber-500 to-red-500',
     durationDays: 1,

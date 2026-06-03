@@ -14,6 +14,7 @@ export const technicalTruthDripTemplate: TemplateDefinition = {
     ],
     group: 'action-triggered',
     category: 'linkedin',
+    audience: 'cold',
     icon: '🏗️',
     color: 'from-stone-500 to-zinc-600',
     durationDays: 11,

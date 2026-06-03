@@ -10,6 +10,7 @@ export const hiringManagerBypassTemplate: TemplateDefinition = {
     recommendedFor: ['Job seekers targeting specific companies', 'Career changers'],
     group: 'objective-based',
     category: 'multi-channel',
+    audience: 'connected',
     persona: 'job-seeker',
     icon: '💼',
     color: 'from-blue-600 to-indigo-700',

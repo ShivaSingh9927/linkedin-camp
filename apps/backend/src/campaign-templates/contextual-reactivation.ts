@@ -14,6 +14,7 @@ export const contextualReactivationTemplate: TemplateDefinition = {
     ],
     group: 'my-network',
     category: 'linkedin',
+    audience: 'connected',
     icon: '🔄',
     color: 'from-blue-400 to-cyan-500',
     durationDays: 2,

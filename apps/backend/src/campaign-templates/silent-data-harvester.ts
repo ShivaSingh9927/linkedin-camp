@@ -14,6 +14,7 @@ export const silentDataHarvesterTemplate: TemplateDefinition = {
     ],
     group: 'my-network',
     category: 'linkedin',
+    audience: 'mixed',
     icon: '🎯',
     color: 'from-emerald-400 to-teal-500',
     durationDays: 0,

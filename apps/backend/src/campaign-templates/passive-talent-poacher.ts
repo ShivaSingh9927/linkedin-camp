@@ -10,6 +10,7 @@ export const passiveTalentPoacherTemplate: TemplateDefinition = {
     recommendedFor: ['Recruiters sourcing passive talent', 'HR professionals'],
     group: 'objective-based',
     category: 'linkedin',
+    audience: 'cold',
     persona: 'recruiter',
     icon: '🎣',
     color: 'from-teal-500 to-emerald-600',

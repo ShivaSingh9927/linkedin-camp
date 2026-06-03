@@ -13,6 +13,7 @@ export const blankSlateConnectorTemplate: TemplateDefinition = {
     ],
     group: 'out-of-network',
     category: 'linkedin',
+    audience: 'cold',
     icon: '🔌',
     color: 'from-slate-500 to-gray-600',
     durationDays: 2,

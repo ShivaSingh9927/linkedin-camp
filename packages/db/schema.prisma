@@ -175,6 +175,20 @@ model Lead {
   phone                String?
   country              String?
   gender               String?
+  // 1 = 1st-degree (already connected), 2 = 2nd-degree, 3 = 3rd-degree+.
+  // null = unknown (legacy/manual imports, or LinkedIn didn't render the
+  // badge). Captured at scrape time by the Chrome extension when visible
+  // in search results, and re-written canonically by PROFILE_VISIT and
+  // CHECK_CONNECTION when they read it off a profile page. Lets templates
+  // branch via IF_ELSE without a runtime DOM probe — fast path for known
+  // 1st-degree leads skips the CONNECT+wait+CHECK_CONNECTION dance.
+  connectionDegree     Int?
+  // Raw text snippet from the LinkedIn search-result card the extension
+  // scraped this lead from. Captures everything visible (name, degree,
+  // role line, location, "Provides services - ..." secondary lines) so
+  // the qampi UI can show "what the user saw on LinkedIn" alongside the
+  // parsed fields. Capped to ~1000 chars at scrape time.
+  info                 String?
   tags                 String[]               @default([])
   status               LeadStatus             @default(IMPORTED)
   aboutInfo            String?

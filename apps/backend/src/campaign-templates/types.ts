@@ -2,6 +2,23 @@ export type TemplateCategory = 'linkedin' | 'email' | 'multi-channel';
 
 export type TemplateGroup = 'my-network' | 'out-of-network' | 'action-triggered' | 'objective-based';
 
+/**
+ * Who this template is designed for, in terms of the lead list's
+ * connection-degree mix:
+ *   - 'connected'   = 1st-degree only (re-engagement, dormant network).
+ *                     Templates that lead with MESSAGE without a CONNECT
+ *                     gate live here.
+ *   - 'cold'        = 2nd / 3rd-degree only (prospecting). Templates that
+ *                     start with CONNECT or FOLLOW.
+ *   - 'mixed'       = handles both via degree-based IF_ELSE branching at
+ *                     the top of the flow. Fast path for 1st-degree, cold
+ *                     path for everyone else.
+ *
+ * Surfaced in the gallery as a filter pill so users pick a template that
+ * matches their actual lead list.
+ */
+export type TemplateAudience = 'connected' | 'cold' | 'mixed';
+
 export type TemplatePersona = 'job-seeker' | 'recruiter' | 'vc-founder' | 'enterprise-sales' | null;
 
 export interface TemplateNode {
@@ -27,6 +44,7 @@ export interface TemplateDefinition {
     recommendedFor: string[];
     group: TemplateGroup;
     category: TemplateCategory;
+    audience: TemplateAudience;
     persona?: TemplatePersona;
     icon: string;
     color: string;

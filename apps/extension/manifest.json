@@ -19,16 +19,12 @@
     },
     "host_permissions": [
         "*://*.linkedin.com/*",
-        "https://linkedin-camp-web.vercel.app/*",
-        "https://*.vercel.app/*",
-        "https://linkedin-camp-production.up.railway.app/*",
+        "https://api.qampi.com/*",
+        "https://app.qampi.com/*",
         "http://localhost:3000/*",
         "http://localhost:3001/*",
         "http://127.0.0.1:3001/*",
-        "http://127.0.0.1:3000/*",
-        "http://204.168.167.198:3001/*",
-        "http://204.168.167.198:3000/*",
-        "https://204.168.167.198:3001/*"
+        "http://127.0.0.1:3000/*"
     ],
     "background": {
         "service_worker": "background.js"
@@ -55,10 +51,8 @@
         },
         {
             "matches": [
-                "https://linkedin-camp-web.vercel.app/*",
-                "https://*.vercel.app/*",
-                "http://localhost:3000/*",
-                "http://204.168.167.198:*/*"
+                "https://app.qampi.com/*",
+                "http://localhost:3000/*"
             ],
             "js": [
                 "dashboard-sync.js"

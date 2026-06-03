@@ -10,6 +10,7 @@ export const multiThreadEnterpriseTemplate: TemplateDefinition = {
     recommendedFor: ['Enterprise sales teams', 'Account executives'],
     group: 'objective-based',
     category: 'multi-channel',
+    audience: 'cold',
     persona: 'enterprise-sales',
     icon: '🏢',
     color: 'from-slate-600 to-gray-700',

@@ -46,8 +46,9 @@ export const checkConnection: NodeHandler = async (ctx): Promise<NodeResult> => 
         output.connected = state.isDmable;
         output.connectionStatus = state.isDmable ? 'connected'
             : (state.invitePending ? 'pending' : 'not_connected');
+        if (state.connectionDegree != null) output.connectionDegree = state.connectionDegree;
 
-        console.log(`[CHECK-CONNECTION] Connection status: ${output.connectionStatus}`);
+        console.log(`[CHECK-CONNECTION] Connection status: ${output.connectionStatus}, degree: ${output.connectionDegree ?? 'unknown'}`);
 
         if (campaignId) {
             try {
@@ -78,14 +79,20 @@ export const checkConnection: NodeHandler = async (ctx): Promise<NodeResult> => 
         // accepted). Only upgrade to CONNECTED — never downgrade past
         // CONNECTED (a previously-accepted lead who LinkedIn now hides
         // shouldn't lose their CONNECTED state silently).
-        if (output.connected) {
+        const leadUpdate: any = {};
+        if (output.connected) leadUpdate.status = 'CONNECTED';
+        // Same write-only-when-confident discipline for degree: don't wipe
+        // a previously-known value with null if today's probe failed to
+        // read the badge.
+        if (output.connectionDegree != null) leadUpdate.connectionDegree = output.connectionDegree;
+        if (Object.keys(leadUpdate).length > 0) {
             try {
                 await prisma.lead.update({
                     where: { id: lead.id },
-                    data: { status: 'CONNECTED' },
+                    data: leadUpdate,
                 });
             } catch (err) {
-                console.log(`[CHECK-CONNECTION] Could not update Lead.status: ${err}`);
+                console.log(`[CHECK-CONNECTION] Could not update Lead row: ${err}`);
             }
         }
 

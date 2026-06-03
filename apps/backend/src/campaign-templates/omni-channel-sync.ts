@@ -14,6 +14,7 @@ export const omniChannelSyncTemplate: TemplateDefinition = {
     ],
     group: 'my-network',
     category: 'multi-channel',
+    audience: 'connected',
     icon: '🔗',
     color: 'from-fuchsia-400 to-pink-500',
     durationDays: 2,

@@ -1,7 +1,7 @@
 // popup.js — Unified popup for auth + import
 
 const DASHBOARD_URLS = [
-    'https://linkedin-camp-web.vercel.app',
+    'https://app.qampi.com',
     'http://localhost:3000'
 ];
 
@@ -32,7 +32,7 @@ async function findDashboardTab() {
         // Also check Vercel preview/branch deployments
         try {
             const tabHost = new URL(tab.url).hostname;
-            if (tabHost.startsWith('linkedin-camp-web') && tabHost.endsWith('.vercel.app')) {
+            if (tabHost === 'app.qampi.com') {
                 return tab;
             }
         } catch (e) { /* ignore */ }
@@ -205,58 +205,9 @@ async function handleImport() {
     }
 }
 
-// ─── Sync Session Logic ────────────────────────────────────
-document.getElementById('sync-btn').onclick = async function () {
-    const btn = this;
-    const original = btn.innerHTML;
-    btn.innerHTML = '⏳ Syncing...';
-    btn.disabled = true;
-
-    // Try to grab token from dashboard tab
-    let dashTab = await findDashboardTab();
-    if (!dashTab) {
-        // Open dashboard login
-        const newTab = await chrome.tabs.create({ url: DASHBOARD_URLS[0] + '/login', active: true });
-        await new Promise((resolve) => {
-            let resolved = false;
-            const listener = (tabId, info) => {
-                if (tabId === newTab.id && info.status === 'complete') {
-                    chrome.tabs.onUpdated.removeListener(listener);
-                    if (!resolved) { resolved = true; resolve(); }
-                }
-            };
-            chrome.tabs.onUpdated.addListener(listener);
-            setTimeout(() => {
-                chrome.tabs.onUpdated.removeListener(listener);
-                if (!resolved) { resolved = true; resolve(); }
-            }, 15000);
-        });
-        await new Promise(r => setTimeout(r, 2000));
-        dashTab = await findDashboardTab();
-    }
-
-    if (dashTab) {
-        const token = await grabTokenFromTab(dashTab.id);
-        if (token) {
-            // Also sync LinkedIn cookie
-            chrome.runtime.sendMessage({ type: 'SYNC_COOKIE' }, (response) => {
-                btn.innerHTML = original;
-                btn.disabled = false;
-                if (response && response.success) {
-                    alert('🚀 Session synced successfully!');
-                } else {
-                    alert('✅ Token saved! You can now import leads.\n\n(Cookie sync: ' + (response?.error || 'skipped') + ')');
-                }
-                updateAuthStatus();
-            });
-            return;
-        }
-    }
-
-    btn.innerHTML = original;
-    btn.disabled = false;
-    alert('❌ Could not find a logged-in dashboard.\n\n1. Open ' + DASHBOARD_URLS[0] + '/login\n2. Log in\n3. Come back and click Sync again');
-};
+// Session sync was removed in Phase B.0 — login is handled server-side
+// by the qampi session-manager, not by the extension scraping cookies.
+// The "Sync Session" button no longer exists; we keep this file lean.
 
 // ─── Initialization ────────────────────────────────────────
 (async () => {

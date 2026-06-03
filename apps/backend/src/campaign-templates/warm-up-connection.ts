@@ -13,6 +13,7 @@ export const warmUpConnectionTemplate: TemplateDefinition = {
     ],
     group: 'out-of-network',
     category: 'linkedin',
+    audience: 'mixed',
     icon: '🔥',
     color: 'from-red-500 to-rose-600',
     durationDays: 2,

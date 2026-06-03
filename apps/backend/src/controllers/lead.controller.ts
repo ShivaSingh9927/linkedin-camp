@@ -56,6 +56,21 @@ const bulkImportLeads = async (userId: string, incomingLeads: any[], teamUserIds
             continue;
         }
 
+        // Sanitize connectionDegree — extension may send 1/2/3 or null.
+        // Anything else (string, undefined, NaN) → null so the column never
+        // gets corrupt data from a future malformed scrape.
+        let connectionDegree: number | null = null;
+        if (lead.connectionDegree === 1 || lead.connectionDegree === 2 || lead.connectionDegree === 3) {
+            connectionDegree = lead.connectionDegree;
+        }
+
+        // Raw snippet from the search-result card. Trim + cap defensively
+        // — the extension already caps to 1000 but a malformed POST could
+        // ship more.
+        const info: string | null = typeof lead.info === 'string' && lead.info.trim().length > 0
+            ? lead.info.trim().substring(0, 2000)
+            : null;
+
         if (userExistingLeadsMap.has(lead.linkedinUrl)) {
             const existingId = userExistingLeadsMap.get(lead.linkedinUrl)!.id;
             leadsToUpdate.push(prisma.lead.update({
@@ -69,6 +84,11 @@ const bulkImportLeads = async (userId: string, incomingLeads: any[], teamUserIds
                     country: lead.country,
                     gender: lead.gender,
                     tags: lead.tags?.length ? lead.tags : undefined,
+                    // Only overwrite degree if the new scrape has a value —
+                    // a later scrape that came in without the badge shouldn't
+                    // wipe a previously-known degree.
+                    ...(connectionDegree != null ? { connectionDegree } : {}),
+                    ...(info != null ? { info } : {}),
                 }
             }));
         } else {
@@ -83,6 +103,8 @@ const bulkImportLeads = async (userId: string, incomingLeads: any[], teamUserIds
                 country: lead.country,
                 gender: lead.gender,
                 tags: lead.tags || [],
+                connectionDegree,
+                info,
             });
         }
     }

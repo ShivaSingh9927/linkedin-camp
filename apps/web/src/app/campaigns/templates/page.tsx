@@ -2,11 +2,13 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Sparkles, FileText, MessageSquare, Mail, Linkedin, Plus, Loader2 } from 'lucide-react';
+import { Sparkles, Loader2, ArrowLeft, Users, Globe, Zap, Target, Check } from 'lucide-react';
+import Link from 'next/link';
 import api from '@/lib/api';
+import { FALLBACK_TEMPLATES } from '@/lib/template-data';
 import { CampaignNameModal } from '@/components/CampaignNameModal';
 
-type Tab = 'workflows' | 'messages';
+type GroupTab = 'all' | 'my-network' | 'out-of-network' | 'action-triggered' | 'objective-based';
 
 interface TemplateSummary {
     id: string;
@@ -14,10 +16,16 @@ interface TemplateSummary {
     description: string;
     useCase: string;
     recommendedFor: string[];
+    group: string;
     category: 'linkedin' | 'email' | 'multi-channel';
+    audience?: 'connected' | 'cold' | 'mixed';
+    persona?: string | null;
     icon: string;
     color: string;
     durationDays: number;
+    stepCount: number;
+    delayCount: number;
+    requires?: string[];
     aiStrategyHint: {
         objective: string;
         description: string;
@@ -33,31 +41,73 @@ interface FullTemplate extends TemplateSummary {
     };
 }
 
-const MESSAGE_TEMPLATES = [
-    { id: 1, name: 'Professional Intro', channel: 'linkedin', type: 'message', content: 'Hi {firstName}, I came across your profile and was impressed by your work at {company}. Would love to connect and exchange insights!' },
-    { id: 2, name: 'Event Follow-up', channel: 'linkedin', type: 'message', content: 'Hi {firstName}, great connecting at the event! I really enjoyed our conversation about {jobTitle} trends. Would love to continue the discussion.' },
-    { id: 3, name: 'Invite with Value', channel: 'linkedin', type: 'invite', content: 'Hi {firstName}, I noticed we share interests in the same space. I\'d love to connect and share some resources I think you\'d find valuable.' },
-    { id: 4, name: 'Cold Email Opener', channel: 'email', type: 'email', content: 'Hi {firstName},\n\nI hope this email finds you well. I came across {company} and was intrigued by your approach.\n\nI\'d love to schedule a quick 15-minute call to discuss how we might collaborate.\n\nBest regards' },
-    { id: 5, name: 'Follow-up Email', channel: 'email', type: 'email', content: 'Hi {firstName},\n\nJust wanted to follow up on my previous email. I understand you\'re busy, but I believe there\'s real value in connecting.\n\nWould any time this week work for a brief chat?\n\nBest' },
+const TABS: { key: GroupTab; label: string; icon: typeof Sparkles }[] = [
+    { key: 'all', label: 'All', icon: Sparkles },
+    { key: 'my-network', label: 'My Network', icon: Users },
+    { key: 'out-of-network', label: 'Out of Network', icon: Globe },
+    { key: 'action-triggered', label: 'Action-Triggered', icon: Zap },
+    { key: 'objective-based', label: 'Objective-Based', icon: Target },
 ];
 
+const GROUP_LABELS: Record<string, string> = {
+    'my-network': 'My Network',
+    'out-of-network': 'Out of Network',
+    'action-triggered': 'Action-Triggered',
+    'objective-based': 'Objective-Based',
+};
+
+const GROUP_COLORS: Record<string, string> = {
+    'my-network': 'bg-blue-100 text-blue-700',
+    'out-of-network': 'bg-purple-100 text-purple-700',
+    'action-triggered': 'bg-amber-100 text-amber-700',
+    'objective-based': 'bg-emerald-100 text-emerald-700',
+};
+
+type AudienceFilter = 'all' | 'connected' | 'cold' | 'mixed';
+
+const AUDIENCE_LABELS: Record<Exclude<AudienceFilter, 'all'>, string> = {
+    connected: 'Existing network',
+    cold: 'Cold prospects',
+    mixed: 'Mixed',
+};
+
+const AUDIENCE_BADGE_COLORS: Record<Exclude<AudienceFilter, 'all'>, string> = {
+    connected: 'bg-emerald-100 text-emerald-700',
+    cold:      'bg-rose-100 text-rose-700',
+    mixed:     'bg-indigo-100 text-indigo-700',
+};
+
+const PERSONA_LABELS: Record<string, string> = {
+    'job-seeker': 'Job Seeker',
+    'recruiter': 'Recruiter',
+    'vc-founder': 'VC / Founder',
+    'enterprise-sales': 'Enterprise Sales',
+};
+
 export default function TemplatesHubPage() {
-    const [tab, setTab] = useState<Tab>('workflows');
-    const [msgFilter, setMsgFilter] = useState<string>('all');
-    const [templates, setTemplates] = useState<TemplateSummary[]>([]);
+    const [tab, setTab] = useState<GroupTab>('all');
+    const [audience, setAudience] = useState<AudienceFilter>('all');
+    const [templates, setTemplates] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
-    const [pendingTemplate, setPendingTemplate] = useState<TemplateSummary | null>(null);
+    const [pendingTemplate, setPendingTemplate] = useState<any | null>(null);
     const [creating, setCreating] = useState(false);
     const router = useRouter();
 
     useEffect(() => {
         api.get('/templates')
             .then(res => setTemplates(res.data.templates || []))
-            .catch(err => console.error('Failed to load templates:', err))
+            .catch(err => {
+                console.error('Failed to load templates from API, using fallback:', err);
+                setTemplates(FALLBACK_TEMPLATES);
+            })
             .finally(() => setLoading(false));
     }, []);
 
-    const handleUseTemplate = (template: TemplateSummary) => {
+    const filtered = templates
+        .filter(t => tab === 'all' || t.group === tab)
+        .filter(t => audience === 'all' || (t.audience || 'mixed') === audience);
+
+    const handleUseTemplate = (template: any) => {
         setPendingTemplate(template);
     };
 
@@ -67,10 +117,16 @@ export default function TemplatesHubPage() {
         setPendingTemplate(null);
         setCreating(true);
         try {
-            // Fetch the full template (with workflow) at the moment of use,
-            // so the list endpoint stays light.
-            const full = await api.get<{ template: FullTemplate }>(`/templates/${summary.id}`);
-            const tpl = full.data.template;
+            let tpl = summary.workflow ? summary : null;
+            if (!tpl) {
+                try {
+                    const res = await api.get<{ template: any }>(`/templates/${summary.id}`);
+                    tpl = res.data.template;
+                } catch {
+                    tpl = FALLBACK_TEMPLATES.find(t => t.id === summary.id) || null;
+                }
+            }
+            if (!tpl) throw new Error('Template not found');
             const res = await api.post('/campaigns', {
                 name,
                 workflowJson: tpl.workflow,
@@ -88,177 +144,150 @@ export default function TemplatesHubPage() {
         }
     };
 
-    const filteredMessages = msgFilter === 'all'
-        ? MESSAGE_TEMPLATES
-        : MESSAGE_TEMPLATES.filter(m => m.channel === msgFilter);
-
-    const categories: { key: TemplateSummary['category']; label: string; color: string }[] = [
-        { key: 'linkedin', label: 'LinkedIn', color: 'bg-blue-100 text-blue-700' },
-        { key: 'email', label: 'Email', color: 'bg-emerald-100 text-emerald-700' },
-        { key: 'multi-channel', label: 'Multi-Channel', color: 'bg-amber-100 text-amber-700' },
-    ];
-
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
-            <div>
-                <h1 className="text-3xl font-black text-slate-800 uppercase tracking-tight italic">Templates Hub</h1>
-                <p className="text-slate-500 font-medium">Prebuilt workflows and reusable message templates.</p>
+            <div className="flex items-center space-x-4">
+                <Link href="/campaigns" className="p-2 hover:bg-slate-100 rounded-xl transition-all">
+                    <ArrowLeft className="w-5 h-5 text-slate-500" />
+                </Link>
+                <div>
+                    <h1 className="text-3xl font-black text-slate-800 uppercase tracking-tight italic">Campaign Templates</h1>
+                    <p className="text-slate-500 font-medium">Prebuilt outreach sequences. Pick one, customize, launch.</p>
+                </div>
             </div>
 
-            {/* Tabs */}
-            <div className="flex items-center space-x-1 bg-slate-100 rounded-2xl p-1 w-fit">
-                <button
-                    onClick={() => setTab('workflows')}
-                    className={`flex items-center space-x-2 px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${tab === 'workflows' ? 'bg-white shadow-sm text-indigo-700' : 'text-slate-500 hover:text-slate-700'
+            {/* Category tabs */}
+            <div className="flex items-center space-x-1 bg-slate-100 rounded-2xl p-1 w-fit overflow-x-auto">
+                {TABS.map((t) => (
+                    <button
+                        key={t.key}
+                        onClick={() => setTab(t.key)}
+                        className={`flex items-center space-x-2 px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all whitespace-nowrap ${
+                            tab === t.key
+                                ? 'bg-white shadow-sm text-indigo-700'
+                                : 'text-slate-500 hover:text-slate-700'
                         }`}
-                >
-                    <Sparkles className="w-4 h-4" />
-                    <span>Workflow Templates</span>
-                    <span className="bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded-full text-[10px]">{templates.length}</span>
-                </button>
-                <button
-                    onClick={() => setTab('messages')}
-                    className={`flex items-center space-x-2 px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${tab === 'messages' ? 'bg-white shadow-sm text-indigo-700' : 'text-slate-500 hover:text-slate-700'
-                        }`}
-                >
-                    <FileText className="w-4 h-4" />
-                    <span>Message Templates</span>
-                    <span className="bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded-full text-[10px]">{MESSAGE_TEMPLATES.length}</span>
-                </button>
+                    >
+                        <t.icon className="w-4 h-4" />
+                        <span>{t.label}</span>
+                        <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${
+                            tab === t.key ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-200 text-slate-500'
+                        }`}>
+                            {t.key === 'all' ? templates.length : templates.filter(x => x.group === t.key).length}
+                        </span>
+                    </button>
+                ))}
             </div>
 
-            {/* Workflow Templates Tab */}
-            {tab === 'workflows' && (
-                <div className="space-y-8">
-                    {loading && (
-                        <div className="flex items-center justify-center py-20">
-                            <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
-                        </div>
-                    )}
-                    {!loading && templates.length === 0 && (
-                        <div className="bg-white border rounded-3xl p-12 text-center">
-                            <p className="text-slate-500 font-bold">No templates available yet.</p>
-                        </div>
-                    )}
-                    {!loading && categories.map((cat) => {
-                        const inCat = templates.filter(t => t.category === cat.key);
-                        if (inCat.length === 0) return null;
-                        return (
-                            <div key={cat.key} className="space-y-4">
-                                <div className="flex items-center space-x-3">
-                                    <span className={`text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full ${cat.color}`}>
-                                        {cat.label}
-                                    </span>
-                                    <span className="text-sm text-slate-400 font-bold">{inCat.length} template{inCat.length === 1 ? '' : 's'}</span>
-                                </div>
+            {/* Audience filter pills — pick the right template for your lead list */}
+            <div className="flex items-center space-x-2 flex-wrap gap-y-2">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mr-1">Lead list:</span>
+                {(['all', 'connected', 'cold', 'mixed'] as AudienceFilter[]).map(a => {
+                    const label = a === 'all' ? 'Any audience' : AUDIENCE_LABELS[a];
+                    const count = a === 'all'
+                        ? templates.filter(t => tab === 'all' || t.group === tab).length
+                        : templates.filter(t => (tab === 'all' || t.group === tab) && (t.audience || 'mixed') === a).length;
+                    const active = audience === a;
+                    return (
+                        <button
+                            key={a}
+                            onClick={() => setAudience(a)}
+                            className={`px-3 py-1.5 rounded-full text-[11px] font-bold uppercase tracking-wider transition-all whitespace-nowrap ${
+                                active
+                                    ? 'bg-slate-900 text-white shadow-sm'
+                                    : 'bg-white border border-slate-200 text-slate-600 hover:border-slate-300'
+                            }`}
+                            title={
+                                a === 'connected' ? 'Templates that work on leads already in your 1st-degree network'
+                                : a === 'cold' ? 'Templates designed for prospects you are not yet connected to'
+                                : a === 'mixed' ? 'Templates that work on any connection degree'
+                                : 'Show all templates'
+                            }
+                        >
+                            {label} <span className={`ml-1 px-1.5 py-0.5 rounded-full text-[9px] ${active ? 'bg-white/20' : 'bg-slate-100'}`}>{count}</span>
+                        </button>
+                    );
+                })}
+            </div>
 
-                                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                                    {inCat.map((tpl) => (
-                                        <div
-                                            key={tpl.id}
-                                            className="bg-white rounded-3xl border shadow-sm hover:shadow-lg transition-all overflow-hidden group flex flex-col"
-                                        >
-                                            <div className={`h-2 bg-gradient-to-r ${tpl.color}`} />
-                                            <div className="p-6 space-y-4 flex flex-col flex-1">
-                                                <div className="flex items-center space-x-3">
-                                                    <span className="text-3xl">{tpl.icon}</span>
-                                                    <div>
-                                                        <p className="font-black text-slate-800 uppercase tracking-tight">{tpl.name}</p>
-                                                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{tpl.category} · {tpl.durationDays}d</p>
-                                                    </div>
-                                                </div>
-                                                <p className="text-sm text-slate-500 leading-relaxed">{tpl.description}</p>
-
-                                                <div className="bg-indigo-50/60 rounded-2xl p-4 space-y-2 border border-indigo-100">
-                                                    <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest">Best for</p>
-                                                    <ul className="space-y-1">
-                                                        {tpl.recommendedFor.map((r, i) => (
-                                                            <li key={i} className="text-xs text-slate-600 flex items-start">
-                                                                <span className="text-indigo-400 mr-2">·</span>
-                                                                <span>{r}</span>
-                                                            </li>
-                                                        ))}
-                                                    </ul>
-                                                </div>
-
-                                                <div className="mt-auto">
-                                                    <button
-                                                        onClick={() => handleUseTemplate(tpl)}
-                                                        disabled={creating}
-                                                        className="w-full py-3 bg-indigo-600 text-white rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 disabled:opacity-60 disabled:cursor-not-allowed"
-                                                    >
-                                                        {creating ? 'Creating…' : 'Use This Template'}
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        );
-                    })}
+            {/* Template grid */}
+            {loading && (
+                <div className="flex items-center justify-center py-20">
+                    <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
                 </div>
             )}
 
-            {/* Message Templates Tab */}
-            {tab === 'messages' && (
-                <div className="space-y-6">
-                    <div className="flex items-center space-x-2">
-                        {[
-                            { key: 'all', label: 'All', icon: FileText },
-                            { key: 'linkedin', label: 'LinkedIn', icon: Linkedin },
-                            { key: 'email', label: 'Email', icon: Mail },
-                        ].map(f => (
-                            <button
-                                key={f.key}
-                                onClick={() => setMsgFilter(f.key)}
-                                className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all border ${msgFilter === f.key
-                                        ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
-                                        : 'text-slate-500 border-slate-200 hover:bg-slate-50'
-                                    }`}
-                            >
-                                <f.icon className="w-3.5 h-3.5" />
-                                <span>{f.label}</span>
-                            </button>
-                        ))}
-                        <button className="ml-auto flex items-center space-x-2 px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200">
-                            <Plus className="w-4 h-4" />
-                            <span>New Template</span>
-                        </button>
-                    </div>
+            {!loading && filtered.length === 0 && (
+                <div className="bg-white border rounded-3xl p-12 text-center">
+                    <p className="text-slate-500 font-bold">No templates in this category.</p>
+                </div>
+            )}
 
-                    <div className="space-y-4">
-                        {filteredMessages.map(msg => (
-                            <div key={msg.id} className="bg-white border rounded-2xl p-5 hover:shadow-md transition-all group">
-                                <div className="flex items-start justify-between">
-                                    <div className="flex items-center space-x-3">
-                                        <div className={`p-2 rounded-xl ${msg.channel === 'linkedin' ? 'bg-blue-50' : 'bg-emerald-50'}`}>
-                                            {msg.channel === 'linkedin'
-                                                ? <Linkedin className="w-4 h-4 text-blue-600" />
-                                                : <Mail className="w-4 h-4 text-emerald-600" />
-                                            }
-                                        </div>
-                                        <div>
-                                            <p className="font-bold text-slate-800">{msg.name}</p>
-                                            <div className="flex items-center space-x-2 mt-0.5">
-                                                <span className={`text-[10px] font-black uppercase tracking-tighter px-2 py-0.5 rounded-full border ${msg.channel === 'linkedin' ? 'bg-blue-50 text-blue-600 border-blue-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100'
-                                                    }`}>
-                                                    {msg.channel}
-                                                </span>
-                                                <span className="text-[10px] text-slate-400 font-bold uppercase">{msg.type}</span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <button className="text-xs font-bold text-indigo-600 hover:text-indigo-700 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        Edit
-                                    </button>
-                                </div>
-                                <div className="mt-3 bg-slate-50 rounded-xl p-4">
-                                    <p className="text-sm text-slate-600 whitespace-pre-line leading-relaxed">{msg.content}</p>
+            {!loading && (
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                    {filtered.map((tpl) => (
+                        <Link
+                            key={tpl.id}
+                            href={`/campaigns/templates/${tpl.id}`}
+                            className="bg-white rounded-3xl border shadow-sm hover:shadow-lg transition-all overflow-hidden group flex flex-col cursor-pointer"
+                        >
+                            <div className={`h-2 bg-gradient-to-r ${tpl.color}`} />
+                            {/* Thumbnail */}
+                            <div className="relative h-36 bg-slate-50 overflow-hidden">
+                                <img
+                                    src={`/templates/thumbs/${tpl.id}.png`}
+                                    alt={tpl.name}
+                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                                    loading="lazy"
+                                    onError={(e) => {
+                                        (e.currentTarget as HTMLImageElement).style.display = 'none';
+                                        (e.currentTarget.parentElement as HTMLElement).classList.add('flex', 'items-center', 'justify-center');
+                                        const fallback = document.createElement('span');
+                                        fallback.className = 'text-5xl';
+                                        fallback.textContent = tpl.icon;
+                                        (e.currentTarget.parentElement as HTMLElement).appendChild(fallback);
+                                    }}
+                                />
+                                <div className="absolute top-3 right-3 flex gap-1.5">
+                                    <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${GROUP_COLORS[tpl.group] || 'bg-slate-100 text-slate-600'} backdrop-blur-sm bg-white/90`}>
+                                        {GROUP_LABELS[tpl.group] || tpl.group}
+                                    </span>
+                                    {tpl.audience && tpl.audience !== 'mixed' && (
+                                        <span
+                                            className={`text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${AUDIENCE_BADGE_COLORS[tpl.audience as Exclude<AudienceFilter, 'all'>] || 'bg-slate-100 text-slate-600'}`}
+                                            title={`Designed for ${AUDIENCE_LABELS[tpl.audience as Exclude<AudienceFilter, 'all'>]?.toLowerCase()}`}
+                                        >
+                                            {tpl.audience === 'connected' ? '1st-degree' : 'Cold'}
+                                        </span>
+                                    )}
                                 </div>
                             </div>
-                        ))}
-                    </div>
+                            <div className="p-6 space-y-4 flex flex-col flex-1">
+                                {/* Title */}
+                                <p className="font-black text-slate-800 uppercase tracking-tight text-sm leading-tight">{tpl.name}</p>
+
+                                {/* Stats */}
+                                <div className="flex items-center space-x-2 text-xs text-slate-400">
+                                    <span className="bg-slate-50 px-2 py-1 rounded-full font-bold">{tpl.stepCount || '-'} steps</span>
+                                    <span className="bg-slate-50 px-2 py-1 rounded-full font-bold">{tpl.delayCount || 0} delays</span>
+                                    <span className="bg-slate-50 px-2 py-1 rounded-full font-bold">{tpl.durationDays}d</span>
+                                </div>
+
+                                {/* Use Template button */}
+                                <button
+                                    onClick={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        handleUseTemplate(tpl);
+                                    }}
+                                    disabled={creating}
+                                    className="mt-auto w-full py-3 bg-indigo-600 text-white rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 disabled:opacity-60 disabled:cursor-not-allowed"
+                                >
+                                    {creating ? 'Creating…' : 'Use Template'}
+                                </button>
+                            </div>
+                        </Link>
+                    ))}
                 </div>
             )}
 
@@ -267,6 +296,12 @@ export default function TemplatesHubPage() {
                 defaultName={pendingTemplate?.name || 'New Campaign'}
                 onConfirm={handleConfirmCreate}
                 onCancel={() => setPendingTemplate(null)}
+                aiGuidance={pendingTemplate ? {
+                    objective: pendingTemplate.aiStrategyHint.objective,
+                    description: pendingTemplate.aiStrategyHint.description,
+                    cta: pendingTemplate.aiStrategyHint.cta,
+                    toneOverride: pendingTemplate.aiStrategyHint.toneOverride,
+                } : undefined}
             />
         </div>
     );

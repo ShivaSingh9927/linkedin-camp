@@ -13,6 +13,7 @@ export const directEmailRouteTemplate: TemplateDefinition = {
     ],
     group: 'out-of-network',
     category: 'email',
+    audience: 'connected',
     icon: '📧',
     color: 'from-emerald-500 to-teal-600',
     durationDays: 1,

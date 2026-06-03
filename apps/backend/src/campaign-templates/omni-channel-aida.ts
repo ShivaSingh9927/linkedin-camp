@@ -13,6 +13,7 @@ export const omniChannelAidaTemplate: TemplateDefinition = {
     ],
     group: 'out-of-network',
     category: 'multi-channel',
+    audience: 'cold',
     icon: '🌐',
     color: 'from-purple-500 to-fuchsia-600',
     durationDays: 6,

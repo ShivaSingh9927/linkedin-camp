@@ -37,12 +37,253 @@ function detectGender(firstName) {
     return '';
 }
 
+// ---- Degree-anchored card discovery (LinkedIn 2026 layout) ----
+//
+// LinkedIn's current search-results page uses obfuscated dynamic CSS class
+// names + drops the `data-view-name="people-search-result"` attribute that
+// older versions exposed. The only stable signals left are:
+//   - profile-link anchors with `/in/<slug>/` href
+//   - the visible degree-badge text ("1st" / "2nd" / "3rd+")
+//   - aria-label filter pills (which must be EXCLUDED — they also contain
+//     the degree token but aren't per-card markers)
+//
+// Walking up from a profile anchor fails because the degree-badge often sits
+// in a SIBLING subtree, and the walk hits a multi-card ancestor before
+// reaching the badge. Inverting works: find every degree-text node, walk up
+// to the smallest single-slug ancestor — that ancestor IS the card.
+//
+// This function returns an array of { slug, url, name, degree, cardEl }.
+// cardEl is the DOM element so the caller can extract the remaining card
+// metadata (jobTitle, company, location) using the existing line-parser.
+// Detect the logged-in LinkedIn user's own profile slug so we can exclude
+// it from extracted results. LinkedIn puts a "Me" / "View profile" link in
+// the top nav pointing at the user's own /in/<slug>. We grab that slug
+// once per scan.
+function getOwnProfileSlug() {
+    // The "Me" nav anchor is inside the global header. It carries either:
+    //   - aria-label="<your name>" with a child a[href*="/in/"]
+    //   - a child img with the user's photo + an /in/<slug> href
+    // Pattern works across LinkedIn nav layouts.
+    const navAnchors = document.querySelectorAll('header a[href*="/in/"], nav a[href*="/in/"], [role="banner"] a[href*="/in/"]');
+    for (const a of navAnchors) {
+        const m = (a.getAttribute('href') || '').match(/\/in\/([^/?#]+)/);
+        if (m) return m[1];
+    }
+    return null;
+}
+
+function findSearchResultCards() {
+    const FILTER_PILL_TEXTS = ['Filter by 1st connections', 'Filter by 2nd connections', 'Filter by 3rd+ connections'];
+    const ownSlug = getOwnProfileSlug();
+
+    const isFilterPill = (el) => {
+        for (let n = el; n && n !== document.body; n = n.parentElement) {
+            const al = (n.getAttribute && n.getAttribute('aria-label')) || '';
+            if (/Filter by .* connections/.test(al)) return true;
+            if (n.tagName === 'LABEL') return true;
+        }
+        return false;
+    };
+
+    const uniqueSlugsUnder = (el) => {
+        const set = new Set();
+        for (const a of el.querySelectorAll('a[href*="/in/"]')) {
+            const m = (a.getAttribute('href') || '').match(/\/in\/([^/?#]+)/);
+            if (m) set.add(m[1]);
+        }
+        return set;
+    };
+
+    const degreeRe = /(?:^|\s|•\s*)(1st|2nd|3rd\+?)(?:\s|$|\b)/;
+    const xpath = document.evaluate(
+        '//text()[contains(., "1st") or contains(., "2nd") or contains(., "3rd")]',
+        document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null
+    );
+
+    const seenSlugs = new Set();
+    const cards = [];
+
+    for (let i = 0; i < xpath.snapshotLength; i++) {
+        const textNode = xpath.snapshotItem(i);
+        const m = (textNode.textContent || '').match(degreeRe);
+        if (!m) continue;
+        const degreeRaw = m[1];
+
+        let el = textNode.parentElement;
+        if (!el || isFilterPill(el)) continue;
+
+        let cardEl = null;
+        let slug = null;
+        for (let depth = 0; depth < 20 && el && el !== document.body; depth++, el = el.parentElement) {
+            if (el.closest('nav, header, [role="banner"]')) { el = null; break; }
+            const slugs = uniqueSlugsUnder(el);
+            if (slugs.size === 1) {
+                cardEl = el;
+                slug = [...slugs][0];
+            } else if (slugs.size > 1) {
+                break;
+            }
+        }
+        if (!cardEl || !slug) continue;
+        if (seenSlugs.has(slug)) continue;
+        // Skip the logged-in user's own profile if it leaked through (e.g.
+        // a sponsored "Promoted for you" card or a "People you may know"
+        // entry that happens to be themselves).
+        if (ownSlug && slug === ownSlug) continue;
+        seenSlugs.add(slug);
+
+        let degreeParsed = null;
+        if (degreeRaw === '1st') degreeParsed = 1;
+        else if (degreeRaw === '2nd') degreeParsed = 2;
+        else if (degreeRaw.startsWith('3rd')) degreeParsed = 3;
+
+        // There are usually 2-3 anchors per card pointing at /in/<slug>:
+        //   1. The avatar/image link — text is empty OR "Status is offline" /
+        //      "Open profile photo of X" / "View X's profile"
+        //   2. The visible name link — text is the clean name (sometimes
+        //      duplicated as a screen-reader span)
+        //   3. A "View X's profile" CTA link near the bottom of the card
+        // We want the visible-name anchor. Pick the one whose textContent,
+        // after stripping known noise, has the longest meaningful name.
+        const allAnchors = Array.from(cardEl.querySelectorAll('a[href*="/in/"]'))
+            .filter(a => {
+                const h = a.getAttribute('href') || '';
+                return h.match(/\/in\/([^/?#]+)/)?.[1] === slug;
+            });
+        const noiseRe = /^(Status is (?:offline|online|away)|Open profile photo of [^]+|View [^]+'s profile)$/i;
+
+        let anchor = null;
+        let name = '';
+        for (const a of allAnchors) {
+            // Prefer a visible-name span (aria-hidden="true") inside this anchor.
+            const visibleSpan = a.querySelector('span[aria-hidden="true"]');
+            const candidate = (visibleSpan ? visibleSpan.textContent : a.textContent || '')
+                .trim().replace(/\s+/g, ' ');
+            if (!candidate || candidate.length < 2) continue;
+            // Strip on first '•' (drops the degree half).
+            let cleaned = candidate;
+            const bulletIdx = cleaned.indexOf('•');
+            if (bulletIdx > 0) cleaned = cleaned.substring(0, bulletIdx).trim();
+            // Strip trailing "View X's profile" / "Status is offline" if it
+            // got concatenated.
+            cleaned = cleaned.replace(/\s*View [^]+?(?:'s|s) profile\s*$/i, '').trim();
+            cleaned = cleaned.replace(/\s*Status is (?:offline|online|away)\s*/gi, ' ').replace(/\s+/g, ' ').trim();
+            if (!cleaned || cleaned.length < 2 || noiseRe.test(cleaned)) continue;
+            // De-double "Name Name" palindrome.
+            const parts = cleaned.split(' ');
+            if (parts.length >= 2 && parts.length % 2 === 0) {
+                const first  = parts.slice(0, parts.length / 2).join(' ');
+                const second = parts.slice(parts.length / 2).join(' ');
+                if (first === second) cleaned = first;
+            }
+            // Pick the longest qualifying candidate — visible-name anchors
+            // tend to be richer than avatar links.
+            if (cleaned.length > name.length) {
+                name = cleaned;
+                anchor = a;
+            }
+        }
+        if (!anchor && allAnchors.length > 0) anchor = allAnchors[0];
+
+        const href = anchor ? (anchor.getAttribute('href') || '') : '';
+        const url = href.startsWith('http') ? href.split('?')[0] : `https://www.linkedin.com${href.split('?')[0]}`;
+
+        cards.push({ slug, url, name, degree: degreeParsed, cardEl });
+    }
+    return cards;
+}
+
 function scanDOM() {
     let added = 0;
     const currentPage = getCurrentPageNumber();
 
     // ============================================================
-    // PRIMARY STRATEGY: Use data-view-name="people-search-result"
+    // PRIMARY STRATEGY (2026 layout): degree-anchored card discovery.
+    // Returns { slug, url, name, degree, cardEl } per card.
+    // ============================================================
+    const primaryCards = findSearchResultCards();
+    if (primaryCards.length > 0) {
+        console.log(`[AutoConnect] Primary strategy: ${primaryCards.length} cards`);
+        for (const c of primaryCards) {
+            if (!c.url || collectedLeads.has(c.url)) continue;
+
+            const nameParts = (c.name || '').split(' ');
+            const firstName = nameParts[0] || '';
+            const lastName = nameParts.slice(1).join(' ') || '';
+
+            // Re-use the line-parser pattern from the legacy fallback to
+            // extract jobTitle / company / location from the card text.
+            let jobTitle = '', company = '', location = '';
+            const lines = (c.cardEl.innerText || '').split('\n')
+                .map(l => l.trim()).filter(l => l.length > 0);
+            for (const line of lines) {
+                if (line === c.name) continue;
+                if (/^(Connect|Follow|Message|Send|Pending|More|Dismiss)$/i.test(line)) continue;
+                if (/^\d+(st|nd|rd|th)\+?$/i.test(line)) continue;
+                if (/^•\s*(1st|2nd|3rd\+?)/i.test(line)) continue;
+                if (line.length < 3) continue;
+                // LinkedIn presence/availability indicators — these aren't
+                // headlines or locations.
+                if (/^Status is (offline|online|away)$/i.test(line)) continue;
+                if (/^(Open profile photo|View [^]+?(?:'s|s) profile)/i.test(line)) continue;
+                if (/^Promoted$/i.test(line)) continue;
+
+                if (/^Current:/i.test(line)) {
+                    const after = line.replace(/^Current:\s*/i, '').trim();
+                    if (after.includes(' at ')) {
+                        const ps = after.split(' at ');
+                        if (!jobTitle) jobTitle = ps[0].trim();
+                        company = ps.slice(1).join(' at ').trim();
+                    } else if (!jobTitle) {
+                        jobTitle = after;
+                    }
+                    continue;
+                }
+                if (/^(Past|Education|Skills|Certifications|Summary):/i.test(line)) continue;
+                if (/followers$/i.test(line)) continue;
+
+                if (!location && (
+                    line.match(/,\s*(India|United States|UK|USA|Canada|Australia|Germany|France|Singapore|Dubai|Netherlands|Pakistan|China|Japan|Brazil|Mexico|Spain|Italy|Indonesia|Philippines|Malaysia|Bangladesh|Nepal|Sri Lanka|Thailand|Vietnam|South Korea|Russia|Turkey|Saudi Arabia|UAE|Ireland|Sweden|Norway|Denmark|Finland|Switzerland|Belgium|Austria|Czech Republic|Poland|Romania|Ukraine|Argentina|Chile|Colombia|Peru|Egypt|Nigeria|Kenya|South Africa|Ghana|Ethiopia|Tanzania)\s*$/i) ||
+                    line.match(/^(Mumbai|New Delhi|Delhi|Bangalore|Bengaluru|Hyderabad|Chennai|Kolkata|Pune|Noida|Gurugram|Gurgaon|Faridabad|Agra|Nashik|Lucknow|Jaipur|Ahmedabad|Indore|Bhopal|Chandigarh|Coimbatore|Kochi|Thiruvananthapuram|Visakhapatnam|Nagpur|Patna|Ranchi|Dehradun|New York|London|San Francisco|Bay Area|Los Angeles|Seattle|Chicago|Toronto|Vancouver|Sydney|Melbourne|Singapore|Dubai|Berlin|Munich|Paris|Amsterdam|Lahore|Canton|Mandya)\b/i)
+                )) {
+                    location = line;
+                    continue;
+                }
+                if (!jobTitle && line !== c.name && line.length > 5 &&
+                    !/^(Connect|Follow|Message|mutual|connection|Promoted)/i.test(line)) {
+                    jobTitle = line;
+                }
+            }
+            let country = '';
+            if (location) {
+                const lp = location.split(',').map(x => x.trim());
+                if (lp.length) country = lp[lp.length - 1];
+            }
+            const gender = detectGender(firstName);
+
+            // Full raw card text — exactly what LinkedIn displayed. Useful
+            // when the structured parse misses something or the user wants
+            // to verify "is this who I thought?". Capped to 1000 chars so
+            // a sponsored card with a giant description doesn't bloat the
+            // payload.
+            const info = (c.cardEl.innerText || '').replace(/\s+\n/g, '\n').trim().substring(0, 1000);
+
+            collectedLeads.set(c.url, {
+                firstName, lastName, jobTitle,
+                company, location, country, gender,
+                linkedinUrl: c.url,
+                connectionDegree: c.degree,
+                info,
+            });
+            added++;
+        }
+    }
+
+    // ============================================================
+    // LEGACY PRIMARY (kept as fallback): data-view-name="people-search-result"
+    // Runs unconditionally so LinkedIn Member rows (no /in/ URL) still get
+    // captured — they're invisible to the degree-anchored primary because
+    // it requires a profile-link anchor.
     // ============================================================
     const searchResultCards = document.querySelectorAll('[data-view-name="people-search-result"]');
     let memberIdx = 0;
@@ -188,13 +429,32 @@ function scanDOM() {
             const isLinkedInMember = rawName === 'LinkedIn Member';
             const storeUrl = isLinkedInMember ? '' : linkedinUrl;
 
+            // Connection degree from the card text. LinkedIn renders the
+            // badge as "• 1st" / "• 2nd" / "• 3rd+" near the name. We pull
+            // it from the full card innerText so both old and new layouts
+            // work. LinkedIn Members can't be DM'd anyway → null.
+            let connectionDegree = null;
+            if (!isLinkedInMember) {
+                const cardTxt = card.innerText || '';
+                const dm = cardTxt.match(/•\s*(1st|2nd|3rd\+?)\b/);
+                if (dm) {
+                    if (dm[1] === '1st') connectionDegree = 1;
+                    else if (dm[1] === '2nd') connectionDegree = 2;
+                    else connectionDegree = 3;
+                }
+            }
+
+            const info = (card.innerText || '').replace(/\s+\n/g, '\n').trim().substring(0, 1000);
+
             collectedLeads.set(linkedinUrl, {
                 firstName, lastName, jobTitle,
                 company: company,
                 location: location,
                 country: country,
                 gender: gender,
-                linkedinUrl: storeUrl
+                linkedinUrl: storeUrl,
+                connectionDegree,
+                info,
             });
             added++;
         } catch (e) {
@@ -290,13 +550,29 @@ function scanDOM() {
 
             const gender = detectGender(firstName);
 
+            // Connection degree from the card text. Same heuristic as the
+            // primary path — match "• 1st" / "• 2nd" / "• 3rd+" inside the
+            // card's innerText.
+            let connectionDegree = null;
+            const fbCardTxt = card.innerText || '';
+            const fbDm = fbCardTxt.match(/•\s*(1st|2nd|3rd\+?)\b/);
+            if (fbDm) {
+                if (fbDm[1] === '1st') connectionDegree = 1;
+                else if (fbDm[1] === '2nd') connectionDegree = 2;
+                else connectionDegree = 3;
+            }
+
+            const info = (card.innerText || '').replace(/\s+\n/g, '\n').trim().substring(0, 1000);
+
             collectedLeads.set(linkedinUrl, {
                 firstName, lastName, jobTitle,
                 company: company,
                 location: location,
                 country: country,
                 gender: gender,
-                linkedinUrl
+                linkedinUrl,
+                connectionDegree,
+                info,
             });
             added++;
         } catch (e) { /* skip individual errors */ }

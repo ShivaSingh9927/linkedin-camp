@@ -61,10 +61,139 @@ function CampaignBuilderInner({
     [nodes, selectedNodeId]
   );
 
+  // B.4 — connection-gate warning. Returns true when the selected node is
+  // one that requires a 1st-degree connection (MESSAGE / EMAIL_FINDER) AND
+  // there is no upstream CONNECT or CHECK_CONNECTION reachable via reverse
+  // graph walk. Used by the warning banner + B.5 auto-insert button.
+  const gapAnalysis = useMemo(() => {
+    if (!selectedNode) return { needsGate: false, hasUpstreamGate: false };
+    const sub = String((selectedNode.data as any).subType || '').toUpperCase();
+    const needsGate = ['MESSAGE', 'SEND_MESSAGE', 'EMAIL_FINDER', 'FIND_EMAIL'].includes(sub);
+    if (!needsGate) return { needsGate: false, hasUpstreamGate: false };
+
+    // Reverse BFS from selectedNode through incoming edges. Stop when we
+    // find a CONNECT, CHECK_CONNECTION, or an IF_ELSE whose condition
+    // already branches on connection state — any of those satisfies the
+    // gate requirement.
+    const incoming = new Map<string, string[]>();
+    for (const e of edges) {
+      if (!incoming.has(e.target)) incoming.set(e.target, []);
+      incoming.get(e.target)!.push(e.source);
+    }
+    const seen = new Set<string>();
+    const queue: string[] = [selectedNode.id];
+    let hasUpstreamGate = false;
+    while (queue.length) {
+      const id = queue.shift()!;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const ancestors = incoming.get(id) || [];
+      for (const aId of ancestors) {
+        if (seen.has(aId)) continue;
+        const a = nodes.find(n => n.id === aId);
+        if (!a) continue;
+        const aSub = String((a.data as any).subType || '').toUpperCase();
+        if (aSub === 'CONNECT' || aSub === 'INVITE' || aSub === 'CHECK_CONNECTION') {
+          hasUpstreamGate = true; break;
+        }
+        if (aSub === 'IF_ELSE' || aSub === 'CONDITION') {
+          const cond = (a.data as any).condition;
+          if (cond?.source === 'connectionState' || cond?.field === 'connectionDegree' || cond?.field === 'connected') {
+            hasUpstreamGate = true; break;
+          }
+        }
+        queue.push(aId);
+      }
+      if (hasUpstreamGate) break;
+    }
+    return { needsGate, hasUpstreamGate };
+  }, [selectedNode, nodes, edges]);
+
   const onConnect = useCallback(
     (params: Connection) => setEdges((eds) => addEdge({ ...params, animated: true, style: { stroke: '#6366f1', strokeWidth: 2 } }, eds)),
     [setEdges],
   );
+
+  // B.5 — One-click "Add Connection Gate". Inserts CONNECT → DELAY 1d →
+  // CHECK_CONNECTION → IF_ELSE around the selected node so it only runs
+  // on 1st-degree leads. Rewires the existing inbound edge to point at
+  // the new CONNECT, and routes the IF_ELSE 'true' branch into the
+  // original node. The 'false' branch terminates (no MESSAGE on cold
+  // leads). User can later wire the false branch to a fallback step
+  // (FOLLOW, secondary DELAY, etc.).
+  const insertConnectionGate = useCallback((targetId: string) => {
+    const target = nodes.find(n => n.id === targetId);
+    if (!target) return;
+    const baseX = target.position.x;
+    const baseY = target.position.y;
+    const stamp = Date.now();
+    const ids = {
+      connect: `node_${stamp}_gate_connect`,
+      wait:    `node_${stamp}_gate_wait`,
+      check:   `node_${stamp}_gate_check`,
+      branch:  `node_${stamp}_gate_branch`,
+    };
+
+    // Push the target node down 4 step-heights so the gate fits above.
+    const STEP_HEIGHT = 110;
+    const shiftedNodes = nodes.map(n => n.id === targetId
+      ? { ...n, position: { x: baseX, y: baseY + STEP_HEIGHT * 4 } }
+      : n);
+
+    const newNodes: Node[] = [
+      ...shiftedNodes,
+      {
+        id: ids.connect,
+        type: 'ACTION',
+        position: { x: baseX, y: baseY },
+        data: { label: 'Send Invite', subType: 'CONNECT', type: 'ACTION', message: '' },
+      } as any,
+      {
+        id: ids.wait,
+        type: 'DELAY',
+        position: { x: baseX, y: baseY + STEP_HEIGHT },
+        data: { label: 'Wait 1 day', subType: 'WAIT', type: 'DELAY', delayDays: 1 },
+      } as any,
+      {
+        id: ids.check,
+        type: 'ACTION',
+        position: { x: baseX, y: baseY + STEP_HEIGHT * 2 },
+        data: { label: 'Check Connection', subType: 'CHECK_CONNECTION', type: 'ACTION' },
+      } as any,
+      {
+        id: ids.branch,
+        type: 'CONDITION',
+        position: { x: baseX, y: baseY + STEP_HEIGHT * 3 },
+        data: {
+          label: 'Connected?',
+          subType: 'IF_ELSE',
+          type: 'CONDITION',
+          condition: {
+            source: 'connectionState',
+            field: 'connectionDegree',
+            operator: 'equals',
+            value: 1,
+            probeOnNull: true,
+          },
+        },
+      } as any,
+    ];
+
+    // Rewire edges: every edge that previously pointed AT target now points
+    // at the new CONNECT. Then add the gate chain edges, plus the true-branch
+    // edge from IF_ELSE into the original target.
+    const rewired = edges.map(e => e.target === targetId ? { ...e, target: ids.connect } : e);
+    const gateEdges: Edge[] = [
+      { id: `e-${stamp}-1`, source: ids.connect, target: ids.wait,   animated: true, style: { stroke: '#6366f1', strokeWidth: 2 } } as any,
+      { id: `e-${stamp}-2`, source: ids.wait,    target: ids.check,  animated: true, style: { stroke: '#6366f1', strokeWidth: 2 } } as any,
+      { id: `e-${stamp}-3`, source: ids.check,   target: ids.branch, animated: true, style: { stroke: '#6366f1', strokeWidth: 2 } } as any,
+      { id: `e-${stamp}-4`, source: ids.branch,  target: targetId,   sourceHandle: 'true',  animated: true, style: { stroke: '#16a34a', strokeWidth: 2 } } as any,
+    ];
+
+    setNodes(newNodes);
+    setEdges([...rewired, ...gateEdges]);
+    toast.success('Connection gate inserted. Wire the "false" branch to a fallback step (FOLLOW, END, etc.).');
+  }, [nodes, edges, setNodes, setEdges]);
 
   const { addNodes } = useReactFlow();
 
@@ -257,6 +386,31 @@ function CampaignBuilderInner({
           </div>
 
           <div className="p-6 flex-1 overflow-y-auto space-y-6">
+            {/* B.4 — Connection-gate warning. Surfaces when this step requires
+                a 1st-degree connection AND no upstream CONNECT / CHECK_CONNECTION
+                exists. B.5 "Add Gate" button auto-inserts the gate. */}
+            {gapAnalysis.needsGate && !gapAnalysis.hasUpstreamGate && (
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl space-y-2">
+                <div className="flex items-start gap-2">
+                  <div className="p-1 bg-amber-100 rounded text-amber-700 mt-0.5">
+                    <Info className="w-3 h-3" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-[11px] font-black text-amber-800 uppercase tracking-wider">Needs Connection Gate</p>
+                    <p className="text-[11px] text-amber-700 mt-1 leading-relaxed">
+                      This step only works on 1st-degree connections. For any lead you're not connected to, it will silently skip. Add a Connect → Wait → Check Connection gate upstream so cold leads get an invite first.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => insertConnectionGate(selectedNode.id)}
+                  className="w-full px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-black uppercase tracking-wider rounded-lg transition-colors"
+                >
+                  + Add Connection Gate
+                </button>
+              </div>
+            )}
+
             {(
               ['EMAIL', 'SEND EMAIL'].includes((((selectedNode.data as any).subType || '') as string).toUpperCase()) ||
               ((selectedNode.data as any).label || '').toUpperCase().includes('EMAIL')

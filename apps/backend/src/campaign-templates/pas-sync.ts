@@ -13,6 +13,7 @@ export const pasSyncTemplate: TemplateDefinition = {
     ],
     group: 'out-of-network',
     category: 'email',
+    audience: 'connected',
     icon: '📊',
     color: 'from-indigo-500 to-violet-600',
     durationDays: 2,

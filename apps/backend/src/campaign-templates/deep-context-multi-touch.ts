@@ -14,6 +14,7 @@ export const deepContextMultiTouchTemplate: TemplateDefinition = {
     ],
     group: 'my-network',
     category: 'linkedin',
+    audience: 'mixed',
     icon: '🌊',
     color: 'from-blue-500 to-indigo-600',
     durationDays: 9,
