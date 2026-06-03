@@ -152,6 +152,11 @@ async function runLead(
     let browser: any;
     let context: any;
     let page: any;
+    // Tracks the node currently being executed so the outer catch can attribute
+    // unexpected errors accurately instead of mis-labelling every failure as a
+    // profile-visit failure (the old behavior). null = pre-flow or between
+    // nodes — outer catch then attributes to 'engine'.
+    let currentNodeName: NodeType | null = null;
 
     try {
         // ---- Load user session data ----
@@ -161,12 +166,7 @@ async function runLead(
 
         if (!user) {
             execResult.failedAt = 'init';
-            execResult.nodesExecuted.push({
-                node: 'profile-visit' as NodeType,
-                status: 'failed',
-                error: 'User not found',
-                at: new Date().toISOString(),
-            });
+            execResult.error = 'User not found';
             return execResult;
         }
 
@@ -275,12 +275,7 @@ async function runLead(
             console.error(`[ENGINE] No linkedinProxySnapshot on user ${userId} — refusing to run. Re-login to pin a proxy.`);
             execResult.status = 'failed';
             execResult.failedAt = 'proxy-snapshot-missing';
-            execResult.nodesExecuted.push({
-                node: 'profile-visit' as NodeType,
-                status: 'failed',
-                error: 'No proxy snapshot on user — re-login required',
-                at: new Date().toISOString(),
-            });
+            execResult.error = 'No proxy snapshot on user — re-login required';
             return execResult;
         }
 
@@ -540,7 +535,9 @@ async function runLead(
                 continue;
             }
 
+            currentNodeName = nodeType;
             const result: NodeResult = await handler(nodeCtx, nodeConfig);
+            currentNodeName = null;
 
             // Emit socket event for real-time activity
             if (socket) {
@@ -687,13 +684,24 @@ async function runLead(
 
     } catch (err: any) {
         execResult.status = 'failed';
-        execResult.failedAt = 'unknown';
-        execResult.nodesExecuted.push({
-            node: 'profile-visit' as NodeType,
-            status: 'failed',
-            error: err.message,
-            at: new Date().toISOString(),
-        });
+        execResult.error = err?.message || String(err);
+        if (currentNodeName) {
+            // A node handler threw uncaught — attribute the failure to that
+            // actual node, not a fake profile-visit row.
+            execResult.failedAt = currentNodeName;
+            execResult.nodesExecuted.push({
+                node: currentNodeName,
+                status: 'failed',
+                error: execResult.error,
+                at: new Date().toISOString(),
+            });
+        } else {
+            // Pre-flow or between-nodes failure (browser launch, session
+            // injection, etc.) — record on execResult.error/failedAt, do NOT
+            // push a fabricated node row.
+            execResult.failedAt = 'engine';
+        }
+        console.error(`[ENGINE] runLead caught at ${execResult.failedAt}: ${execResult.error}`);
         return execResult;
 
     } finally {
@@ -867,6 +875,12 @@ export async function runCampaign(
             if (n.status === 'failed') {
                 console.log(`   [${n.node}] ${n.error}`);
             }
+        }
+        // Engine-level errors (browser launch, session, proxy missing, etc.)
+        // no longer ride as a fake profile-visit node row — they live on
+        // execResult.error/failedAt directly. Surface them here.
+        if (lr.error && lr.failedAt && !lr.nodesExecuted.some(n => n.status === 'failed' && n.error === lr.error)) {
+            console.log(`   [${lr.failedAt}] ${lr.error}`);
         }
     }
 

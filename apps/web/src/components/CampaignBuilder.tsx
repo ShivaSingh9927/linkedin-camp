@@ -89,6 +89,12 @@ function CampaignBuilderInner({
         aiEnabled: false,
         tone: 'professional',
         cta: 'connect',
+        // IF_ELSE / CONDITION default — branch on connection state with
+        // the most common pattern (only proceed down 'true' if 1st-degree).
+        // Users override via the condition editor in the properties panel.
+        condition: subType === 'IF_ELSE' || subType === 'REPLIED'
+          ? { source: 'connectionState', field: 'connected', operator: 'is_true' }
+          : undefined,
       },
     };
 
@@ -152,11 +158,11 @@ function CampaignBuilderInner({
             </button>
 
             <button
-              onClick={() => addNode('REPLIED', 'If Replied', 'CONDITION')}
+              onClick={() => addNode('IF_ELSE', 'Branch', 'CONDITION')}
               className="flex items-center gap-2 p-2 rounded-lg hover:bg-purple-50 text-slate-600 hover:text-purple-600 border border-transparent hover:border-purple-100 transition-all text-xs font-bold"
             >
               <div className="p-1 bg-purple-100 rounded text-purple-600"><GitBranch className="w-3 h-3" /></div>
-              Check Reply
+              Branch (If / Else)
             </button>
 
             <button
@@ -349,6 +355,102 @@ function CampaignBuilderInner({
                   )}
                 </div>
               )}
+
+            {(['IF_ELSE', 'REPLIED', 'CONDITION'].includes(String((selectedNode.data as any).subType || '').toUpperCase()) ||
+              String((selectedNode.data as any).type || '').toUpperCase() === 'CONDITION') && (() => {
+                const cond = (selectedNode.data as any).condition || { source: 'connectionState', field: 'connected', operator: 'is_true' };
+                const updateCond = (patch: any) => updateNodeData(selectedNode.id, { condition: { ...cond, ...patch } });
+                const isStored = cond.source === 'storedOutputs';
+                // Operators that require a literal value comparison.
+                const needsValue = ['equals', 'not_equals'].includes(cond.operator);
+                return (
+                  <div className="space-y-3">
+                    <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b pb-2 mb-4">Branch Condition</div>
+
+                    <div>
+                      <label className="text-[10px] font-bold text-purple-600 uppercase">Source</label>
+                      <select
+                        value={cond.source || 'connectionState'}
+                        onChange={(e) => {
+                          const nextSource = e.target.value;
+                          // Reset field to a sensible default when switching source so
+                          // we don't leave a connectionState field selected after the
+                          // user picked storedOutputs (or vice versa).
+                          const nextField = nextSource === 'storedOutputs' ? 'email-finder.email' : 'connected';
+                          updateCond({ source: nextSource, field: nextField });
+                        }}
+                        className="w-full mt-1 p-2 bg-white border border-purple-200 rounded-lg text-xs font-medium"
+                      >
+                        <option value="connectionState">Connection state (live)</option>
+                        <option value="storedOutputs">Step output (data from upstream node)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-bold text-purple-600 uppercase">Field</label>
+                      {isStored ? (
+                        <input
+                          type="text"
+                          value={cond.field || ''}
+                          onChange={(e) => updateCond({ field: e.target.value })}
+                          placeholder="e.g. email-finder.email"
+                          className="w-full mt-1 p-2 bg-white border border-purple-200 rounded-lg text-xs font-medium"
+                        />
+                      ) : (
+                        <select
+                          value={cond.field || 'connected'}
+                          onChange={(e) => updateCond({ field: e.target.value })}
+                          className="w-full mt-1 p-2 bg-white border border-purple-200 rounded-lg text-xs font-medium"
+                        >
+                          <option value="connected">connected (boolean)</option>
+                          <option value="connectionStatus">connectionStatus (not_connected / pending / connected)</option>
+                          <option value="connectionDegree">connectionDegree (1st / 3rd+)</option>
+                        </select>
+                      )}
+                      {isStored && (
+                        <div className="mt-1 text-[9px] text-slate-400 leading-relaxed">
+                          Dotted path. Common: <span className="font-mono">email-finder.email</span>, <span className="font-mono">profile-visit.connected</span>, <span className="font-mono">check-connection.connected</span>, <span className="font-mono">follow.alreadyFollowing</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-bold text-purple-600 uppercase">Operator</label>
+                      <select
+                        value={cond.operator || 'is_true'}
+                        onChange={(e) => updateCond({ operator: e.target.value })}
+                        className="w-full mt-1 p-2 bg-white border border-purple-200 rounded-lg text-xs font-medium"
+                      >
+                        <option value="is_true">is true</option>
+                        <option value="is_false">is false</option>
+                        <option value="equals">equals</option>
+                        <option value="not_equals">not equals</option>
+                        <option value="is_null">is null / missing</option>
+                        <option value="is_not_null">is not null</option>
+                        <option value="is_empty">is empty</option>
+                        <option value="is_not_empty">is not empty</option>
+                      </select>
+                    </div>
+
+                    {needsValue && (
+                      <div>
+                        <label className="text-[10px] font-bold text-purple-600 uppercase">Value</label>
+                        <input
+                          type="text"
+                          value={String(cond.value ?? '')}
+                          onChange={(e) => updateCond({ value: e.target.value })}
+                          placeholder="e.g. connected"
+                          className="w-full mt-1 p-2 bg-white border border-purple-200 rounded-lg text-xs font-medium"
+                        />
+                      </div>
+                    )}
+
+                    <div className="p-2 bg-purple-50 rounded-lg border border-purple-100 text-[10px] text-purple-600 leading-relaxed">
+                      💡 Wire the <strong>true</strong> and <strong>false</strong> handles on this node to different downstream steps. The engine evaluates the condition and only walks one branch per lead.
+                    </div>
+                  </div>
+                );
+              })()}
 
             {(selectedNode.data as any).subType === 'VISIT' && (
               <div className="space-y-4">

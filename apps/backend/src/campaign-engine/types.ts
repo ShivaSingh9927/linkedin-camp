@@ -221,6 +221,10 @@ export interface LeadExecutionResult {
     status: 'completed' | 'failed' | 'paused';
     nodesExecuted: NodeExecution[];
     failedAt?: string;
+    // Engine-level error message when failedAt is not tied to a specific node
+    // (e.g. session missing, proxy snapshot missing, browser launch failure).
+    // Node-level errors live on the NodeExecution row inside nodesExecuted.
+    error?: string;
     // Set when status === 'paused'. Reasons:
     //   'lead_replied' — engine detected a RECEIVED Message; stop automation.
     //   'daily_cap'    — the next governed action would exceed today's per-user
