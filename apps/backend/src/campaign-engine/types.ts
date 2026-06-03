@@ -56,7 +56,8 @@ export type NodeType =
     | 'inbox-sync'
     | 'if-else'
     | 'check-connection'
-    | 'email';
+    | 'email'
+    | 'email-finder';
 
 // ---- Node Output ----
 
