@@ -1,16 +1,20 @@
 import { NodeHandler, NodeResult, CampaignFlowNode, IfElseCondition, IfElseOutput } from '../types';
 import { executeNode } from '../engine';
 
-const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
-
-function evaluateCondition(condition: IfElseCondition, connectionStatus: 'not_connected' | 'pending' | 'connected' | undefined, connected: boolean): boolean {
-    const field = condition.field;
-    const operator = condition.operator;
-    const value = condition.value;
+function evaluateCondition(
+    condition: IfElseCondition,
+    connectionStatus: 'not_connected' | 'pending' | 'connected' | undefined,
+    connected: boolean,
+    storedOutputs: Record<string, Record<string, any>>,
+): boolean {
+    const { field, operator, value, source } = condition;
 
     let fieldValue: any;
-    
-    if (field === 'connectionStatus') {
+
+    if (source === 'storedOutputs') {
+        const path = field.split('.');
+        fieldValue = path.reduce((obj, key) => obj?.[key], storedOutputs);
+    } else if (field === 'connectionStatus') {
         fieldValue = connectionStatus || 'not_connected';
     } else if (field === 'connected') {
         fieldValue = connected;
@@ -27,6 +31,14 @@ function evaluateCondition(condition: IfElseCondition, connectionStatus: 'not_co
             return fieldValue === true || fieldValue === 'connected' || fieldValue === '1st';
         case 'is_false':
             return fieldValue === false || fieldValue === 'not_connected' || fieldValue === '3rd+';
+        case 'is_null':
+            return fieldValue === null || fieldValue === undefined;
+        case 'is_not_null':
+            return fieldValue !== null && fieldValue !== undefined;
+        case 'is_empty':
+            return fieldValue === null || fieldValue === undefined || fieldValue === '';
+        case 'is_not_empty':
+            return fieldValue !== null && fieldValue !== undefined && fieldValue !== '';
         default:
             return false;
     }
@@ -44,7 +56,7 @@ export const ifElse: NodeHandler = async (ctx, config): Promise<NodeResult> => {
         }
 
         const connected = storedOutputs['profile-visit']?.connected || false;
-        const result = evaluateCondition(condition, connectionStatus, connected);
+        const result = evaluateCondition(condition, connectionStatus, connected, storedOutputs);
 
         output.branch = result ? 'true' : 'false';
 
