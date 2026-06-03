@@ -144,6 +144,25 @@ class MessageRequest(BaseModel):
     value_proposition: Optional[str] = None
     ai_strategy: Optional[Dict[str, Any]] = None
     user_context: Optional[Dict[str, Any]] = None
+    # NEW (Phase C):
+    # channel: 'linkedin' (default — DM, returns {message}) or 'email'
+    # (returns {message, subject} — body and short subject line generated
+    # together so they reinforce each other and stay consistent in tone).
+    channel: str = "linkedin"
+    # ai_prompt: per-step user instructions ("This is the opener, no asks
+    # yet"). Layered on top of campaign + business context with the
+    # highest priority short of the STRICT RULES.
+    ai_prompt: Optional[str] = None
+    # campaign_progress: where this lead sits in the multi-step sequence.
+    # When provided, the AI knows step 1 of N vs step N of N and adjusts
+    # tone (intro → nudge → final). Empty completed_steps = first touch,
+    # behaves like today.
+    campaign_progress: Optional[Dict[str, Any]] = None
+    # message_history: prior SENT messages to this lead in this campaign.
+    # Full body for now (Groq is cheap and "don't repeat phrasing" works
+    # better with exact text). Both LinkedIn DMs and emails included so
+    # cross-channel campaigns don't re-use openers.
+    message_history: Optional[List[Dict[str, Any]]] = None
 
 
 class ThreadMessage(BaseModel):
@@ -390,7 +409,7 @@ RECIPIENT PROFILE:
         campaign_ctx = f"\nCAMPAIGN OBJECTIVE/DESCRIPTION: {req.campaign_description}\n"
     if req.connection_context:
         campaign_ctx += f"\nOUTREACH PURPOSE: {req.connection_context}\n"
-    
+
     cta_map = {
         "connect": "connect with you",
         "reply": "reply to your message",
@@ -400,13 +419,72 @@ RECIPIENT PROFILE:
         "meeting": "schedule a quick call"
     }
     cta_text = cta_map.get(req.cta, "connect with you")
-    
-    system = f"""You are a LinkedIn outreach expert who does thorough homework before reaching out.{brand}{strategy_ctx}
 
-Your task: Write ONE personalized LinkedIn message that shows you've done your research.
+    # Phase C: sequence-awareness. When the engine ships campaign_progress
+    # the model knows step N of M and can shift register (opener → nudge →
+    # final close) instead of generating every step as if it's the first.
+    sequence_ctx = ""
+    is_first_touch = True
+    if req.campaign_progress:
+        cp = req.campaign_progress
+        step_num = cp.get("stepNumber")
+        total = cp.get("totalSteps")
+        completed = cp.get("completedSteps") or []
+        pending = cp.get("pendingSteps") or []
+        days = cp.get("daysSinceFirstTouch")
+        this_label = cp.get("thisStepLabel")
+        is_first_touch = len(completed) == 0
+        if step_num and total:
+            sequence_ctx = f"\nWHERE THIS LEAD IS IN THE SEQUENCE:\n- Step {step_num} of {total}"
+            if this_label:
+                sequence_ctx += f" ({this_label})"
+            sequence_ctx += "\n"
+            if completed:
+                sequence_ctx += f"- Already done: {', '.join(str(s.get('type','')) for s in completed)}\n"
+            if pending:
+                sequence_ctx += f"- Still pending after this: {', '.join(str(s) for s in pending)}\n"
+            if days is not None:
+                sequence_ctx += f"- Days since first touch: {days}\n"
 
-STRICT RULES:
-1. Start with "Hi {name}," - NO fluff before
+    history_ctx = ""
+    if req.message_history:
+        history_lines = []
+        for i, m in enumerate(req.message_history, 1):
+            ch = m.get("channel", "linkedin")
+            when = m.get("sentAt", "")
+            subj = m.get("subject")
+            body = (m.get("body") or "").strip()
+            header = f"[{i}] {ch} on {when}"
+            if subj:
+                header += f' — subject: "{subj}"'
+            history_lines.append(f"{header}\n    {body}")
+        history_ctx = "\nPAST CONVERSATION (DO NOT REPEAT THESE OPENERS OR PHRASES):\n" + "\n".join(history_lines) + "\n"
+
+    custom_ctx = ""
+    if req.ai_prompt:
+        custom_ctx = f"\nUSER'S INSTRUCTIONS FOR THIS STEP (highest priority — follow these closely):\n{req.ai_prompt}\n"
+
+    is_email = (req.channel or "linkedin").lower() == "email"
+
+    # Email-specific rules: longer body OK (4-7 sentences), subject line
+    # required, no "Hi" rule (use the recipient name naturally in the
+    # opening sentence). LinkedIn-specific rules: short DM, "Hi {name}".
+    if is_email:
+        channel_rules = f"""1. Subject: ≤ 6 words, conversational, lowercase or mixed case, NO exclamation marks, NO ALL CAPS, NO sales-y phrases like "Quick question" / "Following up" / "Saw your profile"
+2. Body opens by addressing them by first name naturally — NOT "Dear {name}," — try something like "Hey {name}, ..." or "{name} —"
+3. Body: 4-7 short sentences. Plain text. No marketing fluff.
+4. Reference SPECIFIC thing from their profile (their role, company, recent experience, or something from their about)
+5. End with natural {cta_text}
+6. NO "I hope this finds you well", "I came across your profile", "I wanted to reach out"
+7. NO placeholders or generic templates - write specific to THIS person
+8. Sound like a real human writing a one-off email, not a marketing blast
+
+OUTPUT FORMAT — return EXACTLY this, nothing else:
+SUBJECT: <subject line>
+---
+<body>"""
+    else:
+        channel_rules = f"""1. Start with "Hi {name}," - NO fluff before
 2. Reference SPECIFIC thing from their profile (their role, company, recent experience, location, or something from their about)
 3. Show genuine interest in THEIR work, not just what they can do for you
 4. 2-4 sentences maximum
@@ -414,22 +492,55 @@ STRICT RULES:
 6. NO "I hope this finds you well", "I came across your profile", "I wanted to reach out"
 7. NO placeholders or generic templates - write specific to THIS person
 8. Sound like a real human, not a bot"""
-    
+
+    # Anti-repetition + step-aware nudge: when this isn't the first touch,
+    # the model must NOT reuse the opener or hook from past messages, and
+    # should soften the ask vs. step 1.
+    sequence_rules = ""
+    if not is_first_touch and req.message_history:
+        sequence_rules = """
+
+SEQUENCE-AWARE RULES (this is a follow-up, NOT a first touch):
+- Do NOT repeat any opener, hook, or specific phrase from the PAST CONVERSATION section
+- Reference the prior outreach lightly if natural ("circling back", "wanted to follow up on my note") but do not over-apologize
+- If this is the final step, lead with value (case study, resource, insight) rather than asking again
+- If this is mid-sequence, keep it light — a short nudge, not a re-pitch"""
+
+    channel_label = "email" if is_email else "LinkedIn message"
+    system = f"""You are a {channel_label} outreach expert who does thorough homework before reaching out.{brand}{strategy_ctx}
+
+Your task: Write ONE personalized {channel_label} that shows you've done your research.
+
+STRICT RULES:
+{channel_rules}{sequence_rules}"""
+
     user = f"""{profile_ctx}
-
-{campaign_ctx}
-
-Write a personalized outreach message that:
+{campaign_ctx}{sequence_ctx}{history_ctx}{custom_ctx}
+Write a personalized outreach {channel_label} that:
 - Shows you've done homework on their profile
 - References something specific from their background
 - Feels natural and human, not automated
 - Ends with: {cta_text}
 
 Remember: The key is making them feel you genuinely read their profile and have a real reason to connect."""
-    
+
     try:
-        message = call_llm(system, user, temperature=0.6)
-        return {"message": message}
+        raw = call_llm(system, user, temperature=0.6)
+        if is_email:
+            # Parse "SUBJECT: ...\n---\n<body>". Be lenient: if the model
+            # forgot the marker, fall back to first line as subject.
+            subject = None
+            body = raw
+            if "SUBJECT:" in raw:
+                head, _, rest = raw.partition("SUBJECT:")
+                subject_line, _, after = rest.partition("\n")
+                subject = subject_line.strip()
+                # Strip the --- separator if present.
+                body = after.lstrip()
+                if body.startswith("---"):
+                    body = body[3:].lstrip("\n").lstrip()
+            return {"message": body, "subject": subject}
+        return {"message": raw}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

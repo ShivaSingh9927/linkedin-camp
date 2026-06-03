@@ -36,12 +36,10 @@ export const twoStepNurtureTemplate: TemplateDefinition = {
                 enrichContact: false,
                 enrichPosts: false,
             }),
-            node('n2', 200, 'ACTION', 'MESSAGE', 'First Message (AI)', {
-                message: '',
+            node('n2', 200, 'ACTION', 'MESSAGE', 'First Message (AI)', { aiEnabled: true, message: '',
             }),
             node('n3', 300, 'DELAY', 'WAIT', 'Wait 4 days', { delayDays: 4 }),
-            node('n4', 400, 'ACTION', 'MESSAGE', 'Follow-up (AI)', {
-                message: '',
+            node('n4', 400, 'ACTION', 'MESSAGE', 'Follow-up (AI)', { aiEnabled: true, message: '',
             }),
         ],
         edges: [

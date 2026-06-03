@@ -42,8 +42,7 @@ export const observerToAuthorityTemplate: TemplateDefinition = {
                 message: '',
             }),
             node('n5', 500, 'DELAY', 'WAIT', 'Wait 1 day', { delayDays: 1 }),
-            node('n6', 600, 'ACTION', 'MESSAGE', 'Send Message (AI)', {
-                message: '',
+            node('n6', 600, 'ACTION', 'MESSAGE', 'Send Message (AI)', { aiEnabled: true, message: '',
             }),
         ],
         edges: [

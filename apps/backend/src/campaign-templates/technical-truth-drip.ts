@@ -37,12 +37,10 @@ export const technicalTruthDripTemplate: TemplateDefinition = {
                 message: '',
             }),
             node('n5', 500, 'DELAY', 'WAIT', 'Wait 3 days', { delayDays: 3 }),
-            node('n6', 600, 'ACTION', 'MESSAGE', 'Message 1 — Insight (AI)', {
-                message: '',
+            node('n6', 600, 'ACTION', 'MESSAGE', 'Message 1 — Insight (AI)', { aiEnabled: true, message: '',
             }),
             node('n7', 700, 'DELAY', 'WAIT', 'Wait 5 days', { delayDays: 5 }),
-            node('n8', 800, 'ACTION', 'MESSAGE', 'Message 2 — Resource (AI)', {
-                message: '',
+            node('n8', 800, 'ACTION', 'MESSAGE', 'Message 2 — Resource (AI)', { aiEnabled: true, message: '',
             }),
         ],
         edges: [

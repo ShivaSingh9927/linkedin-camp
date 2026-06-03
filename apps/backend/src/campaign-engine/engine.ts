@@ -105,6 +105,68 @@ async function hasLeadReplied(campaignId: string, leadId: string): Promise<boole
     return !!reply;
 }
 
+// Phase C helpers — sequence awareness for AI nodes.
+//
+// buildCampaignProgress: snapshots where the lead is in the flow so the
+// AI knows step N of M and can shift register. Reads execResult.nodesExecuted
+// which the engine has been building up to this point in the loop. The
+// completedSteps list reflects only successful executions; failures and
+// skips don't count as 'done' from the lead's perspective.
+function buildCampaignProgress(
+    flow: CampaignFlowNode[],
+    currentIndex: number,
+    execResult: LeadExecutionResult,
+) {
+    // Filter out warmup/delay/profile-visit/inbox-sync — they're scaffolding,
+    // not steps the lead would perceive. Same lens used for the "total" count
+    // so step numbers feel natural to the AI ("step 2 of 3", not "step 5 of 9"
+    // where 4 of those were warmups).
+    const visibleTypes = new Set(['connect', 'send-message', 'like-nth-post', 'comment-nth-post', 'email', 'follow']);
+    const totalVisible = flow.filter(n => visibleTypes.has(String(n.node || '').toLowerCase())).length;
+    const completedSteps = execResult.nodesExecuted
+        .filter(n => n.status === 'success' && visibleTypes.has(String(n.node).toLowerCase()))
+        .map(n => ({ type: String(n.node), at: n.at, status: n.output?.status as string | undefined }));
+    const pendingSteps = flow.slice(currentIndex + 1)
+        .filter(n => visibleTypes.has(String(n.node || '').toLowerCase()))
+        .map(n => String(n.node));
+    // Step number = completed visible + 1 (this step itself). If the current
+    // node isn't visible, fall back to completed count.
+    const thisNodeVisible = visibleTypes.has(String(flow[currentIndex]?.node || '').toLowerCase());
+    const stepNumber = completedSteps.length + (thisNodeVisible ? 1 : 0);
+    let daysSinceFirstTouch: number | undefined;
+    if (completedSteps.length > 0 && completedSteps[0].at) {
+        const ms = Date.now() - new Date(completedSteps[0].at).getTime();
+        daysSinceFirstTouch = Math.max(0, Math.round(ms / 86_400_000));
+    }
+    return {
+        stepNumber,
+        totalSteps: Math.max(totalVisible, 1),
+        thisStepLabel: String(flow[currentIndex]?.label || flow[currentIndex]?.node || ''),
+        completedSteps,
+        pendingSteps,
+        daysSinceFirstTouch,
+    };
+}
+
+// loadMessageHistory: prior SENT messages to this lead in this campaign
+// (both LinkedIn DMs and emails). Returned in chronological order so the
+// AI sees the conversation as it unfolded. Full body — Groq is cheap and
+// the anti-repetition rule works better with exact phrasing visible.
+async function loadMessageHistory(campaignId: string, leadId: string) {
+    const rows = await prisma.message.findMany({
+        where: { campaignId, leadId, direction: 'SENT' },
+        select: { channel: true, subject: true, content: true, sentAt: true },
+        orderBy: { sentAt: 'asc' },
+        take: 20, // hard cap — campaigns >20 sent messages without a reply are unusual
+    }).catch(() => []);
+    return rows.map(r => ({
+        channel: (r.channel === 'email' ? 'email' : 'linkedin') as 'email' | 'linkedin',
+        sentAt: r.sentAt.toISOString(),
+        subject: r.subject || undefined,
+        body: r.content || '',
+    }));
+}
+
 // ---- Block resources for speed ----
 
 async function blockResources(page: any) {
@@ -496,6 +558,16 @@ async function runLead(
                 campaign: campaignData,
                 aiContext,
             };
+
+            // Phase C — sequence awareness for AI-capable nodes. Only assembled
+            // when the node will actually call the AI service (saves a DB
+            // round-trip on warmup / delay / profile-visit etc.). MESSAGE,
+            // EMAIL, and COMMENT all gate AI on config.aiEnabled.
+            const aiCapableNodes = new Set(['send-message', 'email', 'comment-nth-post']);
+            if (aiCapableNodes.has(nodeType) && (nodeConfig as any).aiEnabled) {
+                (nodeCtx as any).campaignProgress = buildCampaignProgress(flow, i, execResult);
+                (nodeCtx as any).messageHistory = await loadMessageHistory(campaignId, lead.id);
+            }
 
             console.log(`[ENGINE] Lead ${lead.firstName}: executing node ${i + 1}/${flow.length} → ${nodeType}`);
 

@@ -39,8 +39,7 @@ export const omniChannelSyncTemplate: TemplateDefinition = {
             }),
             node('n2', 200, 'ACTION', 'EMAIL_FINDER', 'Find Email', {}),
             node('n3', 300, 'DELAY', 'WAIT', 'Wait 1 day', { delayDays: 1 }),
-            node('n4', 400, 'ACTION', 'EMAIL', 'Send Email (AI)', {
-                message: '',
+            node('n4', 400, 'ACTION', 'EMAIL', 'Send Email (AI)', { aiEnabled: true, message: '',
                 subject: '',
             }),
         ],

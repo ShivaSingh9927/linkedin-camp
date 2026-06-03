@@ -45,8 +45,7 @@ export const quickEmailPivotTemplate: TemplateDefinition = {
                     operator: 'is_not_null',
                 },
             }),
-            node('n4', 400, 'ACTION', 'EMAIL', 'Send Email (AI)', {
-                message: '',
+            node('n4', 400, 'ACTION', 'EMAIL', 'Send Email (AI)', { aiEnabled: true, message: '',
                 subject: '',
             }),
             node('n5', 400, 'ACTION', 'END', 'End', {}),

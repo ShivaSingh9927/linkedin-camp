@@ -66,12 +66,10 @@ export const warmConnectTemplate: TemplateDefinition = {
                 message: '',
             }),
             node('n4', 400, 'DELAY', 'WAIT', 'Wait 3 days', { delayDays: 3 }),
-            node('n5', 500, 'ACTION', 'MESSAGE', 'Welcome Message (AI)', {
-                message: '',
+            node('n5', 500, 'ACTION', 'MESSAGE', 'Welcome Message (AI)', { aiEnabled: true, message: '',
             }),
             node('n6', 600, 'DELAY', 'WAIT', 'Wait 5 days', { delayDays: 5 }),
-            node('n7', 700, 'ACTION', 'MESSAGE', 'Follow-up (AI)', {
-                message: '',
+            node('n7', 700, 'ACTION', 'MESSAGE', 'Follow-up (AI)', { aiEnabled: true, message: '',
             }),
         ],
         edges: [

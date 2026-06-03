@@ -340,7 +340,7 @@ function CampaignBuilderInner({
                       </div>
                       <div>
                         <label className="text-[10px] font-bold text-purple-600 uppercase">Call to Action</label>
-                        <select 
+                        <select
                           value={(selectedNode.data as any).cta || 'connect'}
                           onChange={(e) => updateNodeData(selectedNode.id, { cta: e.target.value })}
                           className="w-full mt-1 p-2 bg-white border border-purple-200 rounded-lg text-xs font-medium"
@@ -350,6 +350,22 @@ function CampaignBuilderInner({
                           <option value="demo">Book Demo</option>
                           <option value="learn_more">Learn More</option>
                         </select>
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-purple-600 uppercase">Instructions for AI (this step)</label>
+                        <textarea
+                          value={(selectedNode.data as any).aiPrompt || ''}
+                          onChange={(e) => updateNodeData(selectedNode.id, { aiPrompt: e.target.value })}
+                          placeholder={
+                            (((selectedNode.data as any).subType || '') as string).toUpperCase() === 'EMAIL'
+                              ? 'e.g. "Final value-add email. Open with a specific insight about their company. Lead with a useful resource, NOT a meeting ask. Keep it under 6 sentences."'
+                              : 'e.g. "Light opener — reference one detail from their profile. No ask yet. Max 2 sentences."'
+                          }
+                          className="w-full mt-1 p-2 h-24 bg-white border border-purple-200 rounded-lg text-xs font-medium resize-none"
+                        />
+                        <div className="mt-1 text-[9px] text-slate-500 leading-relaxed">
+                          Tell the AI what this specific step is for. The AI also sees the lead's profile, your business context, past messages sent in this campaign, and where this step sits in the sequence — so focus on what makes THIS step different.
+                        </div>
                       </div>
                     </div>
                   )}

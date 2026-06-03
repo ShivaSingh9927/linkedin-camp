@@ -40,8 +40,7 @@ export const warmEngagerLoopTemplate: TemplateDefinition = {
                 message: '',
             }),
             node('n6', 600, 'DELAY', 'WAIT', 'Wait 1 day', { delayDays: 1 }),
-            node('n7', 700, 'ACTION', 'MESSAGE', 'Send Message (AI)', {
-                message: '',
+            node('n7', 700, 'ACTION', 'MESSAGE', 'Send Message (AI)', { aiEnabled: true, message: '',
             }),
         ],
         edges: [

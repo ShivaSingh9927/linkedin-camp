@@ -43,8 +43,7 @@ export const directEmailRouteTemplate: TemplateDefinition = {
                     operator: 'is_not_null',
                 },
             }),
-            node('n4', 400, 'ACTION', 'EMAIL', 'Send Cold Email', {
-                message: '',
+            node('n4', 400, 'ACTION', 'EMAIL', 'Send Cold Email', { aiEnabled: true, message: '',
             }),
             node('n5', 500, 'TRIGGER', 'END', 'End'),
         ],

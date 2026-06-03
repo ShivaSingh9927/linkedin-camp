@@ -37,8 +37,7 @@ export const multiThreadEnterpriseTemplate: TemplateDefinition = {
             node('n2', 200, 'ACTION', 'FOLLOW', 'Follow'),
             node('n3', 300, 'ACTION', 'EMAIL_FINDER', 'Find Email'),
             node('n4', 400, 'DELAY', 'WAIT', 'Wait 2 days', { delayDays: 2 }),
-            node('n5', 500, 'ACTION', 'EMAIL', 'Send Email', {
-                subject: '',
+            node('n5', 500, 'ACTION', 'EMAIL', 'Send Email', { aiEnabled: true, subject: '',
                 message: '',
             }),
         ],

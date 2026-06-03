@@ -37,8 +37,7 @@ export const contextualReactivationTemplate: TemplateDefinition = {
                 enrichPosts: true,
             }),
             node('n2', 200, 'DELAY', 'WAIT', 'Wait 1 day', { delayDays: 1 }),
-            node('n3', 300, 'ACTION', 'MESSAGE', 'Send Message (AI)', {
-                message: '',
+            node('n3', 300, 'ACTION', 'MESSAGE', 'Send Message (AI)', { aiEnabled: true, message: '',
             }),
         ],
         edges: [

@@ -44,15 +44,17 @@ export const emailNode: NodeHandler = async (ctx, config): Promise<NodeResult> =
         lead: { firstName: lead.firstName, lastName: lead.lastName },
         storedOutputs,
     };
-    const subject = resolveVariables(normalizeBraces(rawSubject), resolveCtx);
+    // Template subject is the fallback; an AI-generated subject (when
+    // aiEnabled + AI returns one) takes precedence below.
+    let subject = resolveVariables(normalizeBraces(rawSubject), resolveCtx);
 
     let body: string;
     if (aiEnabled) {
-        console.log('[EMAIL] Generating AI body...');
+        console.log('[EMAIL] Generating AI subject + body...');
         try {
             const profileName = `${lead.firstName || ''} ${lead.lastName || ''}`.trim() || 'User';
             const pv = storedOutputs['profile-visit'] || {};
-            const ai = await generateAIMessage({
+            const aiResult = await generateAIMessage({
                 profileName,
                 profileHeadline: pv.headline || pv.jobTitle || lead.headline || lead.jobTitle || undefined,
                 company:  pv.company  || lead.company  || undefined,
@@ -69,9 +71,19 @@ export const emailNode: NodeHandler = async (ctx, config): Promise<NodeResult> =
                 valueProposition: campaign?.valueProp || aiContext?.userContext?.valueProp || undefined,
                 aiStrategy: aiContext?.aiStrategy,
                 userContext: aiContext?.userContext,
+                // Phase C
+                channel: 'email',
+                aiPrompt: config.aiPrompt,
+                campaignProgress: (ctx as any).campaignProgress,
+                messageHistory: (ctx as any).messageHistory,
             });
-            if (ai && ai.length > 10) {
-                body = ai;
+            const aiBody = aiResult.message;
+            if (aiBody && aiBody.length > 10) {
+                body = aiBody;
+                if (aiResult.subject && aiResult.subject.length > 0) {
+                    subject = aiResult.subject;
+                    console.log(`[EMAIL] AI subject: "${subject}"`);
+                }
                 console.log('[EMAIL] AI body generated:', body.substring(0, 60) + '...');
             } else {
                 console.log('[EMAIL] AI output invalid, using template fallback');

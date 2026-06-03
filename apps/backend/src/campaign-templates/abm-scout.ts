@@ -42,7 +42,7 @@ export const abmScoutTemplate: TemplateDefinition = {
                     operator: 'is_not_null',
                 },
             }),
-            node('n6', 600, 'ACTION', 'EMAIL', 'Send Email'),
+            node('n6', 600, 'ACTION', 'EMAIL', 'Send Email', { aiEnabled: true }),
             node('n7', 700, 'ACTION', 'END', 'End'),
         ],
         edges: [

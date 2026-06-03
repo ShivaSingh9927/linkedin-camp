@@ -40,8 +40,7 @@ export const omniChannelAidaTemplate: TemplateDefinition = {
             }),
             node('n3', 300, 'DELAY', 'WAIT', 'Wait 5 days', { delayDays: 5 }),
             node('n4', 400, 'ACTION', 'EMAIL_FINDER', 'Find Email', {}),
-            node('n5', 500, 'ACTION', 'EMAIL', 'Send AIDA Email', {
-                message: '',
+            node('n5', 500, 'ACTION', 'EMAIL', 'Send AIDA Email', { aiEnabled: true, message: '',
             }),
         ],
         edges: [

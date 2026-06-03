@@ -49,6 +49,44 @@ export interface AIGenerateOptions {
     // message respects the user's GTM positioning + ICP outreach angles.
     aiStrategy?: any;
     userContext?: Record<string, any>;
+
+    // Phase C — sequence awareness + per-step controls.
+    //
+    // channel: 'linkedin' (DM, returns {message}) or 'email' (returns
+    // {message, subject} from a single LLM call). LinkedIn-specific
+    // rules (short, "Hi {name}") vs email-specific rules (subject line,
+    // 4-7 sentences, no "Dear") are picked server-side from this flag.
+    channel?: 'linkedin' | 'email';
+    // Per-step user instructions ("This is the opener, no asks yet").
+    // Layered on top of campaign + business context with the highest
+    // priority short of the STRICT RULES.
+    aiPrompt?: string;
+    // Where this lead sits in the multi-step sequence — lets the model
+    // shift register (intro → nudge → final close) instead of generating
+    // every step as a fresh first touch.
+    campaignProgress?: {
+        stepNumber: number;
+        totalSteps: number;
+        thisStepLabel?: string;
+        completedSteps: Array<{ type: string; at?: string; status?: string }>;
+        pendingSteps: string[];
+        daysSinceFirstTouch?: number;
+    };
+    // Prior SENT messages to this lead in this campaign (both LinkedIn
+    // DMs and emails). Full body — Groq is cheap and the anti-repetition
+    // instruction works better with the exact phrasing the model used
+    // before.
+    messageHistory?: Array<{
+        channel: 'linkedin' | 'email';
+        sentAt: string;
+        subject?: string;
+        body: string;
+    }>;
+}
+
+export interface AIGenerateResult {
+    message: string;
+    subject?: string;
 }
 
 export async function generateAIComment(options: AIGenerateOptions): Promise<string> {
@@ -119,7 +157,7 @@ function cleanAIOutput(text: string, name: string): string {
     return text.trim();
 }
 
-export async function generateAIMessage(options: AIGenerateOptions): Promise<string> {
+export async function generateAIMessage(options: AIGenerateOptions): Promise<AIGenerateResult> {
     try {
         const response = await axios.post(`${AI_SERVICE_URL}/ai/message`, {
             // Profile data
@@ -131,7 +169,7 @@ export async function generateAIMessage(options: AIGenerateOptions): Promise<str
             about: options.about,
             experience: options.experience,
             education: options.education,
-            
+
             // Campaign context
             connection_context: options.connectionContext,
             campaign_description: options.campaignDescription,
@@ -143,11 +181,20 @@ export async function generateAIMessage(options: AIGenerateOptions): Promise<str
             // Strategy + business context
             ai_strategy: options.aiStrategy,
             user_context: options.userContext,
+
+            // Phase C — sequence awareness + per-step controls.
+            channel: options.channel || 'linkedin',
+            ai_prompt: options.aiPrompt,
+            campaign_progress: options.campaignProgress,
+            message_history: options.messageHistory,
         }, { timeout: 30000 });
 
-        const raw = response.data.message;
-        const cleaned = cleanAIOutput(raw, options.profileName);
-        return cleaned || raw;
+        const rawMessage = response.data.message;
+        const cleaned = cleanAIOutput(rawMessage, options.profileName);
+        return {
+            message: cleaned || rawMessage,
+            subject: response.data.subject || undefined,
+        };
     } catch (error: any) {
         console.error('[AI-SERVICE] Error generating message:', error.message);
         throw new Error('Failed to generate AI message');

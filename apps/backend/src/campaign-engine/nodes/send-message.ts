@@ -69,7 +69,7 @@ export const sendMessage: NodeHandler = async (ctx, config): Promise<NodeResult>
                     valueProp: campaign?.valueProp,
                 };
                 
-                let aiMessage = await generateAIMessage({
+                const aiResult = await generateAIMessage({
                     profileName: profileData.name,
                     profileHeadline: profileData.headline || undefined,
                     company: profileData.company || undefined,
@@ -86,7 +86,13 @@ export const sendMessage: NodeHandler = async (ctx, config): Promise<NodeResult>
                     valueProposition: campaignContext.valueProp || aiContext?.userContext?.valueProp || undefined,
                     aiStrategy: aiContext?.aiStrategy,
                     userContext: aiContext?.userContext,
+                    // Phase C
+                    channel: 'linkedin',
+                    aiPrompt: (config as any).aiPrompt,
+                    campaignProgress: (ctx as any).campaignProgress,
+                    messageHistory: (ctx as any).messageHistory,
                 });
+                const aiMessage = aiResult.message;
                 if (aiMessage && aiMessage.length > 10) {
                     messageText = aiMessage;
                     console.log('[SEND-MESSAGE] AI message generated:', messageText.substring(0, 50) + '...');

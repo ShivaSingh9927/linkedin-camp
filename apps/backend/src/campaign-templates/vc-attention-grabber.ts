@@ -64,8 +64,7 @@ export const vcAttentionGrabberTemplate: TemplateDefinition = {
                     operator: 'is_not_null',
                 },
             }),
-            node('n8', 700, 'ACTION', 'EMAIL', 'Send Email', {
-                subject: '',
+            node('n8', 700, 'ACTION', 'EMAIL', 'Send Email', { aiEnabled: true, subject: '',
                 message: '',
             }),
             node('n9', 800, 'ACTION', 'END', 'End'),

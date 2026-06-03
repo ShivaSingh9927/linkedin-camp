@@ -37,8 +37,7 @@ export const pasSyncTemplate: TemplateDefinition = {
             }),
             node('n2', 200, 'ACTION', 'EMAIL_FINDER', 'Find Email', {}),
             node('n3', 300, 'DELAY', 'WAIT', 'Wait 1 day', { delayDays: 1 }),
-            node('n4', 400, 'ACTION', 'EMAIL', 'Send PAS Email', {
-                message: '',
+            node('n4', 400, 'ACTION', 'EMAIL', 'Send PAS Email', { aiEnabled: true, message: '',
             }),
         ],
         edges: [
