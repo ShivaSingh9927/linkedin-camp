@@ -10,6 +10,7 @@ import Redis from 'ioredis';
 import { runCampaign } from '../campaign-engine';
 import { CampaignConfig } from '../campaign-engine/types';
 import { getOrAssignProxy } from '../services/proxy.service';
+import { flattenDagToFlow } from '../campaign-engine/workflow-graph';
 
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
 const redisConnection = REDIS_URL ? new Redis(REDIS_URL, { maxRetriesPerRequest: null }) : null;
@@ -102,65 +103,15 @@ const processCampaignJob = async (data: CampaignJobData, job: Job) => {
     const rawConfig = campaign.workflowJson || campaign.workflow;
     const config: any = typeof rawConfig === 'string' ? JSON.parse(rawConfig) : rawConfig;
     
-    // Convert React Flow graph (nodes/edges) into a linear flow array for the engine
-    // Also handle plain array format: [{"type": "PROFILE_VISIT"}, {"type": "MESSAGE"}]
+    // Convert React Flow graph (nodes/edges) into a linear flow array
+    // for the engine. flattenDagToFlow honors IF_ELSE sourceHandle
+    // branching (nested trueBranch/falseBranch), skips NOOP sentinels
+    // and not-yet-implemented subTypes (FOLLOW/EMAIL/EMAIL_FINDER/...),
+    // and applies the canonical subType→engine-node alias map shared
+    // with linkedin.worker.ts.
     if (config.nodes && config.edges && !config.flow) {
-        const orderedNodes = [];
-        let currentNodeId = config.nodes.find((n: any) => 
-            n.type === 'TRIGGER' || 
-            n.id === 'trigger' || 
-            n.data?.subType === 'START' ||
-            n.subType === 'START'
-        )?.id;
-        
-        while (currentNodeId) {
-            const edge = config.edges.find((e: any) => e.source === currentNodeId);
-            if (!edge) break;
-            
-            currentNodeId = edge.target;
-            const targetNode = config.nodes.find((n: any) => n.id === currentNodeId);
-            if (targetNode) orderedNodes.push(targetNode);
-        }
-
-        console.log(`[CAMPAIGN-WORKER] Converting nodes to flow. orderedNodes length: ${orderedNodes.length}, orderedNodes:`, JSON.stringify(orderedNodes));
-        
-        config.flow = orderedNodes.map((node: any) => {
-            const data = node.data || {};
-            const rawSubType = (data.subType || node.subType || node.type || '').toUpperCase();
-            let mappedNodeType = rawSubType;
-            
-            switch(rawSubType) {
-                case 'VISIT':
-                case 'PROFILE_VISIT':
-                    mappedNodeType = 'profile-visit'; 
-                    break;
-                case 'MESSAGE': 
-                    mappedNodeType = 'send-message'; break;
-                case 'LIKE_NTH_POST':
-                case 'LIKE_POST':
-                case 'LIKE':
-                    mappedNodeType = 'like-nth-post'; break;
-                case 'COMMENT_NTH_POST':
-                case 'COMMENT_POST':
-                case 'COMMENT':
-                    mappedNodeType = 'comment-nth-post'; break;
-                case 'INVITE':
-                case 'CONNECT':
-                    mappedNodeType = 'connect'; break;
-                case 'WAIT':
-                case 'DELAY':
-                    mappedNodeType = 'delay'; break;
-                case 'WARMUP':
-                    mappedNodeType = 'warmup'; break;
-                case 'INBOX_SYNC':
-                    mappedNodeType = 'inbox-sync'; break;
-            }
-
-            return {
-                ...data,
-                node: mappedNodeType
-            };
-        });
+        config.flow = flattenDagToFlow({ nodes: config.nodes, edges: config.edges });
+        console.log(`[CAMPAIGN-WORKER] Flattened DAG → ${config.flow.length} executable nodes:`, JSON.stringify(config.flow.map((n: any) => n.node)));
     }
 
     // Also handle plain array format: [{"type": "PROFILE_VISIT"}, {"type": "MESSAGE"}]

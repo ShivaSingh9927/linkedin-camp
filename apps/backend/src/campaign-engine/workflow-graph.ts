@@ -180,6 +180,99 @@ export function delayMsFromNode(node: any): number {
     return ms || 86_400_000;
 }
 
+/**
+ * Map canonical step type to the engine's lowercase node name. The
+ * legacy `campaign-worker.ts` flattener used a hand-maintained switch;
+ * this keeps the mapping in one place alongside the rest of the
+ * vocabulary translation.
+ */
+const CANONICAL_TO_ENGINE_NODE: Partial<Record<CanonicalStepType, string>> = {
+    VISIT: 'profile-visit',
+    INVITE: 'connect',
+    MESSAGE: 'send-message',
+    LIKE_POST: 'like-nth-post',
+    COMMENT_POST: 'comment-nth-post',
+    DELAY: 'delay',
+    IF_ELSE: 'if-else',
+};
+
+/**
+ * Flatten a DAG `{nodes, edges}` into the linear `flow[]` shape that
+ * `runLead` consumes. Skips NOOP nodes (START/END/TRIGGER/FOLLOW/
+ * EMAIL/EMAIL_FINDER/...) so the engine never sees unknown node types.
+ * IF_ELSE nodes are emitted with nested `trueBranch`/`falseBranch`
+ * arrays built from the corresponding `sourceHandle` edges — matches
+ * the engine's existing if-else handler contract.
+ *
+ * Cycle-safe via visited set. Branches that loop back into the main
+ * trunk are flattened only up to the convergence point on first visit.
+ */
+export function flattenDagToFlow(workflow: WorkflowGraph): any[] {
+    if (!workflow?.nodes || !workflow?.edges) return [];
+
+    const startNode =
+        workflow.nodes.find(
+            (n: any) =>
+                n.type === 'TRIGGER' ||
+                n.id === 'trigger' ||
+                (n.data?.subType || n.subType) === 'START',
+        ) || workflow.nodes[0];
+
+    if (!startNode) return [];
+
+    const visited = new Set<string>();
+
+    const walk = (startId: string): any[] => {
+        const out: any[] = [];
+        let currentId: string | undefined = startId;
+        while (currentId && !visited.has(currentId)) {
+            visited.add(currentId);
+            const node = findNode(workflow, currentId);
+            if (!node) break;
+
+            const stepType = getStepType(node);
+            const data = node.data || {};
+
+            if (stepType === 'NOOP') {
+                const edge = pickNextEdge(workflow, currentId);
+                currentId = edge?.target;
+                continue;
+            }
+
+            if (stepType === 'IF_ELSE') {
+                const trueEdge = pickNextEdge(workflow, currentId, 'true');
+                const falseEdge = pickNextEdge(workflow, currentId, 'false');
+                out.push({
+                    ...data,
+                    node: 'if-else',
+                    condition: data.condition,
+                    trueBranch: trueEdge ? walk(trueEdge.target) : [],
+                    falseBranch: falseEdge ? walk(falseEdge.target) : [],
+                });
+                // IF_ELSE consumes both downstream paths — the linear walk
+                // terminates here. Engine's if-else handler executes the
+                // chosen branch internally.
+                break;
+            }
+
+            const engineNode = CANONICAL_TO_ENGINE_NODE[stepType];
+            if (engineNode) {
+                out.push({ ...data, node: engineNode });
+            } else {
+                // UNKNOWN — skip but log so we notice templates with
+                // typos or genuinely new subTypes.
+                console.warn(`[GRAPH] Unknown step type '${data.subType || node.subType || node.type}' at ${currentId} — skipping.`);
+            }
+
+            const edge = pickNextEdge(workflow, currentId);
+            currentId = edge?.target;
+        }
+        return out;
+    };
+
+    return walk(startNode.id);
+}
+
 export type AdvanceResult =
     | {
         kind: 'execute';
