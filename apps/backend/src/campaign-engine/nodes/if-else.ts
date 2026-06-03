@@ -1,5 +1,6 @@
-import { NodeHandler, NodeResult, CampaignFlowNode, IfElseCondition, IfElseOutput } from '../types';
+import { NodeHandler, NodeResult, CampaignFlowNode, IfElseCondition, IfElseOutput, NodeType } from '../types';
 import { executeNode } from '../engine';
+import { writeNodeOutput } from '../storage';
 
 function evaluateCondition(
     condition: IfElseCondition,
@@ -72,13 +73,33 @@ export const ifElse: NodeHandler = async (ctx, config): Promise<NodeResult> => {
 
         for (const nodeConfig of branchToExecute) {
             const nodeResult = await executeNode(ctx, nodeConfig);
-            
+
+            // Persist inner node output the same way the top-level engine loop
+            // does — write to ctx.storedOutputs so the next inner node in
+            // this branch can read it, AND call writeNodeOutput so downstream
+            // top-level nodes (and audit log) see the result. Without this,
+            // a chain like trueBranch=[EMAIL_FINDER, EMAIL] would have EMAIL
+            // unable to read EMAIL_FINDER's output, and post-branch nodes
+            // would have no visibility into what the branch did.
+            const innerType = nodeConfig.node as NodeType;
+            const execAt = new Date().toISOString();
+            if (nodeResult.success && nodeResult.output) {
+                ctx.storedOutputs[innerType] = nodeResult.output;
+            }
+            await writeNodeOutput(ctx.campaignId, ctx.lead.id, {
+                node: innerType,
+                status: nodeResult.success ? 'success' : 'failed',
+                output: nodeResult.output,
+                error: nodeResult.error,
+                at: execAt,
+            }).catch((err) => console.error(`[IF-ELSE] writeNodeOutput failed for ${innerType}:`, err?.message));
+
             if (!nodeResult.success) {
                 console.log(`[IF-ELSE] Node ${nodeConfig.node} failed: ${nodeResult.error}`);
-                return { 
-                    success: false, 
+                return {
+                    success: false,
                     error: `Node ${nodeConfig.node} failed: ${nodeResult.error}`,
-                    output 
+                    output
                 };
             }
         }
