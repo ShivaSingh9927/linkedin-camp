@@ -16,6 +16,9 @@ import {
     findNode,
 } from '../campaign-engine/workflow-graph';
 import { sendEmail } from '../services/email.service';
+import { checkConnection } from '../campaign-engine/nodes/check-connection';
+import { follow } from '../campaign-engine/nodes/follow';
+import { writeNodeOutput, readNodeOutputs } from '../campaign-engine/storage';
 
 chromium.use(stealth);
 
@@ -745,6 +748,36 @@ export const processWorkflowStep = async (data: any, job: Job) => {
             }
 
             console.log(`[WORKER] Profile visit completed for ${lead.firstName}.`);
+        } else if (stepType === 'CHECK_CONNECTION' || stepType === 'FOLLOW') {
+            // Both handlers share the same ctx shape — page + lead + ids.
+            // No storedOutputs read needed: neither handler consumes upstream
+            // outputs; CHECK_CONNECTION reads DOM, FOLLOW reads DOM. Outputs
+            // ARE persisted so downstream IF_ELSE source='storedOutputs'
+            // can branch on `check-connection.connected` etc.
+            const handler = stepType === 'CHECK_CONNECTION' ? checkConnection : follow;
+            const nodeKey = stepType === 'CHECK_CONNECTION' ? 'check-connection' : 'follow';
+            const ctx: any = {
+                page,
+                context,
+                lead,
+                userId,
+                campaignId,
+                storedOutputs: await readNodeOutputs(campaignId, lead.id),
+            };
+            console.log(`[WORKER] Dispatching ${stepType} via engine handler for ${lead.firstName}...`);
+            const result = await handler(ctx, stepData as any);
+            await writeNodeOutput(campaignId, lead.id, {
+                node: nodeKey as any,
+                status: result.success ? 'success' : 'failed',
+                output: result.output,
+                error: result.error,
+                at: new Date().toISOString(),
+            });
+            if (!result.success) {
+                console.log(`[WORKER] ${stepType} failed for ${lead.firstName}: ${result.error}`);
+            } else {
+                console.log(`[WORKER] ${stepType} success for ${lead.firstName}:`, result.output);
+            }
         } else if (stepType === 'LIKE_POST' || stepType === 'COMMENT_POST') {
             // DEBUG: Log cookie info before starting
             const debugCookies = await context.cookies();

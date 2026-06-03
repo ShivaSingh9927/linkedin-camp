@@ -57,7 +57,8 @@ export type NodeType =
     | 'if-else'
     | 'check-connection'
     | 'email'
-    | 'email-finder';
+    | 'email-finder'
+    | 'follow';
 
 // ---- Node Output ----
 

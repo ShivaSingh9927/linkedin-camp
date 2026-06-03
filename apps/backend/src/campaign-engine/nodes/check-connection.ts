@@ -71,6 +71,24 @@ export const checkConnection: NodeHandler = async (ctx): Promise<NodeResult> => 
             }
         }
 
+        // Mirror to Lead.status so IF_ELSE source='connectionState' reads
+        // ground truth. Without this, a downstream IF_ELSE(connected) right
+        // after CHECK_CONNECTION would still see the stale status set by
+        // the upstream CONNECT (e.g. 'PENDING' even though the lead just
+        // accepted). Only upgrade to CONNECTED — never downgrade past
+        // CONNECTED (a previously-accepted lead who LinkedIn now hides
+        // shouldn't lose their CONNECTED state silently).
+        if (output.connected) {
+            try {
+                await prisma.lead.update({
+                    where: { id: lead.id },
+                    data: { status: 'CONNECTED' },
+                });
+            } catch (err) {
+                console.log(`[CHECK-CONNECTION] Could not update Lead.status: ${err}`);
+            }
+        }
+
         return { success: true, output };
 
     } catch (err: any) {

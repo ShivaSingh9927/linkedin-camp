@@ -39,6 +39,7 @@ import { ifElse } from './nodes/if-else';
 import { checkConnection } from './nodes/check-connection';
 import { emailNode } from './nodes/email';
 import { emailFinder } from './nodes/email-finder';
+import { follow } from './nodes/follow';
 import { readNodeOutputs, writeNodeOutput, updateLeadEnrichment } from './storage';
 import { checkQuota, nextDayRetryAt, DAILY_CAPS, GovernedAction, isWithinWorkingHours, nextWorkingHourAt } from './safety/quota';
 import { transitionLead, recomputeCampaignStatus } from './safety/lifecycle';
@@ -62,6 +63,7 @@ const NODE_HANDLERS: Record<NodeType, NodeHandler> = {
     'check-connection': checkConnection,
     'email': emailNode,
     'email-finder': emailFinder,
+    'follow': follow,
 };
 
 // ---- Execute single node (exported for if-else node) ----

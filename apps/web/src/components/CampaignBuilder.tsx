@@ -19,7 +19,7 @@ import {
 import '@xyflow/react/dist/style.css';
 
 import { TriggerNode, ActionNode, ConditionNode, DelayNode } from './WorkflowNodes';
-import { Plus, MousePointer2, Mail, UserPlus, Clock, Zap, GitBranch, X, Edit3, Heart, MessageCircle, Info, Database, AtSign, FileText, Sparkles } from 'lucide-react';
+import { Plus, MousePointer2, Mail, UserPlus, Clock, Zap, GitBranch, X, Edit3, Heart, MessageCircle, Info, Database, AtSign, FileText, Sparkles, UserCheck, Eye } from 'lucide-react';
 import { toast } from 'sonner';
 
 const nodeTypes = {
@@ -185,6 +185,25 @@ function CampaignBuilderInner({
               <div className="p-1 bg-cyan-100 rounded text-cyan-600"><MessageCircle className="w-3 h-3" /></div>
               Comment on Post
             </button>
+
+            <button
+              onClick={() => addNode('FOLLOW', 'Follow', 'ACTION')}
+              className="flex items-center gap-2 p-2 rounded-lg hover:bg-indigo-50 text-slate-600 hover:text-indigo-600 border border-transparent hover:border-indigo-100 transition-all text-xs font-bold"
+            >
+              <div className="p-1 bg-indigo-100 rounded text-indigo-600"><Eye className="w-3 h-3" /></div>
+              Follow
+            </button>
+
+            <div className="h-px bg-slate-100 my-2" />
+            <div className="text-[9px] font-black text-slate-300 uppercase tracking-widest mb-1 px-1">Gates</div>
+
+            <button
+              onClick={() => addNode('CHECK_CONNECTION', 'Check Connection', 'ACTION')}
+              className="flex items-center gap-2 p-2 rounded-lg hover:bg-teal-50 text-slate-600 hover:text-teal-600 border border-transparent hover:border-teal-100 transition-all text-xs font-bold"
+            >
+              <div className="p-1 bg-teal-100 rounded text-teal-600"><UserCheck className="w-3 h-3" /></div>
+              Check Connection
+            </button>
           </div>
         </div>
 
@@ -233,6 +252,25 @@ function CampaignBuilderInner({
 
           <div className="p-6 flex-1 overflow-y-auto space-y-6">
             {(
+              ['EMAIL', 'SEND EMAIL'].includes((((selectedNode.data as any).subType || '') as string).toUpperCase()) ||
+              ((selectedNode.data as any).label || '').toUpperCase().includes('EMAIL')
+            ) && (
+                <div className="space-y-3">
+                  <label className="text-xs font-bold text-slate-600 flex items-center gap-2">
+                    <Mail className="w-3 h-3 text-indigo-500" />
+                    Subject
+                  </label>
+                  <input
+                    type="text"
+                    value={(selectedNode.data as any).subject || ''}
+                    onChange={(e) => updateNodeData(selectedNode.id, { subject: e.target.value })}
+                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
+                    placeholder="Quick question, {firstName}"
+                  />
+                </div>
+              )}
+
+            {(
               ['MESSAGE', 'SEND MESSAGE', 'COMMENT_POST', 'EMAIL', 'SEND EMAIL'].includes((((selectedNode.data as any).subType || '') as string).toUpperCase()) ||
               ((selectedNode.data as any).label || '').toUpperCase().includes('MESSAGE') ||
               ((selectedNode.data as any).label || '').toUpperCase().includes('COMMENT') ||
@@ -241,7 +279,7 @@ function CampaignBuilderInner({
                 <div className="space-y-3">
                   <label className="text-xs font-bold text-slate-600 flex items-center gap-2">
                     <Mail className="w-3 h-3 text-indigo-500" />
-                    {((selectedNode.data as any).subType === 'COMMENT_POST' ? 'Comment Content' : 
+                    {((selectedNode.data as any).subType === 'COMMENT_POST' ? 'Comment Content' :
                       (selectedNode.data as any).subType === 'EMAIL' ? 'Email Body' : 'Message Content')}
                   </label>
                   <textarea
@@ -257,7 +295,8 @@ function CampaignBuilderInner({
               )}
 
             {(
-              ['MESSAGE', 'COMMENT_POST'].includes((((selectedNode.data as any).subType || '') as string).toUpperCase())
+              ['MESSAGE', 'COMMENT_POST', 'EMAIL'].includes((((selectedNode.data as any).subType || '') as string).toUpperCase()) ||
+              ((selectedNode.data as any).label || '').toUpperCase().includes('EMAIL')
             ) && (
                 <div className="space-y-3">
                   <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b pb-2 mb-4">AI Settings</div>
