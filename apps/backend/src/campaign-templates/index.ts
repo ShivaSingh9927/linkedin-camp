@@ -1,22 +1,52 @@
 import { TemplateDefinition } from './types';
 import { warmConnectTemplate } from './warm-connect';
-
-// The single source of truth for shipped templates.
-//
-// To add a new template:
-//   1. Create apps/backend/src/campaign-templates/<name>.ts exporting a
-//      TemplateDefinition.
-//   2. Import it here and append to TEMPLATES.
-//   3. That's it — `GET /templates` picks it up and the Templates Hub
-//      renders the card automatically.
-//
-// Keep this list small and opinionated. Every template ships with safety
-// defaults (delays, AI-driven personalization, no INVITE-without-visit). Do
-// not seed templates that bypass the connection-degree gate or the reply-pause
-// — those are product invariants, not template choices.
+import { contextualReactivationTemplate } from './contextual-reactivation';
+import { directContentEngagerTemplate } from './direct-content-engager';
+import { silentDataHarvesterTemplate } from './silent-data-harvester';
+import { quickEmailPivotTemplate } from './quick-email-pivot';
+import { observerToAuthorityTemplate } from './observer-to-authority';
+import { omniChannelSyncTemplate } from './omni-channel-sync';
+import { twoStepNurtureTemplate } from './two-step-nurture';
+import { warmEngagerLoopTemplate } from './warm-engager-loop';
+import { deepContextMultiTouchTemplate } from './deep-context-multi-touch';
+import { blankSlateConnectorTemplate } from './blank-slate-connector';
+import { fluffFreeIntroTemplate } from './fluff-free-intro';
+import { directEmailRouteTemplate } from './direct-email-route';
+import { warmUpConnectionTemplate } from './warm-up-connection';
+import { pasSyncTemplate } from './pas-sync';
+import { omniChannelAidaTemplate } from './omni-channel-aida';
+import { softFollowAudienceTemplate } from './soft-follow-audience';
+import { abmScoutTemplate } from './abm-scout';
+import { technicalTruthDripTemplate } from './technical-truth-drip';
+import { hiringManagerBypassTemplate } from './hiring-manager-bypass';
+import { passiveTalentPoacherTemplate } from './passive-talent-poacher';
+import { vcAttentionGrabberTemplate } from './vc-attention-grabber';
+import { multiThreadEnterpriseTemplate } from './multi-thread-enterprise';
 
 export const TEMPLATES: TemplateDefinition[] = [
     warmConnectTemplate,
+    contextualReactivationTemplate,
+    directContentEngagerTemplate,
+    silentDataHarvesterTemplate,
+    quickEmailPivotTemplate,
+    observerToAuthorityTemplate,
+    omniChannelSyncTemplate,
+    twoStepNurtureTemplate,
+    warmEngagerLoopTemplate,
+    deepContextMultiTouchTemplate,
+    blankSlateConnectorTemplate,
+    fluffFreeIntroTemplate,
+    directEmailRouteTemplate,
+    warmUpConnectionTemplate,
+    pasSyncTemplate,
+    omniChannelAidaTemplate,
+    softFollowAudienceTemplate,
+    abmScoutTemplate,
+    technicalTruthDripTemplate,
+    hiringManagerBypassTemplate,
+    passiveTalentPoacherTemplate,
+    vcAttentionGrabberTemplate,
+    multiThreadEnterpriseTemplate,
 ];
 
 export const getTemplates = (): TemplateDefinition[] => TEMPLATES;

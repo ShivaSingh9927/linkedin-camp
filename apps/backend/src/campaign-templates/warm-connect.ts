@@ -37,10 +37,13 @@ export const warmConnectTemplate: TemplateDefinition = {
         'Agency reaching out on behalf of a client',
         'BD / sales targeting decision-makers in a specific niche',
     ],
+    group: 'out-of-network',
     category: 'linkedin',
     icon: '✍️',
     color: 'from-indigo-500 to-purple-600',
     durationDays: 9,
+    stepCount: 6,
+    delayCount: 3,
     aiStrategyHint: {
         objective:
             'Open a conversation with a cold prospect by referencing their specific work and connecting our value to a likely pain point.',
