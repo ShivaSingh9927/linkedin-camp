@@ -39,16 +39,14 @@ export const emailNode: NodeHandler = async (ctx, config): Promise<NodeResult> =
 
     // Reuse the existing variable resolver — same {{firstName}}/{{company}}
     // vocabulary the LinkedIn message templates use, so the builder UI
-    // stays consistent across both channels.
-    const vars = {
-        firstName: lead.firstName || '',
-        lastName: lead.lastName || '',
-        company: lead.company || storedOutputs['profile-visit']?.company || '',
-        jobTitle: lead.jobTitle || storedOutputs['profile-visit']?.jobTitle || '',
-        cta: campaign?.cta || '',
+    // stays consistent across both channels. resolveVariables expects
+    // a ResolveContext shape: {lead, storedOutputs}.
+    const resolveCtx = {
+        lead: { firstName: lead.firstName, lastName: lead.lastName },
+        storedOutputs,
     };
-    const subject = resolveVariables(normalizeBraces(rawSubject), vars);
-    const body = resolveVariables(normalizeBraces(rawBody), vars);
+    const subject = resolveVariables(normalizeBraces(rawSubject), resolveCtx);
+    const body = resolveVariables(normalizeBraces(rawBody), resolveCtx);
 
     console.log(`[EMAIL] Sending to ${recipient}: "${subject.substring(0, 60)}..."`);
 
