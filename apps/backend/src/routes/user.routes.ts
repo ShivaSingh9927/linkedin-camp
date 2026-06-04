@@ -120,11 +120,12 @@ router.put('/onboarding', async (req: AuthRequest, res) => {
             },
         });
 
-        try {
-            await mailService.sendOnboardingSuccessEmail(req.user!.email);
-        } catch (mailError: any) {
-            console.error('[USER-ROUTES] Failed to send onboarding success email:', mailError.message);
-        }
+        // Fire-and-forget: the success email is non-critical and must never block
+        // (or fail) the onboarding response. SMTP stalls would otherwise hang the
+        // request past the client timeout and surface as "Failed to complete onboarding".
+        void mailService.sendOnboardingSuccessEmail(req.user!.email).catch((mailError: any) => {
+            console.error('[USER-ROUTES] Failed to send onboarding success email:', mailError?.message);
+        });
 
         res.json({ success: true, profile: businessProfile });
     } catch (error: any) {

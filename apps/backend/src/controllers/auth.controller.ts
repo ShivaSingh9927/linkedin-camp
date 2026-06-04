@@ -76,12 +76,10 @@ export const googleLogin = async (req: Request, res: Response) => {
                 });
 
                 console.log(`[AUTH/GOOGLE] Sending welcome email to ${email}...`);
-                // Send Welcome Email for new Google user
-                try {
-                    await mailService.sendWelcomeEmail(user.email, user.firstName || 'User');
-                } catch (emailErr: any) {
-                    console.error('[AUTH/GOOGLE] Non-fatal: Failed to send welcome email:', emailErr.message);
-                }
+                // Fire-and-forget: never block/fail signup on a stalled SMTP send.
+                void mailService.sendWelcomeEmail(user.email, user.firstName || 'User').catch((emailErr: any) => {
+                    console.error('[AUTH/GOOGLE] Non-fatal: Failed to send welcome email:', emailErr?.message);
+                });
             }
         } else {
             console.log(`[AUTH/GOOGLE] Found existing user by Google ID: ${user.id}`);
@@ -134,12 +132,10 @@ export const register = async (req: Request, res: Response) => {
             },
         });
 
-        // Send Welcome Email for new manual registration (Non-blocking or at least non-fatal)
-        try {
-            await mailService.sendWelcomeEmail(user.email, user.firstName || 'User');
-        } catch (emailErr: any) {
-            console.error('[AUTH/REGISTER] Non-fatal: Failed to send welcome email:', emailErr.message);
-        }
+        // Fire-and-forget: never block/fail signup on a stalled SMTP send.
+        void mailService.sendWelcomeEmail(user.email, user.firstName || 'User').catch((emailErr: any) => {
+            console.error('[AUTH/REGISTER] Non-fatal: Failed to send welcome email:', emailErr?.message);
+        });
 
         const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
 

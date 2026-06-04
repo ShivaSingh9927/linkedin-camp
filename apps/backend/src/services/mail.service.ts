@@ -15,7 +15,11 @@ class MailService {
             tls: {
                 ciphers: 'TLSv1.2',
                 rejectUnauthorized: false
-            }
+            },
+            // Never let a stalled SMTP handshake hang a request indefinitely.
+            connectionTimeout: 8000,
+            greetingTimeout: 8000,
+            socketTimeout: 10000,
         });
     }
 
