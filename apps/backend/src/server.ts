@@ -153,6 +153,7 @@ const httpServer = app.listen(serverPort, '0.0.0.0', () => {
             app.use('/api/v1/integrations', integrationRoutes);
             app.use('/api/v1/smart-lists', smartListRoutes);
             app.use('/api/v1/ai', aiRoutes);
+            app.use('/api/v1/users', userRoutes);
             app.use('/api/v1/session', sessionRoutes);
             app.use('/api/v1/strategy', strategyRoutes);
             app.use('/api/v1/templates', templateRoutes);
