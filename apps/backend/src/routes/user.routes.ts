@@ -11,7 +11,7 @@ router.get('/me', async (req: AuthRequest, res) => {
     try {
         const user = await prisma.user.findUnique({
             where: { id: req.user!.id },
-            include: { businessProfile: true },
+            include: { BusinessProfile: true },
         });
         
         if (!user) {
@@ -44,7 +44,7 @@ router.get('/me', async (req: AuthRequest, res) => {
             hasPipedrive: !!user.pipedriveToken,
             hasNotion: !!user.notionToken,
             notionDatabaseId: decryptedNotionDatabaseId,
-            businessProfile: user.businessProfile || null,
+            businessProfile: user.BusinessProfile || null,
         });
     } catch (error: any) {
         console.error('[USER-ROUTES] Error fetching user:', error.message);

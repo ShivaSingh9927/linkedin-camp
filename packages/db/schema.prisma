@@ -46,6 +46,13 @@ model BusinessProfile {
   aiStrategy            Json?
   aiStrategyGeneratedAt DateTime?
   websiteScrapedAt      DateTime?
+  // Self-profile enrichment: scraped from the user's OWN LinkedIn profile after
+  // they complete login through Qampi. Populated once by the enrichment job.
+  selfHeadline          String?
+  selfAbout             String?
+  selfRecentPosts       Json?     // [{ url, content, date }]
+  selfProfileSummary    String?
+  selfProfileEnrichedAt DateTime?
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
   User                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)

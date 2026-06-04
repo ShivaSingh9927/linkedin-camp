@@ -130,7 +130,9 @@ export default function AIProfilePage() {
       }
       
       if (res.ok) {
-        router.push('/settings/strategy');
+        // ?generating=1 tells the strategy page to show staged progress while
+        // the background pipeline runs (the POST only returns a 202).
+        router.push('/settings/strategy?generating=1');
       }
     } catch (e) {
       console.error('Failed to generate strategy', e);

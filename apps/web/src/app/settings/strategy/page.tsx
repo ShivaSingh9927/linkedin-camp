@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Sparkles, ChevronDown, Clock, RotateCcw, Save, Loader2, AlertCircle, Check, Zap } from 'lucide-react';
 import { io as socketIO, Socket } from 'socket.io-client';
+import { GenerationProgress } from '@/components/GenerationProgress';
 
 const apiBase = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/v1\/?$/, '');
 
@@ -33,6 +34,11 @@ export default function StrategyPage() {
   const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
+    // Arriving from the AI Profile page right after kicking off generation:
+    // show the staged progress immediately while the background pipeline runs.
+    if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('generating') === '1') {
+      setRegenerating(true);
+    }
     loadStrategy();
   }, []);
 
@@ -189,6 +195,23 @@ export default function StrategyPage() {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <Loader2 className="w-8 h-8 text-primary animate-spin" />
+      </div>
+    );
+  }
+
+  // Generation in progress — show staged progress (arriving fresh from the AI
+  // Profile page, or after hitting Regenerate). The STRATEGY_GENERATED socket
+  // listener flips `regenerating` false and populates the strategy when done.
+  if (regenerating) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center px-4">
+        <div className="w-full max-w-md bg-white rounded-3xl border border-slate-200 shadow-soft p-10">
+          <div className="flex items-center justify-center gap-2 mb-6">
+            <Sparkles className="w-5 h-5 text-primary" />
+            <h2 className="text-lg font-black text-slate-900">Building your AI strategy</h2>
+          </div>
+          <GenerationProgress active variant="light" />
+        </div>
       </div>
     );
   }

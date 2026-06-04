@@ -22,7 +22,8 @@ import {
 import { motion } from 'framer-motion';
 import { TopBar } from '@/components/TopBar';
 import { GlowContainer } from '@/components/GlowBorder';
-import { AIProfileBanner } from '@/components/AIProfileBanner';
+import { SetupChecklist } from '@/components/SetupChecklist';
+import { AIInsightSummary } from '@/components/AIInsightSummary';
 import { AICommandCenter } from '@/components/AICommandCenter';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
@@ -85,7 +86,8 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6 sm:space-y-8 lg:space-y-10">
-      <AIProfileBanner />
+      <SetupChecklist />
+      <AIInsightSummary />
       <GlowContainer active={hasActiveCampaigns} className="p-0 border-none bg-transparent">
         <div className="bg-background rounded-[inherit] overflow-hidden shadow-xl shadow-slate-200/50">
           <TopBar

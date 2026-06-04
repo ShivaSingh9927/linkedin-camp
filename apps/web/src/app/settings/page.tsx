@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
     User,
     Linkedin,
@@ -37,6 +37,16 @@ const settingsNav = [
 export default function SettingsPage() {
     const [activeSection, setActiveSection] = useState('account');
     const [isSaving, setIsSaving] = useState(false);
+
+    // Allow deep-linking to a specific tab via ?tab=<key> (e.g. the dashboard
+    // setup checklist links here with ?tab=linkedin). Read from the URL on mount
+    // rather than useSearchParams to avoid the App Router Suspense requirement.
+    useEffect(() => {
+        const tab = new URLSearchParams(window.location.search).get('tab');
+        if (tab && settingsNav.some((s) => s.key === tab)) {
+            setActiveSection(tab);
+        }
+    }, []);
 
     const handleSave = () => {
         setIsSaving(true);

@@ -29,14 +29,14 @@ else
 end
 `;
 
-async function tryAcquireAccountLock(userId: string, lockToken: string): Promise<boolean> {
+export async function tryAcquireAccountLock(userId: string, lockToken: string): Promise<boolean> {
     if (!redisConnection) return true; // No redis => single-instance fallback, no contention possible
     const key = `linkedin-lock:${userId}`;
     const res = await redisConnection.set(key, lockToken, 'EX', ACCOUNT_LOCK_TTL_SEC, 'NX');
     return res === 'OK';
 }
 
-async function releaseAccountLock(userId: string, lockToken: string): Promise<void> {
+export async function releaseAccountLock(userId: string, lockToken: string): Promise<void> {
     if (!redisConnection) return;
     const key = `linkedin-lock:${userId}`;
     await redisConnection.eval(RELEASE_LOCK_LUA, 1, key, lockToken).catch((err: any) => {

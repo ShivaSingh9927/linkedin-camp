@@ -204,6 +204,18 @@ class StrategyUpdate(BaseModel):
     overrides: Dict[str, Any]
 
 
+class SelfProfileRequest(BaseModel):
+    # Scraped from the user's OWN LinkedIn profile after they log in. Used to
+    # infer their voice and a structured summary that sharpens message gen.
+    name: Optional[str] = None
+    headline: Optional[str] = None
+    about: Optional[str] = None
+    company: Optional[str] = None
+    job_title: Optional[str] = None
+    location: Optional[str] = None
+    posts: List[str] = []  # recent post bodies
+
+
 # ── Helper Functions ─────────────────────────────────────────────────────────
 
 def get_brand_context(persona: Optional[str], value_prop: Optional[str], user_context: Optional[Dict] = None) -> str:
@@ -576,6 +588,72 @@ INSTRUCTIONS:
     try:
         enhanced = call_llm(system, user, temperature=0.8)
         return {"enhanced": enhanced}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─── Self-Profile Summary ─────────────────────────────────────────────────────
+
+@app.post("/ai/profile-summary")
+async def profile_summary(req: SelfProfileRequest):
+    """
+    Turn the user's scraped OWN profile + recent posts into (1) a confident,
+    structured summary of who they are, and (2) an inferred communication style
+    + tone tags. The summary powers the dashboard "here's what I learned about
+    you" card; the style/tone feed message generation so outreach sounds like
+    them. Returns JSON: { summary, communicationStyle, tonePreferences[] }.
+    """
+    import json
+    import re
+
+    profile_lines = []
+    if req.name:
+        profile_lines.append(f"Name: {req.name}")
+    if req.headline:
+        profile_lines.append(f"Headline: {req.headline}")
+    if req.job_title or req.company:
+        profile_lines.append(f"Role: {req.job_title or ''} at {req.company or ''}".strip())
+    if req.location:
+        profile_lines.append(f"Location: {req.location}")
+    if req.about:
+        profile_lines.append(f"About:\n{req.about}")
+
+    posts_block = ""
+    if req.posts:
+        posts_block = "\n\nTheir recent LinkedIn posts (their authentic voice):\n"
+        for i, p in enumerate(req.posts[:5], 1):
+            posts_block += f"\n[Post {i}]\n{p[:1500]}\n"
+
+    system = (
+        "You analyze a professional's own LinkedIn profile and posts to build a "
+        "crisp profile that another AI will use to write outreach in THEIR voice. "
+        "Be specific and grounded ONLY in what's provided — never invent facts. "
+        "Return STRICT JSON only, no prose, no code fences."
+    )
+
+    user = f"""Here is the person's LinkedIn profile and recent posts.
+
+{chr(10).join(profile_lines) if profile_lines else "(no profile fields scraped)"}
+{posts_block}
+
+Return EXACTLY this JSON shape:
+{{
+  "summary": "2-4 sentence confident summary of who they are, what they do, who they help, and what they care about — written so it reads like 'here's the picture I've built of you'.",
+  "communicationStyle": "1-2 sentences describing how they write — sentence length, formality, use of humor/data/stories, emoji, etc. Inferred from their posts if available.",
+  "tonePreferences": ["3-6 short lowercase tone tags, e.g. 'direct', 'warm', 'data-driven', 'conversational'"]
+}}"""
+
+    try:
+        raw = call_llm(system, user, temperature=0.4)
+        # Be tolerant: strip code fences and pull the first {...} block.
+        cleaned = re.sub(r"^```(?:json)?|```$", "", raw.strip(), flags=re.MULTILINE).strip()
+        match = re.search(r"\{.*\}", cleaned, re.DOTALL)
+        data = json.loads(match.group(0) if match else cleaned)
+        return {
+            "summary": (data.get("summary") or "").strip(),
+            "communicationStyle": (data.get("communicationStyle") or "").strip(),
+            "tonePreferences": [str(t).strip() for t in (data.get("tonePreferences") or []) if str(t).strip()][:6],
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

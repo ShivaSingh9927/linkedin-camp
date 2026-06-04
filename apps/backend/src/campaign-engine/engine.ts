@@ -1,8 +1,5 @@
-import { chromium } from 'playwright-extra';
-const stealth = require('puppeteer-extra-plugin-stealth')();
-chromium.use(stealth);
-
 import { prisma } from '@repo/db';
+import { launchAuthenticatedContext } from './session-launch';
 
 let io: any = null;
 const getSocketIO = async () => {
@@ -232,115 +229,6 @@ async function runLead(
             return execResult;
         }
 
-        // ---- Build browser context (matching phase2_cookie_message.js strategy) ----
-
-        // Determine executable path based on environment
-        const getChromiumPath = () => {
-            const candidates = [
-                '/root/.cache/ms-playwright/chromium-1217/chrome-linux64/chrome',
-                '/home/shiva/.cache/ms-playwright/chromium-1217/chrome-linux64/chrome',
-                '/home/shiva/.cache/ms-playwright/chromium-1208/chrome-linux64/chrome',
-            ];
-            for (const p of candidates) {
-                if (require('fs').existsSync(p)) return p;
-            }
-            return undefined; // Let Playwright auto-detect
-        };
-
-        const launchOptions: any = {
-            headless: true,
-            args: [
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-blink-features=AutomationControlled',
-                '--start-maximized',
-                '--disable-gpu',
-                '--disable-dev-shm-usage',
-            ],
-        };
-
-        const chromiumPath = getChromiumPath();
-        if (chromiumPath) {
-            launchOptions.executablePath = chromiumPath;
-        }
-
-        // Session source priority: DB > worker-provided context > file fallback (legacy)
-        // DB-first makes workers stateless and supports horizontal scaling.
-        let activeCookies: any[] | null = null;
-        let activeUserAgent: string | null = null;
-        let activeLocalStorage: Record<string, string> | null = null;
-        let activeProxy: { server: string; username?: string; password?: string } | null = null;
-
-        if (sessionContext?.proxy) {
-            activeProxy = sessionContext.proxy;
-        }
-
-        // PRIMARY: DB-backed session (canonical source for stateless workers)
-        try {
-            if (user.linkedinCookie) {
-                const raw = JSON.parse(user.linkedinCookie);
-                activeCookies = Array.isArray(raw) ? raw.map((c: any) => ({
-                    ...c,
-                    expires: c.expires != null ? Math.round(Number(c.expires)) : Math.round(Date.now() / 1000) + 86400 * 30,
-                })) : raw;
-            }
-        } catch (e: any) {
-            console.log(`[ENGINE] Failed to parse DB cookies: ${e.message}`);
-        }
-        try {
-            if (user.linkedinFingerprint) {
-                const fp = typeof user.linkedinFingerprint === 'string'
-                    ? JSON.parse(user.linkedinFingerprint) : user.linkedinFingerprint;
-                activeUserAgent = fp?.userAgent || null;
-            }
-        } catch {}
-        try {
-            if (user.linkedinLocalStorage) {
-                activeLocalStorage = typeof user.linkedinLocalStorage === 'string'
-                    ? JSON.parse(user.linkedinLocalStorage) : user.linkedinLocalStorage;
-            }
-        } catch {}
-
-        if (activeCookies && activeCookies.length > 0) {
-            console.log(`[ENGINE] Using session from DB (${activeCookies.length} cookies, ua=${activeUserAgent ? 'yes' : 'no'}, ls=${activeLocalStorage ? Object.keys(activeLocalStorage).length : 0})`);
-        } else if (sessionContext?.cookies) {
-            console.log(`[ENGINE] DB session empty, using worker context (${sessionContext.cookies.length} cookies)`);
-            activeCookies = sessionContext.cookies;
-            activeUserAgent = sessionContext.userAgent;
-            activeLocalStorage = sessionContext.localStorage;
-            if (!activeProxy && sessionContext?.proxy) activeProxy = sessionContext.proxy;
-        }
-
-        // Sticky-proxy invariant: LinkedIn binds the captured cookies to the
-        // exact egress IP they were captured behind. ANY other IP carrying
-        // those cookies → server-side session invalidation on first request.
-        // So we read the proxy snapshot persisted at login time and apply it
-        // at Playwright LAUNCH level (not just context-level — Chrome's
-        // internal/background requests escape context proxy on Linux and
-        // would leak through the host IP).
-        //
-        // If the snapshot is missing (user logged in before this field
-        // existed, or login somehow ran without a proxy) we ABORT rather
-        // than fall back to a different proxy. A different proxy is a
-        // guaranteed ban path; aborting forces a re-login through the right
-        // proxy, which is the only correct outcome.
-        let proxyConfig: { server: string; username?: string; password?: string } | null = null;
-        const snapshot = (user as any).linkedinProxySnapshot;
-        if (snapshot && typeof snapshot === 'object' && snapshot.server) {
-            proxyConfig = {
-                server: snapshot.server,
-                username: snapshot.username || undefined,
-                password: snapshot.password || undefined,
-            };
-            console.log(`[ENGINE] Using pinned login proxy ${proxyConfig.server}`);
-        } else {
-            console.error(`[ENGINE] No linkedinProxySnapshot on user ${userId} — refusing to run. Re-login to pin a proxy.`);
-            execResult.status = 'failed';
-            execResult.failedAt = 'proxy-snapshot-missing';
-            execResult.error = 'No proxy snapshot on user — re-login required';
-            return execResult;
-        }
-
         // Account-health gate. If the account is in any non-HEALTHY state
         // (OTP_REQUIRED / SESSION_EXPIRED / RESTRICTED / NEEDS_LOGIN), refuse
         // to launch a browser at all — running through a bad session burns
@@ -358,64 +246,19 @@ async function runLead(
             return execResult;
         }
 
-        // Proxy at LAUNCH level so every Chrome subprocess (DNS, telemetry,
-        // stealth probes) egresses through the same IP as the cookies were
-        // captured under. Context-level proxy alone leaks.
-        launchOptions.proxy = proxyConfig;
-
-        const contextOptions: any = {
-            userAgent: activeUserAgent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36',
-            viewport: null,
-            locale: 'en-IN',
-            timezoneId: 'Asia/Kolkata',
-            proxy: proxyConfig,
-        };
-
-        browser = await chromium.launch(launchOptions);
-        context = await browser.newContext(contextOptions);
-
-        // Inject cookies (exactly like phase2_cookie_message.js line 62)
-        if (activeCookies && activeCookies.length > 0) {
-            await context.addCookies(activeCookies);
-            const verify = await context.cookies();
-            console.log(`[ENGINE] Injected ${activeCookies.length} cookies, verified ${verify.length} in context`);
-        } else {
-            console.warn('[ENGINE] ⚠️ No cookies available — session will likely fail');
+        // Launch the authenticated browser via the shared launcher — the single
+        // source of truth for the sticky-proxy invariant (also used by the
+        // self-profile enrichment job). Aborts if no pinned proxy snapshot.
+        const launch = await launchAuthenticatedContext(userId, sessionContext);
+        if (!launch.ok) {
+            execResult.status = 'failed';
+            execResult.failedAt = launch.failedAt;
+            execResult.error = launch.error;
+            return execResult;
         }
-
-        // Inject localStorage (exactly like phase2_cookie_message.js lines 68-75)
-        if (activeLocalStorage && Object.keys(activeLocalStorage).length > 0) {
-            await context.addInitScript((data: any) => {
-                const parsed = JSON.parse(data);
-                for (const [k, v] of Object.entries(parsed)) {
-                    window.localStorage.setItem(k, v as string);
-                }
-            }, JSON.stringify(activeLocalStorage));
-            console.log(`[ENGINE] Injected ${Object.keys(activeLocalStorage).length} localStorage keys`);
-        }
-
-        // If no localStorage from files, inject from worker context
-        if ((!activeLocalStorage || Object.keys(activeLocalStorage).length === 0) && sessionContext?.localStorage && Object.keys(sessionContext.localStorage).length > 0) {
-            await context.addInitScript((data: any) => {
-                const parsed = JSON.parse(data);
-                for (const [k, v] of Object.entries(parsed)) {
-                    window.localStorage.setItem(k, v as string);
-                }
-            }, JSON.stringify(sessionContext.localStorage));
-            console.log(`[ENGINE] Injected ${Object.keys(sessionContext.localStorage).length} localStorage keys from worker context`);
-        }
-
-        page = context.pages()[0] || await context.newPage();
-
-        // Block heavy resources for speed and stealth (matching testscripts)
-        await page.route('**/*', (route: any) => {
-            const type = route.request().resourceType();
-            const url = route.request().url();
-            if (['image', 'media', 'font'].includes(type) || url.includes('analytics') || url.includes('ads')) {
-                return route.abort();
-            }
-            return route.continue();
-        });
+        browser = launch.browser;
+        context = launch.context;
+        page = launch.page;
 
         // ---- Load previously stored outputs ----
         const storedOutputs = await readNodeOutputs(campaignId, lead.id);

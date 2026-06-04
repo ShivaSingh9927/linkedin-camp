@@ -201,6 +201,49 @@ export async function generateAIMessage(options: AIGenerateOptions): Promise<AIG
     }
 }
 
+export interface SelfProfileSummaryInput {
+    name?: string | null;
+    headline?: string | null;
+    about?: string | null;
+    company?: string | null;
+    jobTitle?: string | null;
+    location?: string | null;
+    posts?: string[];
+}
+
+export interface SelfProfileSummaryResult {
+    summary: string;
+    communicationStyle: string;
+    tonePreferences: string[];
+}
+
+/**
+ * Summarize the user's OWN scraped profile + posts into a structured profile
+ * the rest of the system can use (dashboard summary + voice for message gen).
+ */
+export async function generateSelfProfileSummary(
+    input: SelfProfileSummaryInput
+): Promise<SelfProfileSummaryResult> {
+    const response = await axios.post(
+        `${AI_SERVICE_URL}/ai/profile-summary`,
+        {
+            name: input.name,
+            headline: input.headline,
+            about: input.about,
+            company: input.company,
+            job_title: input.jobTitle,
+            location: input.location,
+            posts: input.posts || [],
+        },
+        { timeout: 45000 }
+    );
+    return {
+        summary: response.data.summary || '',
+        communicationStyle: response.data.communicationStyle || '',
+        tonePreferences: Array.isArray(response.data.tonePreferences) ? response.data.tonePreferences : [],
+    };
+}
+
 export async function generateAIEnhance(options: AIGenerateOptions): Promise<string> {
     try {
         const response = await axios.post(`${AI_SERVICE_URL}/ai/enhance`, {

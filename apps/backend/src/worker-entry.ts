@@ -19,6 +19,7 @@ const bootstrap = async () => {
         const { initProxyHealthWorker } = await import('./workers/proxy.worker');
         const { initInboxWorker } = await import('./workers/inbox.worker');
         const { initCRMWorker } = await import('./workers/crm.worker');
+        const { initEnrichmentWorker } = await import('./workers/enrichment-worker');
 
         initScheduler();
         initWorker();
@@ -26,6 +27,7 @@ const bootstrap = async () => {
         initProxyHealthWorker();
         initInboxWorker();
         initCRMWorker();
+        initEnrichmentWorker();
 
         console.log('[WORKER-READY] All background services ready');
     } catch (err) {

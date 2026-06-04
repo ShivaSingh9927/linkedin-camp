@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { GenerationProgress } from '@/components/GenerationProgress';
 import {
   Sparkles,
   Target,
@@ -151,13 +152,7 @@ export function AICommandCenter() {
       <div className="bg-gradient-to-br from-violet-600 via-primary to-indigo-600 rounded-[3rem] p-10 text-white relative overflow-hidden shadow-2xl shadow-primary/30">
         <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxnIGZpbGw9IiNmZmYiIGZpbGwtb3BhY2l0eT0iMC4wNSI+PGNpcmNsZSBjeD0iMzAiIGN5PSIzMCIgcj0iMiIvPjwvZz48L2c+PC9zdmc+')] opacity-30" />
         <div className="relative z-10 flex flex-col items-center justify-center py-12">
-          <motion.div
-            animate={{ rotate: 360 }}
-            transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
-          >
-            <Loader2 className="w-12 h-12 text-white/80" />
-          </motion.div>
-          <p className="mt-4 text-sm font-bold text-white/80">Analyzing your AI strategy...</p>
+          <GenerationProgress active variant="dark" />
         </div>
       </div>
     );

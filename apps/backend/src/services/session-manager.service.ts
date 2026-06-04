@@ -435,6 +435,18 @@ class SessionManagerService {
         await session.context.close().catch(() => {});
         this.activeSessions.delete(userId);
 
+        // Fire-and-forget: kick off one-time self-profile enrichment. Delayed so
+        // the freshly captured session settles; runs on the worker box behind the
+        // per-account lock. The job no-ops if the user was already enriched.
+        try {
+            const { enqueueSelfEnrichment } = await import('../workers/enrichment-worker');
+            void enqueueSelfEnrichment(userId).catch((err: any) =>
+                console.error('[SESSION-MANAGER] Failed to enqueue self-enrichment:', err?.message)
+            );
+        } catch (err: any) {
+            console.error('[SESSION-MANAGER] Could not load enrichment worker:', err?.message);
+        }
+
         return { success: true };
     }
 
