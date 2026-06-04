@@ -7,6 +7,7 @@ import Link from 'next/link';
 import api from '@/lib/api';
 import { FALLBACK_TEMPLATES } from '@/lib/template-data';
 import { CampaignNameModal } from '@/components/CampaignNameModal';
+import { TemplateFlowStrip } from '@/components/templates/TemplateFlowStrip';
 
 type GroupTab = 'all' | 'my-network' | 'out-of-network' | 'action-triggered' | 'objective-based';
 
@@ -28,6 +29,7 @@ interface TemplateSummary {
     stepCount: number;
     delayCount: number;
     requires?: string[];
+    stepSequence?: string[];
     aiStrategyHint: {
         objective: string;
         description: string;
@@ -279,22 +281,18 @@ export default function TemplatesHubPage() {
                             className="bg-white rounded-3xl border shadow-sm hover:shadow-lg transition-all overflow-hidden group flex flex-col cursor-pointer"
                         >
                             <div className={`h-2 bg-gradient-to-r ${tpl.color}`} />
-                            {/* Thumbnail */}
-                            <div className="relative h-36 bg-slate-50 overflow-hidden">
-                                <img
-                                    src={`/templates/thumbs/${tpl.id}.png`}
-                                    alt={tpl.name}
-                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                                    loading="lazy"
-                                    onError={(e) => {
-                                        (e.currentTarget as HTMLImageElement).style.display = 'none';
-                                        (e.currentTarget.parentElement as HTMLElement).classList.add('flex', 'items-center', 'justify-center');
-                                        const fallback = document.createElement('span');
-                                        fallback.className = 'text-5xl';
-                                        fallback.textContent = tpl.icon;
-                                        (e.currentTarget.parentElement as HTMLElement).appendChild(fallback);
-                                    }}
-                                />
+                            {/* Flow preview header — the actual step sequence, no stock art */}
+                            <div className={`relative h-36 overflow-hidden bg-gradient-to-br ${tpl.color} bg-opacity-5`}>
+                                <div className="absolute inset-0 bg-white/85 backdrop-blur-[1px]" />
+                                <div className="relative h-full flex flex-col justify-center px-5 gap-3">
+                                    <span className="text-4xl drop-shadow-sm">{tpl.icon}</span>
+                                    {tpl.stepSequence && tpl.stepSequence.length > 0 ? (
+                                        <TemplateFlowStrip
+                                            nodes={tpl.stepSequence.map((s: string) => ({ subType: s }))}
+                                            maxSteps={6}
+                                        />
+                                    ) : null}
+                                </div>
                                 <div className="absolute top-3 right-3 flex gap-1.5">
                                     <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${GROUP_COLORS[tpl.group] || 'bg-slate-100 text-slate-600'} backdrop-blur-sm bg-white/90`}>
                                         {GROUP_LABELS[tpl.group] || tpl.group}

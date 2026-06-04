@@ -12,7 +12,15 @@ router.use(authMiddleware);
 // the template's `workflow` + `aiStrategyHint`.
 
 router.get('/', (_req, res) => {
-    const templates = getTemplates().map(({ workflow: _w, ...rest }) => rest);
+    // Ship a compact step sequence (node subTypes, in graph order minus START)
+    // so the gallery card can render a real mini-flow preview without the full
+    // workflow payload. The detail page still fetches the complete graph.
+    const templates = getTemplates().map(({ workflow, ...rest }) => ({
+        ...rest,
+        stepSequence: (workflow?.nodes ?? [])
+            .filter((n) => n.subType !== 'START')
+            .map((n) => n.subType),
+    }));
     res.json({ templates });
 });
 
