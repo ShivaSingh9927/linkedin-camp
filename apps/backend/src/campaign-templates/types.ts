@@ -21,6 +21,27 @@ export type TemplateAudience = 'connected' | 'cold' | 'mixed';
 
 export type TemplatePersona = 'job-seeker' | 'recruiter' | 'vc-founder' | 'enterprise-sales' | null;
 
+/**
+ * The user role this template is designed for. Surfaced as the primary
+ * filter row in the gallery (`/campaigns/templates`). A user picks their
+ * ICP at onboarding (future) and the gallery defaults to their bucket.
+ *   - 'founder'     — solo operator / early-stage CEO selling, raising, hiring
+ *   - 'sales'       — BD / AE / SDR running outbound at volume
+ *   - 'agency'      — service business pitching new clients or reactivating old ones
+ *   - 'recruiter'   — in-house TA or agency recruiter sourcing candidates
+ *   - 'job-seeker'  — individual looking for roles or referrals
+ *   - 'creator'     — newsletter, course, community builder growing audience
+ *   - 'universal'   — works across roles; safe defaults
+ */
+export type TemplateICP =
+    | 'founder'
+    | 'sales'
+    | 'agency'
+    | 'recruiter'
+    | 'job-seeker'
+    | 'creator'
+    | 'universal';
+
 export interface TemplateNode {
     id: string;
     type: 'TRIGGER' | 'ACTION' | 'DELAY' | 'CONDITION';
@@ -45,6 +66,8 @@ export interface TemplateDefinition {
     group: TemplateGroup;
     category: TemplateCategory;
     audience: TemplateAudience;
+    icp: TemplateICP;
+    bestFor?: string;
     persona?: TemplatePersona;
     icon: string;
     color: string;
