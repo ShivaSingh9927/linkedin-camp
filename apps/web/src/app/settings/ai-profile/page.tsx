@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { Building2, Target, PenTool, Globe, Sparkles, Check, Loader2, ArrowRight, Clock } from 'lucide-react';
+import api from '@/lib/api';
 
 const tabs = [
   { id: 'business', label: 'Business', icon: Building2 },
@@ -67,8 +68,9 @@ export default function AIProfilePage() {
   const loadProfile = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/v1/users/me');
-      const data = await res.json();
+      // Use the api client so the Bearer token is attached — a bare fetch sends
+      // no Authorization header and the backend returns 401.
+      const { data } = await api.get('/users/me');
       if (data.businessProfile) {
         setExistingProfile(data.businessProfile);
         setForm(prev => ({
@@ -97,17 +99,12 @@ export default function AIProfilePage() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      const res = await fetch('/api/v1/users/business-profile', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
-      });
-      if (res.ok) {
-        setSaved(true);
-        setTimeout(() => setSaved(false), 3000);
-      }
+      await api.put('/users/business-profile', form);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
     } catch (e) {
       console.error('Failed to save', e);
+      alert('Failed to save profile. Please try again.');
     } finally {
       setSaving(false);
     }
@@ -117,24 +114,18 @@ export default function AIProfilePage() {
     setGenerating(true);
     setRateLimitError(null);
     try {
-      const res = await fetch('/api/v1/strategy/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ trigger: 'manual' }),
-      });
-      
-      if (res.status === 429) {
-        const data = await res.json();
-        setRateLimitError(data.error || 'Rate limit exceeded. Please wait before generating another strategy.');
+      // Save the latest form first so generation runs against current input,
+      // then kick off generation — both authenticated via the api client.
+      await api.put('/users/business-profile', form);
+      await api.post('/strategy/generate', { trigger: 'manual' });
+      // ?generating=1 tells the strategy page to show staged progress while
+      // the background pipeline runs (the POST only returns a 202).
+      router.push('/settings/strategy?generating=1');
+    } catch (e: any) {
+      if (e?.response?.status === 429) {
+        setRateLimitError(e.response.data?.error || 'Rate limit exceeded. Please wait before generating another strategy.');
         return;
       }
-      
-      if (res.ok) {
-        // ?generating=1 tells the strategy page to show staged progress while
-        // the background pipeline runs (the POST only returns a 202).
-        router.push('/settings/strategy?generating=1');
-      }
-    } catch (e) {
       console.error('Failed to generate strategy', e);
       setRateLimitError('Failed to generate strategy. Please try again.');
     } finally {

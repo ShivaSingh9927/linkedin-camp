@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { GenerationProgress } from '@/components/GenerationProgress';
+import api from '@/lib/api';
 import {
   Sparkles,
   Target,
@@ -110,8 +111,7 @@ export function AICommandCenter() {
   const loadStrategy = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/v1/strategy');
-      const data = await res.json();
+      const { data } = await api.get('/strategy');
       if (data.strategy) {
         setStrategy(data.strategy);
         // Simulated metrics (would come from actual usage data)
@@ -132,14 +132,8 @@ export function AICommandCenter() {
   const handleRegenerate = async () => {
     setRegenerating(true);
     try {
-      const res = await fetch('/api/v1/strategy/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ trigger: 'manual' }),
-      });
-      if (res.ok) {
-        loadStrategy();
-      }
+      await api.post('/strategy/generate', { trigger: 'manual' });
+      loadStrategy();
     } catch (e) {
       console.error('Failed to regenerate', e);
     } finally {

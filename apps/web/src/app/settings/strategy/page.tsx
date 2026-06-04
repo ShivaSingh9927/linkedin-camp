@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Sparkles, ChevronDown, Clock, RotateCcw, Save, Loader2, AlertCircle, Check, Zap } from 'lucide-react';
 import { io as socketIO, Socket } from 'socket.io-client';
 import { GenerationProgress } from '@/components/GenerationProgress';
+import api from '@/lib/api';
 
 const apiBase = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/v1\/?$/, '');
 
@@ -76,8 +77,8 @@ export default function StrategyPage() {
   const loadStrategy = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/v1/strategy');
-      const data = await res.json();
+      // api client attaches the Bearer token (a bare fetch would 401).
+      const { data } = await api.get('/strategy');
       if (data.strategy) {
         setStrategy(data.strategy);
         setGeneratedAt(data.generatedAt);
@@ -107,11 +108,7 @@ export default function StrategyPage() {
     try {
       const parsed = JSON.parse(editValues[key]);
       const updated = { ...strategy, [key]: parsed };
-      await fetch('/api/v1/strategy', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ overrides: { [key]: parsed } }),
-      });
+      await api.put('/strategy', { overrides: { [key]: parsed } });
       setStrategy(updated);
       setEditMode(prev => ({ ...prev, [key]: false }));
       setSaved(true);
@@ -127,30 +124,17 @@ export default function StrategyPage() {
     setRegenerating(true);
     setRateLimitError(null);
     try {
-      const res = await fetch('/api/v1/strategy/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ trigger: 'manual', force_regenerate: force }),
-      });
-
-      if (res.status === 429) {
-        const data = await res.json();
-        setRateLimitError(data.error || 'Rate limit exceeded. Please wait before generating another strategy.');
-        setRegenerating(false);
-        return;
+      // Backend returns 202 — the 6-agent pipeline runs in the background and
+      // pushes the result via STRATEGY_GENERATED Socket.IO event. The useEffect
+      // listener above flips regenerating=false when it arrives.
+      await api.post('/strategy/generate', { trigger: 'manual', force_regenerate: force });
+    } catch (e: any) {
+      if (e?.response?.status === 429) {
+        setRateLimitError(e.response.data?.error || 'Rate limit exceeded. Please wait before generating another strategy.');
+      } else {
+        console.error('Failed to regenerate', e);
+        setRateLimitError('Failed to regenerate strategy. Please try again.');
       }
-
-      // Backend returns 202 — the 6-agent pipeline runs in the background
-      // and pushes the result via STRATEGY_GENERATED Socket.IO event. The
-      // useEffect listener above flips regenerating=false when it arrives.
-      if (!res.ok && res.status !== 202) {
-        const data = await res.json().catch(() => ({}));
-        setRateLimitError(data.error || `Request failed (${res.status}).`);
-        setRegenerating(false);
-      }
-    } catch (e) {
-      console.error('Failed to regenerate', e);
-      setRateLimitError('Failed to regenerate strategy. Please try again.');
       setRegenerating(false);
     }
   };
