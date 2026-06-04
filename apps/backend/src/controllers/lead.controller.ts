@@ -8,9 +8,9 @@ import { getActionQueue } from '../services/queue.service';
 const getTeamUserIds = async (userId: string) => {
     const member = await prisma.teamMember.findFirst({
         where: { userId },
-        include: { team: { include: { members: true } } }
+        include: { Team: { include: { TeamMember: true } } }
     });
-    return member ? member.team.members.map((m: { userId: string }) => m.userId) : [];
+    return member ? member.Team.TeamMember.map((m: { userId: string }) => m.userId) : [];
 };
 
 const bulkImportLeads = async (userId: string, incomingLeads: any[], teamUserIds: string[]) => {

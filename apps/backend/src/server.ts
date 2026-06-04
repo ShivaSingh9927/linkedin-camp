@@ -69,6 +69,10 @@ app.use(cors({
         // Same-origin / curl / health checks have no Origin header — allow.
         if (!origin) return callback(null, true);
         if (allowedOrigins.includes(origin)) return callback(null, true);
+        // The Qampi Chrome extension (AutoConnect) POSTs scraped leads to
+        // /api/v1/leads/import from a chrome-extension:// origin. Allow the
+        // extension scheme — every endpoint still requires a valid JWT.
+        if (origin.startsWith('chrome-extension://')) return callback(null, true);
         return callback(new Error(`CORS: origin ${origin} not allowed`));
     },
     credentials: true,
