@@ -8,6 +8,7 @@ import {
   syncLinkedinProfile,
   startLinkedinLogin,
   heartbeat,
+  syncExtension,
 } from '../controllers/auth.controller';
 import { authMiddleware } from '../middleware/auth.middleware';
 
@@ -21,5 +22,6 @@ router.get('/linkedin-status', authMiddleware, getLinkedinStatus);
 router.post('/sync-profile', authMiddleware, syncLinkedinProfile);
 router.post('/start-login', authMiddleware, startLinkedinLogin);
 router.post('/heartbeat', authMiddleware, heartbeat);
+router.post('/sync-extension', authMiddleware, syncExtension);
 
 export default router;

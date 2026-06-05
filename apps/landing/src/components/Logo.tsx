@@ -24,7 +24,8 @@ export function Logo({ size = "md", className, showText = true }: LogoProps) {
       <div className={cn("relative", sizes[size])}>
         <svg viewBox="0 0 40 40" fill="none" className="w-full h-full">
           <rect width="40" height="40" rx="10" fill="url(#logo-gradient)" />
-          <path d="M12 28V12h4l4 8 4-8h4v16h-4V20l-4 8-4-8v8h-4z" fill="white" />
+          <circle cx="20" cy="18" r="7" stroke="white" strokeWidth="4.5" fill="none" />
+          <path d="M24.5 22.5l6 6" stroke="white" strokeWidth="4.5" strokeLinecap="round" />
           <defs>
             <linearGradient id="logo-gradient" x1="0" y1="0" x2="40" y2="40">
               <stop offset="0%" stopColor="#8b5cf6" />

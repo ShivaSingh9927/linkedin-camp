@@ -21,6 +21,23 @@ export function IntegrationsSection() {
       <div className="absolute bottom-0 right-1/4 w-[400px] h-[400px] bg-indigo-100/30 rounded-full blur-3xl" />
 
       <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        {/* ── Mascot Sticker: Integration Bird ── */}
+        <motion.div
+          className="absolute left-[5%] top-4 md:left-[15%] lg:left-[20%] w-14 md:w-16 z-20 pointer-events-none mix-blend-darken opacity-90 hidden md:block"
+          initial={{ opacity: 0, x: -20 }}
+          whileInView={{ opacity: 1, x: 0 }}
+          viewport={{ once: true, margin: "-100px" }}
+          transition={{ duration: 1, ease: "easeOut", delay: 0.2 }}
+        >
+          <motion.img
+            src="/stickers/bird_integration.png"
+            alt="Integration Bird Mascot"
+            className="w-full h-full object-contain"
+            animate={{ y: [0, -3, 0] }}
+            transition={{ repeat: Infinity, duration: 4.5, ease: "easeInOut" }}
+          />
+        </motion.div>
+
         <motion.div
           initial={{ opacity: 0, y: 30 }}
           whileInView={{ opacity: 1, y: 0 }}

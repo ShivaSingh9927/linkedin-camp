@@ -205,18 +205,34 @@ export const getLinkedinStatus = async (req: any, res: Response) => {
         // It's a polling endpoint; checking LinkedIn validity on every poll is session suicide.
         const connected = !!user.linkedinCookie || !!user.persistentSessionPath;
 
+        let profile = {
+            firstName: user.email.split('@')[0], 
+            lastName: "",
+            headline: "LinkedIn Member",
+            avatarUrl: null as string | null
+        };
+
+        if (user.profileData) {
+            try {
+                const parsed = typeof user.profileData === 'string' 
+                    ? JSON.parse(user.profileData) 
+                    : user.profileData as any;
+                if (parsed.firstName) profile.firstName = parsed.firstName;
+                if (parsed.lastName) profile.lastName = parsed.lastName;
+                if (parsed.headline) profile.headline = parsed.headline;
+                if (parsed.avatarUrl) profile.avatarUrl = parsed.avatarUrl;
+            } catch (e) {
+                console.error('[AUTH-CTRL] Failed to parse user.profileData:', e);
+            }
+        }
+
         res.json({
             userId: user.id,
             connected: connected,
             isValid: true, // Optimistically valid if connected; real check is in worker
             cookieLength: user.linkedinCookie ? user.linkedinCookie.length : 0,
             persistentPath: user.persistentSessionPath,
-            profile: {
-                firstName: user.email.split('@')[0], 
-                lastName: "",
-                headline: "LinkedIn Member",
-                avatarUrl: null
-            }
+            profile
         });
     } catch (error) {
         res.status(500).json({ error: 'Failed to fetch status' });
@@ -283,5 +299,71 @@ export const heartbeat = async (req: any, res: Response) => {
         res.json({ success: true, message: 'Heartbeat received' });
     } catch (error) {
         res.status(500).json({ error: 'Failed to process heartbeat' });
+    }
+};
+
+export const syncExtension = async (req: any, res: Response) => {
+    const userId = req.user.id;
+    const { linkedinCookie, linkedinLocalStorage, fingerprint } = req.body;
+
+    if (!linkedinCookie) {
+        return res.status(400).json({ error: 'Cookies required' });
+    }
+
+    try {
+        console.log(`[AUTH-CTRL] Syncing extension session for user ${userId}...`);
+        
+        // Parse cookies to ensure they are valid JSON
+        const parsedCookies = JSON.parse(linkedinCookie);
+        if (!Array.isArray(parsedCookies)) {
+            throw new Error('Cookies must be an array');
+        }
+
+        // Save session data to DB
+        await prisma.user.update({
+            where: { id: userId },
+            data: {
+                sessionValidatedAt: new Date(),
+                sessionInvalid: false,
+                lastBrowserActivityAt: new Date(),
+                linkedinCookie: linkedinCookie,
+                linkedinLocalStorage: linkedinLocalStorage || null,
+                linkedinFingerprint: fingerprint ? JSON.stringify(fingerprint) : null,
+            }
+        });
+
+        // Trigger asynchronous validation to retrieve profile info and emit socket success
+        (async () => {
+            try {
+                const { sessionValidator } = await import('../services/session-validator.service');
+                const { io } = await import('../socket');
+                const validation = await sessionValidator.validateSession(userId);
+                if (validation.valid) {
+                    console.log(`[AUTH-CTRL] Post-extension-sync validation successful for ${userId}`);
+                    if (io) {
+                        io.to(`user_${userId}`).emit('SESSION_LOGIN_STATUS', { 
+                            status: 'SUCCESS', 
+                            message: 'Successfully synced extension!',
+                            profile: validation.profile 
+                        });
+                    }
+                } else {
+                    console.error(`[AUTH-CTRL] Post-extension-sync validation failed for ${userId}: ${validation.reason}`);
+                    if (io) {
+                        io.to(`user_${userId}`).emit('SESSION_LOGIN_STATUS', { 
+                            status: 'FAILED', 
+                            error: `Validation failed: ${validation.reason || 'Unknown error'}` 
+                        });
+                    }
+                }
+            } catch (err: any) {
+                console.error(`[AUTH-CTRL] Error during post-extension-sync validation:`, err.message);
+            }
+        })();
+
+        res.json({ success: true, message: 'Extension session received and validation started.' });
+    } catch (error: any) {
+        console.error(`[AUTH-CTRL] syncExtension error:`, error.message);
+        res.status(500).json({ error: error.message || 'Failed to sync extension session' });
     }
 };

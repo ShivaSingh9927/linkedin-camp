@@ -75,11 +75,11 @@ export const listProxies = async (req: Request, res: Response): Promise<void> =>
         const proxies = await prisma.proxy.findMany({
             orderBy: { createdAt: 'desc' },
             include: {
-                users: {
+                User: {
                     select: { id: true, email: true, tier: true }
                 },
                 _count: {
-                    select: { users: true }
+                    select: { User: true }
                 }
             }
         });
@@ -119,7 +119,7 @@ export const updateProxyMaxUsers = async (req: Request, res: Response): Promise<
         // Get current proxy to check current usage
         const proxy = await prisma.proxy.findUnique({
             where: { id: id as string },
-            include: { users: true }
+            include: { User: true }
         });
 
         if (!proxy) {
@@ -127,7 +127,7 @@ export const updateProxyMaxUsers = async (req: Request, res: Response): Promise<
             return;
         }
 
-        const currentUsers = proxy.users.length;
+        const currentUsers = (proxy as any).User?.length || 0;
 
         // Prevent setting maxUsers below current usage
         if (maxUsers < currentUsers) {

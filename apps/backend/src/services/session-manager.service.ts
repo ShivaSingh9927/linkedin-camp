@@ -287,43 +287,7 @@ class SessionManagerService {
 
             await page.waitForTimeout(5000);
 
-            const cookies = await context.cookies();
-            fs.writeFileSync(path.join(sessionPath, 'cookies.json'), JSON.stringify(cookies, null, 2));
-            console.log(`[SESSION-MANAGER] ${cookies.length} cookies saved`);
-
-            const userAgent = await page.evaluate(() => navigator.userAgent);
-            fs.writeFileSync(path.join(sessionPath, 'fingerprint.json'), JSON.stringify({ userAgent }, null, 2));
-            console.log(`[SESSION-MANAGER] Fingerprint saved`);
-
-            const localStorageData = await page.evaluate(() => JSON.stringify(window.localStorage));
-            fs.writeFileSync(path.join(sessionPath, 'localStorage.json'), localStorageData);
-            console.log(`[SESSION-MANAGER] LocalStorage saved`);
-
-            // Capture proxy BEFORE deleting the session below. Engine reads
-            // this verbatim and launches its browser through the same IP —
-            // anything else and LinkedIn invalidates the cookies on first
-            // request.
-            const session = this.activeSessions.get(userId);
-            const proxySnapshot = session?.proxy ?? null;
-
-            await context.close().catch(() => {});
-            this.activeSessions.delete(userId);
-
-            await prisma.user.update({
-                where: { id: userId },
-                data: {
-                    sessionPath,
-                    sessionInvalid: false,
-                    linkedinCookie: JSON.stringify(cookies),
-                    linkedinLocalStorage: localStorageData,
-                    linkedinFingerprint: JSON.stringify({ userAgent }),
-                    linkedinProxySnapshot: proxySnapshot as any,
-                }
-            });
-
-            console.log(`[SESSION-MANAGER] Session files saved to ${sessionPath}${proxySnapshot ? ` (proxy pinned: ${proxySnapshot.server})` : ' (NO PROXY — session will likely die on first automation step)'}`);
-            this.emitStatus(userId, 'SUCCESS', { sessionPath });
-
+            await this.handleSuccess(userId);
             return {};
         } catch (e: any) {
             console.error(`[SESSION-MANAGER] Login failed: ${e.message}`);
@@ -394,12 +358,30 @@ class SessionManagerService {
         });
 
         const profileData: any = await page.evaluate(() => {
-            const nav = document.querySelector('.global-nav__me');
-            const nameEl = document.querySelector('.global-nav__me button img[alt]');
-            const firstName = (nameEl as HTMLImageElement)?.alt?.split(' ')[0] || '';
-            const lastName = (nameEl as HTMLImageElement)?.alt?.split(' ').slice(1).join(' ') || '';
-            const avatarUrl = (nameEl as HTMLImageElement)?.src || '';
-            return { firstName, lastName, avatarUrl };
+            const navMe = document.querySelector('.global-nav__me button[aria-label]');
+            const ariaLabel = navMe?.getAttribute('aria-label') || '';
+            const nameMatch = ariaLabel.match(/^(.+?)\s*\(/);
+            const fullName = nameMatch ? nameMatch[1].trim() : ariaLabel;
+
+            let firstName = '', lastName = '';
+            if (fullName) {
+                const parts = fullName.split(' ');
+                firstName = parts[0] || '';
+                lastName = parts.slice(1).join(' ') || '';
+            }
+
+            const avatarImg = document.querySelector('.global-nav__me button img[alt]');
+            const avatarUrl = (avatarImg as HTMLImageElement)?.src || '';
+
+            const headlineEl = document.querySelector('a[href*="/in/"] span[aria-hidden="true"]');
+            const headline = headlineEl?.textContent || '';
+
+            const urnEl = document.querySelector('a[href*="/in/"]');
+            const href = urnEl?.getAttribute('href') || '';
+            const urnMatch = href.match(/\/in\/([^/?]+)/);
+            const urn = urnMatch ? urnMatch[1] : '';
+
+            return { firstName, lastName, fullName, headline, avatarUrl, urn };
         }).catch(() => ({}));
 
         const sessionPath = this.getUserSessionPath(userId);
@@ -429,12 +411,22 @@ class SessionManagerService {
             }
         });
 
-        session.status = 'SUCCESS';
-        this.emitStatus(userId, 'SUCCESS', { message: 'Successfully connected!', profile: profileData });
-
         await session.context.close().catch(() => {});
         this.activeSessions.delete(userId);
 
+        console.log(`[SESSION-MANAGER] Saved initial session data for user ${userId}. Session status: SUCCESS.`);
+
+        session.status = 'SUCCESS';
+        this.emitStatus(userId, 'SUCCESS', {
+            message: 'Successfully connected!',
+            profile: {
+                firstName: profileData.firstName,
+                lastName: profileData.lastName,
+                headline: profileData.headline,
+                avatarUrl: profileData.avatarUrl,
+                urn: profileData.urn
+            }
+        });
         return { success: true };
     }
 

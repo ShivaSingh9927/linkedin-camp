@@ -44,7 +44,7 @@ function FloatingMessage({ x, y, size, color, type }: FloatingMessageProps) {
         y: [0, -driftY, driftY, 0],
         rotate: [0, maxRotate, -maxRotate, 0],
         scale: [0.95, 1.05, 0.95],
-        opacity: type === 'logo' ? [0.12, 0.22, 0.12] : [0.18, 0.32, 0.18],
+        opacity: type === 'logo' ? [0.25, 0.5, 0.25] : [0.4, 0.8, 0.4],
       }}
       transition={{
         x: { duration: durationX, repeat: Infinity, ease: "easeInOut" },
@@ -65,7 +65,7 @@ function FloatingMessage({ x, y, size, color, type }: FloatingMessageProps) {
         <img 
           src="/logo.png" 
           alt="Qampi Bird" 
-          className="w-full h-full object-contain select-none pointer-events-none opacity-70 filter saturate-[0.6] drop-shadow-sm" 
+          className="w-full h-full object-contain select-none pointer-events-none opacity-90 filter saturate-[0.8] drop-shadow-md" 
         />
       ) : (
         <svg
@@ -92,7 +92,7 @@ function FloatingMessages() {
       x: 5 + Math.random() * 90, // 5% to 95%
       y: 5 + Math.random() * 90, // 5% to 95%
       size: Math.random() * 20 + 24, // Size range: 24px to 44px
-      color: `rgba(147, 51, 234, ${0.22 + Math.random() * 0.18})`, // Soft brand purple (Tailwind purple-600)
+      color: `rgba(147, 51, 234, ${0.5 + Math.random() * 0.4})`, // Stronger brand purple
       type: types[i % 4], // Mixes the logo into the floating items
     }));
     setItems(newItems);

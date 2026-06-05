@@ -12,26 +12,26 @@ export const getConversations = async (req: any, res: Response) => {
         const leadsWithMessages = await prisma.lead.findMany({
             where: {
                 userId,
-                messages: { some: {} },
+                Message: { some: {} },
             },
             include: {
-                messages: {
+                Message: {
                     orderBy: { sentAt: 'desc' },
                     take: 1, // latest message for preview
                 },
-                campaignLeads: {
+                CampaignLead: {
                     include: {
-                        campaign: { select: { id: true, name: true, status: true } },
+                        Campaign: { select: { id: true, name: true, status: true } },
                     },
                 },
                 _count: {
-                    select: { messages: true },
+                    select: { Message: true },
                 },
             },
             orderBy: { updatedAt: 'desc' },
         });
 
-        const conversations = leadsWithMessages.map((lead) => ({
+        const conversations = leadsWithMessages.map((lead: any) => ({
             leadId: lead.id,
             firstName: lead.firstName,
             lastName: lead.lastName,
@@ -42,9 +42,9 @@ export const getConversations = async (req: any, res: Response) => {
             gender: lead.gender,
             status: lead.status,
             tags: lead.tags,
-            lastMessage: lead.messages[0] || null,
-            messageCount: lead._count.messages,
-            campaigns: lead.campaignLeads.map((cl) => cl.campaign),
+            lastMessage: lead.Message[0] || null,
+            messageCount: lead._count.Message,
+            campaigns: lead.CampaignLead.map((cl: any) => cl.Campaign),
         }));
 
         res.json(conversations);
@@ -70,9 +70,9 @@ export const getMessages = async (req: any, res: Response) => {
         const lead = await prisma.lead.findFirst({
             where: { id: leadId, userId },
             include: {
-                campaignLeads: {
+                CampaignLead: {
                     include: {
-                        campaign: { select: { id: true, name: true, status: true } },
+                        Campaign: { select: { id: true, name: true, status: true } },
                     },
                 },
             },

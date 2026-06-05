@@ -11,11 +11,11 @@ export const getMyTeam = async (req: any, res: Response) => {
         const member = await prisma.teamMember.findFirst({
             where: { userId },
             include: {
-                team: {
+                Team: {
                     include: {
-                        members: {
+                        TeamMember: {
                             include: {
-                                user: {
+                                User: {
                                     select: {
                                         id: true,
                                         email: true,
@@ -23,7 +23,7 @@ export const getMyTeam = async (req: any, res: Response) => {
                                 }
                             }
                         },
-                        invites: {
+                        TeamInvite: {
                             where: { status: 'PENDING' }
                         }
                     }
@@ -36,7 +36,7 @@ export const getMyTeam = async (req: any, res: Response) => {
         }
 
         // Fetch statistics for members if user is Admin (or for everyone for a cooler UI)
-        const membersWithStats = await Promise.all(member.team.members.map(async (m) => {
+        const membersWithStats = await Promise.all(member.Team.TeamMember.map(async (m: any) => {
             const activeCampaigns = await prisma.campaign.count({
                 where: { userId: m.userId, status: 'ACTIVE' }
             });
@@ -78,7 +78,7 @@ export const getMyTeam = async (req: any, res: Response) => {
         res.json({
             hasTeam: true,
             team: {
-                ...member.team,
+                ...member.Team,
                 members: membersWithStats
             },
             role: member.role,
@@ -110,7 +110,7 @@ export const createTeam = async (req: any, res: Response) => {
             data: {
                 name,
                 ownerId: userId,
-                members: {
+                TeamMember: {
                     create: {
                         userId,
                         role: 'ADMIN'
@@ -118,12 +118,12 @@ export const createTeam = async (req: any, res: Response) => {
                 }
             },
             include: {
-                members: {
+                TeamMember: {
                     include: {
-                        user: { select: { id: true, email: true } }
+                        User: { select: { id: true, email: true } }
                     }
                 },
-                invites: true
+                TeamInvite: true
             }
         });
 
@@ -156,10 +156,10 @@ export const inviteMember = async (req: any, res: Response) => {
         // Check if user is already a member
         const existingMember = await prisma.user.findUnique({
             where: { email },
-            include: { teamMembers: { where: { teamId } } }
+            include: { TeamMember: { where: { teamId } } }
         });
 
-        if (existingMember && existingMember.teamMembers.length > 0) {
+        if (existingMember && existingMember.TeamMember.length > 0) {
             return res.status(400).json({ error: 'User is already a member of this team' });
         }
 
@@ -167,12 +167,12 @@ export const inviteMember = async (req: any, res: Response) => {
         const teamStatus = await prisma.team.findUnique({
             where: { id: teamId },
             include: {
-                members: true,
-                invites: { where: { status: 'PENDING' } }
+                TeamMember: true,
+                TeamInvite: { where: { status: 'PENDING' } }
             }
         });
 
-        if (teamStatus && (teamStatus.members.length + teamStatus.invites.length >= 10)) {
+        if (teamStatus && (teamStatus.TeamMember.length + teamStatus.TeamInvite.length >= 10)) {
             return res.status(400).json({ error: 'Crew is at maximum capacity (10 seats). Please upgrade your plan to invite more.' });
         }
 
@@ -209,7 +209,7 @@ export const getInviteInfo = async (req: any, res: Response) => {
     try {
         const invite = await prisma.teamInvite.findUnique({
             where: { token },
-            include: { team: true }
+            include: { Team: true }
         });
 
         if (!invite || invite.status !== 'PENDING' || invite.expiresAt < new Date()) {
@@ -217,7 +217,7 @@ export const getInviteInfo = async (req: any, res: Response) => {
         }
 
         res.json({
-            teamName: invite.team.name,
+            teamName: invite.Team.name,
             role: invite.role,
             email: invite.email
         });
@@ -236,7 +236,7 @@ export const joinTeam = async (req: any, res: Response) => {
     try {
         const invite = await prisma.teamInvite.findUnique({
             where: { token },
-            include: { team: true }
+            include: { Team: true }
         });
 
         if (!invite || invite.status !== 'PENDING' || invite.expiresAt < new Date()) {
@@ -267,7 +267,7 @@ export const joinTeam = async (req: any, res: Response) => {
             data: { status: 'ACCEPTED' }
         });
 
-        res.json({ success: true, teamName: invite.team.name });
+        res.json({ success: true, teamName: invite.Team.name });
     } catch (error) {
         console.error('Error joining team:', error);
         res.status(500).json({ error: 'Failed to join team' });

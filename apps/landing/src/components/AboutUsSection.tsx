@@ -16,6 +16,8 @@ import {
   ArrowRight,
   Zap,
   ShieldCheck,
+  Bot,
+  Network
 } from "lucide-react"
 import { motion, useScroll, useTransform, useInView, useSpring } from "framer-motion"
 import { MagneticButton } from "./MagneticButton"
@@ -54,11 +56,12 @@ export default function AboutUsSection() {
   }
 
   const itemVariants = {
-    hidden: { y: 20, opacity: 0 },
+    hidden: { y: 40, opacity: 0, scale: 0.95 },
     visible: {
       y: 0,
       opacity: 1,
-      transition: { duration: 0.6, ease: "easeOut" as const },
+      scale: 1,
+      transition: { type: "spring" as const, stiffness: 100, damping: 15 },
     },
   }
 
@@ -67,49 +70,49 @@ export default function AboutUsSection() {
       icon: <Mail className="w-6 h-6" />,
       secondaryIcon: <Sparkles className="w-4 h-4 absolute -top-1 -right-1 text-blue-500" />,
       title: "Email Hunting",
-      description:
-        "Instantly find and verify corporate email addresses of your target decision-makers directly from LinkedIn profiles.",
+      description: "Instantly find and verify corporate email addresses of your target decision-makers directly from LinkedIn profiles.",
       position: "left",
+      theme: { text: "text-blue-600", bg: "bg-blue-50", hoverBg: "group-hover:bg-blue-100", border: "border-blue-100/50" }
     },
     {
       icon: <UserPlus className="w-6 h-6" />,
-      secondaryIcon: <CheckCircle className="w-4 h-4 absolute -top-1 -right-1 text-purple-500" />,
+      secondaryIcon: <CheckCircle className="w-4 h-4 absolute -top-1 -right-1 text-indigo-500" />,
       title: "Auto-Connecting",
-      description:
-        "Automate personalized connection requests with smart delays and custom variables to organically grow your network.",
+      description: "Automate personalized connection requests with smart delays and custom variables to organically grow your network.",
       position: "left",
+      theme: { text: "text-indigo-600", bg: "bg-indigo-50", hoverBg: "group-hover:bg-indigo-100", border: "border-indigo-100/50" }
     },
     {
       icon: <Sparkles className="w-6 h-6" />,
-      secondaryIcon: <Star className="w-4 h-4 absolute -top-1 -right-1 text-blue-500" />,
+      secondaryIcon: <Star className="w-4 h-4 absolute -top-1 -right-1 text-violet-500" />,
       title: "Smart Personalization",
-      description:
-        "Automatically inject first names, company titles, and custom icebreakers to make every touchpoint feel human.",
+      description: "Automatically inject first names, company titles, and custom icebreakers to make every touchpoint feel human.",
       position: "left",
+      theme: { text: "text-violet-600", bg: "bg-violet-50", hoverBg: "group-hover:bg-violet-100", border: "border-violet-100/50" }
     },
     {
       icon: <MessageSquare className="w-6 h-6" />,
       secondaryIcon: <Sparkles className="w-4 h-4 absolute -top-1 -right-1 text-purple-500" />,
       title: "Message Sequences",
-      description:
-        "Set up multi-channel automated follow-ups that instantly halt as soon as a lead responds, keeping conversations natural.",
+      description: "Set up multi-channel automated follow-ups that instantly halt as soon as a lead responds, keeping conversations natural.",
       position: "right",
+      theme: { text: "text-purple-600", bg: "bg-purple-50", hoverBg: "group-hover:bg-purple-100", border: "border-purple-100/50" }
     },
     {
       icon: <Database className="w-6 h-6" />,
-      secondaryIcon: <CheckCircle className="w-4 h-4 absolute -top-1 -right-1 text-blue-500" />,
+      secondaryIcon: <CheckCircle className="w-4 h-4 absolute -top-1 -right-1 text-blue-600" />,
       title: "CRM Sync",
-      description:
-        "One-click export leads and interaction logs to popular platforms like HubSpot, Pipedrive, Salesforce, and Notion.",
+      description: "One-click export leads and interaction logs to popular platforms like HubSpot, Pipedrive, Salesforce, and Notion.",
       position: "right",
+      theme: { text: "text-blue-700", bg: "bg-blue-50", hoverBg: "group-hover:bg-blue-100", border: "border-blue-200/50" }
     },
     {
       icon: <TrendingUp className="w-6 h-6" />,
-      secondaryIcon: <Star className="w-4 h-4 absolute -top-1 -right-1 text-purple-500" />,
+      secondaryIcon: <Star className="w-4 h-4 absolute -top-1 -right-1 text-indigo-600" />,
       title: "Real-time Analytics",
-      description:
-        "Track pending invites, open rates, click-through rates, and overall campaign metrics in a clean, unified dashboard.",
+      description: "Track pending invites, open rates, click-through rates, and overall campaign metrics in a clean, unified dashboard.",
       position: "right",
+      theme: { text: "text-indigo-700", bg: "bg-indigo-50", hoverBg: "group-hover:bg-indigo-100", border: "border-indigo-200/50" }
     },
   ]
 
@@ -162,7 +165,7 @@ export default function AboutUsSection() {
       />
 
       <motion.div
-        className="container mx-auto max-w-6xl relative z-10"
+        className="container mx-auto max-w-[90rem] relative z-10 px-4 lg:px-8"
         initial="hidden"
         animate={isInView ? "visible" : "hidden"}
         variants={containerVariants}
@@ -177,7 +180,7 @@ export default function AboutUsSection() {
             <Zap className="w-4.5 h-4.5 text-primary fill-current" />
             DISCOVER QAMPI
           </motion.span>
-          <h2 className="text-4xl md:text-5xl font-extrabold text-slate-900 mb-4 text-center tracking-tight">Outreach Made Effortless</h2>
+          <h2 className="text-4xl md:text-5xl font-extrabold mb-4 text-center tracking-tight bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 bg-clip-text text-transparent">Outreach Made Effortless</h2>
           <motion.div
             className="w-24 h-1 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full"
             initial={{ width: 0 }}
@@ -205,93 +208,17 @@ export default function AboutUsSection() {
                   variants={itemVariants}
                   delay={index * 0.15}
                   direction="left"
+                  theme={service.theme}
                 />
               ))}
           </div>
 
-          {/* Center Image */}
-          <div className="flex justify-center items-center order-first md:order-none mb-8 md:mb-0">
-            <motion.div className="relative w-full max-w-xs" variants={itemVariants}>
-              <motion.div
-                className="rounded-[2.5rem] overflow-hidden shadow-2xl border-4 border-white bg-slate-100 aspect-square"
-                initial={{ scale: 0.9, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                transition={{ duration: 0.8, delay: 0.3 }}
-                whileHover={{ scale: 1.03, transition: { duration: 0.3 } }}
-              >
-                <img
-                  src="/pigeon_linkedin.png"
-                  alt="Qampi Pigeon AI Assistant"
-                  className="w-full h-full object-cover select-none"
-                />
-                <motion.div
-                  className="absolute inset-0 bg-gradient-to-t from-slate-900/60 via-slate-900/10 to-transparent flex items-end justify-center p-6"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ duration: 0.8, delay: 0.9 }}
-                >
-                  <MagneticButton>
-                    <a
-                      href="https://app.qampi.com/register"
-                      className="bg-white hover:bg-slate-50 text-slate-900 px-5 py-2.5 rounded-full flex items-center gap-2 text-sm font-bold shadow-lg transition-transform duration-200"
-                    >
-                      Our Product <ArrowRight className="w-4 h-4 text-primary" />
-                    </a>
-                  </MagneticButton>
-                </motion.div>
-              </motion.div>
-              <motion.div
-                className="absolute inset-0 border-4 border-purple-200 rounded-[2.75rem] -m-3 z-[-1] opacity-60"
-                initial={{ opacity: 0, scale: 1.1 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ duration: 0.8, delay: 0.6 }}
-              ></motion.div>
-
-              {/* Floating accent elements */}
-              <motion.div
-                className="absolute -top-4 -right-8 w-16 h-16 rounded-full bg-blue-500/10"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 1, delay: 0.9 }}
-                style={{ y: y1 }}
-              ></motion.div>
-              <motion.div
-                className="absolute -bottom-6 -left-10 w-20 h-20 rounded-full bg-purple-500/10"
-                initial={{ opacity: 0, y: -20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 1, delay: 1.1 }}
-                style={{ y: y2 }}
-              ></motion.div>
-
-              {/* Additional decorative elements */}
-              <motion.div
-                className="absolute -top-10 left-1/2 -translate-x-1/2 w-3 h-3 rounded-full bg-blue-500"
-                animate={{
-                  y: [0, -10, 0],
-                  opacity: [0.5, 1, 0.5],
-                }}
-                transition={{
-                  duration: 2,
-                  repeat: Number.POSITIVE_INFINITY,
-                  ease: "easeInOut",
-                }}
-              ></motion.div>
-              <motion.div
-                className="absolute -bottom-12 left-1/2 -translate-x-1/2 w-2 h-2 rounded-full bg-purple-500"
-                animate={{
-                  y: [0, 10, 0],
-                  opacity: [0.5, 1, 0.5],
-                }}
-                transition={{
-                  duration: 2,
-                  repeat: Number.POSITIVE_INFINITY,
-                  ease: "easeInOut",
-                  delay: 0.5,
-                }}
-              ></motion.div>
+          {/* Center Figure */}
+          <div className="flex justify-center items-center order-first md:order-none mb-12 md:mb-0 w-full">
+            <motion.div className="relative w-full max-w-md flex justify-center" variants={itemVariants}>
+              <AnimatedCenterFigure />
             </motion.div>
           </div>
-
           {/* Right Column */}
           <div className="space-y-12">
             {services
@@ -306,6 +233,7 @@ export default function AboutUsSection() {
                   variants={itemVariants}
                   delay={index * 0.15}
                   direction="right"
+                  theme={service.theme}
                 />
               ))}
           </div>
@@ -364,30 +292,36 @@ interface ServiceItemProps {
   variants: any
   delay: number
   direction: "left" | "right"
+  theme: {
+    text: string;
+    bg: string;
+    hoverBg: string;
+    border: string;
+  }
 }
 
-function ServiceItem({ icon, secondaryIcon, title, description, variants, delay, direction }: ServiceItemProps) {
+function ServiceItem({ icon, secondaryIcon, title, description, variants, delay, direction, theme }: ServiceItemProps) {
   return (
     <motion.div
-      className="flex flex-col group"
+      className="flex flex-col group cursor-pointer"
       variants={variants}
       transition={{ delay }}
       whileHover={{ y: -5, transition: { duration: 0.2 } }}
     >
       <motion.div
         className="flex items-center gap-3 mb-3"
-        initial={{ x: direction === "left" ? -20 : 20, opacity: 0 }}
+        initial={{ x: direction === "left" ? -30 : 30, opacity: 0 }}
         animate={{ x: 0, opacity: 1 }}
-        transition={{ duration: 0.6, delay: delay + 0.2 }}
+        transition={{ type: "spring", stiffness: 100, damping: 15, delay: delay + 0.2 }}
       >
         <motion.div
-          className="text-primary bg-blue-50 p-3 rounded-xl transition-colors duration-300 group-hover:bg-blue-100 relative border border-blue-100/50"
-          whileHover={{ rotate: [0, -10, 10, -5, 0], transition: { duration: 0.5 } }}
+          className={`${theme.text} ${theme.bg} p-3 rounded-xl transition-colors duration-300 ${theme.hoverBg} relative border ${theme.border}`}
+          whileHover={{ rotate: [0, -10, 10, -5, 0], scale: 1.1, transition: { duration: 0.5 } }}
         >
           {icon}
           {secondaryIcon}
         </motion.div>
-        <h3 className="text-xl font-bold text-slate-800 group-hover:text-primary transition-colors duration-300">
+        <h3 className={`text-xl font-bold text-slate-800 transition-colors duration-300 group-hover:${theme.text.split('-')[1]}-600`}>
           {title}
         </h3>
       </motion.div>
@@ -400,9 +334,8 @@ function ServiceItem({ icon, secondaryIcon, title, description, variants, delay,
         {description}
       </motion.p>
       <motion.div
-        className="mt-3 pl-12 flex items-center text-primary text-xs font-bold opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+        className={`mt-3 pl-12 flex items-center ${theme.text} text-xs font-bold opacity-0 group-hover:opacity-100 transition-all duration-300 -translate-x-2 group-hover:translate-x-0`}
         initial={{ opacity: 0 }}
-        animate={{ opacity: 0 }}
       >
         <span className="flex items-center gap-1">
           Learn more <ArrowRight className="w-3 h-3" />
@@ -470,3 +403,68 @@ function StatCounter({ icon, value, label, suffix, delay }: StatCounterProps) {
     </motion.div>
   )
 }
+
+const AnimatedCenterFigure = () => {
+  return (
+    <div className="relative w-full max-w-[400px] aspect-square flex items-center justify-center">
+      {/* Outer Pulse */}
+      <motion.div
+        className="absolute inset-0 rounded-full bg-blue-100/30"
+        animate={{ scale: [1, 1.4, 1], opacity: [0.6, 0, 0.6] }}
+        transition={{ duration: 3.5, repeat: Infinity, ease: "easeInOut" }}
+      />
+      
+      {/* Spinning tech rings */}
+      <motion.div
+        className="absolute inset-4 rounded-full border-2 border-indigo-200/50 border-dashed"
+        animate={{ rotate: 360 }}
+        transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
+      />
+      <motion.div
+        className="absolute inset-12 rounded-full border border-violet-300/40 border-dotted"
+        animate={{ rotate: -360 }}
+        transition={{ duration: 15, repeat: Infinity, ease: "linear" }}
+      />
+      <motion.div
+        className="absolute inset-20 rounded-full border border-blue-200/30"
+        animate={{ rotate: 180 }}
+        transition={{ duration: 25, repeat: Infinity, ease: "linear" }}
+      />
+      
+      {/* Center Mascot & Logo */}
+      <motion.div
+        className="relative z-20 w-44 h-44 rounded-full bg-gradient-to-br from-blue-500/10 via-indigo-600/10 to-purple-600/10 shadow-[0_0_40px_rgba(79,70,229,0.2)] flex items-center justify-center border-4 border-white backdrop-blur-sm"
+        animate={{ y: [-12, 12, -12] }}
+        transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+      >
+        <img src="/logo.png" alt="Qampi Logo" className="w-24 h-24 object-contain drop-shadow-xl" />
+      </motion.div>
+
+      {/* Orbiting capability nodes */}
+      {[
+        { Icon: Mail, color: "text-blue-500", border: "border-blue-100", angle: 0 },
+        { Icon: MessageSquare, color: "text-violet-500", border: "border-violet-100", angle: 72 },
+        { Icon: UserPlus, color: "text-indigo-500", border: "border-indigo-100", angle: 144 },
+        { Icon: Database, color: "text-fuchsia-500", border: "border-fuchsia-100", angle: 216 },
+        { Icon: Network, color: "text-purple-500", border: "border-purple-100", angle: 288 },
+      ].map((node, i) => {
+        return (
+          <motion.div
+            key={i}
+            className="absolute top-1/2 left-1/2 w-[115%] h-[115%] -mt-[57.5%] -ml-[57.5%]"
+            animate={{ rotate: [node.angle, node.angle + 360] }}
+            transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
+          >
+            <motion.div
+              className={`absolute top-0 left-1/2 -ml-7 flex items-center justify-center w-14 h-14 rounded-2xl bg-white shadow-xl border ${node.border} ${node.color}`}
+              animate={{ rotate: [-node.angle, -(node.angle + 360)] }}
+              transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
+            >
+              <node.Icon className="w-6 h-6" />
+            </motion.div>
+          </motion.div>
+        );
+      })}
+    </div>
+  );
+};

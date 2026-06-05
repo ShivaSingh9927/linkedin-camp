@@ -8,8 +8,8 @@ const steps = [
   {
     icon: Brain,
     number: "01",
-    title: "Aigeon learns your voice",
-    description: "Upload a few samples of your writing — emails, LinkedIn posts, or messages. Aigeon fine-tunes to your tone, style, and personality. It sounds like you, not a robot.",
+    title: "Qampi learns your voice",
+    description: "Upload a few samples of your writing — emails, LinkedIn posts, or messages. Qampi fine-tunes to your tone, style, and personality. It sounds like you, not a robot.",
     gradient: "from-purple-500 via-indigo-500 to-blue-500",
     visual: "voice",
     image: "https://images.unsplash.com/photo-1455390582262-044cdead277a?w=600&h=400&auto=format&fit=crop&q=80",
@@ -17,8 +17,8 @@ const steps = [
   {
     icon: Search,
     number: "02",
-    title: "Aigeon researches every prospect",
-    description: "Before sending, Aigeon reads the prospect's profile, recent posts, company news, and mutual connections. It finds the hook that makes them want to reply.",
+    title: "Qampi researches every prospect",
+    description: "Before sending, Qampi reads the prospect's profile, recent posts, company news, and mutual connections. It finds the hook that makes them want to reply.",
     gradient: "from-blue-500 via-cyan-500 to-teal-500",
     visual: "research",
     image: "https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=600&h=400&auto=format&fit=crop&q=80",
@@ -26,7 +26,7 @@ const steps = [
   {
     icon: Send,
     number: "03",
-    title: "Aigeon crafts personalized messages",
+    title: "Qampi crafts personalized messages",
     description: "Every message is unique. No templates. No copy-paste. Just a real conversation starter that references something the prospect actually cares about.",
     gradient: "from-amber-500 via-orange-500 to-red-500",
     visual: "message",
@@ -146,7 +146,7 @@ function StepVisual({ visual, gradient, image }: { visual: string; gradient: str
   );
 }
 
-export function HowAigeonWorks() {
+export function HowQampiWorks() {
   return (
     <section className="py-24 lg:py-32 bg-white relative overflow-hidden">
       {/* Background */}
@@ -162,14 +162,14 @@ export function HowAigeonWorks() {
         >
           <span className="inline-flex items-center gap-2 bg-primary/10 text-primary px-4 py-1.5 rounded-full text-sm font-bold mb-4">
             <Sparkles className="w-4 h-4" />
-            How Aigeon Works
+            How Qampi Works
           </span>
           <h2 className="text-3xl sm:text-4xl lg:text-5xl font-black text-slate-900 tracking-tight">
             3 steps from stranger to{" "}
             <span className="text-primary">conversation</span>
           </h2>
           <p className="mt-4 text-lg text-slate-600 max-w-2xl mx-auto">
-            Aigeon doesn't guess. It researches, learns, and writes — so you don't have to.
+            Qampi doesn't guess. It researches, learns, and writes — so you don't have to.
           </p>
         </motion.div>
 
@@ -220,10 +220,10 @@ export function HowAigeonWorks() {
           <div className="flex flex-col lg:flex-row items-center justify-between gap-6">
             <div className="text-center lg:text-left">
               <p className="text-lg font-bold text-slate-900">
-                Free: 25 Aigeon messages/week (Fast model)
+                Free: 25 Qampi messages/week (Fast model)
               </p>
               <p className="text-sm text-slate-500 mt-1">
-                Upgrade to Aigeon Pro for advanced reasoning and deeper personalization
+                Upgrade to Qampi Pro for advanced reasoning and deeper personalization
               </p>
             </div>
             <GlowButton href="https://app.qampi.com/register">

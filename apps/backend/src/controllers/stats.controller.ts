@@ -52,15 +52,15 @@ export const getStats = async (req: any, res: Response) => {
 
         // Process Campaign Stats
         const campaignPerformance = campaignsData.map(camp => {
-            const leads = camp.leads;
+            const leads = camp.CampaignLead || [];
             return {
                 id: camp.id,
                 name: camp.name,
                 status: camp.status,
                 totalLeads: leads.length,
-                pending: leads.filter(l => l.status === 'PENDING').length,
-                connected: leads.filter(l => l.status === 'CONNECTED' || l.status === 'REPLIED').length,
-                replied: leads.filter(l => l.status === 'REPLIED').length
+                pending: leads.filter((l: any) => l.status === 'PENDING').length,
+                connected: leads.filter((l: any) => l.status === 'CONNECTED' || l.status === 'REPLIED').length,
+                replied: leads.filter((l: any) => l.status === 'REPLIED').length
             };
         });
 

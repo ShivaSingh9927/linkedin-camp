@@ -193,7 +193,7 @@ export class StrategyService {
     await prisma.businessProfile.update({
       where: { userId },
       data: {
-        aiStrategy: historyEntry.outputStrategy,
+        aiStrategy: historyEntry.outputStrategy as any,
         aiStrategyGeneratedAt: historyEntry.generatedAt,
       },
     });
