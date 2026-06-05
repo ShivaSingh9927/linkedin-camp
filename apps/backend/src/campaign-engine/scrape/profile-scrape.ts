@@ -87,10 +87,19 @@ export async function extractTopCard(page: any): Promise<ProfileCardData> {
             return (
                 /degree connection/i.test(s) ||         // "3rd+ degree connection"
                 /modal window/i.test(s) ||              // "This is a modal window."
+                /media could not be loaded/i.test(s) || // video-player error overlay
+                /^(Beginning|End) of dialog window/i.test(s) ||
                 /^\s*(\d[\d,]*)\s+(followers?|connections?|mutual)/i.test(s) ||
                 /^(Visit my website|Contact info|Message|More|Follow|Connect|Pending|Open to|Add profile section)\b/i.test(s) ||
                 /^(He\/Him|She\/Her|They\/Them)$/i.test(s)
             );
+        };
+
+        // Some headline elements include the name run with no separator
+        // ("khushhal kaushikFounder & CEO…"). Strip a leading name prefix.
+        const stripLeadingName = (t: string, name: string | null): string => {
+            if (name && t.startsWith(name)) return t.slice(name.length).trim();
+            return t;
         };
 
         const main = (document.querySelector('main, [role="main"]') as HTMLElement) || document.body;
@@ -103,7 +112,7 @@ export async function extractTopCard(page: any): Promise<ProfileCardData> {
         const headlineCandidates = Array.from(
             main.querySelectorAll('div.text-body-medium, .text-body-medium.break-words')
         )
-            .map((el: any) => (el.innerText || el.textContent || '').trim())
+            .map((el: any) => stripLeadingName((el.innerText || el.textContent || '').trim(), data.name))
             .filter((t: string) => t.length > 0);
         const headline = headlineCandidates.find((t) => !isJunkHeadline(t, data.name));
         if (headline) data.headline = headline;

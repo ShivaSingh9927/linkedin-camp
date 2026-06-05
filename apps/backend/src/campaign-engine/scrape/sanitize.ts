@@ -15,6 +15,8 @@ export function isJunkPersonField(value?: string | null, name?: string | null): 
     return (
         /degree connection/i.test(s) || // "3rd+ degree connection"
         /modal window/i.test(s) || // "This is a modal window."
+        /media could not be loaded/i.test(s) || // video-player error overlay
+        /^(Beginning|End) of dialog window/i.test(s) ||
         /^\s*\d[\d,]*\s+(followers?|connections?|mutual)/i.test(s) ||
         /^(Visit my website|Contact info|Message|More|Follow|Connect|Pending|Open to|Add profile section)\b/i.test(s) ||
         /^(He\/Him|She\/Her|They\/Them)$/i.test(s)
