@@ -1,0 +1,16 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Virtual environments
+venv/
+.venv/
+
+# Runtime logs / artifacts
+server.log
+*.log
+
+# Env files
+.env
+.env.*
