@@ -210,7 +210,9 @@ export const syncInbox = async (userId: string) => {
             const chatHistory: Array<{ sender: string; text: string; direction: 'SENT' | 'RECEIVED' }> = await page.evaluate(() => {
                 // Logged-in user's name from the global nav. The avatar's alt
                 // attribute reads "Photo of <Name>" on most rollouts but on
-                // some it's just the bare name — handle both.
+                // some it's just the bare name — handle both. May be empty on
+                // some rollouts, which is exactly why it's only the FALLBACK
+                // signal below, never the primary one.
                 const meName = (() => {
                     const alt = (document.querySelector('.global-nav__me-photo')?.getAttribute('alt') || '').trim();
                     const stripped = alt.replace(/^Photo of\s+/i, '').trim();
@@ -218,6 +220,21 @@ export const syncInbox = async (userId: string) => {
                     const bold = (document.querySelector('.global-nav__me .t-bold')?.textContent || '').trim();
                     return bold;
                 })().toLowerCase();
+
+                const eventNodes = Array.from(document.querySelectorAll('.msg-s-message-list__event, li.msg-s-message-list__event'));
+
+                // PRIMARY direction signal: LinkedIn marks messages from the
+                // OTHER party with the long-stable `--other` modifier on the
+                // event listitem (e.g. `msg-s-event-listitem--other`). Your own
+                // outgoing messages never carry it. This is far more reliable
+                // than name-matching, which breaks when the global-nav name
+                // can't be read. We only trust it if at least one node in the
+                // thread actually has the class (guards against a class rename).
+                const otherRe = /--other\b/;
+                const hasOtherMarker = eventNodes.some((n) => {
+                    const item = n.querySelector('.msg-s-event-listitem') || n;
+                    return otherRe.test((item as HTMLElement).className || '') || otherRe.test((n as HTMLElement).className || '');
+                });
 
                 // Extract the sender's name from a bubble's profile link. The
                 // link's anchor text is literally "View {Name}'s profile"
@@ -231,14 +248,11 @@ export const syncInbox = async (userId: string) => {
                     ).trim();
                     const m = linkText.match(/View\s+(.+?)['’]s\s+profile/i);
                     if (m && m[1]) return m[1].trim();
-                    // Some bubbles carry the bare sender name in a separate span.
                     const groupName = (eventNode.querySelector('.msg-s-message-group__name')?.textContent || '').trim();
                     return groupName || null;
                 };
 
                 const msgs: any[] = [];
-                const eventNodes = Array.from(document.querySelectorAll('.msg-s-message-list__event, li.msg-s-message-list__event'));
-
                 let lastSender = '';
                 let lastDirection: 'SENT' | 'RECEIVED' = 'RECEIVED';
 
@@ -249,17 +263,16 @@ export const syncInbox = async (userId: string) => {
                     if (text.length === 0) continue;
 
                     const bubbleSender = senderFromBubble(eventNode);
-                    let sender = bubbleSender || lastSender;
                     let direction: 'SENT' | 'RECEIVED';
 
-                    if (bubbleSender) {
-                        // First message of a new group — match the bubble's
-                        // named sender against meName. LinkedIn's profile link
-                        // typically renders the first name only ("View Raja's
-                        // profile") while the global-nav meName is the full
-                        // name ("Raja Singh"), so we compare on either the
-                        // first token of meName or substring containment in
-                        // either direction.
+                    if (hasOtherMarker) {
+                        // Reliable path — the listitem either is, or isn't, from
+                        // the other party. `--other` => RECEIVED, absence => SENT.
+                        const item = eventNode.querySelector('.msg-s-event-listitem') || eventNode;
+                        const isOther = otherRe.test((item as HTMLElement).className || '') || otherRe.test((eventNode as HTMLElement).className || '');
+                        direction = isOther ? 'RECEIVED' : 'SENT';
+                    } else if (bubbleSender) {
+                        // Fallback (no `--other` class anywhere) — name match.
                         const s = bubbleSender.toLowerCase();
                         const meFirst = meName.split(/\s+/)[0] || '';
                         const isMe = !!meName && (
@@ -270,13 +283,11 @@ export const syncInbox = async (userId: string) => {
                         );
                         direction = isMe ? 'SENT' : 'RECEIVED';
                     } else {
-                        // Grouped subsequent bubble — same direction as the
-                        // last named bubble. Defaults to RECEIVED only if the
-                        // thread literally opens with no named bubble at all.
+                        // Grouped subsequent bubble — inherit the last direction.
                         direction = lastDirection;
                     }
 
-                    if (!sender) sender = direction === 'SENT' ? 'You' : 'Unknown';
+                    const sender = bubbleSender || lastSender || (direction === 'SENT' ? 'You' : 'Unknown');
                     lastDirection = direction;
                     lastSender = sender;
                     msgs.push({ sender, text, direction });
@@ -309,14 +320,14 @@ export const syncInbox = async (userId: string) => {
                 const total = chatHistory.length;
                 for (let m = 0; m < total; m++) {
                     const msg = chatHistory[m];
-                    // Dedup on content+direction+lead. Once a row exists we
-                    // never touch it again — campaign-engine writes are
-                    // authoritative for SENT and we don't want a wobbly sync
-                    // heuristic to overwrite that ground truth. Including
-                    // direction lets an inbound "Hi" and an outbound "Hi"
-                    // coexist instead of one masking the other.
+                    // Dedup on content+lead ONLY (NOT direction). The campaign
+                    // engine is the authoritative writer for SENT rows; if the
+                    // direction heuristic ever misfires we must not create a
+                    // flipped-direction duplicate of a message we already have,
+                    // nor falsely flag the lead as REPLIED. A message we've
+                    // already stored — in either direction — is left untouched.
                     const exists = await prisma.message.findFirst({
-                        where: { leadId: lead.id, content: msg.text, direction: msg.direction }
+                        where: { leadId: lead.id, content: msg.text }
                     });
                     if (!exists) {
                         await prisma.message.create({
