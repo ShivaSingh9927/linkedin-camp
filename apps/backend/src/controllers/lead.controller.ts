@@ -3,6 +3,7 @@ import { prisma } from '@repo/db';
 import { parse } from 'csv-parse';
 import fs from 'fs';
 import { getActionQueue } from '../services/queue.service';
+import { cleanPersonField } from '../campaign-engine/scrape/sanitize';
 
 // Helper to get team user ids
 const getTeamUserIds = async (userId: string) => {
@@ -48,7 +49,10 @@ const bulkImportLeads = async (userId: string, incomingLeads: any[], teamUserIds
         const nameParts = (lead.name || `${lead.firstName || ''} ${lead.lastName || ''}`).trim().split(' ');
         const firstName = lead.firstName || nameParts[0] || 'Unknown';
         const lastName = lead.lastName || nameParts.slice(1).join(' ') || '';
-        const jobTitle = lead.jobTitle || lead.title;
+        // The extension's `title`/`jobTitle` for search cards is often the
+        // degree subtitle ("3rd+ degree connection") or the person's name —
+        // drop those rather than storing them as a real role.
+        const jobTitle = cleanPersonField(lead.jobTitle || lead.title, `${firstName} ${lastName}`);
 
         // Anti-duplication check across team
         if (teamUserIds.length > 1 && existingTeamLeadUrls.has(lead.linkedinUrl) && !userExistingLeadsMap.has(lead.linkedinUrl)) {
@@ -78,7 +82,9 @@ const bulkImportLeads = async (userId: string, incomingLeads: any[], teamUserIds
                 data: {
                     firstName,
                     lastName,
-                    jobTitle,
+                    // Don't overwrite a good (profile-visit) title with a
+                    // re-import that only carries the junk card subtitle.
+                    ...(jobTitle ? { jobTitle } : {}),
                     company: lead.company,
                     email: lead.email,
                     country: lead.country,
@@ -236,7 +242,10 @@ export const uploadCsvLeads = async (req: any, res: Response) => {
                 linkedinUrl: record['LinkedIn URL'] || record['url'] || record['linkedinUrl'],
                 firstName: record['First Name'] || record['firstName'],
                 lastName: record['Last Name'] || record['lastName'],
-                jobTitle: record['Job Title'] || record['title'] || record['jobTitle'],
+                jobTitle: cleanPersonField(
+                    record['Job Title'] || record['title'] || record['jobTitle'],
+                    `${record['First Name'] || record['firstName'] || ''} ${record['Last Name'] || record['lastName'] || ''}`
+                ),
                 company: record['Company'] || record['company'],
                 email: record['Email'] || record['email'],
                 country: record['Country'] || record['country'],

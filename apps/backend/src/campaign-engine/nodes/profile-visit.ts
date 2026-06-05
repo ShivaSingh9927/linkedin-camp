@@ -1,6 +1,7 @@
 import { NodeHandler, NodeResult, ProfileVisitOutput } from '../types';
 import { detectConnectionState } from '../connection-state';
 import { scrollProfile, extractTopCard, extractAbout, extractExperience, extractExperienceList, extractEducationList } from '../scrape/profile-scrape';
+import { cleanPersonField } from '../scrape/sanitize';
 import { prisma } from '@repo/db';
 
 const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
@@ -88,15 +89,17 @@ export const profileVisit: NodeHandler = async (ctx): Promise<NodeResult> => {
             const expData = await extractExperience(page);
 
             output.company = expData.company;
-            output.jobTitle = expData.jobTitle;
+            // Reject a junk jobTitle (degree subtitle, the person's own name, etc.).
+            output.jobTitle = cleanPersonField(expData.jobTitle, output.name);
             output.companyUrl = expData.companyUrl;
 
             // Last-resort: parse "<title> at <company>" out of the headline so
             // profiles whose experience scrape failed still get usable values.
+            // Only trust a clean headline (extractTopCard already sanitizes it).
             if ((!output.company || !output.jobTitle) && output.headline) {
                 const m = output.headline.match(/^(.+?)\s+(?:at|@)\s+(.+?)$/i);
                 if (m) {
-                    if (!output.jobTitle) output.jobTitle = m[1].trim();
+                    if (!output.jobTitle) output.jobTitle = cleanPersonField(m[1].trim(), output.name);
                     if (!output.company)  output.company  = m[2].trim();
                     console.log(`[PROFILE-VISIT] Filled company/jobTitle from headline.`);
                 }

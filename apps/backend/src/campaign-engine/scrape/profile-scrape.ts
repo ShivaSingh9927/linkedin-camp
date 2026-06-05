@@ -60,41 +60,98 @@ export async function scrollProfile(page: any): Promise<void> {
     await wait(3000);
 }
 
-/** Name / headline / location from the top card's contact-info section. */
+/** Name / headline / location from the profile top card.
+ *
+ * Primary path uses LinkedIn's Artdeco *utility* classes (`text-body-medium`,
+ * `text-body-small`, `t-black--light`) — these are stable, NOT the hashed
+ * component classes. Falls back to the old contact-info-section heuristic if
+ * those miss. A sanitizer rejects the junk the old heuristic used to capture
+ * as a headline (modal a11y text, "Visit my website", a bare degree badge, an
+ * education/school line, etc.).
+ */
 export async function extractTopCard(page: any): Promise<ProfileCardData> {
     return page.evaluate(() => {
         const data: any = { name: null, headline: null, location: null };
 
-        const contactLinks = Array.from(document.querySelectorAll('a')).filter(
-            (a: any) =>
-                a.innerText?.toLowerCase().includes('contact info') || (a.id && a.id.includes('contact-info'))
-        );
+        const stripPronouns = (s: string | null): string | null => {
+            if (!s) return s;
+            return s.replace(/\b(He\/Him|She\/Her|They\/Them)\b/g, '').trim();
+        };
 
-        if (contactLinks.length > 0) {
-            const section = contactLinks[0].closest('section');
-            if (section) {
-                const rawText = section.innerText
-                    .split('\n')
-                    .map((t: string) => t.trim())
-                    .filter((t: string) => t.length > 0 && !t.includes('connections') && !t.includes('Message'));
+        // Reject strings that are clearly NOT a professional headline.
+        const isJunkHeadline = (t: string | null, name: string | null): boolean => {
+            if (!t) return true;
+            const s = t.trim();
+            if (s.length < 2) return true;
+            if (name && s === name) return true;
+            return (
+                /degree connection/i.test(s) ||         // "3rd+ degree connection"
+                /modal window/i.test(s) ||              // "This is a modal window."
+                /^\s*(\d[\d,]*)\s+(followers?|connections?|mutual)/i.test(s) ||
+                /^(Visit my website|Contact info|Message|More|Follow|Connect|Pending|Open to|Add profile section)\b/i.test(s) ||
+                /^(He\/Him|She\/Her|They\/Them)$/i.test(s)
+            );
+        };
 
-                const uniqueDetails = [...new Set(rawText)] as string[];
+        const main = (document.querySelector('main, [role="main"]') as HTMLElement) || document.body;
 
-                if (uniqueDetails.length > 0) {
-                    data.name = uniqueDetails[0];
-                    ['He/Him', 'She/Her', 'They/Them'].forEach((p: string) => {
-                        if (data.name?.endsWith(p)) data.name = data.name.replace(p, '').trim();
-                    });
+        // --- Name: the profile H1 ---
+        const h1 = main.querySelector('h1');
+        if (h1) data.name = stripPronouns((h1 as HTMLElement).innerText?.trim() || null);
+
+        // --- Headline: the text-body-medium line directly under the name ---
+        const headlineCandidates = Array.from(
+            main.querySelectorAll('div.text-body-medium, .text-body-medium.break-words')
+        )
+            .map((el: any) => (el.innerText || el.textContent || '').trim())
+            .filter((t: string) => t.length > 0);
+        const headline = headlineCandidates.find((t) => !isJunkHeadline(t, data.name));
+        if (headline) data.headline = headline;
+
+        // --- Location: the muted small line (t-black--light, inline) ---
+        const locEl =
+            main.querySelector('span.text-body-small.inline.t-black--light.break-words') ||
+            main.querySelector('.pv-text-details__left-panel .text-body-small');
+        if (locEl) {
+            const loc = ((locEl as HTMLElement).innerText || '').trim();
+            if (loc && !/connections?|followers?|Contact info/i.test(loc)) data.location = loc;
+        }
+
+        // --- Fallback: old contact-info-section heuristic (relaxed) ---
+        if (!data.name || !data.headline || !data.location) {
+            const contactLinks = Array.from(document.querySelectorAll('a')).filter(
+                (a: any) =>
+                    a.innerText?.toLowerCase().includes('contact info') || (a.id && a.id.includes('contact-info'))
+            );
+            if (contactLinks.length > 0) {
+                const section = contactLinks[0].closest('section');
+                if (section) {
+                    const uniqueDetails = [
+                        ...new Set(
+                            (section as HTMLElement).innerText
+                                .split('\n')
+                                .map((t: string) => t.trim())
+                                .filter((t: string) => t.length > 0 && !t.includes('connections') && !t.includes('Message'))
+                        ),
+                    ] as string[];
+
+                    if (!data.name && uniqueDetails.length > 0) data.name = stripPronouns(uniqueDetails[0]);
+                    if (!data.headline) {
+                        // Real headlines CAN contain commas ("Founder, CEO") — the old
+                        // no-comma filter is gone; rely on the junk sanitizer instead.
+                        const h = uniqueDetails.find(
+                            (t: string) => t.length > 8 && t !== data.name && !isJunkHeadline(t, data.name)
+                        );
+                        if (h) data.headline = h;
+                    }
+                    if (!data.location) {
+                        data.location =
+                            uniqueDetails.find((t: string) => t.includes(',') && !t.includes('Mutual')) || null;
+                    }
                 }
-
-                const potentialHeadlines = uniqueDetails.filter(
-                    (t: string) => t.length > 15 && t !== data.name && !t.includes(',')
-                );
-                if (potentialHeadlines.length > 0) data.headline = potentialHeadlines[0];
-
-                data.location = uniqueDetails.find((t: string) => t.includes(',') && !t.includes('Mutual')) || null;
             }
         }
+
         return data;
     });
 }
