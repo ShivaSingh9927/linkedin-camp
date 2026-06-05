@@ -2,7 +2,7 @@ import cron from 'node-cron';
 import { prisma } from '@repo/db';
 import { Queue } from 'bullmq';
 import Redis from 'ioredis';
-import { syncInbox, inboxQueue } from '../workers/inbox.worker';
+import { enqueueInboxSync } from '../workers/inbox.worker';
 import { withdrawOldInvites } from '../workers/withdraw.worker';
 import { sessionValidator } from '../services/session-validator.service';
 import { getStepType } from '../campaign-engine/workflow-graph';
@@ -156,25 +156,41 @@ const isUserActive = redisPresence === 'ACTIVE' || (now - lastActivity < twoMins
     }
   });
 
-  // 2. Inbox Sync Scheduler (Every 6 hours)
-  cron.schedule('0 */6 * * *', async () => {
-    console.log('Running global inbox sync...');
+  // 2. Inbox Sync Scheduler (Once daily at 4:00 AM).
+  // Kept deliberately light per product decision: a single daily sweep plus the
+  // per-campaign trigger (see campaign-worker) is enough to keep the Qampi inbox
+  // current without loading the worker box. We pre-filter cheaply here — skip
+  // users whose browser is active or whose session is already known-invalid —
+  // so we don't even launch a headless Chromium for accounts that can't sync.
+  // The worker itself still takes the per-account lock as the real guard.
+  cron.schedule('0 4 * * *', async () => {
+    console.log('Running daily inbox sync sweep...');
     try {
       const usersWithCookies = await prisma.user.findMany({
-        where: { linkedinCookie: { not: null } },
-        select: { id: true }
+        where: { linkedinCookie: { not: null }, sessionInvalid: false },
+        select: { id: true, lastBrowserActivityAt: true }
       });
 
+      const now = Date.now();
+      const twoMins = 2 * 60 * 1000;
+      let enqueued = 0;
+
       for (const user of usersWithCookies) {
-        if (inboxQueue) {
-          await inboxQueue.add('inbox-sync', { userId: user.id }, { removeOnComplete: true });
-        } else {
-          // Fallback if queue not ready (though it should be)
-          await syncInbox(user.id);
+        const redisPresence = redisConnection ? await redisConnection.get(`user_presence:${user.id}`) : null;
+        const lastActivity = user.lastBrowserActivityAt ? new Date(user.lastBrowserActivityAt).getTime() : 0;
+        if (redisPresence === 'ACTIVE' || (now - lastActivity < twoMins)) {
+          // User is on LinkedIn in their own browser — don't drive the account.
+          continue;
         }
+
+        // force: this is the authoritative daily run, bypass the debounce.
+        const ok = await enqueueInboxSync(user.id, { force: true });
+        if (ok) enqueued++;
       }
+
+      console.log(`[Scheduler] Daily inbox sweep enqueued ${enqueued}/${usersWithCookies.length} users.`);
     } catch (error) {
-      console.error('Global inbox sync failed:', error);
+      console.error('Daily inbox sync failed:', error);
     }
   });
 

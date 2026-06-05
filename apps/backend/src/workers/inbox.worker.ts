@@ -1,10 +1,8 @@
 import { Worker, Job, Queue } from 'bullmq';
 import { prisma } from '@repo/db';
-import { chromium } from 'playwright-extra';
-const stealth = require('puppeteer-extra-plugin-stealth')();
 import Redis from 'ioredis';
-
-chromium.use(stealth);
+import { launchAuthenticatedContext } from '../campaign-engine/session-launch';
+import { tryAcquireAccountLock, releaseAccountLock } from './campaign-worker';
 
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
 const redisConnection = REDIS_URL ? new Redis(REDIS_URL, { maxRetriesPerRequest: null }) : null;
@@ -13,6 +11,33 @@ export const inboxQueue = redisConnection ? new Queue('inbox-sync', { connection
 
 const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
 const randomRange = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1) + min);
+
+/**
+ * Enqueue an inbox sync for a user, with an optional Redis-backed debounce so
+ * the same user can't be re-synced more often than `debounceSec`. This is what
+ * keeps the "after any campaign run" trigger from hammering the worker — a busy
+ * campaign fires this on every run, but the debounce collapses it to at most
+ * one sync per window. `force` (used by the daily cron) bypasses the debounce.
+ */
+export const enqueueInboxSync = async (
+    userId: string,
+    opts: { debounceSec?: number; force?: boolean } = {}
+): Promise<boolean> => {
+    if (!inboxQueue) return false;
+    const { debounceSec = 0, force = false } = opts;
+
+    if (!force && debounceSec > 0 && redisConnection) {
+        // NX set returns null if the key already exists → recently enqueued, skip.
+        const set = await redisConnection.set(`inbox_sync_recent:${userId}`, '1', 'EX', debounceSec, 'NX');
+        if (set !== 'OK') {
+            console.log(`[INBOX-WORKER] Debounced inbox sync for ${userId} (within ${debounceSec}s window).`);
+            return false;
+        }
+    }
+
+    await inboxQueue.add('inbox-sync', { userId }, { removeOnComplete: true, removeOnFail: true });
+    return true;
+};
 
 async function safeGoto(page: any, url: string, retries = 3) {
     for (let i = 0; i < retries; i++) {
@@ -28,32 +53,30 @@ async function safeGoto(page: any, url: string, retries = 3) {
     }
 }
 
-async function blockResources(page: any) {
-    await page.route('**/*', (route: any) => {
-        const type = route.request().resourceType();
-        const url = route.request().url();
-        if (
-            ['image', 'media', 'font'].includes(type) ||
-            url.includes('analytics') ||
-            url.includes('ads') ||
-            url.includes('tracking') ||
-            url.includes('doubleclick')
-        ) {
-            return route.abort();
-        }
-        return route.continue();
-    });
-}
-
 export const syncInbox = async (userId: string) => {
-    const user = await prisma.user.findUnique({
-        where: { id: userId }
-    });
+    const user = await prisma.user.findUnique({ where: { id: userId } });
 
     if (!user || !user.linkedinCookie) {
         console.error(`[INBOX-WORKER] No LinkedIn session for user ${userId}`);
         return;
     }
+
+    // Per-account lock — the SAME lock the campaign worker uses. LinkedIn bans
+    // accounts that hit two endpoints from two IPs in the same second, so inbox
+    // sync must never run while a campaign is driving this account. If the lock
+    // is held, bail silently; the daily cron / next campaign trigger retries.
+    const lockToken = `inbox-${userId}-${Date.now()}`;
+    const acquired = await tryAcquireAccountLock(userId, lockToken);
+    if (!acquired) {
+        console.log(`[INBOX-WORKER] Account ${userId} busy (campaign running) — skipping inbox sync.`);
+        return;
+    }
+
+    // DB safety flag mirrors the withdraw worker so the manual-sync / login
+    // guards see the cloud worker as active for the duration.
+    await prisma.user
+        .update({ where: { id: userId }, data: { cloudWorkerActive: true, lastCloudActionAt: new Date() } })
+        .catch(() => {});
 
     console.log(`[INBOX-WORKER] Syncing inbox for user ${userId}...`);
 
@@ -61,81 +84,33 @@ export const syncInbox = async (userId: string) => {
     let context: any;
 
     try {
-        // Build browser context — same strategy as working campaign nodes
-        let userAgentStr = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36';
-        let viewportSettings = { width: 1440, height: 900 };
-
-        // Fingerprint from DB
-        if (user.linkedinFingerprint) {
-            try {
-                const fp = typeof user.linkedinFingerprint === 'string'
-                    ? JSON.parse(user.linkedinFingerprint)
-                    : user.linkedinFingerprint;
-                if (fp.userAgent) userAgentStr = fp.userAgent;
-                if (fp.screen?.width && fp.screen?.height) {
-                    viewportSettings = { width: fp.screen.width, height: fp.screen.height };
-                }
-            } catch {}
+        // SINGLE source of truth for the sticky-proxy invariant. This pins the
+        // exact login egress IP at launch level (aborts if no proxy snapshot),
+        // injects cookies + localStorage + fingerprint, and blocks heavy
+        // resources — identical to the campaign engine, so behavior never drifts.
+        const launch = await launchAuthenticatedContext(userId);
+        if (!launch.ok) {
+            console.error(`[INBOX-WORKER] Launch failed (${launch.failedAt}): ${launch.error}`);
+            if (launch.failedAt === 'proxy-snapshot-missing') {
+                await prisma.notification.create({
+                    data: {
+                        userId,
+                        title: 'Inbox Sync Skipped',
+                        body: 'No pinned LinkedIn proxy. Please re-sync your session.',
+                        type: 'ERROR',
+                    },
+                }).catch(() => {});
+            }
+            return;
         }
+        ({ browser, context } = launch);
+        const page = launch.page;
 
-        const launchOptions: any = {
-            headless: true,
-            args: [
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-blink-features=AutomationControlled',
-                '--start-maximized',
-                '--disable-gpu',
-                '--disable-dev-shm-usage',
-            ],
-        };
-
-        const contextOptions: any = {
-            userAgent: userAgentStr,
-            viewport: viewportSettings,
-            locale: 'en-IN',
-            timezoneId: 'Asia/Kolkata',
-        };
-
-        browser = await chromium.launch(launchOptions);
-        context = await browser.newContext(contextOptions);
-
-        // Inject cookies from DB
-        if (user.linkedinCookie) {
-            try {
-                const cookies = JSON.parse(user.linkedinCookie);
-                if (Array.isArray(cookies)) {
-                    const sanitized = cookies.map((c: any) => ({
-                        ...c,
-                        expires: c.expires ? Math.round(Number(c.expires)) : Math.round(Date.now() / 1000) + 86400 * 30,
-                    }));
-                    await context.addCookies(sanitized);
-                }
-            } catch {}
-        }
-
-        // Inject localStorage from DB
-        if (user.linkedinLocalStorage) {
-            try {
-                const lsData = JSON.parse(user.linkedinLocalStorage);
-                await context.addInitScript((data: any) => {
-                    const parsed = JSON.parse(data);
-                    for (const [k, v] of Object.entries(parsed)) {
-                        window.localStorage.setItem(k, v as string);
-                    }
-                }, JSON.stringify(lsData));
-            } catch {}
-        }
-
-        const page = context.pages()[0] || await context.newPage();
-        await blockResources(page);
-
-        // 1. Warmup — visit feed
+        // 1. Warmup — visit feed, then validate the session is still live.
         console.log(`[INBOX-WORKER] Warming up...`);
         await safeGoto(page, 'https://www.linkedin.com/feed/');
         await wait(randomRange(5000, 8000));
 
-        // Session validation
         const feedUrl = page.url();
         if (feedUrl.includes('authwall') || feedUrl.includes('login') || feedUrl.includes('checkpoint')) {
             console.error(`[INBOX-WORKER] Session invalid. Redirected to: ${feedUrl}`);
@@ -155,7 +130,6 @@ export const syncInbox = async (userId: string) => {
         await safeGoto(page, 'https://www.linkedin.com/messaging/');
         await wait(randomRange(4000, 6000));
 
-        // Wait for conversation list
         try {
             await page.waitForSelector('.msg-conversation-listitem', { timeout: 15000 });
             console.log(`[INBOX-WORKER] Conversation list rendered.`);
@@ -180,6 +154,8 @@ export const syncInbox = async (userId: string) => {
         const syncLimit = Math.min(threadCount, 5);
 
         console.log(`[INBOX-WORKER] Found ${threadCount} threads. Syncing top ${syncLimit}...`);
+
+        let totalNewReplies = 0;
 
         for (let i = 0; i < syncLimit; i++) {
             const currentItem = threadItems.nth(i);
@@ -323,15 +299,24 @@ export const syncInbox = async (userId: string) => {
 
             if (lead) {
                 let hasNewReply = false;
-                for (const msg of chatHistory) {
-                    // Dedup on content+lead. Once a row exists we never touch
-                    // it again — campaign-engine writes are authoritative for
-                    // SENT and we don't want a wobbly sync heuristic to
-                    // overwrite that ground truth. Replies the LinkedIn UI
-                    // already pulled in stay frozen too; that's fine, they
-                    // don't change.
+                // Order preservation: LinkedIn renders oldest→newest top to
+                // bottom but exposes no reliable per-bubble timestamp we can
+                // parse across locales. We assign a monotonically increasing
+                // sentAt from a single base so newly-created rows sort in the
+                // exact visual order. A new sync uses a fresh (later) base, so
+                // replies appended since the last sync sort after older ones.
+                const base = Date.now();
+                const total = chatHistory.length;
+                for (let m = 0; m < total; m++) {
+                    const msg = chatHistory[m];
+                    // Dedup on content+direction+lead. Once a row exists we
+                    // never touch it again — campaign-engine writes are
+                    // authoritative for SENT and we don't want a wobbly sync
+                    // heuristic to overwrite that ground truth. Including
+                    // direction lets an inbound "Hi" and an outbound "Hi"
+                    // coexist instead of one masking the other.
                     const exists = await prisma.message.findFirst({
-                        where: { leadId: lead.id, content: msg.text }
+                        where: { leadId: lead.id, content: msg.text, direction: msg.direction }
                     });
                     if (!exists) {
                         await prisma.message.create({
@@ -341,7 +326,7 @@ export const syncInbox = async (userId: string) => {
                                 direction: msg.direction,
                                 content: msg.text,
                                 source: 'LINKEDIN_SYNC',
-                                sentAt: new Date(),
+                                sentAt: new Date(base - (total - m) * 1000),
                             }
                         });
                         if (msg.direction === 'RECEIVED') hasNewReply = true;
@@ -350,6 +335,7 @@ export const syncInbox = async (userId: string) => {
 
                 // Update lead status if there's a new reply
                 if (hasNewReply) {
+                    totalNewReplies++;
                     await prisma.lead.update({
                         where: { id: lead.id },
                         data: { status: 'REPLIED' }
@@ -386,6 +372,17 @@ export const syncInbox = async (userId: string) => {
                             meta: { leadId: lead.id }
                         }
                     });
+
+                    // Realtime nudge so an open inbox refreshes without polling.
+                    import('../socket').then(({ io }) =>
+                        io?.to(`user_${userId}`).emit('INBOX_UPDATED', {
+                            leadId: lead.id,
+                            participantName,
+                            replyContent: lastInbound?.text,
+                            timestamp: new Date().toISOString(),
+                        }),
+                    ).catch(() => {});
+
                     console.log(`[INBOX-WORKER] Lead ${participantName} marked as REPLIED.`);
                 }
             } else {
@@ -393,13 +390,17 @@ export const syncInbox = async (userId: string) => {
             }
         }
 
-        console.log(`[INBOX-WORKER] Inbox sync complete. Synced ${syncLimit} threads.`);
+        console.log(`[INBOX-WORKER] Inbox sync complete. Synced ${syncLimit} threads, ${totalNewReplies} with new replies.`);
 
     } catch (err: any) {
         console.error(`[INBOX-WORKER] Error:`, err.message);
     } finally {
         if (context) await context.close().catch(() => {});
         if (browser) await browser.close().catch(() => {});
+        await prisma.user
+            .update({ where: { id: userId }, data: { cloudWorkerActive: false, lastCloudActionAt: new Date() } })
+            .catch(() => {});
+        await releaseAccountLock(userId, lockToken);
     }
 };
 

@@ -290,7 +290,18 @@ const processCampaignJob = async (data: CampaignJobData, job: Job) => {
 
         console.log(`[CAMPAIGN-WORKER] ✅ Campaign ${campaignId} finished.`);
         console.log(`   Stats -> Succeeded: ${summary.succeeded}, Failed: ${summary.failed}`);
-        
+
+        // After a campaign run, pull the inbox so replies to what we just sent
+        // surface in Qampi. Debounced (Redis) to at most once / 3h per user so a
+        // busy account firing this every run collapses to a light cadence. The
+        // sync itself contends on the same per-account lock, so it only actually
+        // runs once this account is idle. Dynamic import breaks the worker<->
+        // inbox-worker require cycle (inbox-worker statically imports our lock
+        // helpers).
+        import('./inbox.worker')
+            .then(({ enqueueInboxSync }) => enqueueInboxSync(userId, { debounceSec: 3 * 60 * 60 }))
+            .catch((err: any) => console.warn(`[CAMPAIGN-WORKER] inbox sync enqueue failed: ${err?.message}`));
+
     } catch (err: any) {
         console.error(`[CAMPAIGN-WORKER] ❌ Critical Crash:`, err.message);
 
