@@ -70,8 +70,12 @@ export async function updateLeadEnrichment(
     if (output.about) updateData.aboutInfo = output.about;
     if (output.email) updateData.email = output.email;
     if (output.phone) updateData.phone = output.phone;
+    if (Array.isArray(output.experience) && output.experience.length > 0) updateData.experience = output.experience;
+    if (Array.isArray(output.education) && output.education.length > 0) updateData.education = output.education;
 
     if (Object.keys(updateData).length > 0) {
+        // Stamp enrichment freshness whenever a profile-visit wrote anything.
+        updateData.enrichedAt = new Date();
         await prisma.lead.update({
             where: { id: leadId },
             data: updateData

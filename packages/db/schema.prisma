@@ -201,6 +201,12 @@ model Lead {
   aboutInfo            String?
   latestPost           String?
   latestPostUrl        String?
+  // Captured by PROFILE_VISIT enrichment. experience/education are arrays of
+  // { ... } objects scraped from the profile; enrichedAt timestamps the last
+  // successful profile-visit scrape so the UI can show enrichment freshness.
+  experience           Json?
+  education            Json?
+  enrichedAt           DateTime?
   createdAt            DateTime               @default(now())
   updatedAt            DateTime               @updatedAt
   ActionLog            ActionLog[]

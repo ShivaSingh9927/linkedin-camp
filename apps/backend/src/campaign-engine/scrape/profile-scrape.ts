@@ -160,6 +160,73 @@ export async function extractExperience(page: any): Promise<ProfileExperienceDat
     });
 }
 
+export interface ExperienceEntry {
+    title: string | null;
+    company: string | null;
+    dateRange: string | null;
+}
+export interface EducationEntry {
+    school: string | null;
+    degree: string | null;
+    dateRange: string | null;
+}
+
+// Shared DOM walker for the "Experience"/"Education" list sections. LinkedIn
+// marks each visible text run with an aria-hidden span; the first is the
+// title/school, the next lines are company/degree and date range. Best-effort:
+// returns [] if the section/markup isn't found rather than throwing.
+async function extractSectionEntries(page: any, sectionId: string, headerText: string, max: number): Promise<any[]> {
+    return page.evaluate(
+        (args: { sectionId: string; headerText: string; max: number }) => {
+            const { sectionId, headerText, max } = args;
+            const headers = Array.from(document.querySelectorAll('h2, div[role="heading"]'));
+            const header =
+                headers.find((h: any) => {
+                    const txt = (h.innerText || h.textContent || '').trim().toLowerCase();
+                    return txt === headerText || txt.startsWith(headerText + '\n');
+                }) || document.querySelector('#' + sectionId);
+            const section: Element | null = header
+                ? (header as HTMLElement).closest('section') || ((header as HTMLElement).parentElement as Element)
+                : null;
+            if (!section) return [];
+
+            const items = Array.from(
+                section.querySelectorAll(
+                    'li.artdeco-list__item, .pvs-list__paged-list-item, [data-view-name="profile-component-entity"]'
+                )
+            ).slice(0, max);
+
+            return items
+                .map((item) => {
+                    const lines = Array.from(item.querySelectorAll('span[aria-hidden="true"]'))
+                        .map((s: any) => (s.innerText || s.textContent || '').trim())
+                        .filter((t: string) => t.length > 0);
+                    if (lines.length === 0) return null;
+                    const dateLine = lines.find((l) => /\b(19|20)\d{2}\b|present|yr|mo/i.test(l)) || null;
+                    return {
+                        primary: lines[0] || null,
+                        secondary: lines[1] ? lines[1].split('·')[0].trim() : null,
+                        dateRange: dateLine,
+                    };
+                })
+                .filter(Boolean);
+        },
+        { sectionId, headerText, max }
+    );
+}
+
+/** Up to `max` experience entries (title / company / date range). */
+export async function extractExperienceList(page: any, max = 5): Promise<ExperienceEntry[]> {
+    const rows = await extractSectionEntries(page, 'experience', 'experience', max);
+    return rows.map((r: any) => ({ title: r.primary, company: r.secondary, dateRange: r.dateRange }));
+}
+
+/** Up to `max` education entries (school / degree / date range). */
+export async function extractEducationList(page: any, max = 3): Promise<EducationEntry[]> {
+    const rows = await extractSectionEntries(page, 'education', 'education', max);
+    return rows.map((r: any) => ({ school: r.primary, degree: r.secondary, dateRange: r.dateRange }));
+}
+
 export interface RecentPost {
     url: string | null;
     content: string;

@@ -21,8 +21,10 @@ import {
     ArrowUpRight,
     Database,
     Mail,
+    Briefcase,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { degreeLabel, timeAgo } from '@/components/LeadEnrichmentDrawer';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import api from '@/lib/api';
@@ -48,6 +50,15 @@ interface Lead {
     tags: string[];
     createdAt: string;
     campaignLeads?: { campaign: { name: string } }[];
+    // Enrichment captured by PROFILE_VISIT
+    headline?: string | null;
+    location?: string | null;
+    phone?: string | null;
+    aboutInfo?: string | null;
+    connectionDegree?: number | null;
+    experience?: any;
+    education?: any;
+    enrichedAt?: string | null;
 }
 
 interface Campaign {
@@ -765,15 +776,23 @@ export default function LeadsPage() {
                                                     {lead.firstName.charAt(0)}{lead.lastName.charAt(0)}
                                                 </div>
                                                 <div className="min-w-0 flex-1">
-                                                    <p className="text-sm font-black text-foreground uppercase tracking-tight group-hover:text-primary transition-colors truncate">{lead.firstName} {lead.lastName}</p>
-                                                    <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-0.5 truncate max-w-[300px]">{lead.jobTitle || 'Human Resource'}</p>
+                                                    <div className="flex items-center gap-2">
+                                                        <p className="text-sm font-black text-foreground uppercase tracking-tight group-hover:text-primary transition-colors truncate">{lead.firstName} {lead.lastName}</p>
+                                                        {degreeLabel(lead.connectionDegree) && (
+                                                            <span className="text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded-full bg-blue-500/10 text-blue-600 border border-blue-500/20">{degreeLabel(lead.connectionDegree)}</span>
+                                                        )}
+                                                        {lead.enrichedAt && (
+                                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" title={`Enriched ${timeAgo(lead.enrichedAt)}`} />
+                                                        )}
+                                                    </div>
+                                                    <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-0.5 truncate max-w-[300px]">{lead.jobTitle || lead.headline || 'Human Resource'}</p>
                                                 </div>
                                             </div>
                                         </td>
                                         <td className="px-6 py-7">
                                             <p className="text-xs font-black text-foreground/80 uppercase tracking-tight">{lead.company || '—'}</p>
                                             <div className="flex items-center space-x-2 mt-1 opacity-50">
-                                                <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">{lead.country || 'Global'}</span>
+                                                <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">{lead.location || lead.country || 'Global'}</span>
                                             </div>
                                         </td>
                                         <td className="px-6 py-7">
@@ -1064,8 +1083,19 @@ export default function LeadsPage() {
                                         {selectedLead.firstName.charAt(0)}{selectedLead.lastName.charAt(0)}
                                     </div>
                                     <div>
-                                        <h2 className="text-3xl font-black text-slate-900 uppercase tracking-tight italic leading-none">{selectedLead.firstName} {selectedLead.lastName}</h2>
-                                        <p className="text-xs font-bold text-indigo-500 uppercase tracking-[0.2em] mt-2 italic">{selectedLead.jobTitle || 'Human Resource'}</p>
+                                        <div className="flex items-center gap-2">
+                                            <h2 className="text-3xl font-black text-slate-900 uppercase tracking-tight italic leading-none">{selectedLead.firstName} {selectedLead.lastName}</h2>
+                                            {degreeLabel(selectedLead.connectionDegree) && (
+                                                <span className="text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600 border border-blue-500/20 not-italic">{degreeLabel(selectedLead.connectionDegree)}</span>
+                                            )}
+                                        </div>
+                                        <p className="text-xs font-bold text-indigo-500 uppercase tracking-[0.2em] mt-2 italic">{[selectedLead.jobTitle, selectedLead.company].filter(Boolean).join(' · ') || selectedLead.headline || 'Human Resource'}</p>
+                                        {(selectedLead.location || selectedLead.enrichedAt) && (
+                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1.5 not-italic flex items-center gap-2">
+                                                {selectedLead.location && <span>📍 {selectedLead.location}</span>}
+                                                {selectedLead.enrichedAt && <span className="text-emerald-600">✦ Enriched {timeAgo(selectedLead.enrichedAt)}</span>}
+                                            </p>
+                                        )}
                                     </div>
                                 </div>
                                 <button 
@@ -1117,6 +1147,35 @@ export default function LeadsPage() {
                                     )}
                                 </div>
                             </section>
+
+                            {/* Career history (from PROFILE_VISIT enrichment) */}
+                            {(() => {
+                                const exp = Array.isArray(selectedLead.experience) ? selectedLead.experience : [];
+                                const edu = Array.isArray(selectedLead.education) ? selectedLead.education : [];
+                                if (!exp.length && !edu.length) return null;
+                                return (
+                                    <section className="space-y-4">
+                                        <div className="flex items-center space-x-3">
+                                            <div className="p-2 bg-indigo-50 rounded-lg text-indigo-600"><Briefcase className="w-4 h-4" /></div>
+                                            <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">Career & Education</h3>
+                                        </div>
+                                        <div className="bg-slate-50 rounded-[2rem] p-8 border border-slate-100 space-y-5">
+                                            {exp.map((e: any, i: number) => (
+                                                <div key={`x${i}`} className="border-l-2 border-indigo-200 pl-4">
+                                                    <p className="text-sm font-black text-slate-800">{e.title || e.jobTitle || '—'}</p>
+                                                    <p className="text-xs font-bold text-slate-500">{[e.company, e.dateRange || e.duration].filter(Boolean).join(' · ')}</p>
+                                                </div>
+                                            ))}
+                                            {edu.map((e: any, i: number) => (
+                                                <div key={`e${i}`} className="border-l-2 border-emerald-200 pl-4">
+                                                    <p className="text-sm font-black text-slate-800">{e.school || '—'}</p>
+                                                    <p className="text-xs font-bold text-slate-500">{[e.degree, e.dateRange || e.dates].filter(Boolean).join(' · ')}</p>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </section>
+                                );
+                            })()}
 
                             {/* Activity Feed */}
                             <section className="space-y-4">

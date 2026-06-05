@@ -5,6 +5,7 @@ import api from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { Download, Trash2, Search, Loader2, Send, Plus } from 'lucide-react';
+import { LeadEnrichmentDrawer, degreeLabel } from '@/components/LeadEnrichmentDrawer';
 
 interface Lead {
     id: string;
@@ -16,6 +17,16 @@ interface Lead {
     stage: string;
     lastActionAt: string | null;
     nextActionAt: string | null;
+    // Enrichment captured by PROFILE_VISIT
+    headline?: string | null;
+    location?: string | null;
+    email?: string | null;
+    phone?: string | null;
+    aboutInfo?: string | null;
+    connectionDegree?: number | null;
+    experience?: any;
+    education?: any;
+    enrichedAt?: string | null;
 }
 
 interface LeadsResponse {
@@ -65,6 +76,7 @@ export function CampaignLeadsTab({ campaignId, initialStage = 'all' }: Props) {
     const [data, setData] = useState<LeadsResponse | null>(null);
     const [loading, setLoading] = useState(true);
     const [selected, setSelected] = useState<Set<string>>(new Set());
+    const [detailLead, setDetailLead] = useState<Lead | null>(null);
 
     useEffect(() => { setStage(initialStage); setPage(1); }, [initialStage]);
 
@@ -253,6 +265,8 @@ export function CampaignLeadsTab({ campaignId, initialStage = 'all' }: Props) {
                                 <input type="checkbox" checked={allSelected} onChange={toggleAll} className="rounded" />
                             </th>
                             <th className="py-3 px-2 text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">Lead</th>
+                            <th className="py-3 px-2 text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">Email</th>
+                            <th className="py-3 px-2 text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">Location</th>
                             <th className="py-3 px-2 text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">Stage</th>
                             <th className="py-3 px-2 text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">Last action</th>
                             <th className="py-3 px-2 text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">Next</th>
@@ -260,11 +274,11 @@ export function CampaignLeadsTab({ campaignId, initialStage = 'all' }: Props) {
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                         {loading ? (
-                            <tr><td colSpan={5} className="py-16 text-center">
+                            <tr><td colSpan={7} className="py-16 text-center">
                                 <Loader2 className="w-6 h-6 text-violet-500 animate-spin mx-auto" />
                             </td></tr>
                         ) : !data?.leads.length ? (
-                            <tr><td colSpan={5} className="py-16 text-center text-sm text-slate-500">
+                            <tr><td colSpan={7} className="py-16 text-center text-sm text-slate-500">
                                 No leads match this filter.
                             </td></tr>
                         ) : data.leads.map(l => {
@@ -276,9 +290,18 @@ export function CampaignLeadsTab({ campaignId, initialStage = 'all' }: Props) {
                                         <input type="checkbox" checked={isSelected} onChange={() => toggleOne(l.campaignLeadId)} className="rounded" />
                                     </td>
                                     <td className="py-4 px-2">
-                                        <a href={l.linkedinUrl} target="_blank" rel="noopener" className="font-bold text-slate-800 hover:text-violet-600 hover:underline">{l.name}</a>
-                                        <div className="text-xs text-slate-500">{[l.jobTitle, l.company].filter(Boolean).join(' · ') || '—'}</div>
+                                        <div className="flex items-center gap-2">
+                                            <button onClick={() => setDetailLead(l)} className="font-bold text-slate-800 hover:text-violet-600 hover:underline text-left">{l.name}</button>
+                                            {degreeLabel(l.connectionDegree) && (
+                                                <span className="text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded-full bg-blue-500/10 text-blue-600 border border-blue-500/20">{degreeLabel(l.connectionDegree)}</span>
+                                            )}
+                                        </div>
+                                        <div className="text-xs text-slate-500">{[l.jobTitle, l.company].filter(Boolean).join(' · ') || l.headline || '—'}</div>
                                     </td>
+                                    <td className="py-4 px-2 text-xs">
+                                        {l.email ? <a href={`mailto:${l.email}`} className="text-violet-600 hover:underline">{l.email}</a> : <span className="text-slate-400">—</span>}
+                                    </td>
+                                    <td className="py-4 px-2 text-xs text-slate-600">{l.location || '—'}</td>
                                     <td className="py-4 px-2">
                                         <span className={cn("inline-flex items-center px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border", pillClass)}>
                                             {l.stage.replace(/_/g, ' ')}
@@ -296,6 +319,9 @@ export function CampaignLeadsTab({ campaignId, initialStage = 'all' }: Props) {
                     </tbody>
                 </table>
             </div>
+
+            {/* Enrichment detail drawer */}
+            <LeadEnrichmentDrawer lead={detailLead as any} onClose={() => setDetailLead(null)} />
 
             {/* Move-to-campaign picker */}
             {movePickerOpen && (

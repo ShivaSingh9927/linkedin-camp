@@ -609,6 +609,17 @@ export const getCampaignLeads = async (req: any, res: Response) => {
             stage: r.isCompleted ? 'completed' : r.status.toLowerCase(),
             lastActionAt: r.lastActionAt,
             nextActionAt: r.nextActionDate,
+            // Enrichment captured by PROFILE_VISIT — surfaced so the Leads tab
+            // can show what the scrape pulled (and a detail drawer).
+            headline: r.Lead.headline,
+            location: r.Lead.location,
+            email: r.Lead.email,
+            phone: r.Lead.phone,
+            aboutInfo: r.Lead.aboutInfo,
+            connectionDegree: r.Lead.connectionDegree,
+            experience: (r.Lead as any).experience ?? null,
+            education: (r.Lead as any).education ?? null,
+            enrichedAt: (r.Lead as any).enrichedAt ?? null,
         }));
 
         res.json({ leads, total, page, limit, stageCounts });

@@ -1,6 +1,6 @@
 import { NodeHandler, NodeResult, ProfileVisitOutput } from '../types';
 import { detectConnectionState } from '../connection-state';
-import { scrollProfile, extractTopCard, extractAbout, extractExperience } from '../scrape/profile-scrape';
+import { scrollProfile, extractTopCard, extractAbout, extractExperience, extractExperienceList, extractEducationList } from '../scrape/profile-scrape';
 import { prisma } from '@repo/db';
 
 const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
@@ -105,6 +105,15 @@ export const profileVisit: NodeHandler = async (ctx): Promise<NodeResult> => {
             console.log(`[PROFILE-VISIT] Company: ${output.company}, Job: ${output.jobTitle}`);
         } catch (e: any) {
             console.log(`[PROFILE-VISIT] Experience error: ${e?.message}`);
+        }
+
+        // --- EXTRACT FULL EXPERIENCE / EDUCATION LISTS (best-effort) ---
+        try {
+            output.experience = (await extractExperienceList(page)) as any;
+            output.education = (await extractEducationList(page)) as any;
+            console.log(`[PROFILE-VISIT] Experience entries: ${output.experience.length}, Education: ${output.education.length}`);
+        } catch (e: any) {
+            console.log(`[PROFILE-VISIT] Experience/education list error: ${e?.message}`);
         }
 
         // --- EXTRACT CONTACT INFO (exact from testscript) ---
