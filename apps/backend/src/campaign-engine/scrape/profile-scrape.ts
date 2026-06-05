@@ -161,6 +161,15 @@ export async function extractTopCard(page: any): Promise<ProfileCardData> {
             }
         }
 
+        // Final pass: strip a leading name prefix now that data.name is fully
+        // resolved (it may have come from the fallback AFTER the headline was
+        // read, so the per-candidate strip above could have missed it). Also
+        // drop a headline that's now just the name or pure junk.
+        if (data.headline) {
+            data.headline = stripLeadingName(data.headline, data.name);
+            if (isJunkHeadline(data.headline, data.name)) data.headline = null;
+        }
+
         return data;
     });
 }
