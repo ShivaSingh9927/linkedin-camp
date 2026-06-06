@@ -74,7 +74,7 @@ export default function InboxPage() {
       const data = await res.json();
       setMessages(data.messages || []);
       
-      const receivedMessages = (data.messages || []).filter((m: any) => !m.isFromMe);
+      const receivedMessages = (data.messages || []).filter((m: any) => m.direction === 'RECEIVED');
       if (receivedMessages.length > 0) {
         const lastReceived = receivedMessages[receivedMessages.length - 1];
         setLastReceivedMessage(lastReceived.content || '');
