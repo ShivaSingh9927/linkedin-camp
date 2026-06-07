@@ -21,7 +21,7 @@ export const salesStealthEnrichmentTemplate: TemplateDefinition = {
     icon: '🛰️',
     color: 'from-zinc-500 to-slate-600',
     durationDays: 1,
-    stepCount: 2,
+    stepCount: 3,
     delayCount: 0,
     aiStrategyHint: {
         objective:
@@ -38,10 +38,11 @@ export const salesStealthEnrichmentTemplate: TemplateDefinition = {
                 enrichCompany: true, enrichAbout: true, enrichContact: true, enrichPosts: true,
             }),
             node('n2', 200, 'ACTION', 'FOLLOW', 'Soft Follow'),
-            node('end_ok', 300, 'ACTION', 'END', 'End'),
+            node('n3', 300, 'ACTION', 'EMAIL_FINDER', 'Find Email'),
+            node('end_ok', 400, 'ACTION', 'END', 'End'),
         ],
         edges: [
-            edge('trigger', 'n1'), edge('n1', 'n2'), edge('n2', 'end_ok'),
+            edge('trigger', 'n1'), edge('n1', 'n2'), edge('n2', 'n3'), edge('n3', 'end_ok'),
         ],
     },
 };
