@@ -100,7 +100,14 @@ export const profileVisit: NodeHandler = async (ctx): Promise<NodeResult> => {
                 const m = output.headline.match(/^(.+?)\s+(?:at|@)\s+(.+?)$/i);
                 if (m) {
                     if (!output.jobTitle) output.jobTitle = cleanPersonField(m[1].trim(), output.name);
-                    if (!output.company)  output.company  = m[2].trim();
+                    // Only trust a headline-derived company when it's a single clean
+                    // token — never a multi-segment banner ("Bynd | … | We're Hiring").
+                    // A real company comes from the logo alt in extractExperience;
+                    // this is just a fallback for "<title> at <Company>" headlines.
+                    if (!output.company) {
+                        const cand = m[2].trim();
+                        if (cand && !/[|·•]/.test(cand) && cand.length <= 60) output.company = cand;
+                    }
                     console.log(`[PROFILE-VISIT] Filled company/jobTitle from headline.`);
                 }
             }

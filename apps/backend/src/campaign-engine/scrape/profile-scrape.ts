@@ -190,12 +190,22 @@ export async function extractAbout(page: any): Promise<string | null> {
     });
 }
 
-/** First experience entry: company, job title, company URL. */
+/** First experience entry: company, job title, company URL.
+ *
+ * Company name is taken PRIMARILY from the first company logo's `alt`
+ * ("Meril logo" -> "Meril") inside the Experience section — that is the only
+ * clean, structured source. The old `span[aria-hidden]` heuristic kept landing
+ * on the headline banner / employment-type line ("Bynd | Generative AI… ",
+ * "Company · Full-time"), which the email-finder can't resolve to a domain.
+ * Job title comes from the first job block's deduped text lines, accounting for
+ * LinkedIn's "umbrella" layout (company name leads the block, title sits lower).
+ * Mirrors testscripts/phase2_lead_company&jobpost.js.
+ */
 export async function extractExperience(page: any): Promise<ProfileExperienceData> {
     return page.evaluate(() => {
         const data: any = { company: null, jobTitle: null, companyUrl: null };
 
-        const headers = Array.from(document.querySelectorAll('h2, div[role="heading"]'));
+        const headers = Array.from(document.querySelectorAll('h2, div[role="heading"], span[aria-hidden="true"]'));
         const header =
             headers.find((h: any) => {
                 const txt = (h.innerText || h.textContent || '').trim().toLowerCase();
@@ -207,28 +217,56 @@ export async function extractExperience(page: any): Promise<ProfileExperienceDat
             : null;
         if (!section) return data;
 
+        // --- Company URL + clean company NAME from the first company logo. ---
         const companyLink = section.querySelector('a[href*="/company/"]');
         if (companyLink) {
             data.companyUrl = (companyLink as HTMLAnchorElement).href?.split('?')[0] || null;
         }
+        const logoImg = section.querySelector('a[href*="/company/"] img[alt]');
+        const alt = logoImg?.getAttribute('alt')?.replace(/\s*logo\s*$/i, '').trim();
+        if (alt && alt.length > 1) data.company = alt;
 
         const firstJob = section.querySelector(
             'ul > li, .pvs-list__paged-list-item, .artdeco-list__item, [data-view-name="profile-component-entity"]'
         );
-        if (!firstJob) return data;
+        if (firstJob) {
+            // Deduped, ordered text lines of the first job block.
+            const rawLines = ((firstJob as HTMLElement).innerText || '')
+                .split('\n')
+                .map((l: string) => l.trim())
+                .filter((l: string) => l.length > 0);
+            const details: string[] = [];
+            for (let i = 0; i < rawLines.length; i++) {
+                if (i === 0 || rawLines[i] !== rawLines[i - 1]) details.push(rawLines[i]);
+            }
 
-        const spans = Array.from(firstJob.querySelectorAll('span[aria-hidden="true"]'))
-            .map((s: any) => (s.innerText || s.textContent || '').trim())
-            .filter((t: string) => t.length > 0);
+            // Job title: in the "umbrella" layout the first line is the company
+            // name and the title sits further down; otherwise line 0 is the title.
+            if (details.length > 0) {
+                if (data.company && details[0].toLowerCase().includes(data.company.toLowerCase())) {
+                    data.jobTitle = details.length > 3 ? details[3] : details[1] || null;
+                } else {
+                    data.jobTitle = details[0];
+                }
+            }
 
-        if (spans.length > 0) data.jobTitle = spans[0];
-        if (spans.length > 1) data.company = spans[1].split('·')[0].trim() || null;
+            // If the logo alt missed, recover company from the employment line
+            // ("Company · Full-time") rather than from the banner headline.
+            if (!data.company) {
+                const empLine = details.find((l) =>
+                    / · (Full-time|Part-time|Internship|Contract|Freelance|Self-employed)/i.test(l)
+                );
+                if (empLine) data.company = empLine.split('·')[0].trim() || null;
+            }
+        }
 
-        if (!data.company) {
-            const logoImg =
-                firstJob.querySelector('img[alt]') || section.querySelector('a[href*="/company/"] img[alt]');
-            const alt = logoImg?.getAttribute('alt')?.replace(/\s*logo\s*$/i, '').trim();
-            if (alt && alt.length > 1) data.company = alt;
+        // Last-resort legacy span heuristic, only if we still have nothing.
+        if (!data.jobTitle || !data.company) {
+            const spans = Array.from(section.querySelectorAll('span[aria-hidden="true"]'))
+                .map((s: any) => (s.innerText || s.textContent || '').trim())
+                .filter((t: string) => t.length > 0);
+            if (!data.jobTitle && spans.length > 0) data.jobTitle = spans[0];
+            if (!data.company && spans.length > 1) data.company = spans[1].split('·')[0].trim() || null;
         }
 
         return data;
