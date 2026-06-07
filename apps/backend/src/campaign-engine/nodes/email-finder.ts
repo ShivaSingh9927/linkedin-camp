@@ -1,6 +1,7 @@
 import { NodeHandler, NodeResult } from '../types';
 import { prisma } from '@repo/db';
 import { findEmail } from '../../services/email-finder.service';
+import { getEmailFinderHealth } from '../../services/email-finder-health';
 
 /**
  * EMAIL_FINDER — resolves a sendable email for the lead.
@@ -24,6 +25,19 @@ export const emailFinder: NodeHandler = async (ctx): Promise<NodeResult> => {
 
     const pvEmail = (storedOutputs['profile-visit']?.email as string | undefined) || null;
     const leadEmail = lead.email || null;
+
+    // 0: not configured — never make the call.
+    if (!process.env.EMAIL_FINDER_URL || !process.env.EMAIL_FINDER_TOKEN) {
+        console.log(`[EMAIL-FINDER] Not configured (URL/TOKEN missing) — skipping for ${lead.firstName || lead.linkedinUrl}`);
+        return { success: true, output: { email: null, source: null, found: false, reason: 'not_configured' } };
+    }
+
+    // 0b: box known-down from a recent probe or failure — skip without burning the timeout.
+    const health = await getEmailFinderHealth();
+    if (health === 'down') {
+        console.log(`[EMAIL-FINDER] Box down (cached 60s) — skipping for ${lead.firstName || lead.linkedinUrl}`);
+        return { success: true, output: { email: null, source: null, found: false, reason: 'box_down' } };
+    }
 
     // 1 + 2: we already have a real/known email — use it, don't call the box.
     if (pvEmail || leadEmail) {
