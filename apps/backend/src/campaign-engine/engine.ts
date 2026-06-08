@@ -349,10 +349,28 @@ async function runLead(
                 }
 
                 if (!warmupResult.success) {
-                    // Warmup is fatal
                     warmupExec.status = 'failed';
                     warmupExec.error = warmupResult.error;
                     execResult.nodesExecuted.push(warmupExec);
+
+                    // Check for LinkedIn checkpoint/authwall — if present,
+                    // mark account health, notify user, and pause campaign
+                    // so the cron doesn't keep re-queueing failing jobs.
+                    const checkpointInfo = await classifyPage(page).catch(() => null);
+                    if (checkpointInfo && isCheckpoint(checkpointInfo)) {
+                        console.warn(`[ENGINE] Checkpoint detected during warmup: kind=${checkpointInfo.kind} url=${checkpointInfo.url}`);
+                        const shotPath = `/tmp/test-sessions/engine_warmup_${userId}_${Date.now()}.png`;
+                        await page.screenshot({ path: shotPath, fullPage: false }).catch(() => {});
+                        await handleCheckpoint({ userId, campaignId, leadId: lead.id, info: checkpointInfo, screenshotPath: shotPath });
+                        await prisma.campaign.update({
+                            where: { id: campaignId },
+                            data: { status: 'PAUSED' },
+                        }).catch(err => console.error(`[ENGINE] Failed to pause campaign: ${err.message}`));
+                        execResult.status = 'paused';
+                        execResult.pausedReason = 'stalled';
+                        return execResult;
+                    }
+
                     execResult.status = 'failed';
                     execResult.failedAt = 'warmup';
                     console.log(`[ENGINE] Lead ${lead.firstName}: warmup FAILED. Error: ${warmupResult.error}. Skipping to next lead.`);

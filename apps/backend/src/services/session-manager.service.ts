@@ -274,7 +274,18 @@ class SessionManagerService {
 
                     // Give the page a moment to react and log where we land
                     await page.waitForTimeout(5000);
-                    console.log(`[SESSION-MANAGER] Post-submit URL: ${page.url()}`);
+                    const postSubmitUrl = page.url();
+                    console.log(`[SESSION-MANAGER] Post-submit URL: ${postSubmitUrl}`);
+
+                    // LinkedIn checkpoint/challenge (OTP, phone, captcha) after login.
+                    // Emit AWAITING_2FA so the frontend shows the OTP input instead
+                    // of waiting 120s for the feed timeout.
+                    if (postSubmitUrl.includes('/checkpoint/')) {
+                        console.log(`[SESSION-MANAGER] Checkpoint detected — awaiting 2FA code`);
+                        session.status = 'AWAITING_2FA';
+                        this.emitStatus(userId, 'AWAITING_2FA', { message: 'LinkedIn sent a verification code. Enter it below.' });
+                        return { requires2FA: true };
+                    }
                 } else {
                     console.warn(`[SESSION-MANAGER] No password field found after filling email`);
                 }
