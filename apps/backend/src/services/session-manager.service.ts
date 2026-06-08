@@ -184,6 +184,7 @@ class SessionManagerService {
 
         const { page, context } = session;
         const sessionPath = this.getUserSessionPath(userId);
+        let checkpointDetected = false;
 
         try {
             const usernameSelectors = ['#username', 'input[name="session_key"]', 'input[autocomplete="username"]', 'input[type="email"]'];
@@ -282,15 +283,21 @@ class SessionManagerService {
                     // of waiting 120s for the feed timeout.
                     if (postSubmitUrl.includes('/checkpoint/')) {
                         console.log(`[SESSION-MANAGER] Checkpoint detected — awaiting 2FA code`);
-                        session.status = 'AWAITING_2FA';
-                        this.emitStatus(userId, 'AWAITING_2FA', { message: 'LinkedIn sent a verification code. Enter it below.' });
-                        return { requires2FA: true };
+                        checkpointDetected = true;
                     }
                 } else {
                     console.warn(`[SESSION-MANAGER] No password field found after filling email`);
                 }
             } else {
                 console.warn(`[SESSION-MANAGER] No username field matched any selector — page may be a checkpoint/challenge`);
+            }
+
+            // If a checkpoint was detected during login, emit AWAITING_2FA and
+            // return early — don't wait for the feed (which will never come).
+            if (checkpointDetected) {
+                session.status = 'AWAITING_2FA';
+                this.emitStatus(userId, 'AWAITING_2FA', { message: 'LinkedIn sent a verification code. Enter it below.' });
+                return { requires2FA: true };
             }
 
             await page.waitForURL('**/feed/**', { timeout: 120000 });
@@ -314,7 +321,6 @@ class SessionManagerService {
             // this verbatim and launches its browser through the same IP —
             // anything else and LinkedIn invalidates the cookies on first
             // request.
-            const session = this.activeSessions.get(userId);
             const proxySnapshot = session?.proxy ?? null;
 
             await context.close().catch(() => {});
