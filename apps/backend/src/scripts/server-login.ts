@@ -12,11 +12,8 @@
  * For now it runs headless — you'll need to pass cookies manually or use the extension.
  */
 
-import { chromium } from 'playwright-extra';
+import { chromium } from 'patchright';
 import { prisma } from '@repo/db';
-
-const stealth = require('puppeteer-extra-plugin-stealth')();
-chromium.use(stealth);
 
 const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
 

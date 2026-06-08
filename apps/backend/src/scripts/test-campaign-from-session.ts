@@ -1,9 +1,6 @@
-import { chromium } from 'playwright-extra';
-const stealth = require('puppeteer-extra-plugin-stealth')();
+import { chromium } from 'patchright';
 import path from 'path';
 import fs from 'fs';
-
-chromium.use(stealth);
 
 const wait = (ms: number) => new Promise((res) => setTimeout(res, ms));
 const randomRange = (min: number, max: number) =>

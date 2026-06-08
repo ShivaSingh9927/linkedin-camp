@@ -3,8 +3,6 @@ import bcrypt from 'bcryptjs';
 import { OAuth2Client } from 'google-auth-library';
 import jwt from 'jsonwebtoken';
 import { prisma } from '@repo/db';
-import { chromium } from 'playwright-extra';
-const stealth = require('puppeteer-extra-plugin-stealth')();
 import path from 'path';
 import fs from 'fs';
 import { getOrAssignProxy } from '../services/proxy.service';
@@ -12,8 +10,6 @@ import axios from 'axios';
 import { LinkedInService } from '../services/linkedin.service';
 import { mailService } from '../services/mail.service';
 import { sessionManager } from '../services/session-manager.service';
-
-chromium.use(stealth);
 
 const JWT_SECRET = process.env.JWT_SECRET || 'supersecretkey';
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);

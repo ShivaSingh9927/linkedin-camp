@@ -1,9 +1,6 @@
-import { chromium } from 'playwright-extra';
-const stealth = require('puppeteer-extra-plugin-stealth')();
+import { chromium } from 'patchright';
 import path from 'path';
 import { prisma } from '@repo/db';
-
-chromium.use(stealth);
 
 async function savePersistentSession(userId: string) {
     if (!userId) {

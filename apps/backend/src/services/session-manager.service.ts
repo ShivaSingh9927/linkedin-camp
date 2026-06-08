@@ -1,13 +1,10 @@
-import { chromium } from 'playwright-extra';
-import { BrowserContext, Page, Cookie } from 'playwright';
-const stealth = require('puppeteer-extra-plugin-stealth')();
+import { chromium } from 'patchright';
+import type { BrowserContext, Page, Cookie } from 'patchright';
 import { prisma } from '@repo/db';
 import path from 'path';
 import fs from 'fs';
 import { io } from '../socket';
 import { uploadScreenshotToS3 } from './s3-upload.service';
-
-chromium.use(stealth);
 
 const SESSION_STORAGE_PATH = process.env.SESSION_STORAGE_PATH || path.join(process.cwd(), 'sessions');
 

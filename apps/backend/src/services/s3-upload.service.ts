@@ -1,5 +1,5 @@
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
-import type { Page } from 'playwright-core';
+import type { Page } from 'patchright';
 import fs from 'fs';
 import path from 'path';
 

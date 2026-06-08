@@ -1,7 +1,6 @@
 import { Worker, Job } from 'bullmq';
 import { prisma } from '@repo/db';
-import { chromium } from 'playwright-extra';
-const stealth = require('puppeteer-extra-plugin-stealth')();
+import { chromium } from 'patchright';
 import Redis from 'ioredis';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -19,8 +18,6 @@ import { sendEmail } from '../services/email.service';
 import { checkConnection } from '../campaign-engine/nodes/check-connection';
 import { follow } from '../campaign-engine/nodes/follow';
 import { writeNodeOutput, readNodeOutputs } from '../campaign-engine/storage';
-
-chromium.use(stealth);
 
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
 const redisConnection = REDIS_URL ? new Redis(REDIS_URL, { maxRetriesPerRequest: null }) : null;

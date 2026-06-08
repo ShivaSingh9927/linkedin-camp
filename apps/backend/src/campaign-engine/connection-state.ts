@@ -1,4 +1,4 @@
-import type { Page } from 'playwright';
+import type { Page } from 'patchright';
 
 // Inspect a LinkedIn profile page (assumed already navigated to) and return
 // a robust read of the lead's connection state.

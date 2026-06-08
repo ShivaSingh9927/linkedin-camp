@@ -1,6 +1,4 @@
-import { chromium } from 'playwright-extra';
-const stealth = require('puppeteer-extra-plugin-stealth')();
-chromium.use(stealth);
+import { chromium } from 'patchright';
 
 import { prisma } from '@repo/db';
 import type { SessionContext } from './types';

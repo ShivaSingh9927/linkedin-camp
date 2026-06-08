@@ -1,10 +1,7 @@
-import { chromium } from 'playwright-extra';
-import { Cookie } from 'playwright';
-const stealth = require('puppeteer-extra-plugin-stealth')();
+import { chromium } from 'patchright';
+import type { Cookie } from 'patchright';
 import { prisma, Prisma } from '@repo/db';
 import { getOrAssignProxy } from './proxy.service';
-
-chromium.use(stealth);
 
 export interface ValidationResult {
     valid: boolean;

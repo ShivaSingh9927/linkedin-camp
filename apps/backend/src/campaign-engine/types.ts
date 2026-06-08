@@ -1,4 +1,4 @@
-import { Page, BrowserContext } from 'playwright';
+import type { Page, BrowserContext } from 'patchright';
 
 // ---- Campaign Config ----
 

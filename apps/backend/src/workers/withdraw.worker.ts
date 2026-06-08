@@ -1,4 +1,4 @@
-import { chromium } from 'playwright';
+import { chromium } from 'patchright';
 import { prisma } from '@repo/db';
 import { getRandomUserAgent } from '../services/safety.service';
 

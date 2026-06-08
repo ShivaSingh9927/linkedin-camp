@@ -1,4 +1,4 @@
-import type { Page } from 'playwright-core';
+import type { Page } from 'patchright';
 import { prisma } from '@repo/db';
 import { transitionLead } from './lifecycle';
 

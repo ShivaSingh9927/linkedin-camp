@@ -1,13 +1,10 @@
-import { chromium } from 'playwright-extra';
-import type { Page } from 'playwright';
+import { chromium } from 'patchright';
+import type { Page } from 'patchright';
 import { prisma } from '@repo/db';
 import path from 'path';
 import fs from 'fs';
 import { classifyPage, markAccountHealthy, handleCheckpoint, type CheckpointInfo } from '../campaign-engine/safety/checkpoint';
 import { uploadScreenshotToS3 } from './s3-upload.service';
-
-const stealth = require('puppeteer-extra-plugin-stealth')();
-chromium.use(stealth);
 
 const SCREENSHOT_DIR = process.env.SESSION_STORAGE_PATH || '/app/sessions';
 

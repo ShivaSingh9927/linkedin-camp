@@ -1,4 +1,4 @@
-import { Page, Locator } from 'playwright';
+import type { Page, Locator } from 'patchright';
 
 const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
 export const randomRange = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1) + min);
