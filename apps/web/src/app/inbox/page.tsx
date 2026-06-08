@@ -152,25 +152,7 @@ export default function InboxPage() {
     }
   };
 
-  const handleSendMessage = async () => {
-    if (!selectedConvo || !replyText.trim()) return;
-    try {
-      const res = await fetch(`/api/v1/inbox/conversations/${selectedConvo.id}/messages`, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}` 
-        },
-        body: JSON.stringify({ content: replyText })
-      });
-      if (res.ok) {
-        setReplyText('');
-        fetchMessages(selectedConvo.id);
-      }
-    } catch (err) {
-      console.error('Send failed:', err);
-    }
-  };
+  
 
   const filteredConversations = conversations.filter(c => {
     const matchesSearch = (c.firstName + ' ' + c.lastName).toLowerCase().includes(searchQuery.toLowerCase());
@@ -381,12 +363,6 @@ export default function InboxPage() {
                         <Sparkles className="w-3.5 h-3.5" />
                       )}
                       <span className="hidden xs:inline">{replyText ? 'Fix' : 'AI'}</span>
-                    </button>
-                    <button 
-                      onClick={handleSendMessage}
-                      className="bg-primary text-white p-2.5 sm:p-3 rounded-xl sm:rounded-2xl shadow-lg shadow-primary/30 hover:bg-primary/90 transition-all"
-                    >
-                      <Sparkles className="w-4 h-4 sm:w-5 sm:h-5" />
                     </button>
                   </div>
                 </div>

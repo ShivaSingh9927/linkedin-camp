@@ -1,14 +1,15 @@
 import { NodeHandler, NodeResult, ProfileVisitOutput } from '../types';
 import { detectConnectionState } from '../connection-state';
-import { scrollProfile, extractTopCard, extractAbout, extractExperience, extractExperienceList, extractEducationList } from '../scrape/profile-scrape';
+import { scrollProfile, extractTopCard, extractAbout, extractExperience, extractExperienceList, extractEducationList, scrapeRecentPosts } from '../scrape/profile-scrape';
 import { cleanPersonField } from '../scrape/sanitize';
 import { prisma } from '@repo/db';
 
 const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
 const randomRange = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1) + min);
 
-export const profileVisit: NodeHandler = async (ctx): Promise<NodeResult> => {
+export const profileVisit: NodeHandler = async (ctx, config): Promise<NodeResult> => {
     const { page, lead } = ctx;
+    const enrichPosts = (config as any)?.enrichPosts === true;
 
     const output: ProfileVisitOutput = {
         name: null,
@@ -24,6 +25,8 @@ export const profileVisit: NodeHandler = async (ctx): Promise<NodeResult> => {
         connectedDate: null,
         experience: [],
         education: [],
+        latestPost: null,
+        latestPostUrl: null,
     };
 
     try {
@@ -175,6 +178,23 @@ export const profileVisit: NodeHandler = async (ctx): Promise<NodeResult> => {
             }
         } catch (e: any) {
             console.log(`[PROFILE-VISIT] Contact error: ${e?.message}`);
+        }
+
+        // --- EXTRACT LATEST POST (if enrichPosts is set) ---
+        if (enrichPosts && lead.linkedinUrl) {
+            try {
+                console.log('[PROFILE-VISIT] Scraping latest post...');
+                const posts = await scrapeRecentPosts(page, lead.linkedinUrl, 1);
+                if (posts.length > 0) {
+                    output.latestPost = posts[0].content.substring(0, 1000);
+                    output.latestPostUrl = posts[0].url;
+                    console.log(`[PROFILE-VISIT] Latest post: ${output.latestPost?.substring(0, 60)}...`);
+                } else {
+                    console.log('[PROFILE-VISIT] No posts found.');
+                }
+            } catch (e: any) {
+                console.log(`[PROFILE-VISIT] Post scrape error: ${e?.message}`);
+            }
         }
 
         // Persistence happens centrally in engine.ts via updateLeadEnrichment

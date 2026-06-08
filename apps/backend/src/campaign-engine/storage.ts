@@ -72,6 +72,8 @@ export async function updateLeadEnrichment(
     if (output.phone) updateData.phone = output.phone;
     if (Array.isArray(output.experience) && output.experience.length > 0) updateData.experience = output.experience;
     if (Array.isArray(output.education) && output.education.length > 0) updateData.education = output.education;
+    if (output.latestPost) updateData.latestPost = output.latestPost;
+    if (output.latestPostUrl) updateData.latestPostUrl = output.latestPostUrl;
 
     if (Object.keys(updateData).length > 0) {
         // Stamp enrichment freshness whenever a profile-visit wrote anything.

@@ -94,6 +94,8 @@ export interface ProfileVisitOutput {
     connectedDate: string | null;
     experience: Experience[];
     education: Education[];
+    latestPost: string | null;
+    latestPostUrl: string | null;
 }
 
 export interface Experience {
