@@ -5,6 +5,7 @@ import { prisma } from '@repo/db';
 import path from 'path';
 import fs from 'fs';
 import { io } from '../socket';
+import { uploadScreenshotToS3 } from './s3-upload.service';
 
 chromium.use(stealth);
 
@@ -158,6 +159,7 @@ class SessionManagerService {
                 await page.screenshot({ path: path.join(SESSION_STORAGE_PATH, `login_debug_${userId}.png`) });
                 console.log(`[SESSION-MANAGER] Screenshot saved for debugging`);
             } catch {}
+            uploadScreenshotToS3(page, userId, 'login_debug').catch(() => {});
 
             if (page.url().includes('/feed') || page.url().includes('/in/')) {
                 console.log(`[SESSION-MANAGER] User already logged in, capturing session`);
@@ -283,6 +285,14 @@ class SessionManagerService {
                     // of waiting 120s for the feed timeout.
                     if (postSubmitUrl.includes('/checkpoint/')) {
                         console.log(`[SESSION-MANAGER] Checkpoint detected — awaiting 2FA code`);
+                        try {
+                            const ssDir = SESSION_STORAGE_PATH;
+                            if (!fs.existsSync(ssDir)) fs.mkdirSync(ssDir, { recursive: true });
+                            const ssPath = path.join(ssDir, `checkpoint_${userId}_${Date.now()}.png`);
+                            await page.screenshot({ path: ssPath, fullPage: true });
+                            console.log(`[SESSION-MANAGER] Checkpoint screenshot saved: ${ssPath}`);
+                        } catch {}
+                        uploadScreenshotToS3(page, userId, 'checkpoint').catch(() => {});
                         checkpointDetected = true;
                     }
                 } else {
@@ -290,6 +300,14 @@ class SessionManagerService {
                 }
             } else {
                 console.warn(`[SESSION-MANAGER] No username field matched any selector — page may be a checkpoint/challenge`);
+                try {
+                    const ssDir = SESSION_STORAGE_PATH;
+                    if (!fs.existsSync(ssDir)) fs.mkdirSync(ssDir, { recursive: true });
+                    const ssPath = path.join(ssDir, `no_field_${userId}_${Date.now()}.png`);
+                    await page.screenshot({ path: ssPath, fullPage: true });
+                    console.log(`[SESSION-MANAGER] No-field screenshot saved: ${ssPath}`);
+                } catch {}
+                uploadScreenshotToS3(page, userId, 'no_field').catch(() => {});
             }
 
             // If a checkpoint was detected during login, emit AWAITING_2FA and
@@ -347,6 +365,7 @@ class SessionManagerService {
             try {
                 console.log(`[SESSION-MANAGER] Browser URL at failure: ${page.url()}`);
                 await page.screenshot({ path: path.join(SESSION_STORAGE_PATH, `login_error_${userId}.png`), fullPage: true });
+                uploadScreenshotToS3(page, userId, 'login_error').catch(() => {});
                 const bodyText = await page.evaluate(() => document.body.innerText.slice(0, 1500)).catch(() => '');
                 console.log(`[SESSION-MANAGER] Body text snippet: ${bodyText.replace(/\n+/g, ' | ')}`);
             } catch {}

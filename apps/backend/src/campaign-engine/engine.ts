@@ -41,6 +41,7 @@ import { readNodeOutputs, writeNodeOutput, updateLeadEnrichment } from './storag
 import { checkQuota, nextDayRetryAt, DAILY_CAPS, GovernedAction, isWithinWorkingHours, nextWorkingHourAt } from './safety/quota';
 import { transitionLead, recomputeCampaignStatus } from './safety/lifecycle';
 import { classifyPage, handleCheckpoint, isCheckpoint } from './safety/checkpoint';
+import { uploadScreenshotToS3 } from '../services/s3-upload.service';
 
 const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
 const randomRange = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1) + min);
@@ -282,8 +283,9 @@ async function runLead(
             const checkpointInfo = await classifyPage(page);
             if (isCheckpoint(checkpointInfo)) {
                 console.warn(`[ENGINE] Checkpoint mid-flow for lead ${lead.firstName}: kind=${checkpointInfo.kind} url=${checkpointInfo.url}`);
-                const shotPath = `/tmp/test-sessions/engine_checkpoint_${userId}_${Date.now()}.png`;
+                const shotPath = `/app/sessions/engine_checkpoint_${userId}_${Date.now()}.png`;
                 await page.screenshot({ path: shotPath, fullPage: false }).catch(() => {});
+                uploadScreenshotToS3(page, userId, `engine_checkpoint_${lead.firstName || 'unknown'}`).catch(() => {});
                 await handleCheckpoint({
                     userId,
                     campaignId,
@@ -359,8 +361,9 @@ async function runLead(
                     const checkpointInfo = await classifyPage(page).catch(() => null);
                     if (checkpointInfo && isCheckpoint(checkpointInfo)) {
                         console.warn(`[ENGINE] Checkpoint detected during warmup: kind=${checkpointInfo.kind} url=${checkpointInfo.url}`);
-                        const shotPath = `/tmp/test-sessions/engine_warmup_${userId}_${Date.now()}.png`;
+                        const shotPath = `/app/sessions/engine_warmup_${userId}_${Date.now()}.png`;
                         await page.screenshot({ path: shotPath, fullPage: false }).catch(() => {});
+                        uploadScreenshotToS3(page, userId, `engine_warmup_${lead.firstName || 'unknown'}`).catch(() => {});
                         await handleCheckpoint({ userId, campaignId, leadId: lead.id, info: checkpointInfo, screenshotPath: shotPath });
                         await prisma.campaign.update({
                             where: { id: campaignId },

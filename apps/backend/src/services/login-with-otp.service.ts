@@ -1,10 +1,31 @@
 import { chromium } from 'playwright-extra';
 import type { Page } from 'playwright';
 import { prisma } from '@repo/db';
+import path from 'path';
+import fs from 'fs';
 import { classifyPage, markAccountHealthy, handleCheckpoint, type CheckpointInfo } from '../campaign-engine/safety/checkpoint';
+import { uploadScreenshotToS3 } from './s3-upload.service';
 
 const stealth = require('puppeteer-extra-plugin-stealth')();
 chromium.use(stealth);
+
+const SCREENSHOT_DIR = process.env.SESSION_STORAGE_PATH || '/app/sessions';
+
+function ensureScreenshotDir() {
+    if (!fs.existsSync(SCREENSHOT_DIR)) fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
+}
+
+async function saveScreenshot(page: Page, userId: string, label: string) {
+    try {
+        ensureScreenshotDir();
+        const p = path.join(SCREENSHOT_DIR, `${label}_${userId}_${Date.now()}.png`);
+        await page.screenshot({ path: p, fullPage: true });
+        console.log(`[login-otp] screenshot saved: ${p}`);
+    } catch (err: any) {
+        console.error(`[login-otp] screenshot failed: ${err.message}`);
+    }
+    uploadScreenshotToS3(page, userId, label).catch(() => {});
+}
 
 // Production port of testscripts/auto_login_with_otp.js. Headless, proxy at
 // LAUNCH level (sticky-proxy invariant), pluggable OTP resolver — for the
@@ -146,6 +167,7 @@ export async function loginWithOtp(input: LoginInput): Promise<LoginOutcome> {
         const page = await context.newPage();
         await page.goto('https://www.linkedin.com/login', { waitUntil: 'domcontentloaded', timeout: 60000 });
         await wait(3000);
+        await saveScreenshot(page, userId, 'login_page');
 
         // LinkedIn's 2026 sign-in renders a hidden duplicate of each input;
         // the visible username has autocomplete="username webauthn".
@@ -156,13 +178,16 @@ export async function loginWithOtp(input: LoginInput): Promise<LoginOutcome> {
         await page.getByRole('button', { name: /^Sign in$/i }).click();
         await wait(8000);
         try { await page.waitForLoadState('networkidle', { timeout: 12000 }); } catch {}
+        await saveScreenshot(page, userId, 'post_submit');
 
         let info: CheckpointInfo = await classifyPage(page);
         console.log(`[login-otp] post-submit kind=${info.kind} url=${info.url}`);
 
         if (info.kind === 'otp') {
+            await saveScreenshot(page, userId, 'otp_challenge');
             const solved = await solveOtp(page, otpResolver);
             if (!solved) {
+                await saveScreenshot(page, userId, 'otp_failed');
                 outcome = { kind: 'otp_failed', finalUrl: page.url(), error: 'OTP unresolved' };
                 throw new Error('OTP unresolved');
             }
@@ -170,9 +195,12 @@ export async function loginWithOtp(input: LoginInput): Promise<LoginOutcome> {
         }
 
         if (info.kind !== 'feed') {
+            await saveScreenshot(page, userId, `challenge_${info.kind}`);
             outcome = { kind: info.kind as LoginOutcomeKind, finalUrl: info.url, error: `landed on ${info.kind}` };
             throw new Error(`final state ${info.kind}`);
         }
+
+        await saveScreenshot(page, userId, 'login_success');
 
         // Settle on /feed so all post-login cookies (CSRF, etc.) land.
         await wait(4000);
