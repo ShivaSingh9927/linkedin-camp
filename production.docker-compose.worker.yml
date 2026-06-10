@@ -11,7 +11,7 @@ services:
     image: linkedin-camp-backend:latest
     container_name: backend-api
     restart: unless-stopped
-    command: ["sh", "-c", "node apps/backend/dist/server.js"]
+    command: ["sh", "-c", "xvfb-run -a node apps/backend/dist/server.js"]
     environment:
       NODE_ENV: production
       PORT: 3001

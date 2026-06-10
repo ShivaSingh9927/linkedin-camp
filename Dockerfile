@@ -57,8 +57,8 @@ RUN rm -rf \
 
 CMD ["sh", "-c", "echo '🚀 API SERVER' && node apps/backend/dist/server.js"]
 
-# --------- WORKER RUNNER (full) ---------
-# Includes Playwright Chromium + xvfb for headed automation.
+# --------- WORKER RUNNER (full)---------
+# Includes Google Chrome + xvfb for headed automation.
 FROM node:20-bookworm-slim AS worker-runner
 
 WORKDIR /app
@@ -67,6 +67,15 @@ RUN apt-get update && apt-get install -y \
         xvfb \
         openssl \
         ca-certificates \
+        wget \
+        gnupg \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Google Chrome (needed for channel:'chrome' — correct TLS fingerprint)
+RUN wget -q -O /tmp/google-chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
+    && apt-get update \
+    && apt-get install -y /tmp/google-chrome.deb \
+    && rm /tmp/google-chrome.deb \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /app/node_modules ./node_modules
@@ -77,7 +86,10 @@ COPY --from=builder /app/packages/types/package.json ./packages/types/package.js
 COPY --from=builder /app/packages/db/schema.prisma ./packages/db/schema.prisma
 COPY --from=builder /app/apps/backend/dist ./apps/backend/dist
 
-# Playwright Chromium + system deps. Heavy layer, install last.
-RUN npx playwright install chromium && npx playwright install-deps chromium
+# Install patchright's own Chromium (1223) — channel:'chrome' resolves to the
+# system Chrome for TLS fingerprint correctness, but launchPersistentContext
+# sometimes falls back to the ms-playwright cache. Installing patchright's
+# chromium here guarantees the binary exists at the expected path.
+RUN npx patchright install chromium && npx patchright install-deps chromium || true
 
-CMD ["sh", "-c", "echo '🚀 WORKER WITH XVFB' && xvfb-run -a node apps/backend/dist/worker-entry.js"]
+CMD ["sh", "-c", "echo '🚀 WORKER WITH XVFB + CHROME' && xvfb-run -a node apps/backend/dist/worker-entry.js"]
