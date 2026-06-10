@@ -23,18 +23,6 @@ export type LaunchResult =
     | { ok: true; browser: any; context: any; page: any; proxyServer: string }
     | { ok: false; failedAt: string; error: string };
 
-const getChromiumPath = (): string | undefined => {
-    const candidates = [
-        '/root/.cache/ms-playwright/chromium-1217/chrome-linux64/chrome',
-        '/home/shiva/.cache/ms-playwright/chromium-1217/chrome-linux64/chrome',
-        '/home/shiva/.cache/ms-playwright/chromium-1208/chrome-linux64/chrome',
-    ];
-    for (const p of candidates) {
-        if (require('fs').existsSync(p)) return p;
-    }
-    return undefined; // Let Playwright auto-detect
-};
-
 export async function launchAuthenticatedContext(
     userId: string,
     sessionContext?: SessionContext
@@ -45,6 +33,7 @@ export async function launchAuthenticatedContext(
     }
 
     const launchOptions: any = {
+        channel: 'chrome',
         headless: true,
         args: [
             '--no-sandbox',
@@ -55,11 +44,6 @@ export async function launchAuthenticatedContext(
             '--disable-dev-shm-usage',
         ],
     };
-
-    const chromiumPath = getChromiumPath();
-    if (chromiumPath) {
-        launchOptions.executablePath = chromiumPath;
-    }
 
     // Session source priority: DB > worker-provided context > file fallback.
     // DB-first makes workers stateless and supports horizontal scaling.
