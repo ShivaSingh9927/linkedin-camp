@@ -298,10 +298,10 @@ export const syncInboxManual = async (req: any, res: Response) => {
 
         const now = new Date();
         const lastAction = user.lastCloudActionAt ? user.lastCloudActionAt.getTime() : 0;
-        const isRecentlyActive = (now.getTime() - lastAction) < (5 * 60 * 1000); // 5 minutes
+        const isRecentlyActive = (now.getTime() - lastAction) < (30 * 1000); // 30 seconds
 
         if (user.cloudWorkerActive || isRecentlyActive) {
-            return res.status(409).json({ error: 'Cloud worker is currently active with another task (Campaign/Sync). Please try again in a few minutes.' });
+            return res.status(409).json({ error: 'Cloud worker is currently active. Please try again in a few seconds.' });
         }
 
         // Run in background via Queue
