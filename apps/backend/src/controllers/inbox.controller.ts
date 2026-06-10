@@ -21,7 +21,7 @@ export const getConversations = async (req: any, res: Response) => {
                 },
                 CampaignLead: {
                     include: {
-                        campaign: { select: { id: true, name: true, status: true } },
+                        Campaign: { select: { id: true, name: true, status: true } },
                     },
                 },
                 _count: {
@@ -44,7 +44,7 @@ export const getConversations = async (req: any, res: Response) => {
             tags: lead.tags,
             lastMessage: lead.Message[0] || null,
             messageCount: lead._count.Message,
-            campaigns: lead.CampaignLead.map((cl) => cl.campaign),
+            campaigns: lead.CampaignLead.map((cl) => cl.Campaign),
         }));
 
         res.json(conversations);
@@ -72,7 +72,7 @@ export const getMessages = async (req: any, res: Response) => {
             include: {
                 CampaignLead: {
                     include: {
-                        campaign: { select: { id: true, name: true, status: true } },
+                        Campaign: { select: { id: true, name: true, status: true } },
                     },
                 },
             },
