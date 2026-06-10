@@ -175,6 +175,9 @@ interface FetchOptions {
     // Treat 200-with-internal-error (status field in body) as a 4xx so callers
     // can decide what to do. Default true — most callers want to know.
     surfaceInternalGates?: boolean;
+    // Override the default `accept` header. Messenger GraphQL endpoints need
+    // 'application/graphql' instead of the REST format.
+    accept?: string;
 }
 
 /**
@@ -201,7 +204,7 @@ export async function voyagerFetch<T = any>(
     const csrf = getCachedCsrf(userId);
     const pageInstance = getCachedPageInstance(userId);
     const headers: Record<string, string> = {
-        'accept': 'application/vnd.linkedin.normalized+json+2.1',
+        'accept': opts.accept || 'application/vnd.linkedin.normalized+json+2.1',
         'x-restli-protocol-version': '2.0.0',
         'x-li-lang': 'en_US',
     };
@@ -626,7 +629,7 @@ export async function syncInbox(userId: string, page: Page, opts: { maxThreads?:
         return { ok: false, error: 'self mailbox urn not in cache — call getMe first' };
     }
     const url = `https://www.linkedin.com/voyager/api/voyagerMessagingGraphQL/graphql?queryId=messengerConversations.0d5e6781bbee71c3e51c8843c6519f48&variables=(mailboxUrn:${encodeURIComponent(mailboxUrn)})`;
-    const r = await voyagerFetch<any>(userId, url, { page, skipRateLimit: true });
+    const r = await voyagerFetch<any>(userId, url, { page, skipRateLimit: true, accept: 'application/graphql' });
     if (!r.ok) return r;
 
     const ct = (r.data as any)?.data?.messengerConversationsBySyncToken;
@@ -685,7 +688,7 @@ export async function getMessagesInConversation(
     page: Page
 ): Promise<VoyagerResult<Message[]>> {
     const url = `https://www.linkedin.com/voyager/api/voyagerMessagingGraphQL/graphql?queryId=messengerMessages.5846eeb71c981f11e0134cb6626cc314&variables=(conversationUrn:${encodeURIComponent(conversationUrn)})`;
-    const r = await voyagerFetch<any>(userId, url, { page, skipRateLimit: true });
+    const r = await voyagerFetch<any>(userId, url, { page, skipRateLimit: true, accept: 'application/graphql' });
     if (!r.ok) return r;
     const elements: any[] = (r.data as any)?.data?.messengerMessagesBySyncToken?.elements || [];
     const messages: Message[] = elements.map((m: any) => {
