@@ -255,7 +255,7 @@ export const processWorkflowStep = async (data: any, job: Job) => {
             ? { id: campaignLeadId }
             : { campaignId_leadId: { campaignId: campaign.id, leadId: lead.id } };
 
-        if (isNodeBased && stepType !== 'VISIT' && stepType !== 'INVITE' && stepType !== 'MESSAGE' && stepType !== 'LIKE_POST' && stepType !== 'COMMENT_POST') {
+        if (isNodeBased && stepType !== 'VISIT' && stepType !== 'VISIT_API' && stepType !== 'INVITE' && stepType !== 'MESSAGE' && stepType !== 'LIKE_POST' && stepType !== 'COMMENT_POST' && stepType !== 'INBOX_SYNC' && stepType !== 'INBOX_SYNC_API' && stepType !== 'CHECK_CONNECTION' && stepType !== 'CHECK_CONNECTION_API') {
             console.log(`[WORKER] Step ${stepId} is non-executable (${stepType}). Walking DAG without Playwright.`);
             const resolved = await advanceUntilExecutable(parsedWorkflow, stepId, { campaignId, leadId: lead.id });
 

@@ -75,7 +75,7 @@ export const initEnrichmentWorker = () => {
             }
 
             try {
-                const result = await runSelfProfileEnrichment(userId);
+                const result = await runSelfProfileEnrichment(userId, { mode: 'api' });
                 console.log(`[ENRICH-WORKER] user=${userId} result=${result.status}${result.reason ? ` (${result.reason})` : ''}`);
             } finally {
                 await releaseAccountLock(userId, lockToken);

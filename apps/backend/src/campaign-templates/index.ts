@@ -42,6 +42,7 @@ import { recruiterAlumniNetworkReachTemplate } from './recruiter-alumni-network-
 import { agencyReferralMiningTemplate } from './agency-referral-mining';
 import { salesHighVelocitySdrTemplate } from './sales-high-velocity-sdr';
 import { creatorLapsedSubscriberWinbackTemplate } from './creator-lapsed-subscriber-winback';
+import { salesFastEnrichmentTemplate, inboxSyncVoyagerTemplate } from './fast-enrichment-voyager';
 
 export const TEMPLATES: TemplateDefinition[] = [
     founderDesignPartnerHuntTemplate,
@@ -80,6 +81,8 @@ export const TEMPLATES: TemplateDefinition[] = [
     agencyReferralMiningTemplate,
     salesHighVelocitySdrTemplate,
     creatorLapsedSubscriberWinbackTemplate,
+    salesFastEnrichmentTemplate,
+    inboxSyncVoyagerTemplate,
 ];
 
 export const getTemplates = (): TemplateDefinition[] => TEMPLATES;

@@ -214,6 +214,15 @@ class SelfProfileRequest(BaseModel):
     job_title: Optional[str] = None
     location: Optional[str] = None
     posts: List[str] = []  # recent post bodies
+    # Extended fields from Voyager API (not available via DOM scraper).
+    # These give the AI richer context about the user's professional identity.
+    industry: Optional[str] = None          # "Computer Software"
+    geo_location: Optional[str] = None      # "Kanpur, Uttar Pradesh, India"
+    premium: Optional[bool] = None          # LinkedIn Premium subscriber
+    pronouns: Optional[str] = None          # "HE_HIM", "SHE_HER", etc.
+    vanity: Optional[str] = None            # "shiva-singh-genai-llm"
+    member_id: Optional[str] = None         # "660119273"
+    profile_picture_url: Optional[str] = None  # full URL
 
 
 # ── Helper Functions ─────────────────────────────────────────────────────────
@@ -617,6 +626,21 @@ async def profile_summary(req: SelfProfileRequest):
         profile_lines.append(f"Location: {req.location}")
     if req.about:
         profile_lines.append(f"About:\n{req.about}")
+    # Voyager API extended fields — richer context for the AI
+    if req.industry:
+        profile_lines.append(f"Industry: {req.industry}")
+    if req.geo_location:
+        profile_lines.append(f"Detailed Location: {req.geo_location}")
+    if req.premium is not None:
+        profile_lines.append(f"LinkedIn Plan: {'Premium' if req.premium else 'Free'}")
+    if req.pronouns:
+        # Normalize pronoun codes to readable form
+        pronoun_map = {
+            "HE_HIM": "he/him", "SHE_HER": "she/her", "THEY_THEM": "they/them",
+            "ZE_ZIR": "ze/zir", "XE_XEM": "xe/xem", "VE_VER": "ve/ver",
+        }
+        readable = pronoun_map.get(req.pronouns.upper(), req.pronouns.lower().replace("_", "/"))
+        profile_lines.append(f"Pronouns: {readable}")
 
     posts_block = ""
     if req.posts:
@@ -628,6 +652,9 @@ async def profile_summary(req: SelfProfileRequest):
         "You analyze a professional's own LinkedIn profile and posts to build a "
         "crisp profile that another AI will use to write outreach in THEIR voice. "
         "Be specific and grounded ONLY in what's provided — never invent facts. "
+        "When industry, location details, pronouns, or LinkedIn plan are provided, "
+        "use them to sharpen your understanding of their professional domain, "
+        "geographic context, and communication preferences. "
         "Return STRICT JSON only, no prose, no code fences."
     )
 

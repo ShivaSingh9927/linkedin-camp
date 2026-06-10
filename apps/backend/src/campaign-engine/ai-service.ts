@@ -209,6 +209,14 @@ export interface SelfProfileSummaryInput {
     jobTitle?: string | null;
     location?: string | null;
     posts?: string[];
+    // Extended fields from Voyager API (richer context for the AI)
+    industry?: string | null;
+    geoLocation?: string | null;
+    premium?: boolean | null;
+    pronouns?: string | null;
+    vanity?: string | null;
+    memberId?: string | null;
+    profilePictureUrl?: string | null;
 }
 
 export interface SelfProfileSummaryResult {
@@ -234,6 +242,14 @@ export async function generateSelfProfileSummary(
             job_title: input.jobTitle,
             location: input.location,
             posts: input.posts || [],
+            // Voyager extended fields
+            industry: input.industry || undefined,
+            geo_location: input.geoLocation || undefined,
+            premium: input.premium ?? undefined,
+            pronouns: input.pronouns || undefined,
+            vanity: input.vanity || undefined,
+            member_id: input.memberId || undefined,
+            profile_picture_url: input.profilePictureUrl || undefined,
         },
         { timeout: 45000 }
     );

@@ -54,14 +54,17 @@ export interface CampaignConfig {
 export type NodeType =
     | 'warmup'
     | 'profile-visit'
+    | 'profile-visit-voyager'
     | 'connect'
     | 'like-nth-post'
     | 'comment-nth-post'
     | 'send-message'
     | 'delay'
     | 'inbox-sync'
+    | 'inbox-sync-voyager'
     | 'if-else'
     | 'check-connection'
+    | 'check-connection-voyager'
     | 'email'
     | 'email-finder'
     | 'follow';

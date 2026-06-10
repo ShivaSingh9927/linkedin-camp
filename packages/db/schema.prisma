@@ -48,11 +48,20 @@ model BusinessProfile {
   websiteScrapedAt      DateTime?
   // Self-profile enrichment: scraped from the user's OWN LinkedIn profile after
   // they complete login through Qampi. Populated once by the enrichment job.
+  // Voyager API fields (faster, richer data)
   selfHeadline          String?
   selfAbout             String?
   selfRecentPosts       Json?     // [{ url, content, date }]
   selfProfileSummary    String?
   selfProfileEnrichedAt DateTime?
+  // Extended fields from Voyager FullProfile-76 (not available via DOM scraper)
+  selfIndustry          String?   // "Computer Software"
+  selfGeoLocation       String?   // "Kanpur, Uttar Pradesh, India"
+  selfPremium           Boolean?  // false
+  selfPronouns          String?   // "HE_HIM"
+  selfVanity            String?   // "shiva-singh-genai-llm"
+  selfMemberId          String?   // "660119273"
+  selfProfilePictureUrl String?   // full URL to profile picture
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
   User                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)

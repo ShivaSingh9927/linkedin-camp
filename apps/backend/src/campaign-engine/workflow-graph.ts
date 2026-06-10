@@ -16,6 +16,8 @@ import { prisma } from '@repo/db';
 const SUBTYPE_ALIASES: Record<string, CanonicalStepType> = {
     PROFILE_VISIT: 'VISIT',
     VISIT: 'VISIT',
+    VISIT_API: 'VISIT_API',
+    PROFILE_VISIT_VOYAGER: 'VISIT_API',
     CONNECT: 'INVITE',
     INVITE: 'INVITE',
     INVITATION: 'INVITE',
@@ -31,6 +33,10 @@ const SUBTYPE_ALIASES: Record<string, CanonicalStepType> = {
     FIND_EMAIL: 'EMAIL_FINDER',
     FOLLOW: 'FOLLOW',
     CHECK_CONNECTION: 'CHECK_CONNECTION',
+    CHECK_CONNECTION_VOYAGER: 'CHECK_CONNECTION_API',
+
+    INBOX_SYNC: 'INBOX_SYNC',
+    INBOX_SYNC_VOYAGER: 'INBOX_SYNC_API',
 
     IF_ELSE: 'IF_ELSE',
     WAIT: 'DELAY',
@@ -48,6 +54,7 @@ const SUBTYPE_ALIASES: Record<string, CanonicalStepType> = {
 
 export type CanonicalStepType =
     | 'VISIT'
+    | 'VISIT_API'
     | 'INVITE'
     | 'MESSAGE'
     | 'LIKE_POST'
@@ -56,6 +63,9 @@ export type CanonicalStepType =
     | 'EMAIL_FINDER'
     | 'FOLLOW'
     | 'CHECK_CONNECTION'
+    | 'CHECK_CONNECTION_API'
+    | 'INBOX_SYNC'
+    | 'INBOX_SYNC_API'
     | 'IF_ELSE'
     | 'DELAY'
     | 'NOOP'
@@ -214,6 +224,7 @@ export function delayMsFromNode(node: any): number {
  */
 const CANONICAL_TO_ENGINE_NODE: Partial<Record<CanonicalStepType, string>> = {
     VISIT: 'profile-visit',
+    VISIT_API: 'profile-visit-voyager',
     INVITE: 'connect',
     MESSAGE: 'send-message',
     LIKE_POST: 'like-nth-post',
@@ -222,6 +233,9 @@ const CANONICAL_TO_ENGINE_NODE: Partial<Record<CanonicalStepType, string>> = {
     EMAIL_FINDER: 'email-finder',
     FOLLOW: 'follow',
     CHECK_CONNECTION: 'check-connection',
+    CHECK_CONNECTION_API: 'check-connection-voyager',
+    INBOX_SYNC: 'inbox-sync',
+    INBOX_SYNC_API: 'inbox-sync-voyager',
     DELAY: 'delay',
     IF_ELSE: 'if-else',
 };

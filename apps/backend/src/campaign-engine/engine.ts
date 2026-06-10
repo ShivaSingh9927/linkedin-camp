@@ -26,14 +26,17 @@ import {
 } from './types';
 import { warmup } from './nodes/warmup';
 import { profileVisit } from './nodes/profile-visit';
+import { profileVisitVoyager } from './nodes/profile-visit-voyager';
 import { connect } from './nodes/connect';
 import { likeNthPost } from './nodes/like-nth-post';
 import { commentNthPost } from './nodes/comment-nth-post';
 import { sendMessage } from './nodes/send-message';
 import { inboxSync } from './nodes/inbox-sync';
+import { inboxSyncVoyager } from './nodes/inbox-sync-voyager';
 import { delay } from './nodes/delay';
 import { ifElse } from './nodes/if-else';
 import { checkConnection } from './nodes/check-connection';
+import { checkConnectionVoyager } from './nodes/check-connection-voyager';
 import { emailNode } from './nodes/email';
 import { emailFinder } from './nodes/email-finder';
 import { follow } from './nodes/follow';
@@ -51,14 +54,17 @@ const randomRange = (min: number, max: number) => Math.floor(Math.random() * (ma
 const NODE_HANDLERS: Record<NodeType, NodeHandler> = {
     'warmup': warmup,
     'profile-visit': profileVisit,
+    'profile-visit-voyager': profileVisitVoyager,
     'connect': connect,
     'like-nth-post': likeNthPost,
     'comment-nth-post': commentNthPost,
     'send-message': sendMessage,
     'delay': delay,
     'inbox-sync': inboxSync,
+    'inbox-sync-voyager': inboxSyncVoyager,
     'if-else': ifElse,
     'check-connection': checkConnection,
+    'check-connection-voyager': checkConnectionVoyager,
     'email': emailNode,
     'email-finder': emailFinder,
     'follow': follow,
