@@ -3,6 +3,12 @@ import { prisma } from '@repo/db';
 import Redis from 'ioredis';
 import { launchAuthenticatedContext } from '../campaign-engine/session-launch';
 import { tryAcquireAccountLock, releaseAccountLock } from './campaign-worker';
+import {
+    syncInbox as voyagerSyncInbox,
+    getMessagesInConversation,
+    captureVoyagerHeaders,
+    warmSelfCache,
+} from '../services/voyager-api.service';
 
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
 const redisConnection = REDIS_URL ? new Redis(REDIS_URL, { maxRetriesPerRequest: null }) : null;
@@ -125,207 +131,96 @@ export const syncInbox = async (userId: string) => {
             return;
         }
 
-        // 2. Navigate to inbox
+        // 2. Set up header capture BEFORE navigating, so the listener catches
+        //    the first Voyager API request the page makes during load.
+        console.log(`[INBOX-WORKER] Capturing Voyager headers...`);
+        const headersPromise = captureVoyagerHeaders(page, userId, 10000);
+
+        // 3. Navigate to inbox — this triggers Voyager API calls which the
+        //    listener above will intercept.
         console.log(`[INBOX-WORKER] Navigating to inbox...`);
         await safeGoto(page, 'https://www.linkedin.com/messaging/');
-        await wait(randomRange(4000, 6000));
-
-        try {
-            await page.waitForSelector('.msg-conversation-listitem', { timeout: 15000 });
-            console.log(`[INBOX-WORKER] Conversation list rendered.`);
-        } catch {
-            console.log(`[INBOX-WORKER] Timed out waiting for conversation list.`);
+        const headers = await headersPromise;
+        if (!headers) {
+            console.warn(`[INBOX-WORKER] Could not capture Voyager headers. Inbox sync may fail.`);
         }
 
-        // Scroll the conversation list to load more
-        const leftPane = page.locator('.msg-conversations-container__list, ul.msg-conversations-container__conversations-list').first();
-        if (await leftPane.isVisible({ timeout: 5000 }).catch(() => false)) {
-            await leftPane.click({ force: true }).catch(() => {});
-            await wait(1000);
-            for (let i = 0; i < 4; i++) {
-                await page.keyboard.press('PageDown');
-                await wait(randomRange(800, 1500));
-            }
+        // 4. Warm the self mailbox URN cache (needed for syncInbox).
+        //    warmSelfCache internally calls captureVoyagerHeaders (which will
+        //    return the cached headers from step 2) and getMe.
+        console.log(`[INBOX-WORKER] Warming self cache...`);
+        const meR = await warmSelfCache(userId, page);
+        if (!meR.ok) {
+            console.error(`[INBOX-WORKER] warmSelfCache failed: ${(meR as any).error || 'unknown'}`);
+            await prisma.notification.create({
+                data: {
+                    userId,
+                    title: 'Inbox Sync Failed',
+                    body: 'Could not warm LinkedIn cache. Please try again.',
+                    type: 'ERROR',
+                }
+            }).catch(() => {});
+            return;
         }
 
-        // 3. Scan threads
-        const threadItems = page.locator('.msg-conversation-listitem');
-        const threadCount = await threadItems.count();
-        const syncLimit = Math.min(threadCount, 5);
+        // 5. Fetch inbox thread list via Voyager GraphQL
+        console.log(`[INBOX-WORKER] Fetching inbox threads via Voyager API...`);
+        const inbox = await voyagerSyncInbox(userId, page, { maxThreads: 5 });
+        if (!inbox.ok) {
+            console.error(`[INBOX-WORKER] syncInbox failed: ${(inbox as any).error || 'unknown'}`);
+            return;
+        }
 
-        console.log(`[INBOX-WORKER] Found ${threadCount} threads. Syncing top ${syncLimit}...`);
+        const conversations = inbox.data.conversations;
+        console.log(`[INBOX-WORKER] Found ${conversations.length} threads.`);
 
+        // 6. For each thread, fetch full message bodies via Voyager GraphQL
+        //    with fallback to the last-message preview from the thread list.
         let totalNewReplies = 0;
 
-        for (let i = 0; i < syncLimit; i++) {
-            const currentItem = threadItems.nth(i);
+        for (const c of conversations) {
+            const participantName = `${c.otherFirstName} ${c.otherLastName}`.trim() || 'Unknown';
+            console.log(`[INBOX-WORKER] Fetching messages for ${participantName}...`);
 
-            // Extract participant name
-            const nameLoc = currentItem.locator('.msg-conversation-listitem__participant-names, .msg-conversation-card__participant-names').first();
-            let participantName = 'Unknown';
-            if (await nameLoc.isVisible({ timeout: 3000 }).catch(() => false)) {
-                const rawName = await nameLoc.innerText();
-                participantName = rawName.split('\n')[0].trim();
+            const msgs = await getMessagesInConversation(userId, c.conversationUrn, page);
+            let chatHistory: Array<{ sender: string; text: string; direction: 'SENT' | 'RECEIVED' }>;
+            if (msgs.ok && msgs.data.length > 0) {
+                chatHistory = msgs.data.map((m) => ({
+                    sender: m.isFromMe ? 'You' : `${m.senderFirstName} ${m.senderLastName}`.trim(),
+                    text: m.body,
+                    direction: m.isFromMe ? 'SENT' as const : 'RECEIVED' as const,
+                }));
+            } else if (c.lastMessageText) {
+                chatHistory = [{
+                    sender: 'last-message',
+                    text: c.lastMessageText,
+                    direction: 'RECEIVED',
+                }];
+            } else {
+                chatHistory = [];
             }
 
-            console.log(`[INBOX-WORKER] Loading thread ${i + 1}/${syncLimit} with ${participantName}...`);
+            if (chatHistory.length === 0) continue;
 
-            await currentItem.click({ force: true });
-            await wait(randomRange(4000, 6000));
+            console.log(`[INBOX-WORKER] Got ${chatHistory.length} messages for ${participantName}.`);
 
-            // Scroll up to load message history
-            const messageListContainer = page.locator('.msg-s-message-list-container, .msg-s-message-list').first();
-            if (await messageListContainer.isVisible({ timeout: 5000 }).catch(() => false)) {
-                await messageListContainer.click({ force: true }).catch(() => {});
-                for (let j = 0; j < 3; j++) {
-                    await page.keyboard.press('PageUp');
-                    await wait(randomRange(1200, 2000));
-                }
-            }
-
-            // One-shot DOM diagnostic — log the class list and aria-label of
-            // the first two message events so we can see what LinkedIn is
-            // actually rendering and tighten the selectors based on real data
-            // instead of guesses. Stripped of message content for log volume.
-            if (i === 0 && process.env.INBOX_DIAG === '1') {
-                const diag = await page.evaluate(() => {
-                    const nodes = Array.from(document.querySelectorAll('.msg-s-message-list__event, li.msg-s-message-list__event')).slice(0, 2);
-                    return nodes.map((n: any) => ({
-                        outerClass: n.className,
-                        bubbleClass: n.querySelector('.msg-s-event-listitem__message-bubble')?.className || null,
-                        nameElText: n.querySelector('.msg-s-message-group__name, .msg-s-event-listitem__name, .msg-s-event-listitem__link')?.textContent?.trim() || null,
-                        ariaLabels: Array.from(n.querySelectorAll('[aria-label]')).slice(0, 3).map((e: any) => e.getAttribute('aria-label')),
-                        meName: (document.querySelector('.global-nav__me-photo')?.getAttribute('alt') || document.querySelector('.global-nav__me .t-bold')?.textContent || '').trim(),
-                    }));
-                });
-                console.log(`[INBOX-WORKER][DIAG] ${JSON.stringify(diag)}`);
-            }
-
-            // Parse message bubbles. LinkedIn keeps changing the outgoing-bubble
-            // class name, so rely on multiple signals: (a) the logged-in user's
-            // own name from the global nav, (b) any aria-label hint LinkedIn
-            // exposes, (c) a wide set of bubble class variants, and finally
-            // (d) sender-name inheritance across grouped messages (only the
-            // first bubble in a group carries the sender's name).
-            const chatHistory: Array<{ sender: string; text: string; direction: 'SENT' | 'RECEIVED' }> = await page.evaluate(() => {
-                // Logged-in user's name from the global nav. The avatar's alt
-                // attribute reads "Photo of <Name>" on most rollouts but on
-                // some it's just the bare name — handle both. May be empty on
-                // some rollouts, which is exactly why it's only the FALLBACK
-                // signal below, never the primary one.
-                const meName = (() => {
-                    const alt = (document.querySelector('.global-nav__me-photo')?.getAttribute('alt') || '').trim();
-                    const stripped = alt.replace(/^Photo of\s+/i, '').trim();
-                    if (stripped) return stripped;
-                    const bold = (document.querySelector('.global-nav__me .t-bold')?.textContent || '').trim();
-                    return bold;
-                })().toLowerCase();
-
-                const eventNodes = Array.from(document.querySelectorAll('.msg-s-message-list__event, li.msg-s-message-list__event'));
-
-                // PRIMARY direction signal: LinkedIn marks messages from the
-                // OTHER party with the long-stable `--other` modifier on the
-                // event listitem (e.g. `msg-s-event-listitem--other`). Your own
-                // outgoing messages never carry it. This is far more reliable
-                // than name-matching, which breaks when the global-nav name
-                // can't be read. We only trust it if at least one node in the
-                // thread actually has the class (guards against a class rename).
-                const otherRe = /--other\b/;
-                const hasOtherMarker = eventNodes.some((n) => {
-                    const item = n.querySelector('.msg-s-event-listitem') || n;
-                    return otherRe.test((item as HTMLElement).className || '') || otherRe.test((n as HTMLElement).className || '');
-                });
-
-                // Extract the sender's name from a bubble's profile link. The
-                // link's anchor text is literally "View {Name}'s profile"
-                // (curly apostrophe). Returns null if no such link is present
-                // (which happens for grouped subsequent bubbles).
-                const senderFromBubble = (eventNode: Element): string | null => {
-                    const linkText = (
-                        eventNode.querySelector('.msg-s-event-listitem__link')?.textContent ||
-                        eventNode.querySelector('a.msg-s-event-listitem__link')?.textContent ||
-                        ''
-                    ).trim();
-                    const m = linkText.match(/View\s+(.+?)['’]s\s+profile/i);
-                    if (m && m[1]) return m[1].trim();
-                    const groupName = (eventNode.querySelector('.msg-s-message-group__name')?.textContent || '').trim();
-                    return groupName || null;
-                };
-
-                const msgs: any[] = [];
-                let lastSender = '';
-                let lastDirection: 'SENT' | 'RECEIVED' = 'RECEIVED';
-
-                for (const eventNode of eventNodes) {
-                    const bodyNode = eventNode.querySelector('.msg-s-event-listitem__body, .msg-s-event__content');
-                    if (!bodyNode) continue;
-                    const text = (bodyNode as HTMLElement).innerText.trim();
-                    if (text.length === 0) continue;
-
-                    const bubbleSender = senderFromBubble(eventNode);
-                    let direction: 'SENT' | 'RECEIVED';
-
-                    if (hasOtherMarker) {
-                        // Reliable path — the listitem either is, or isn't, from
-                        // the other party. `--other` => RECEIVED, absence => SENT.
-                        const item = eventNode.querySelector('.msg-s-event-listitem') || eventNode;
-                        const isOther = otherRe.test((item as HTMLElement).className || '') || otherRe.test((eventNode as HTMLElement).className || '');
-                        direction = isOther ? 'RECEIVED' : 'SENT';
-                    } else if (bubbleSender) {
-                        // Fallback (no `--other` class anywhere) — name match.
-                        const s = bubbleSender.toLowerCase();
-                        const meFirst = meName.split(/\s+/)[0] || '';
-                        const isMe = !!meName && (
-                            s === meName ||
-                            s === meFirst ||
-                            (s.length >= 3 && meName.includes(s)) ||
-                            (meFirst.length >= 3 && s.includes(meFirst))
-                        );
-                        direction = isMe ? 'SENT' : 'RECEIVED';
-                    } else {
-                        // Grouped subsequent bubble — inherit the last direction.
-                        direction = lastDirection;
-                    }
-
-                    const sender = bubbleSender || lastSender || (direction === 'SENT' ? 'You' : 'Unknown');
-                    lastDirection = direction;
-                    lastSender = sender;
-                    msgs.push({ sender, text, direction });
-                }
-                return msgs;
-            });
-
-            console.log(`[INBOX-WORKER] Extracted ${chatHistory.length} messages from ${participantName}.`);
-
-            // 4. Save to DB — match lead by name
+            // 7. Save to DB — match lead by profile URL/vanity
             const lead = await prisma.lead.findFirst({
                 where: {
                     userId,
                     OR: [
-                        { firstName: { contains: participantName.split(' ')[0], mode: 'insensitive' } },
-                        { firstName: { contains: participantName, mode: 'insensitive' } },
-                    ]
+                        c.otherProfileUrl ? { linkedinUrl: { contains: extractVanityFromUrl(c.otherProfileUrl) || '__no_match__' } } : { id: '__no_match__' },
+                        { firstName: { contains: c.otherFirstName, mode: 'insensitive' } },
+                    ],
                 }
             });
 
             if (lead) {
                 let hasNewReply = false;
-                // Order preservation: LinkedIn renders oldest→newest top to
-                // bottom but exposes no reliable per-bubble timestamp we can
-                // parse across locales. We assign a monotonically increasing
-                // sentAt from a single base so newly-created rows sort in the
-                // exact visual order. A new sync uses a fresh (later) base, so
-                // replies appended since the last sync sort after older ones.
                 const base = Date.now();
                 const total = chatHistory.length;
                 for (let m = 0; m < total; m++) {
                     const msg = chatHistory[m];
-                    // Dedup on content+lead ONLY (NOT direction). The campaign
-                    // engine is the authoritative writer for SENT rows; if the
-                    // direction heuristic ever misfires we must not create a
-                    // flipped-direction duplicate of a message we already have,
-                    // nor falsely flag the lead as REPLIED. A message we've
-                    // already stored — in either direction — is left untouched.
                     const exists = await prisma.message.findFirst({
                         where: { leadId: lead.id, content: msg.text }
                     });
@@ -344,7 +239,6 @@ export const syncInbox = async (userId: string) => {
                     }
                 }
 
-                // Update lead status if there's a new reply
                 if (hasNewReply) {
                     totalNewReplies++;
                     await prisma.lead.update({
@@ -356,13 +250,11 @@ export const syncInbox = async (userId: string) => {
                         data: { status: 'REPLIED' }
                     });
 
-                    // CRM event — emit for each active campaign the lead is
-                    // currently in. Reply text is the last RECEIVED message.
                     const activeLinks = await prisma.campaignLead.findMany({
                         where: { leadId: lead.id, isCompleted: false },
                         select: { campaignId: true },
                     });
-                    const lastInbound = [...chatHistory].reverse().find(m => m.direction === 'RECEIVED');
+                    const lastInbound = [...chatHistory].reverse().find(msg => msg.direction === 'RECEIVED');
                     for (const link of activeLinks) {
                         import('../services/crm-events').then(({ emitCrmEvent }) =>
                             emitCrmEvent({
@@ -384,7 +276,6 @@ export const syncInbox = async (userId: string) => {
                         }
                     });
 
-                    // Realtime nudge so an open inbox refreshes without polling.
                     import('../socket').then(({ io }) =>
                         io?.to(`user_${userId}`).emit('INBOX_UPDATED', {
                             leadId: lead.id,
@@ -399,9 +290,12 @@ export const syncInbox = async (userId: string) => {
             } else {
                 console.log(`[INBOX-WORKER] No matching lead found for "${participantName}". Skipping DB save.`);
             }
+
+            // Brief pause between threads
+            await wait(randomRange(800, 1500));
         }
 
-        console.log(`[INBOX-WORKER] Inbox sync complete. Synced ${syncLimit} threads, ${totalNewReplies} with new replies.`);
+        console.log(`[INBOX-WORKER] Inbox sync complete. Synced ${conversations.length} threads, ${totalNewReplies} with new replies.`);
 
     } catch (err: any) {
         console.error(`[INBOX-WORKER] Error:`, err.message);
@@ -414,6 +308,12 @@ export const syncInbox = async (userId: string) => {
         await releaseAccountLock(userId, lockToken);
     }
 };
+
+function extractVanityFromUrl(profileUrl: string): string | null {
+    if (!profileUrl) return null;
+    const m = profileUrl.match(/\/in\/([^/?]+)/);
+    return m ? m[1] : null;
+}
 
 export const initInboxWorker = () => {
     if (!redisConnection) {

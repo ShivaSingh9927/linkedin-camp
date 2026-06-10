@@ -40,12 +40,20 @@ export default function InboxPage() {
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<'all' | 'unread' | 'replied'>('all');
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   const fetchConversations = async () => {
     try {
+      setSyncError(null);
       const res = await fetch('/api/v1/inbox/conversations', {
         headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
       });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setSyncError(data?.error || `Failed to load conversations (${res.status})`);
+        setConversations([]);
+        return;
+      }
       const data = await res.json();
       const mapped = data.map((c: any) => ({
         id: c.leadId,
@@ -60,6 +68,7 @@ export default function InboxPage() {
       setConversations(mapped);
     } catch (err) {
       console.error('Failed to fetch:', err);
+      setSyncError('Network error — please check your connection');
     } finally {
       setIsLoading(false);
     }
@@ -98,6 +107,7 @@ export default function InboxPage() {
 
   const handleSync = async () => {
     setIsSyncing(true);
+    setSyncError(null);
     try {
       const res = await fetch('/api/v1/inbox/sync', {
         method: 'POST',
@@ -106,9 +116,13 @@ export default function InboxPage() {
       if (res.ok) {
         // Background sync takes time — auto-refresh in 30s
         setTimeout(fetchConversations, 30000);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setSyncError(data?.error || `Sync failed (${res.status})`);
       }
     } catch (err) {
       console.error('Sync failed:', err);
+      setSyncError('Network error — please check your connection');
     } finally {
       setIsSyncing(false);
     }
@@ -186,6 +200,13 @@ export default function InboxPage() {
           </div>
         }
       />
+      {syncError && (
+        <div className="mx-3 sm:mx-6 mt-2">
+          <p className="text-xs text-red-500 bg-red-50 px-4 py-2 rounded-xl font-medium border border-red-100">
+            {syncError}
+          </p>
+        </div>
+      )}
       <main className="flex-1 flex overflow-hidden p-3 sm:p-6 gap-6 relative">
         {/* Convo List - Hidden on mobile if a conversation is selected */}
         <div className={cn(
@@ -229,6 +250,11 @@ export default function InboxPage() {
                   <InboxIcon className="w-8 h-8" />
                 </div>
                 <h3 className="font-bold text-slate-800">No conversations yet</h3>
+                {syncError && (
+                  <p className="mt-3 text-xs text-red-500 max-w-xs bg-red-50 px-4 py-2 rounded-xl font-medium">
+                    {syncError}
+                  </p>
+                )}
                 <button 
                   onClick={handleSync}
                   className="mt-6 text-primary text-sm font-bold flex items-center gap-1 hover:underline"
