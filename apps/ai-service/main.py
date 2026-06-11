@@ -204,6 +204,14 @@ class StrategyUpdate(BaseModel):
     overrides: Dict[str, Any]
 
 
+class EditPillarRequest(BaseModel):
+    instruction: str  # user's natural-language edit
+    pillar_name: str  # e.g., "Speed & Accuracy"
+    pillar_angle: str  # e.g., "Our vision analytics replace manual..."
+    brand_context: Optional[str] = None  # company, persona, value prop
+    other_pillars: Optional[List[Dict[str, str]]] = None  # [{name, angle}, ...]
+
+
 class SelfProfileRequest(BaseModel):
     # Scraped from the user's OWN LinkedIn profile after they log in. Used to
     # infer their voice and a structured summary that sharpens message gen.
@@ -394,6 +402,52 @@ async def validate_strategy_endpoint(strategy: Dict[str, Any]):
     from validators import validate_strategy
     is_valid, errors = validate_strategy(strategy)
     return {"valid": is_valid, "errors": errors}
+
+
+# ─── Pillar Editor ─────────────────────────────────────────────────────────────
+
+@app.post("/ai/edit-pillar")
+async def edit_pillar(req: EditPillarRequest):
+    try:
+        cacheable_preamble = f"""You are a messaging strategist. The user wants to edit one of their messaging pillars — the core themes used in LinkedIn/email outreach. You rewrite the pillar based on their instruction while keeping it concise and on-brand.
+
+BRAND CONTEXT:
+{req.brand_context or 'Not provided'}
+
+OTHER PILLARS (for reference — keep these consistent):
+"""
+        if req.other_pillars:
+            for p in req.other_pillars:
+                cacheable_preamble += f"- {p.get('name', '')}: {p.get('angle', '')}\n"
+        else:
+            cacheable_preamble += "None provided\n"
+
+        fresh_input = f"""
+PILLAR TO EDIT:
+Name: {req.pillar_name}
+Current angle: {req.pillar_angle}
+
+USER'S INSTRUCTION:
+{req.instruction}
+
+Rewrite the pillar. Return ONLY a JSON object with two fields:
+{{"name": "<new pillar name>", "angle": "<new pillar angle — 1-2 sentences>"}}"""
+
+        import json as _json
+        raw = call_llm(cacheable_preamble, fresh_input, temperature=0.4)
+        # Try to parse JSON from the response (handle markdown fences)
+        cleaned = raw.strip()
+        if cleaned.startswith("```"):
+            cleaned = cleaned.split("\n", 1)[-1]
+            cleaned = cleaned.rsplit("```", 1)[0]
+        result = _json.loads(cleaned)
+        return {
+            "suggested_name": result.get("name", req.pillar_name),
+            "suggested_angle": result.get("angle", req.pillar_angle),
+        }
+    except Exception as e:
+        # On parse failure, return the raw LLM output for debugging
+        raise HTTPException(status_code=500, detail=f"Failed to edit pillar: {e}")
 
 
 # ─── Existing Endpoints (Updated with AI Strategy Context) ────────────────────
