@@ -260,14 +260,27 @@ def get_strategy_context(ai_strategy: Optional[Dict] = None) -> str:
     if "gtm" in ai_strategy:
         gtm = ai_strategy["gtm"]
         ctx += f"- Positioning: {gtm.get('positioning', 'N/A')}\n"
+        if gtm.get("primaryChannel"):
+            ctx += f"- Primary Channel: {gtm['primaryChannel']}\n"
+        if gtm.get("salesMotion"):
+            ctx += f"- Sales Motion: {gtm['salesMotion']}\n"
+        if gtm.get("buyingCommittee"):
+            ctx += f"- Buying Committee: {gtm['buyingCommittee']}\n"
+        if gtm.get("averageDealSize"):
+            ctx += f"- Avg Deal Size: {gtm['averageDealSize']}\n"
+        if gtm.get("salesCycle"):
+            ctx += f"- Sales Cycle: {gtm['salesCycle']}\n"
     
     if "icp" in ai_strategy:
         icp = ai_strategy["icp"]
-        if isinstance(icp, dict) and "primary" in icp:
-            primary = icp["primary"]
+        if isinstance(icp, dict):
+            primary = icp.get("primary", {})
             ctx += f"- Target ICP: {primary.get('title', 'N/A')}\n"
             if primary.get("painPoints"):
                 ctx += f"- ICP Pain Points: {', '.join(primary['painPoints'][:3])}\n"
+            secondary = icp.get("secondary", {})
+            if secondary.get("title"):
+                ctx += f"- Secondary ICP: {secondary['title']}\n"
     
     if "messagingPillars" in ai_strategy:
         pillars = ai_strategy["messagingPillars"]
@@ -283,6 +296,46 @@ def get_strategy_context(ai_strategy: Optional[Dict] = None) -> str:
             for persona_name, angle in list(angles.items())[:3]:
                 if isinstance(angle, dict):
                     ctx += f"  * {persona_name}: hook={angle.get('hook', '')[:50]}, tone={angle.get('tone', '')}\n"
+    
+    if "objections" in ai_strategy:
+        objections = ai_strategy["objections"]
+        if isinstance(objections, dict):
+            ctx += "- Common Objections & Responses:\n"
+            for key, obj in objections.items():
+                label = key.replace("_", " ").title()
+                response_text = obj.get("response", "")
+                pivot_text = obj.get("pivot", "")
+                ctx += f"  * {label}: {response_text[:120]}\n"
+                if pivot_text:
+                    ctx += f"    Pivot: {pivot_text[:120]}\n"
+    
+    if "competitiveLandscape" in ai_strategy:
+        cl = ai_strategy["competitiveLandscape"]
+        if isinstance(cl, dict):
+            ctx += "- Competitive Landscape:\n"
+            if cl.get("directCompetitors"):
+                ctx += f"  * Competitors: {', '.join(cl['directCompetitors'][:5])}\n"
+            if cl.get("theirWeaknesses"):
+                ctx += f"  * Their Weaknesses: {'; '.join(cl['theirWeaknesses'][:3])}\n"
+            if cl.get("ourAdvantages"):
+                ctx += f"  * Our Advantages: {'; '.join(cl['ourAdvantages'][:3])}\n"
+            if cl.get("whenToMention"):
+                ctx += f"  * When to Mention: {cl['whenToMention'][:200]}\n"
+    
+    if "commentStrategy" in ai_strategy:
+        cs = ai_strategy["commentStrategy"]
+        if isinstance(cs, dict):
+            ctx += "- Comment Strategy:\n"
+            ctx += f"  * Goal: {cs.get('goal', '')[:200]}\n"
+            ctx += f"  * Approach: {cs.get('approach', '')[:200]}\n"
+            if cs.get("avoid"):
+                avoids = cs["avoid"]
+                if isinstance(avoids, list):
+                    ctx += f"  * Avoid: {', '.join(avoids[:3])}\n"
+            if cs.get("topics"):
+                topics = cs["topics"]
+                if isinstance(topics, list):
+                    ctx += f"  * Topics: {', '.join(topics[:5])}\n"
     
     return ctx
 
