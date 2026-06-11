@@ -238,6 +238,14 @@ for f in sorted(os.listdir(camp_dir)):
             exit 1
         fi
 
+        # Load strategy output so the AI knows positioning, ICP, messaging pillars
+        strategy_file="$RESULTS_DIR/A1-strategy-$USER_NAME/response.json"
+        if [ -f "$strategy_file" ]; then
+            strategy_json=$(python3 -c "import json; d=json.load(open('$strategy_file')); print(json.dumps(d.get('strategy',{})))" 2>/dev/null)
+        else
+            strategy_json="{}"
+        fi
+
         payload=$(python3 << PYEOF
 import json
 
@@ -282,6 +290,7 @@ req = {
         "communicationStyle": p.get("communicationStyle", ""),
         "writingSamples": p.get("writingSamples", [])
     },
+    "ai_strategy": json.loads('''$strategy_json'''),
     "campaign_progress": {
         "stepNumber": int($STEP_NUM),
         "totalSteps": total_steps,
@@ -370,6 +379,14 @@ PYEOF
         lead_basename=$(basename "$lead_file" .json)
         label="MESSAGE-$USER_NAME-$(printf "%02d" "$CAMPAIGN_NUM")-${campaign_name}-${lead_basename}"
 
+        # Load strategy output so the AI knows positioning, ICP, messaging pillars
+        strategy_file="$RESULTS_DIR/A1-strategy-$USER_NAME/response.json"
+        if [ -f "$strategy_file" ]; then
+            strategy_json=$(python3 -c "import json; d=json.load(open('$strategy_file')); print(json.dumps(d.get('strategy',{})))" 2>/dev/null)
+        else
+            strategy_json="{}"
+        fi
+
         payload=$(python3 << PYEOF
 import json
 
@@ -403,7 +420,8 @@ req = {
         "differentiators": p.get("differentiators", ""),
         "communicationStyle": p.get("communicationStyle", ""),
         "writingSamples": p.get("writingSamples", [])
-    }
+    },
+    "ai_strategy": json.loads('''$strategy_json''')
 }
 
 print(json.dumps(req))
