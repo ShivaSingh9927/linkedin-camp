@@ -604,6 +604,56 @@ Remember: The key is making them feel you genuinely read their profile and have 
 
     try:
         raw = call_llm(system, user, temperature=0.6)
+
+        # VERIFIER: check message quality, retry once if needed
+        verify_system = """You are a message quality inspector. Check the outreach message against the strategy and brand context. Return a JSON object with one of two formats:
+
+PASS: {"verdict": "pass"}
+FAIL: {"verdict": "fail", "issues": ["issue 1", "issue 2", ...]}
+
+Check for:
+1. STRATEGIC ALIGNMENT — does the message reflect the positioning and at least one messaging pillar? Or is it generic/pitchy?
+2. SEQUENCE PROGRESSION (only if this is a follow-up) — does it advance the narrative instead of repeating the opener? Does it avoid phrases from past messages?
+3. TONE & SAFETY — does the tone match the communication style? No self-promotion, no robotic phrasing, no "I came across your profile" or other banned openers."""
+
+        verify_input = f"""
+MESSAGE TO INSPECT:
+---
+{raw}
+---
+
+BRAND CONTEXT:
+{brand}
+
+STRATEGY CONTEXT:
+{strategy_ctx}
+
+SEQUENCE CONTEXT:
+{sequence_ctx}
+
+PAST MESSAGES (for follow-up check):
+{history_ctx}
+"""
+        import json as _json
+        try:
+            verify_raw = call_llm(verify_system, verify_input, temperature=0.2)
+            verify_result = _json.loads(verify_raw)
+        except Exception:
+            verify_result = {"verdict": "pass"}
+
+        verified = False
+        corrections_applied = []
+        if verify_result.get("verdict") == "fail":
+            issues = verify_result.get("issues", [])
+            if issues:
+                corrections_applied = issues
+                correction = "\n\nCORRECTIONS NEEDED (fix ALL of these):\n"
+                for iss in issues:
+                    correction += f"- {iss}\n"
+                user += correction
+                raw = call_llm(system, user, temperature=0.4)
+                verified = True
+
         if is_email:
             # Parse "SUBJECT: ...\n---\n<body>". Be lenient: if the model
             # forgot the marker, fall back to first line as subject.
@@ -617,8 +667,14 @@ Remember: The key is making them feel you genuinely read their profile and have 
                 body = after.lstrip()
                 if body.startswith("---"):
                     body = body[3:].lstrip("\n").lstrip()
-            return {"message": body, "subject": subject}
-        return {"message": raw}
+            resp = {"message": body, "subject": subject}
+            if corrections_applied:
+                resp["_verifier"] = {"corrected": True, "issues": corrections_applied}
+            return resp
+        resp = {"message": raw}
+        if corrections_applied:
+            resp["_verifier"] = {"corrected": True, "issues": corrections_applied}
+        return resp
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
