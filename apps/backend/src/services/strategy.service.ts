@@ -240,6 +240,76 @@ export class StrategyService {
     return response.json();
   }
 
+  async editCommentStyle(userId: string, instruction: string) {
+    const businessProfile = await prisma.businessProfile.findUnique({
+      where: { userId },
+    });
+    if (!businessProfile) {
+      throw new Error('Business profile not found');
+    }
+
+    const strategy = (businessProfile.aiStrategy as any) || {};
+    const commentStrategy = strategy.commentStrategy || {};
+    const currentStrategyStr = [
+      `Goal: ${commentStrategy.goal || ''}`,
+      `Approach: ${commentStrategy.approach || ''}`,
+      `Topics: ${(commentStrategy.topics || []).join(', ')}`,
+      `Avoid: ${(commentStrategy.avoid || []).join(', ')}`,
+    ].filter(Boolean).join('\n');
+
+    const preferences = (businessProfile.aiPreferences as any) || {};
+    const currentInstruction = preferences.commentInstruction || '';
+
+    const brandContext = [
+      `Company: ${businessProfile.company || ''}`,
+      `Persona: ${businessProfile.persona || ''}`,
+      `Value Prop: ${businessProfile.valueProp || ''}`,
+    ].filter(Boolean).join('. ');
+
+    const response = await fetch(`${AI_SERVICE_URL}/ai/edit-comment-style`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        instruction,
+        brand_context: brandContext,
+        current_strategy: currentStrategyStr,
+        current_instruction: currentInstruction,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`AI service edit comment style error: ${response.statusText}`);
+    }
+
+    return response.json();
+  }
+
+  async getCommentInstruction(userId: string) {
+    const businessProfile = await prisma.businessProfile.findUnique({
+      where: { userId },
+      select: { aiPreferences: true },
+    });
+    const preferences = (businessProfile?.aiPreferences as any) || {};
+    return { instruction: preferences.commentInstruction || '' };
+  }
+
+  async setCommentInstruction(userId: string, instruction: string) {
+    const businessProfile = await prisma.businessProfile.findUnique({
+      where: { userId },
+    });
+    if (!businessProfile) {
+      throw new Error('Business profile not found');
+    }
+    const currentPreferences = (businessProfile.aiPreferences as any) || {};
+    await prisma.businessProfile.update({
+      where: { userId },
+      data: {
+        aiPreferences: { ...currentPreferences, commentInstruction: instruction },
+      },
+    });
+    return { success: true };
+  }
+
   async getUserContext(userId: string) {
     const businessProfile = await prisma.businessProfile.findUnique({
       where: { userId },

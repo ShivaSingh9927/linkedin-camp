@@ -45,6 +45,7 @@ model BusinessProfile {
   tonePreferences       String[]  @default([])
   aiStrategy            Json?
   aiStrategyGeneratedAt DateTime?
+  aiPreferences         Json?     // { commentInstruction: string }
   websiteScrapedAt      DateTime?
   // Self-profile enrichment: scraped from the user's OWN LinkedIn profile after
   // they complete login through Qampi. Populated once by the enrichment job.

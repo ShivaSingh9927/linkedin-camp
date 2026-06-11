@@ -99,4 +99,40 @@ router.get('/context', async (req: AuthRequest, res) => {
   }
 });
 
+router.post('/edit-comment-style', async (req: AuthRequest, res) => {
+  try {
+    const { instruction } = req.body;
+    if (!instruction) {
+      res.status(400).json({ error: 'instruction is required' });
+      return;
+    }
+    const result = await strategyService.editCommentStyle(req.user!.id, instruction);
+    res.json(result);
+  } catch (error: any) {
+    console.error('[STRATEGY] Edit comment style error:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.get('/comment-instruction', async (req: AuthRequest, res) => {
+  try {
+    const result = await strategyService.getCommentInstruction(req.user!.id);
+    res.json(result);
+  } catch (error: any) {
+    console.error('[STRATEGY] Get comment instruction error:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.put('/comment-instruction', async (req: AuthRequest, res) => {
+  try {
+    const { instruction } = req.body;
+    const result = await strategyService.setCommentInstruction(req.user!.id, instruction || '');
+    res.json(result);
+  } catch (error: any) {
+    console.error('[STRATEGY] Set comment instruction error:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 export default router;

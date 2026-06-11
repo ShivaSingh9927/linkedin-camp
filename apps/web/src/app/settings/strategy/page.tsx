@@ -34,6 +34,11 @@ export default function StrategyPage() {
   const [isCached, setIsCached] = useState(false);
   const [rateLimitError, setRateLimitError] = useState<string | null>(null);
   const [pillarSaving, setPillarSaving] = useState(false);
+  const [commentInstruction, setCommentInstruction] = useState('');
+  const [editCommentInstruction, setEditCommentInstruction] = useState('');
+  const [commentSuggesting, setCommentSuggesting] = useState(false);
+  const [commentSuggestion, setCommentSuggestion] = useState<string | null>(null);
+  const [commentSaving, setCommentSaving] = useState(false);
   const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
@@ -43,6 +48,7 @@ export default function StrategyPage() {
       setRegenerating(true);
     }
     loadStrategy();
+    loadCommentInstruction();
   }, []);
 
   // Subscribe to STRATEGY_GENERATED — backend emits this when the
@@ -93,6 +99,51 @@ export default function StrategyPage() {
       console.error('Failed to load strategy', e);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadCommentInstruction = async () => {
+    try {
+      const { data } = await api.get('/strategy/comment-instruction');
+      if (data.instruction) {
+        setCommentInstruction(data.instruction);
+      }
+    } catch (e) {
+      console.error('Failed to load comment instruction', e);
+    }
+  };
+
+  const handleSuggestComment = async () => {
+    if (!editCommentInstruction.trim()) return;
+    setCommentSuggesting(true);
+    setCommentSuggestion(null);
+    try {
+      const { data } = await api.post('/strategy/edit-comment-style', {
+        instruction: editCommentInstruction.trim(),
+      });
+      setCommentSuggestion(data.suggested_instruction);
+    } catch (e) {
+      console.error('Failed to suggest comment style', e);
+      alert('Failed to get suggestion. Please try again.');
+    } finally {
+      setCommentSuggesting(false);
+    }
+  };
+
+  const handleAcceptCommentInstruction = async () => {
+    if (!commentSuggestion) return;
+    setCommentSaving(true);
+    try {
+      await api.put('/strategy/comment-instruction', { instruction: commentSuggestion });
+      setCommentInstruction(commentSuggestion);
+      setEditCommentInstruction('');
+      setCommentSuggestion(null);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch (e) {
+      console.error('Failed to save comment instruction', e);
+    } finally {
+      setCommentSaving(false);
     }
   };
 
@@ -353,6 +404,104 @@ export default function StrategyPage() {
                             onSave={handlePillarSave}
                             saving={pillarSaving}
                           />
+                        ) : section.key === 'commentStrategy' ? (
+                          <div className="space-y-4">
+                            {/* AI-generated strategy (read-only) */}
+                            <div className="text-sm leading-relaxed">
+                              {renderValue(value)}
+                            </div>
+
+                            {/* Comment instruction editor */}
+                            <div className="border-t border-slate-100 pt-4">
+                              <div className="flex items-center justify-between mb-2">
+                                <div>
+                                  <div className="text-xs font-semibold text-slate-500">Your Comment Style (optional)</div>
+                                  <p className="text-xs text-slate-400 mt-0.5">This instruction is applied to every comment the AI writes.</p>
+                                </div>
+                                {commentInstruction && (
+                                  <div className="flex items-center gap-1.5 text-xs text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-lg">
+                                    <Check className="w-3 h-3" />
+                                    Saved
+                                  </div>
+                                )}
+                              </div>
+
+                              <textarea
+                                value={editCommentInstruction}
+                                onChange={e => setEditCommentInstruction(e.target.value)}
+                                placeholder={commentInstruction || "e.g. After reading the post, share an insightful observation. Don't mention your company name."}
+                                rows={2}
+                                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary resize-none placeholder:text-slate-400"
+                              />
+
+                              <div className="flex items-center gap-2 mt-2">
+                                <button
+                                  onClick={handleSuggestComment}
+                                  disabled={commentSuggesting || !editCommentInstruction.trim()}
+                                  className="flex items-center gap-1.5 px-4 py-2 bg-primary/10 text-primary rounded-lg text-xs font-semibold hover:bg-primary/20 disabled:opacity-50 transition-colors"
+                                >
+                                  {commentSuggesting ? (
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                  ) : (
+                                    <Sparkles className="w-3.5 h-3.5" />
+                                  )}
+                                  Preview Revision
+                                </button>
+                                <button
+                                  onClick={() => { setEditCommentInstruction(''); setCommentSuggestion(null); }}
+                                  className="px-3 py-2 text-xs text-slate-500 hover:text-slate-700"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+
+                              {/* Suggestion result */}
+                              {commentSuggestion && (
+                                <motion.div
+                                  initial={{ opacity: 0, y: 8 }}
+                                  animate={{ opacity: 1, y: 0 }}
+                                  className="mt-4 space-y-3"
+                                >
+                                  <div>
+                                    <div className="text-xs font-semibold text-slate-500 mb-1">Suggested instruction:</div>
+                                    <div className="text-sm leading-relaxed bg-slate-50 rounded-lg p-3">
+                                      {commentInstruction && (
+                                        <div className="mb-2">
+                                          <span className="text-xs text-slate-400">Before:</span>
+                                          <div className="text-xs text-slate-500 line-through">{commentInstruction}</div>
+                                        </div>
+                                      )}
+                                      <div>
+                                        <span className="text-xs text-emerald-600 font-semibold">After:</span>
+                                        <div className="text-sm text-slate-700 mt-0.5">{commentSuggestion}</div>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex items-center gap-2">
+                                    <button
+                                      onClick={handleAcceptCommentInstruction}
+                                      disabled={commentSaving}
+                                      className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 text-white rounded-lg text-xs font-semibold hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+                                    >
+                                      {commentSaving ? (
+                                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                      ) : (
+                                        <Check className="w-3.5 h-3.5" />
+                                      )}
+                                      Accept & Save
+                                    </button>
+                                    <button
+                                      onClick={() => setCommentSuggestion(null)}
+                                      className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 text-slate-600 rounded-lg text-xs font-semibold hover:bg-slate-200"
+                                    >
+                                      Edit More
+                                    </button>
+                                  </div>
+                                </motion.div>
+                              )}
+                            </div>
+                          </div>
                         ) : isEditing ? (
                           <div>
                             <textarea

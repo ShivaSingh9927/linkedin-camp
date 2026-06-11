@@ -213,6 +213,13 @@ class EditPillarRequest(BaseModel):
     other_pillars: Optional[List[Dict[str, str]]] = None  # [{name, angle}, ...]
 
 
+class EditCommentStyleRequest(BaseModel):
+    instruction: str  # user's natural-language edit
+    brand_context: Optional[str] = None  # company, persona, value prop
+    current_strategy: Optional[str] = None  # current comment strategy (goal, approach, etc.)
+    current_instruction: Optional[str] = None  # current saved instruction, if any
+
+
 class SelfProfileRequest(BaseModel):
     # Scraped from the user's OWN LinkedIn profile after they log in. Used to
     # infer their voice and a structured summary that sharpens message gen.
@@ -449,6 +456,40 @@ Rewrite the pillar. Return ONLY a JSON object with two fields:
     except Exception as e:
         # On parse failure, return the raw LLM output for debugging
         raise HTTPException(status_code=500, detail=f"Failed to edit pillar: {e}")
+
+
+@app.post("/ai/edit-comment-style")
+async def edit_comment_style(req: EditCommentStyleRequest):
+    try:
+        cacheable_preamble = f"""You are a comment style editor. The user wants to set or update their commenting style — the instruction that guides how the AI writes LinkedIn comments on their behalf. You rewrite the instruction based on their request while keeping it concise and actionable.
+
+BRAND CONTEXT:
+{req.brand_context or 'Not provided'}
+
+CURRENT COMMENT STRATEGY FROM AI:
+{req.current_strategy or 'Not generated yet'}
+
+CURRENT INSTRUCTION (if any):
+{req.current_instruction or '(none — use default behavior)'}"""
+
+        fresh_input = f"""
+USER'S REQUEST:
+{req.instruction}
+
+Rewrite the comment style instruction. Return ONLY a JSON object with one field:
+{{"instruction": "<the comment style instruction — 1-3 clear sentences that tell the AI how to write comments>"}}"""
+
+        import json as _json
+        raw = call_llm(cacheable_preamble, fresh_input, temperature=0.4)
+        cleaned = raw.strip()
+        if cleaned.startswith("```"):
+            cleaned = cleaned.split("\n", 1)[-1]
+            cleaned = cleaned.rsplit("```", 1)[0]
+        result = _json.loads(cleaned)
+        suggested = result.get("instruction", req.instruction)
+        return {"suggested_instruction": suggested}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to edit comment style: {e}")
 
 
 # ─── Existing Endpoints (Updated with AI Strategy Context) ────────────────────
