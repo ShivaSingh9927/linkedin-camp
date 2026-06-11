@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Sparkles, ChevronDown, Clock, RotateCcw, Save, Loader2, AlertCircle, Check, Zap } from 'lucide-react';
 import { io as socketIO, Socket } from 'socket.io-client';
 import { GenerationProgress } from '@/components/GenerationProgress';
+import PillarEditor from '@/components/PillarEditor';
 import api from '@/lib/api';
 
 const apiBase = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/v1\/?$/, '');
@@ -32,6 +33,7 @@ export default function StrategyPage() {
   const [isFallback, setIsFallback] = useState(false);
   const [isCached, setIsCached] = useState(false);
   const [rateLimitError, setRateLimitError] = useState<string | null>(null);
+  const [pillarSaving, setPillarSaving] = useState(false);
   const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
@@ -117,6 +119,21 @@ export default function StrategyPage() {
       alert('Invalid JSON. Please fix the format.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handlePillarSave = async (updated: any[]) => {
+    setPillarSaving(true);
+    try {
+      const updatedStrategy = { ...strategy, messagingPillars: updated };
+      await api.put('/strategy', { overrides: { messagingPillars: updated } });
+      setStrategy(updatedStrategy);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch (e) {
+      console.error('Failed to save pillars', e);
+    } finally {
+      setPillarSaving(false);
     }
   };
 
@@ -330,7 +347,13 @@ export default function StrategyPage() {
                       transition={{ duration: 0.2 }}
                     >
                       <div className="px-5 pb-5 border-t border-slate-100 pt-4">
-                        {isEditing ? (
+                        {section.key === 'messagingPillars' && Array.isArray(value) ? (
+                          <PillarEditor
+                            pillars={value}
+                            onSave={handlePillarSave}
+                            saving={pillarSaving}
+                          />
+                        ) : isEditing ? (
                           <div>
                             <textarea
                               value={editValues[section.key] || ''}
@@ -359,12 +382,14 @@ export default function StrategyPage() {
                             <div className="text-sm leading-relaxed">
                               {renderValue(value)}
                             </div>
-                            <button
-                              onClick={() => startEdit(section.key)}
-                              className="mt-3 text-xs text-primary font-semibold hover:underline"
-                            >
-                              Edit this section
-                            </button>
+                            {section.key !== 'messagingPillars' && (
+                              <button
+                                onClick={() => startEdit(section.key)}
+                                className="mt-3 text-xs text-primary font-semibold hover:underline"
+                              >
+                                Edit this section
+                              </button>
+                            )}
                           </div>
                         )}
                       </div>

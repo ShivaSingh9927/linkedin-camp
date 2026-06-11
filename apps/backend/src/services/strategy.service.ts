@@ -201,6 +201,45 @@ export class StrategyService {
     return historyEntry.outputStrategy;
   }
 
+  async editPillar(userId: string, instruction: string, pillarName: string, pillarAngle: string) {
+    const businessProfile = await prisma.businessProfile.findUnique({
+      where: { userId },
+    });
+    if (!businessProfile) {
+      throw new Error('Business profile not found');
+    }
+
+    const strategy = (businessProfile.aiStrategy as any) || {};
+    const pillars = strategy.messagingPillars || [];
+    const otherPillars = pillars
+      .filter((p: any) => p.pillar !== pillarName)
+      .map((p: any) => ({ name: p.pillar, angle: p.angle }));
+
+    const brandContext = [
+      `Company: ${businessProfile.company || ''}`,
+      `Persona: ${businessProfile.persona || ''}`,
+      `Value Prop: ${businessProfile.valueProp || ''}`,
+    ].filter(Boolean).join('. ');
+
+    const response = await fetch(`${AI_SERVICE_URL}/ai/edit-pillar`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        instruction,
+        pillar_name: pillarName,
+        pillar_angle: pillarAngle,
+        brand_context: brandContext,
+        other_pillars: otherPillars,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`AI service edit pillar error: ${response.statusText}`);
+    }
+
+    return response.json();
+  }
+
   async getUserContext(userId: string) {
     const businessProfile = await prisma.businessProfile.findUnique({
       where: { userId },

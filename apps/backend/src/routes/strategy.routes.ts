@@ -74,6 +74,21 @@ router.post('/rollback', async (req: AuthRequest, res) => {
   }
 });
 
+router.post('/edit-pillar', async (req: AuthRequest, res) => {
+  try {
+    const { instruction, pillar_name, pillar_angle } = req.body;
+    if (!instruction || !pillar_name || !pillar_angle) {
+      res.status(400).json({ error: 'instruction, pillar_name, and pillar_angle are required' });
+      return;
+    }
+    const result = await strategyService.editPillar(req.user!.id, instruction, pillar_name, pillar_angle);
+    res.json(result);
+  } catch (error: any) {
+    console.error('[STRATEGY] Edit pillar error:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 router.get('/context', async (req: AuthRequest, res) => {
   try {
     const context = await strategyService.getUserContext(req.user!.id);
