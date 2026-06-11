@@ -79,3 +79,4 @@ deepseek_api_test.py
 # runtime pid files
 server.pid
 *.pid
+crm-keys.txt

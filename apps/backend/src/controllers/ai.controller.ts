@@ -27,6 +27,7 @@ export const generateComment = async (req: AuthRequest, res: Response) => {
             });
         }
 
+        const aiPreferences = (businessProfile?.aiPreferences as any) || {};
         const comment = await generateAIComment({
             profileName: profile_name,
             profileHeadline: profile_headline,
@@ -35,6 +36,7 @@ export const generateComment = async (req: AuthRequest, res: Response) => {
             persona: businessProfile?.persona || undefined,
             valueProposition: businessProfile?.valueProp || undefined,
             aiStrategy: businessProfile?.aiStrategy || undefined,
+            aiPrompt: aiPreferences.commentInstruction || undefined,
             userContext: businessProfile ? {
                 persona: businessProfile.persona,
                 company: businessProfile.company,

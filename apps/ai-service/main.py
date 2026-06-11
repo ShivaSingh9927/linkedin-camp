@@ -125,6 +125,7 @@ class CommentRequest(BaseModel):
     value_proposition: Optional[str] = None
     ai_strategy: Optional[Dict[str, Any]] = None
     user_context: Optional[Dict[str, Any]] = None
+    ai_prompt: Optional[str] = None
 
 
 class MessageRequest(BaseModel):
@@ -469,6 +470,10 @@ COMMENTER PROFILE:
     campaign_ctx = ""
     if req.campaign_description:
         campaign_ctx = f"\nCAMPAIGN OBJECTIVE: {req.campaign_description}\n"
+
+    custom_ctx = ""
+    if req.ai_prompt:
+        custom_ctx = f"\nUSER'S COMMENT STYLE (highest priority — follow these exactly):\n{req.ai_prompt}\n"
     
     system = f"""You are an expert LinkedIn commenter who engages authentically with posts.{brand}{strategy_ctx}
 
@@ -484,7 +489,7 @@ STRICT RULES:
     
     user = f"""{profile_ctx}
 
-{campaign_ctx}
+{campaign_ctx}{custom_ctx}
 
 THE POST YOU'RE COMMENTING ON:
 ---
@@ -500,8 +505,56 @@ Write a comment that:
 Remember: The goal is to get engagement with YOUR comment, not just sound smart."""
     
     try:
-        comment = call_llm(system, user, temperature=0.6)
-        return {"comment": comment}
+        raw = call_llm(system, user, temperature=0.6)
+
+        # Verifier: check comment quality, retry once if needed
+        verify_system = """You are a comment quality inspector. Check the LinkedIn comment against the strategy and brand context. Return a JSON object with one of two formats:
+
+PASS: {"verdict": "pass"}
+FAIL: {"verdict": "fail", "issues": ["issue 1", "issue 2", ...]}
+
+Check for:
+1. STRATEGIC ALIGNMENT — does the comment reflect the brand's positioning and at least one messaging pillar? Or is it generic fluff?
+2. TONE & SAFETY — no banned openers ("Great post!", "Thanks for sharing", "Well said"), no self-promotion, no robotic phrasing
+3. USER INSTRUCTIONS (if provided) — does the comment follow any user-specified style preferences?"""
+
+        verify_input = f"""
+COMMENT TO INSPECT:
+---
+{raw}
+---
+
+BRAND CONTEXT:
+{brand}
+
+STRATEGY CONTEXT:
+{strategy_ctx}
+
+USER INSTRUCTIONS:
+{custom_ctx}
+"""
+        import json as _json
+        try:
+            verify_raw = call_llm(verify_system, verify_input, temperature=0.2)
+            verify_result = _json.loads(verify_raw)
+        except Exception:
+            verify_result = {"verdict": "pass"}
+
+        corrections_applied = []
+        if verify_result.get("verdict") == "fail":
+            issues = verify_result.get("issues", [])
+            if issues:
+                corrections_applied = issues
+                correction = "\n\nCORRECTIONS NEEDED (fix ALL of these):\n"
+                for iss in issues:
+                    correction += f"- {iss}\n"
+                user += correction
+                raw = call_llm(system, user, temperature=0.4)
+
+        resp = {"comment": raw}
+        if corrections_applied:
+            resp["_verifier"] = {"corrected": True, "issues": corrections_applied}
+        return resp
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

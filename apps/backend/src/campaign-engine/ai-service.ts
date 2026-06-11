@@ -112,6 +112,7 @@ export async function generateAIComment(options: AIGenerateOptions): Promise<str
             // Strategy + business context
             ai_strategy: options.aiStrategy,
             user_context: options.userContext,
+            ai_prompt: options.aiPrompt,
         }, { timeout: 30000 });
 
         return response.data.comment;
