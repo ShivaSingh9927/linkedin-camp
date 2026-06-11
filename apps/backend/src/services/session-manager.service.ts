@@ -82,16 +82,16 @@ class SessionManagerService {
         });
 
         const launchOptions: any = {
-            headless: true,
+            headless: false,
+            channel: 'chrome',
             args: [
                 '--disable-blink-features=AutomationControlled',
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
                 '--start-maximized',
-                '--disable-web-security'
             ],
-            viewport: { width: 1280, height: 800 },
-            userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+            viewport: null,
+            userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36'
         };
 
         // Sticky proxy per LinkedIn account: same exit IP for login + every campaign run
@@ -120,8 +120,8 @@ class SessionManagerService {
         const contextOptions: any = {
             userAgent: launchOptions.userAgent,
             viewport: null,
-            locale: 'en-IN',
-            timezoneId: 'Asia/Kolkata'
+            locale: 'en-US',
+            timezoneId: 'America/New_York'
         };
 
         try {
@@ -207,17 +207,18 @@ class SessionManagerService {
 
             if (usernameInput) {
                 console.log(`[SESSION-MANAGER] Typing email (human-like)...`);
-                await usernameInput.click();
-                await page.waitForTimeout(300);
-                await page.keyboard.type(email, { delay: 80 });
-                await page.waitForTimeout(800);
+                const { humanType, humanMoveAndClick } = await import('./stealth.service');
+                await humanMoveAndClick(page, usernameInput);
+                await page.waitForTimeout(500);
+                await humanType(page, usernameInput, email);
+                await page.waitForTimeout(1000);
 
                 const continueBtn = await page.$('button[type="submit"]:has-text("Continue")');
                 if (continueBtn) {
                     const continueVisible = await continueBtn.isVisible().catch(() => false);
                     if (continueVisible) {
                         console.log(`[SESSION-MANAGER] Clicking Continue (two-step variant)`);
-                        await continueBtn.click();
+                        await humanMoveAndClick(page, continueBtn);
                         await page.waitForTimeout(2000);
                     } else {
                         console.log(`[SESSION-MANAGER] Continue button hidden, single-page variant — skipping`);
@@ -242,13 +243,14 @@ class SessionManagerService {
 
                 if (passwordInput) {
                     console.log(`[SESSION-MANAGER] Typing password (human-like)...`);
-                    await passwordInput.click();
-                    await page.waitForTimeout(300);
-                    await page.keyboard.type(password, { delay: 80 });
-                    await page.waitForTimeout(800);
+                    await humanMoveAndClick(page, passwordInput);
+                    await page.waitForTimeout(500);
+                    await humanType(page, passwordInput, password);
+                    await page.waitForTimeout(1000);
 
                     // Try multiple ways to find and click the submit button
                     let clicked = false;
+                    const { humanMoveAndClick: hmc } = await import('./stealth.service');
                     const buttonSelectors = [
                         'button[type="submit"]:has-text("Sign in")',
                         'button[aria-label*="Sign in"]',
@@ -261,7 +263,7 @@ class SessionManagerService {
                             const isVisible = await btn.isVisible().catch(() => false);
                             if (isVisible) {
                                 console.log(`[SESSION-MANAGER] Clicking submit via: ${sel}`);
-                                await btn.click();
+                                await hmc(page, btn);
                                 clicked = true;
                                 break;
                             }

@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CSV Batch Processor - Smart Auto Connect</title>
+    <style>
+        :root {
+            --bg: #0f1117; --bg-card: #1a1d27; --bg-input: #161822;
+            --border: #2a2e3d; --text: #e2e8f0; --text-dim: #8891a5; --text-muted: #5c6478;
+            --accent: #6366f1; --accent-gradient: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+            --green: #10b981; --red: #ef4444; --amber: #f59e0b;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Inter', -apple-system, sans-serif; background: var(--bg); color: var(--text);
+            max-width: 800px; margin: 0 auto; padding: 24px; min-height: 100vh;
+        }
+        h1 { font-size: 20px; margin-bottom: 4px; }
+        .subtitle { font-size: 13px; color: var(--text-dim); margin-bottom: 24px; }
+        .card {
+            background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px;
+            padding: 20px; margin-bottom: 16px;
+        }
+        .card h2 { font-size: 14px; margin-bottom: 12px; color: var(--text-dim); }
+        .card.disabled { opacity: 0.45; pointer-events: none; filter: grayscale(0.4); }
+        .drop-zone {
+            border: 2px dashed var(--border); border-radius: 8px; padding: 40px 20px;
+            text-align: center; cursor: pointer; transition: all 0.2s; position: relative;
+        }
+        .drop-zone:hover, .drop-zone.dragover { border-color: var(--accent); background: rgba(99,102,241,0.05); }
+        .drop-zone .icon { font-size: 32px; margin-bottom: 8px; }
+        .drop-zone p { font-size: 13px; color: var(--text-dim); }
+        .drop-zone .hint { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+        .drop-zone input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+        .or-divider { text-align: center; color: var(--text-muted); font-size: 12px; margin: 12px 0; }
+        textarea {
+            width: 100%; min-height: 120px; padding: 12px; border: 1px solid var(--border);
+            border-radius: 8px; background: var(--bg-input); color: var(--text);
+            font-family: 'Courier New', monospace; font-size: 12px; resize: vertical;
+        }
+        textarea:focus { outline: none; border-color: var(--accent); }
+        textarea:disabled { cursor: not-allowed; }
+        .btn {
+            padding: 10px 20px; border: none; border-radius: 8px; font-size: 13px;
+            font-weight: 700; cursor: pointer; font-family: inherit;
+            background: var(--accent-gradient); color: white; width: 100%;
+            display: flex; align-items: center; justify-content: center; gap: 8px;
+            transition: all 0.2s;
+        }
+        .btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(99,102,241,0.3); }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+        .btn-secondary { background: var(--bg-card); border: 1px solid var(--border); color: var(--text); }
+        .btn-secondary:hover { border-color: var(--accent); }
+        .spinner {
+            width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 50%; border-top-color: #fff; animation: spin 0.8s linear infinite; flex-shrink: 0;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .status-bar {
+            padding: 10px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; display: none;
+            align-items: center; gap: 8px; margin-bottom: 16px;
+        }
+        .status-bar.running { display: flex; background: rgba(99,102,241,0.1); color: var(--accent); border: 1px solid rgba(99,102,241,0.2); }
+        .status-bar.complete { display: flex; background: rgba(16,185,129,0.1); color: var(--green); border: 1px solid rgba(16,185,129,0.25); }
+        .status-bar.error { display: flex; background: rgba(239,68,68,0.1); color: var(--red); border: 1px solid rgba(239,68,68,0.25); }
+        .progress-bar-bg {
+            width: 100%; height: 4px; background: var(--bg-input); border-radius: 4px; overflow: hidden; margin-top: 12px;
+        }
+        .progress-bar-fill { height: 100%; background: var(--accent-gradient); border-radius: 4px; transition: width 0.3s ease; width: 0%; }
+        .progress-text { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+        .preview-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 12px; }
+        .preview-table th { text-align: left; color: var(--text-dim); padding: 6px 8px; border-bottom: 1px solid var(--border); font-size: 10px; text-transform: uppercase; }
+        .preview-table td { padding: 6px 8px; border-bottom: 1px solid var(--border); color: var(--text); max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700; background: rgba(99,102,241,0.15); color: var(--accent); }
+        .actions { display: flex; gap: 8px; margin-top: 16px; }
+        .actions .btn { flex: 1; }
+        .footer { text-align: center; padding: 20px 0; font-size: 12px; color: var(--text-muted); }
+
+        /* ─── Load Overlay ─── */
+        #load-overlay {
+            position: fixed; inset: 0; z-index: 1000;
+            background: rgba(15,17,23,0.96); backdrop-filter: blur(8px);
+            display: flex; align-items: center; justify-content: center;
+            flex-direction: column; padding: 24px;
+        }
+        #load-overlay.hidden { display: none; }
+        .load-box {
+            background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px;
+            padding: 40px 32px; max-width: 480px; width: 100%; text-align: center;
+        }
+        .load-box .icon { font-size: 48px; margin-bottom: 16px; }
+        .load-box h2 { font-size: 18px; margin-bottom: 8px; }
+        .load-box .desc { font-size: 13px; color: var(--text-dim); margin-bottom: 24px; line-height: 1.5; }
+        .load-progress {
+            width: 100%; height: 6px; background: var(--bg-input); border-radius: 6px;
+            overflow: hidden; margin-bottom: 12px;
+        }
+        .load-progress-fill {
+            height: 100%; background: var(--accent-gradient); border-radius: 6px;
+            width: 0%; transition: width 0.3s ease;
+        }
+        .load-status {
+            font-size: 12px; color: var(--text-dim); font-family: 'Courier New', monospace;
+            min-height: 18px; word-break: break-word;
+        }
+        .load-error { color: var(--red); margin-top: 16px; font-size: 13px; line-height: 1.5; }
+        .load-error .hint { color: var(--text-muted); font-size: 11px; margin-top: 8px; }
+        .load-success { color: var(--green); margin-top: 16px; font-size: 14px; font-weight: 600; }
+
+        ::-webkit-scrollbar { width: 5px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <!-- ─── Load Overlay (no model needed in regex mode) ─── -->
+    <div id="load-overlay" class="hidden">
+        <div class="load-box">
+            <div class="icon">⚡</div>
+            <h2>Ready</h2>
+            <p class="desc">Using fast regex extraction. No model download required, no WebGPU needed. Processing starts instantly.</p>
+            <div class="load-status" id="load-status">Ready</div>
+        </div>
+    </div>
+
+    <h1>AI CSV Batch Processor</h1>
+    <p class="subtitle">Upload or paste a CSV file with an <code>info</code> column — the LLM will extract <code>company</code>, <code>education</code>, <code>job_profile</code>, <code>field</code>, and <code>location</code> from each row.</p>
+
+    <div id="status-bar" class="status-bar"></div>
+
+    <div class="card disabled" id="csv-card">
+        <h2>1. Load CSV</h2>
+        <div class="drop-zone" id="drop-zone">
+            <input type="file" id="file-input" accept=".csv" disabled>
+            <div class="icon">📂</div>
+            <p>Drop a CSV file here or click to browse</p>
+            <p class="hint">Expects a column named <strong>info</strong> with raw LinkedIn card text</p>
+        </div>
+        <div class="or-divider">— or paste CSV data below —</div>
+        <textarea id="csv-text" placeholder="firstName,lastName,info&#10;Kartik,Garg,&quot;AI Engineer at Meril | MTech IIIT Lucknow&#10;Kanpur&quot;" disabled></textarea>
+    </div>
+
+    <div class="card disabled" id="preview-card" style="display:none;">
+        <h2>2. Preview <span id="row-count" class="badge">0 rows</span></h2>
+        <div style="overflow-x:auto;"><table class="preview-table" id="preview-table"><thead><tr id="preview-header"></tr></thead><tbody id="preview-body"></tbody></table></div>
+        <div style="margin-top:16px;">
+            <button class="btn" id="process-btn">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                Start AI Extraction
+            </button>
+        </div>
+        <div id="progress-section" style="display:none;">
+            <div class="progress-bar-bg"><div class="progress-bar-fill" id="progress-fill"></div></div>
+            <div class="progress-text"><span id="progress-status">Processing...</span><span id="progress-percent">0%</span></div>
+        </div>
+        <div class="actions" id="download-section" style="display:none;">
+            <button class="btn" id="download-btn">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                Download Enriched CSV
+            </button>
+            <button class="btn btn-secondary" id="reset-btn">Start Over</button>
+        </div>
+    </div>
+
+    <div class="footer">Smart Auto Connect v1.2.0 — Uses regex extraction (instant, no model needed)</div>
+
+    <script src="llm-bundle.js"></script>
+    <script>
+    let csvRows = [];
+    let enrichedRows = [];
+    let processing = false;
+    let llmReady = false;
+
+    const els = {
+        loadOverlay: document.getElementById('load-overlay'),
+        loadProgressFill: document.getElementById('load-progress-fill'),
+        loadStatus: document.getElementById('load-status'),
+        loadError: document.getElementById('load-error'),
+        statusBar: document.getElementById('status-bar'),
+        csvCard: document.getElementById('csv-card'),
+        dropZone: document.getElementById('drop-zone'),
+        fileInput: document.getElementById('file-input'),
+        csvText: document.getElementById('csv-text'),
+        previewCard: document.getElementById('preview-card'),
+        previewHeader: document.getElementById('preview-header'),
+        previewBody: document.getElementById('preview-body'),
+        rowCount: document.getElementById('row-count'),
+        processBtn: document.getElementById('process-btn'),
+        progressSection: document.getElementById('progress-section'),
+        progressFill: document.getElementById('progress-fill'),
+        progressStatus: document.getElementById('progress-status'),
+        progressPercent: document.getElementById('progress-percent'),
+        downloadSection: document.getElementById('download-section'),
+        downloadBtn: document.getElementById('download-btn'),
+        resetBtn: document.getElementById('reset-btn'),
+    };
+
+    // ─── Auto-load (regex mode: instant) ───
+    async function bootLLM() {
+        if (!window.LLM || !window.LLM.extractInfo) {
+            return showLoadError('Extractor module did not load. Check that llm-bundle.js is in this folder.',
+                'Try: chrome://extensions → toggle the extension off and on, then refresh this page.');
+        }
+        // No model load needed
+        llmReady = true;
+        els.loadStatus.textContent = 'Ready';
+        els.loadOverlay.classList.add('hidden');
+        enableUI();
+    }
+
+    function showLoadError(msg, hint) {
+        els.loadProgressFill.style.background = 'var(--red)';
+        els.loadError.style.display = 'block';
+        els.loadError.innerHTML = '⚠ ' + msg + (hint ? '<div class="hint">' + hint + '</div>' : '');
+        els.loadStatus.textContent = 'Failed';
+    }
+
+    function enableUI() {
+        els.csvCard.classList.remove('disabled');
+        els.fileInput.disabled = false;
+        els.csvText.disabled = false;
+        if (els.previewCard.style.display !== 'none') {
+            els.previewCard.classList.remove('disabled');
+        }
+        setStatus('Model ready — load a CSV to begin', 'complete');
+    }
+
+    function csvParse(text) {
+        const rows = [];
+        const lines = text.split('\n').filter(l => l.trim());
+        if (!lines.length) return rows;
+        const header = parseLine(lines[0]);
+        for (let i = 1; i < lines.length; i++) {
+            const vals = parseLine(lines[i]);
+            const row = {};
+            header.forEach((h, idx) => row[h.trim()] = (vals[idx] || '').trim());
+            rows.push(row);
+        }
+        return { header, rows };
+    }
+
+    function parseLine(line) {
+        const result = [];
+        let current = '';
+        let inQuotes = false;
+        for (let i = 0; i < line.length; i++) {
+            const ch = line[i];
+            if (inQuotes) {
+                if (ch === '"' && i + 1 < line.length && line[i + 1] === '"') {
+                    current += '"'; i++;
+                } else if (ch === '"') {
+                    inQuotes = false;
+                } else {
+                    current += ch;
+                }
+            } else {
+                if (ch === '"') {
+                    inQuotes = true;
+                } else if (ch === ',') {
+                    result.push(current);
+                    current = '';
+                } else {
+                    current += ch;
+                }
+            }
+        }
+        result.push(current);
+        return result;
+    }
+
+    function csvEscape(v) {
+        if (v == null) return '';
+        const s = String(v);
+        if (/[",\n\r]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+        return s;
+    }
+
+    function setStatus(text, type) {
+        els.statusBar.className = 'status-bar ' + (type || '');
+        els.statusBar.innerHTML = type === 'running'
+            ? `<div class="spinner"></div><span>${text}</span>`
+            : `<span>${type === 'complete' ? '✓ ' : type === 'error' ? '⚠ ' : ''}${text}</span>`;
+    }
+
+    function loadCSV(text) {
+        if (!llmReady) { setStatus('Extractor not ready', 'error'); return; }
+        if (!text.trim()) { setStatus('CSV is empty', 'error'); return; }
+        const parsed = csvParse(text);
+        if (!parsed.header || parsed.header.length < 2) {
+            setStatus('CSV must have at least a header row and one data row', 'error');
+            return;
+        }
+        if (!parsed.header.some(h => h.trim().toLowerCase() === 'info')) {
+            setStatus('CSV must have an "info" column', 'error');
+            return;
+        }
+        csvRows = parsed.rows;
+        showPreview(parsed.header, parsed.rows);
+        setStatus(`Loaded ${parsed.rows.length} rows with ${parsed.header.length} columns`, 'complete');
+    }
+
+    function showPreview(header, rows) {
+        els.previewCard.style.display = 'block';
+        els.previewCard.classList.remove('disabled');
+        els.previewHeader.innerHTML = header.map(h => `<th>${h}</th>`).join('');
+        els.previewBody.innerHTML = rows.slice(0, 10).map(r =>
+            '<tr>' + header.map(h => `<td title="${csvEscape(r[h])}">${r[h] || ''}</td>`).join('') + '</tr>'
+        ).join('');
+        els.rowCount.textContent = rows.length + ' rows';
+        if (rows.length > 10) {
+            els.previewBody.innerHTML += `<tr><td colspan="${header.length}" style="text-align:center;color:var(--text-muted);font-style:italic;">... and ${rows.length - 10} more rows</td></tr>`;
+        }
+        els.downloadSection.style.display = 'none';
+        els.progressSection.style.display = 'none';
+        els.processBtn.disabled = false;
+        els.processBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Start AI Extraction`;
+    }
+
+    async function processCSV() {
+        if (processing) return;
+        if (!llmReady) {
+            setStatus('Extractor not ready', 'error');
+            return;
+        }
+        processing = true;
+        els.processBtn.disabled = true;
+        els.processBtn.innerHTML = '<div class="spinner"></div> Processing...';
+        els.progressSection.style.display = 'block';
+        els.downloadSection.style.display = 'none';
+        enrichedRows = [];
+
+        try {
+            const infoCol = Object.keys(csvRows[0]).find(k => k.toLowerCase() === 'info') || 'info';
+
+            for (let i = 0; i < csvRows.length; i++) {
+                const row = { ...csvRows[i] };
+                const pct = Math.round(((i + 1) / csvRows.length) * 100);
+                els.progressFill.style.width = pct + '%';
+                els.progressStatus.textContent = `Extracting: row ${i + 1} of ${csvRows.length}`;
+                els.progressPercent.textContent = pct + '%';
+
+                const info = (row[infoCol] || '').trim();
+                if (info) {
+                    try {
+                        const extracted = window.LLM.extractInfo(info);
+                        row.company = extracted.company || row.company || '';
+                        row.education = extracted.education || '';
+                        row.job_profile = extracted.job_profile || '';
+                        row.field = extracted.field || '';
+                        row.location = extracted.location || '';
+                    } catch (e) {
+                        console.warn('Row', i + 1, 'extraction failed:', e);
+                    }
+                }
+                enrichedRows.push(row);
+            }
+
+            els.progressFill.style.width = '100%';
+            els.progressStatus.textContent = `Done — ${csvRows.length} rows processed`;
+            els.progressPercent.textContent = '100%';
+            els.downloadSection.style.display = 'flex';
+            setStatus(`✓ Extracted structured data from ${csvRows.length} rows`, 'complete');
+
+            const header = Object.keys(enrichedRows[0]);
+            showPreview(header, enrichedRows);
+
+        } catch (e) {
+            setStatus('Error: ' + e.message, 'error');
+            console.error(e);
+            els.processBtn.disabled = false;
+            els.processBtn.innerHTML = 'Retry';
+        }
+        processing = false;
+    }
+
+    function downloadCSV() {
+        if (!enrichedRows.length) return;
+        const cols = ['firstName', 'lastName', 'connectionDegree', 'jobTitle', 'company',
+            'location', 'country', 'gender', 'linkedinUrl', 'info',
+            'education', 'job_profile', 'field'];
+        const availableCols = cols.filter(c => enrichedRows[0].hasOwnProperty(c));
+        Object.keys(enrichedRows[0]).forEach(k => {
+            if (!availableCols.includes(k)) availableCols.push(k);
+        });
+
+        const header = availableCols.join(',');
+        const rows = enrichedRows.map(r => availableCols.map(c => csvEscape(r[c])).join(','));
+        const csv = [header, ...rows].join('\n');
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `enriched-leads-${new Date().toISOString().slice(0, 10)}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
+
+    // ─── Events ───
+    els.fileInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            els.csvText.value = ev.target.result;
+            loadCSV(ev.target.result);
+        };
+        reader.readAsText(file);
+    });
+
+    els.dropZone.addEventListener('dragover', (e) => { e.preventDefault(); els.dropZone.classList.add('dragover'); });
+    els.dropZone.addEventListener('dragleave', () => els.dropZone.classList.remove('dragover'));
+    els.dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        els.dropZone.classList.remove('dragover');
+        const file = e.dataTransfer.files[0];
+        if (file && (file.name.endsWith('.csv') || file.type === 'text/csv')) {
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                els.csvText.value = ev.target.result;
+                loadCSV(ev.target.result);
+            };
+            reader.readAsText(file);
+        }
+    });
+
+    els.csvText.addEventListener('input', () => {
+        if (els.csvText.value.trim()) loadCSV(els.csvText.value);
+    });
+
+    els.processBtn.addEventListener('click', processCSV);
+    els.downloadBtn.addEventListener('click', downloadCSV);
+    els.resetBtn.addEventListener('click', () => {
+        csvRows = []; enrichedRows = []; processing = false;
+        els.previewCard.style.display = 'none';
+        els.previewCard.classList.add('disabled');
+        els.statusBar.className = 'status-bar';
+        els.statusBar.innerHTML = '';
+        els.csvText.value = '';
+        els.fileInput.value = '';
+    });
+
+    // ─── Boot ───
+    bootLLM();
+    </script>
+</body>
+</html>

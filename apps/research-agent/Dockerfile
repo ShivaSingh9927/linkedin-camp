@@ -26,8 +26,8 @@ RUN npm install --omit=dev --no-audit --no-fund
 COPY server.js research.js ./
 
 ENV LIGHTPANDA_PATH=/usr/local/bin/lightpanda \
-    PORT=8002 \
+    PORT=3010 \
     NODE_ENV=production
 
-EXPOSE 8002
+EXPOSE 3010
 CMD ["node", "server.js"]

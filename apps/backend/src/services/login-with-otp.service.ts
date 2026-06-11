@@ -68,7 +68,7 @@ export interface LoginOutcome {
     cookieCount?: number;
 }
 
-const DEFAULT_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36';
+const DEFAULT_UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36';
 
 /**
  * Solve the email-OTP challenge with the supplied resolver. Identical logic
@@ -141,20 +141,22 @@ export async function loginWithOtp(input: LoginInput): Promise<LoginOutcome> {
     console.log(`[login-otp] user=${userId} email=${email} proxy=${proxy.server}`);
 
     const browser = await chromium.launch({
-        headless: true,
+        headless: false,
+        channel: 'chrome',
         proxy,
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
             '--disable-blink-features=AutomationControlled',
+            '--start-maximized',
         ],
     });
 
     const context = await browser.newContext({
         userAgent: userAgent || DEFAULT_UA,
-        viewport: { width: 1920, height: 1080 },
-        locale: 'en-IN',
-        timezoneId: 'Asia/Kolkata',
+        viewport: null,
+        locale: 'en-US',
+        timezoneId: 'America/New_York',
         proxy,
     });
 
@@ -167,12 +169,31 @@ export async function loginWithOtp(input: LoginInput): Promise<LoginOutcome> {
         await saveScreenshot(page, userId, 'login_page');
 
         // LinkedIn's 2026 sign-in renders a hidden duplicate of each input;
-        // the visible username has autocomplete="username webauthn".
-        await page.locator('input[autocomplete="username webauthn"]').fill(email);
-        await wait(600);
-        await page.locator('input[autocomplete="current-password"]').last().fill(password);
-        await wait(600);
-        await page.getByRole('button', { name: /^Sign in$/i }).click();
+        // find the visible username input
+        const { humanType, humanMoveAndClick } = await import('./stealth.service');
+        let emailInput = null;
+        for (const c of await page.$$('input[type="email"]')) {
+            if (await c.isVisible().catch(() => false)) { emailInput = c; break; }
+        }
+        if (emailInput) {
+            await humanMoveAndClick(page, emailInput);
+            await wait(500);
+            await humanType(page, emailInput, email);
+            await wait(1000);
+        }
+
+        let passInput = null;
+        for (const c of await page.$$('input[type="password"]')) {
+            if (await c.isVisible().catch(() => false)) { passInput = c; break; }
+        }
+        if (passInput) {
+            await humanMoveAndClick(page, passInput);
+            await wait(500);
+            await humanType(page, passInput, password);
+            await wait(1000);
+        }
+
+        await humanMoveAndClick(page, page.getByRole('button', { name: /^Sign in$/i }).first());
         await wait(8000);
         try { await page.waitForLoadState('networkidle', { timeout: 12000 }); } catch {}
         await saveScreenshot(page, userId, 'post_submit');

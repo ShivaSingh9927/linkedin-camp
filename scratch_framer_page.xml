@@ -1,0 +1,1698 @@
+Node xml:
+<Desktop
+    nodeId="zk0RtjosR"
+    position="absolute"
+    width="1200px"
+    height="fit-content"
+    top="0px"
+    left="0px"
+    <!-- background color string or project color style path (if starts with /) -->
+    backgroundColor="rgb(249, 248, 248)"
+    overflow="clip"
+    layout="stack"
+    stackDirection="vertical"
+    stackDistribution="start"
+    stackAlignment="center"
+>
+  <Main
+      nodeId="OAY23PCQd"
+      width="1fr"
+      height="fit-content"
+      zIndex="1"
+      overflow="clip"
+      layout="stack"
+      gap="120px"
+      stackDirection="vertical"
+      stackDistribution="start"
+      stackAlignment="center"
+  >
+    <Hero
+        nodeId="jhh85N0W1"
+        width="1fr"
+        height="1020px"
+        minHeight="80vh"
+        overflow="clip"
+        layout="stack"
+        gap="80px"
+        padding="160px 0px 0px 0px"
+        stackDirection="vertical"
+        stackDistribution="start"
+        stackAlignment="center"
+    >
+      <Content
+          nodeId="a3YrCgEql"
+          width="1fr"
+          height="fit-content"
+          maxWidth="1072px"
+          zIndex="2"
+          overflow="clip"
+          layout="stack"
+          gap="64px"
+          stackDirection="vertical"
+          stackDistribution="center"
+          stackAlignment="center"
+      >
+        <Top
+            nodeId="W771PegEl"
+            width="1fr"
+            height="fit-content"
+            maxWidth="792px"
+            borderRadius="0px"
+            overflow="visible"
+            layout="stack"
+            gap="40px"
+            stackDirection="vertical"
+            stackDistribution="start"
+            stackAlignment="center"
+        >
+          <Texts
+              nodeId="EBKbzH5Hn"
+              width="1fr"
+              height="fit-content"
+              borderRadius="0px"
+              overflow="visible"
+              layout="stack"
+              gap="16px"
+              stackDirection="vertical"
+              stackDistribution="start"
+              stackAlignment="center"
+          >
+            <RunYourFreelanceBusinessLikeAPro
+                nodeId="j8DrJyz3Q"
+                width="1fr"
+                height="fit-content"
+                <!-- project text style path, always starts with / -->
+                inlineTextStyle="/Heading/Heading 1"
+            >
+              Run your freelance business like a pro
+            </RunYourFreelanceBusinessLikeAPro>
+            <AllInOnePlatformForManagingClientsProjectsAndPaymentsWithout
+                nodeId="DMOueQ0pp"
+                width="1fr"
+                height="fit-content"
+                maxWidth="700px"
+                <!-- project text style path, always starts with / -->
+                inlineTextStyle="/Body/Body XL"
+            >
+              All-in-one platform for managing clients, projects, and payments without the chaos. From first contract to final invoice, we’ve got your back.
+            </AllInOnePlatformForManagingClientsProjectsAndPaymentsWithout>
+          </Texts>
+          <Button
+              nodeId="Eu0mu9YNO"
+              width="fit-content"
+              height="fit-content"
+              borderRadius="0px"
+              overflow="visible"
+              layout="stack"
+              gap="8px"
+              stackDirection="horizontal"
+              stackDistribution="start"
+              stackAlignment="start"
+          >
+            <MainButton
+                nodeId="gaauaj2hO"
+                width="fit-content"
+                height="fit-content"
+                <!-- the component id this instance uses -->
+                componentId="h4JcoWJSF"
+                variant="OBWsuGAEJ"
+                ektwzyaAy="Try Dreelio free"
+                yPsg9PA2x="/contact-us"
+                FHCLGB0I0="rgb(26, 22, 21)"
+             />
+            <MainButton
+                nodeId="RheKc9HlL"
+                width="fit-content"
+                height="fit-content"
+                <!-- the component id this instance uses -->
+                componentId="h4JcoWJSF"
+                variant="cMgcydVG6"
+                ektwzyaAy="See features"
+                yPsg9PA2x="/#features"
+                FHCLGB0I0="rgb(26, 22, 21)"
+             />
+          </Button>
+        </Top>
+        <DashboardImage
+            nodeId="uPrggLWN7"
+            width="1fr"
+            height="700px"
+            maxWidth="1072px"
+            aspectRatio="1.531"
+            borderRadius="20px"
+            <!-- background image URL, if you pass a new image url, the image will be uploaded to Framer -->
+            backgroundImage="https://framerusercontent.com/images/JeI7uULY0av9DxD7q7NVLTuoNc.png"
+            overflow="hidden"
+         />
+      </Content>
+    </Hero>
+    <Content
+        nodeId="Q2uG1CEki"
+        width="1fr"
+        height="fit-content"
+        overflow="clip"
+        layout="stack"
+        gap="160px"
+        padding="0px 0px 160px 0px"
+        stackDirection="vertical"
+        stackDistribution="center"
+        stackAlignment="center"
+    >
+      <LogosTicker
+          nodeId="XMdTlq4yH"
+          width="1fr"
+          height="fit-content"
+          overflow="visible"
+          layout="stack"
+          stackDirection="vertical"
+          stackDistribution="start"
+          stackAlignment="center"
+      >
+        <Container
+            nodeId="UfNsSLr_R"
+            width="1fr"
+            height="fit-content"
+            maxWidth="1072px"
+            zIndex="1"
+            overflow="visible"
+            layout="stack"
+            gap="16px"
+            stackDirection="vertical"
+            stackDistribution="center"
+            stackAlignment="center"
+        >
+          <TrustedBy7000TopStartupsFreelancersAndStudios
+              nodeId="ad14o9wYC"
+              width="1fr"
+              height="fit-content"
+              <!-- project text style path, always starts with / -->
+              inlineTextStyle="/Body/Body Normal"
+          >
+            Trusted by 7,000+ top startups, freelancers and studios
+          </TrustedBy7000TopStartupsFreelancersAndStudios>
+          <Ticker
+              nodeId="d1xou7tsy"
+              width="1fr"
+              height="55px"
+              maxWidth="900px"
+              speed="20"
+              direction="left"
+              alignment="center"
+              gap="40"
+              hoverFactor="1"
+           />
+        </Container>
+      </LogosTicker>
+      <AboutApp
+          nodeId="EDlyxw3K9"
+          width="1fr"
+          height="fit-content"
+          overflow="clip"
+          layout="stack"
+          stackDirection="vertical"
+          stackDistribution="start"
+          stackAlignment="center"
+      >
+        <Container
+            nodeId="Z4IHJW1oT"
+            width="1fr"
+            height="fit-content"
+            maxWidth="1072px"
+            overflow="clip"
+            layout="stack"
+            gap="56px"
+            stackDirection="vertical"
+            stackDistribution="center"
+            stackAlignment="center"
+        >
+          <Header
+              nodeId="Yh9Qlxgxh"
+              width="1fr"
+              height="fit-content"
+              maxWidth="800px"
+              borderRadius="0px"
+              overflow="visible"
+              layout="stack"
+              gap="20px"
+              stackDirection="vertical"
+              stackDistribution="start"
+              stackAlignment="center"
+          >
+            <SeamlessAcrossDevices
+                nodeId="W4ZMMJ0vX"
+                width="1fr"
+                height="fit-content"
+                <!-- project text style path, always starts with / -->
+                inlineTextStyle="/Label & Eyebrow/Eyebrow Large"
+            >
+              Seamless across devices
+            </SeamlessAcrossDevices>
+            <WorkFromAnywhereStayInSync
+                nodeId="EfTezZ2cb"
+                width="1fr"
+                height="fit-content"
+                <!-- project text style path, always starts with / -->
+                inlineTextStyle="/Heading/Heading 2"
+            >
+              Work from anywhere, stay in sync
+            </WorkFromAnywhereStayInSync>
+          </Header>
+          <AboutAppCarousel
+              nodeId="OwDh2aWBP"
+              width="1fr"
+              height="700px"
+              <!-- the component id this instance uses -->
+              componentId="dgJJ2Bw3u"
+              variant="eiSc6Uds8"
+           />
+        </Container>
+      </AboutApp>
+      <Features
+          nodeId="VMJGhIahi"
+          width="1fr"
+          height="fit-content"
+          borderRadius="0px"
+          overflow="visible"
+          layout="stack"
+          stackDirection="vertical"
+          stackDistribution="start"
+          stackAlignment="center"
+      >
+        <Container
+            nodeId="EIT_h9oAq"
+            width="1fr"
+            height="fit-content"
+            maxWidth="1072px"
+            overflow="clip"
+            layout="stack"
+            gap="120px"
+            stackDirection="vertical"
+            stackDistribution="center"
+            stackAlignment="center"
+        >
+          <Block1
+              nodeId="dCQf1ksyU"
+              width="1fr"
+              height="fit-content"
+              borderRadius="0px"
+              overflow="visible"
+              layout="stack"
+              gap="64px"
+              stackDirection="horizontal"
+              stackDistribution="start"
+              stackAlignment="start"
+          >
+            <Left
+                nodeId="hfHcGIct8"
+                width="1fr"
+                height="fit-content"
+                minWidth="588px"
+                borderRadius="24px"
+                <!-- background image URL, if you pass a new image url, the image will be uploaded to Framer -->
+                backgroundImage="https://framerusercontent.com/images/g690a9Fxc6Y5G69sPCSKq4vjw.png"
+                overflow="hidden"
+                layout="stack"
+                padding="40px"
+                stackDirection="vertical"
+                stackDistribution="center"
+                stackAlignment="center"
+            >
+              <Illustration
+                  nodeId="Eb67p2tcQ"
+                  width="1fr"
+                  height="615px"
+                  aspectRatio="0.826"
+                  borderRadius="20px"
+                  <!-- background image URL, if you pass a new image url, the image will be uploaded to Framer -->
+                  backgroundImage="https://framerusercontent.com/images/gUEFVWinvZ7dMZa0mUhNZWHNj3U.png"
+                  overflow="hidden"
+                  layout="stack"
+                  gap="8px"
+                  padding="32px 0px 0px 0px"
+                  stackDirection="horizontal"
+                  stackDistribution="start"
+                  stackAlignment="center"
+               />
+            </Left>
+            <Right
+                nodeId="NJWrT9QO7"
+                width="1fr"
+                height="1fr"
+                borderRadius="0px"
+                overflow="visible"
+                layout="stack"
+                gap="296px"
+                stackDirection="vertical"
+                stackDistribution="space-between"
+                stackAlignment="start"
+            >
+              <Top
+                  nodeId="Y_4nE_k2J"
+                  width="1fr"
+                  height="fit-content"
+                  borderRadius="0px"
+                  overflow="visible"
+                  layout="stack"
+                  gap="40px"
+                  stackDirection="vertical"
+                  stackDistribution="start"
+                  stackAlignment="start"
+              >
+                <Texts
+                    nodeId="geqnCf9cN"
+                    width="1fr"
+                    height="fit-content"
+                    borderRadius="0px"
+                    overflow="visible"
+                    layout="stack"
+                    gap="16px"
+                    stackDirection="vertical"
+                    stackDistribution="start"
+                    stackAlignment="start"
+                >
+                  <Header
+                      nodeId="AgR0fHThi"
+                      width="1fr"
+                      height="fit-content"
+                      borderRadius="0px"
+                      overflow="visible"
+                      layout="stack"
+                      gap="16px"
+                      stackDirection="vertical"
+                      stackDistribution="start"
+                      stackAlignment="start"
+                  >
+                    <ProjectManagement
+                        nodeId="CEZ7sJk11"
+                        width="1fr"
+                        height="fit-content"
+                        <!-- project text style path, always starts with / -->
+                        inlineTextStyle="/Label & Eyebrow/Eyebrow Large"
+                    >
+                      project management
+                    </ProjectManagement>
+                    <KeepEveryProjectMovingForward
+                        nodeId="bPuzOzTT1"
+                        width="1fr"
+                        height="fit-content"
+                        <!-- project text style path, always starts with / -->
+                        inlineTextStyle="/Heading/Heading 2"
+                    >
+                      Keep every project moving forward
+                    </KeepEveryProjectMovingForward>
+                  </Header>
+                  <PlanAssignAndDeliverYourWorkAllInOnePlaceWithSmartTaskTracki
+                      nodeId="XWg_JpIFS"
+                      width="1fr"
+                      height="fit-content"
+                      <!-- project text style path, always starts with / -->
+                      inlineTextStyle="/Body/Body Large"
+                  >
+                    Plan, assign, and deliver your work - all in one place. With smart task tracking, deadlines, and real-time progress, you stay organized and clients stay confident.
+                  </PlanAssignAndDeliverYourWorkAllInOnePlaceWithSmartTaskTracki>
+                </Texts>
+                <MainButton
+                    nodeId="Rbn3cqGPj"
+                    width="fit-content"
+                    height="fit-content"
+                    <!-- the component id this instance uses -->
+                    componentId="h4JcoWJSF"
+                    variant="OBWsuGAEJ"
+                    ektwzyaAy="Try Dreelio free"
+                    yPsg9PA2x="/contact-us"
+                    FHCLGB0I0="rgb(26, 22, 21)"
+                 />
+              </Top>
+              <Lists
+                  nodeId="YP1zx_HsR"
+                  width="1fr"
+                  height="fit-content"
+                  borderRadius="0px"
+                  overflow="visible"
+                  layout="grid"
+                  gap="16px"
+                  gridColumns="2"
+                  gridRows="2"
+                  gridAlignment="center"
+                  gridColumnWidthType="minmax"
+                  gridColumnWidth="200"
+                  gridColumnMinWidth="50"
+                  gridRowHeightType="auto"
+                  gridRowHeight="200"
+              >
+                <FeaturesPill
+                    nodeId="gdjs4eMgf"
+                    width="1fr"
+                    height="fit-content"
+                    <!-- the component id this instance uses -->
+                    componentId="OXxV3C0mQ"
+                    BC4UHABgE="Tasks"
+                 />
+                <FeaturesPill
+                    nodeId="lECSlCgmQ"
+                    width="1fr"
+                    height="fit-content"
+                    <!-- the component id this instance uses -->
+                    componentId="OXxV3C0mQ"
+                    BC4UHABgE="Time tracking"
+                 />
+                <FeaturesPill
+                    nodeId="pHA8Xzkft"
+                    width="1fr"
+                    height="fit-content"
+                    <!-- the component id this instance uses -->
+                    componentId="OXxV3C0mQ"
+                    BC4UHABgE="Timesheets"
+                 />
+                <FeaturesPill
+                    nodeId="AE2Bh_eMF"
+                    width="1fr"
+                    height="fit-content"
+                    <!-- the component id this instance uses -->
+                    componentId="OXxV3C0mQ"
+                    BC4UHABgE="Reports"
+                 />
+              </Lists>
+            </Right>
+          </Block1>
+          <Block2
+              nodeId="Y8pChWksy"
+              width="1fr"
+              height="fit-content"
+              borderRadius="0px"
+              overflow="visible"
+              layout="stack"
+              gap="64px"
+              stackDirection="horizontal"
+              stackDistribution="start"
+              stackAlignment="start"
+          >
+            <Left
+                nodeId="wU9U0AGBj"
+                width="1fr"
+                height="1fr"
+                borderRadius="0px"
+                overflow="visible"
+                layout="stack"
+                gap="296px"
+                stackDirection="vertical"
+                stackDistribution="space-between"
+                stackAlignment="start"
+            >
+              <Top
+                  nodeId="yUCNA65Sf"
+                  width="1fr"
+                  height="fit-content"
+                  borderRadius="0px"
+                  overflow="visible"
+                  layout="stack"
+                  gap="40px"
+                  stackDirection="vertical"
+                  stackDistribution="start"
+                  stackAlignment="start"
+              >
+                <Texts
+                    nodeId="BXct6WRT7"
+                    width="1fr"
+                    height="fit-content"
+                    borderRadius="0px"
+                    overflow="visible"
+                    layout="stack"
+                    gap="16px"
+                    stackDirection="vertical"
+                    stackDistribution="start"
+                    stackAlignment="start"
+                >
+                  <Header
+                      nodeId="ZIeALN_s8"
+                      width="1fr"
+                      height="fit-content"
+                      borderRadius="0px"
+                      overflow="visible"
+                      layout="stack"
+                      gap="16px"
+                      stackDirection="vertical"
+                      stackDistribution="start"
+                      stackAlignment="start"
+                  >
+                    <ProjectManagement
+                        nodeId="LyjUtpJyE"
+                        width="1fr"
+                        height="fit-content"
+                        <!-- project text style path, always starts with / -->
+                        inlineTextStyle="/Label & Eyebrow/Eyebrow Large"
+                    >
+                      financial management
+                    </ProjectManagement>
+                    <KeepEveryProjectMovingForward
+                        nodeId="CBUIJTAs8"
+                        width="1fr"
+                        height="fit-content"
+                        <!-- project text style path, always starts with / -->
+                        inlineTextStyle="/Heading/Heading 2"
+                    >
+                      Track income, get paid, stress less
+                    </KeepEveryProjectMovingForward>
+                  </Header>
+                  <PlanAssignAndDeliverYourWorkAllInOnePlaceWithSmartTaskTracki
+                      nodeId="Ehk__4nek"
+                      width="1fr"
+                      height="fit-content"
+                      <!-- project text style path, always starts with / -->
+                      inlineTextStyle="/Body/Body Large"
+                  >
+                    Create branded invoices, log expenses, and keep tabs on your earnings. Whether you bill hourly or per project, everything’s automated and tax-friendly.
+                  </PlanAssignAndDeliverYourWorkAllInOnePlaceWithSmartTaskTracki>
+                </Texts>
+                <MainButton
+                    nodeId="HXLfh2EHO"
+                    width="fit-content"
+                    height="fit-content"
+                    <!-- the component id this instance uses -->
+                    componentId="h4JcoWJSF"
+                    variant="OBWsuGAEJ"
+                    ektwzyaAy="Try Dreelio free"
+                    yPsg9PA2x="/contact-us"
+                    FHCLGB0I0="rgb(26, 22, 21)"
+                 />
+              </Top>
+              <Lists
+                  nodeId="NhQZzP7SW"
+                  width="1fr"
+                  height="fit-content"
+                  borderRadius="0px"
+                  overflow="visible"
+                  layout="grid"
+                  gap="16px"
+                  gridColumns="2"
+                  gridRows="2"
+                  gridAlignment="center"
+                  gridColumnWidthType="minmax"
+                  gridColumnWidth="200"
+                  gridColumnMinWidth="50"
+                  gridRowHeightType="auto"
+                  gridRowHeight="200"
+              >
+                <FeaturesPill
+                    nodeId="iNfMPn91z"
+                    width="1fr"
+                    height="fit-content"
+                    <!-- the component id this instance uses -->
+                    componentId="OXxV3C0mQ"
+                    BC4UHABgE="Invoicing"
+                 />
+                <FeaturesPill
+                    nodeId="z7IQOKSyX"
+                    width="1fr"
+                    height="fit-content"
+                    <!-- the component id this instance uses -->
+                    componentId="OXxV3C0mQ"
+                    BC4UHABgE="Budgets"
+                 />
+                <FeaturesPill
+                    nodeId="ifi6FZWbj"
+                    width="1fr"
+                    height="fit-content"
+                    <!-- the component id this instance uses -->
+                    componentId="OXxV3C0mQ"
+                    BC4UHABgE="Forecasting"
+                 />
+                <FeaturesPill
+                    nodeId="YXtZN26jX"
+                    width="1fr"
+                    height="fit-content"
+                    <!-- the component id this instance uses -->
+                    componentId="OXxV3C0mQ"
+                    BC4UHABgE="Integrations"
+                 />
+              </Lists>
+            </Left>
+            <Right
+                nodeId="FMh_vtS_a"
+                width="1fr"
+                height="fit-content"
+                minWidth="588px"
+                borderRadius="24px"
+                <!-- background image URL, if you pass a new image url, the image will be uploaded to Framer -->
+                backgroundImage="https://framerusercontent.com/images/g690a9Fxc6Y5G69sPCSKq4vjw.png"
+                overflow="hidden"
+                layout="stack"
+                padding="40px"
+                stackDirection="vertical"
+                stackDistribution="center"
+                stackAlignment="center"
+            >
+              <Illustration
+                  nodeId="kCB5XcM1V"
+                  width="1fr"
+                  height="615px"
+                  aspectRatio="0.826"
+                  borderRadius="20px"
+                  <!-- background image URL, if you pass a new image url, the image will be uploaded to Framer -->
+                  backgroundImage="https://framerusercontent.com/images/thBhwyY3D4d8TRQEbrMU6zSvz8.png"
+                  overflow="hidden"
+                  layout="stack"
+                  gap="8px"
+                  padding="32px 0px 0px 0px"
+                  stackDirection="horizontal"
+                  stackDistribution="start"
+                  stackAlignment="center"
+               />
+            </Right>
+          </Block2>
+        </Container>
+      </Features>
+      <Benefits
+          nodeId="kO4oh9IU1"
+          width="1fr"
+          height="fit-content"
+          overflow="visible"
+          layout="stack"
+          stackDirection="vertical"
+          stackDistribution="start"
+          stackAlignment="center"
+      >
+        <Container
+            nodeId="TAK0o21si"
+            width="1fr"
+            height="fit-content"
+            maxWidth="1072px"
+            borderRadius="0px"
+            overflow="visible"
+            layout="stack"
+            gap="56px"
+            stackDirection="vertical"
+            stackDistribution="start"
+            stackAlignment="center"
+        >
+          <Header
+              nodeId="cBh3dQItl"
+              width="1fr"
+              height="fit-content"
+              maxWidth="800px"
+              borderRadius="0px"
+              overflow="visible"
+              layout="stack"
+              gap="20px"
+              stackDirection="vertical"
+              stackDistribution="start"
+              stackAlignment="center"
+          >
+            <Features
+                nodeId="JgrgujCxh"
+                width="1fr"
+                height="fit-content"
+                <!-- project text style path, always starts with / -->
+                inlineTextStyle="/Label & Eyebrow/Eyebrow Large"
+            >
+              features
+            </Features>
+            <BuiltForFreelancersPoweredBySimplicity
+                nodeId="nJDY7v5rC"
+                width="1fr"
+                height="fit-content"
+                <!-- project text style path, always starts with / -->
+                inlineTextStyle="/Heading/Heading 2"
+            >
+              Built for freelancers, powered by simplicity
+            </BuiltForFreelancersPoweredBySimplicity>
+          </Header>
+          <Cards
+              nodeId="VEAkUCg45"
+              width="1fr"
+              height="fit-content"
+              borderRadius="0px"
+              overflow="visible"
+              layout="stack"
+              gap="24px"
+              stackDirection="vertical"
+              stackDistribution="start"
+              stackAlignment="start"
+          >
+            <Top
+                nodeId="Z5WYHhPyQ"
+                width="1fr"
+                height="fit-content"
+                borderRadius="0px"
+                overflow="visible"
+                layout="stack"
+                gap="24px"
+                stackDirection="horizontal"
+                stackDistribution="start"
+                stackAlignment="start"
+            >
+              <1
+                  nodeId="cMsCyEyGl"
+                  width="1fr"
+                  height="fit-content"
+                  <!-- background color string or project color style path (if starts with /) -->
+                  backgroundColor="rgba(240, 234, 229, 1)"
+                  borderRadius="24px"
+                  overflow="hidden"
+                  layout="stack"
+                  gap="80px"
+                  padding="32px"
+                  stackDirection="vertical"
+                  stackDistribution="start"
+                  stackAlignment="center"
+              >
+                <SmartFlexibleAndBuiltAroundYourBusinessWorkflow
+                    nodeId="DPKVwAP2I"
+                    width="1fr"
+                    height="fit-content"
+                    <!-- project text style path, always starts with / -->
+                    inlineTextStyle="/Heading/Heading 5"
+                >
+                  Smart, flexible, and built around your business workflow
+                </SmartFlexibleAndBuiltAroundYourBusinessWorkflow>
+                <Illustration
+                    nodeId="IRimdA71D"
+                    width="1fr"
+                    height="176px"
+                    aspectRatio="2.614"
+                    borderRadius="0px"
+                    <!-- background image URL, if you pass a new image url, the image will be uploaded to Framer -->
+                    backgroundImage="https://framerusercontent.com/images/o5PFg7LTymdZ6P4tuEGy4oFUFzw.svg"
+                    overflow="visible"
+                    layout="stack"
+                    gap="24px"
+                    stackDirection="vertical"
+                    stackDistribution="start"
+                    stackAlignment="start"
+                 />
+                <PersonalizeEveryDetailFromBrandingAndInterfaceLayoutToColors
+                    nodeId="CbJt3VIuQ"
+                    width="1fr"
+                    height="fit-content"
+                    <!-- project text style path, always starts with / -->
+                    inlineTextStyle="/Body/Body Large"
+                >
+                  Personalize every detail, From branding and interface layout to colors and menus, so Dreelio feels like an extension of your brand.
+                </PersonalizeEveryDetailFromBrandingAndInterfaceLayoutToColors>
+              </1>
+              <2
+                  nodeId="SCM3Ca27W"
+                  width="1fr"
+                  height="fit-content"
+                  <!-- background color string or project color style path (if starts with /) -->
+                  backgroundColor="rgba(241, 235, 229, 1)"
+                  borderRadius="24px"
+                  overflow="hidden"
+                  layout="stack"
+                  gap="80px"
+                  padding="32px 32px 32px 32px"
+                  stackDirection="vertical"
+                  stackDistribution="start"
+                  stackAlignment="center"
+              >
+                <IntegratesSeamlesslyWithTheToolsYouAlreadyUse
+                    nodeId="YYs398FWi"
+                    width="1fr"
+                    height="fit-content"
+                    <!-- project text style path, always starts with / -->
+                    inlineTextStyle="/Heading/Heading 5"
+                >
+                  Integrates seamlessly with the tools you already use
+                </IntegratesSeamlesslyWithTheToolsYouAlreadyUse>
+                <AppLogos
+                    nodeId="Td4uEmCYP"
+                    width="1fr"
+                    height="176px"
+                    overflow="visible"
+                    layout="stack"
+                    gap="16px"
+                    stackDirection="vertical"
+                    stackDistribution="center"
+                    stackAlignment="center"
+                >
+                  <IntegrationsTicker
+                      nodeId="JnXnUNjGH"
+                      width="1fr"
+                      height="76px"
+                      <!-- the component id this instance uses -->
+                      componentId="VE7jZqmTQ"
+                      ma9v2jUiv="yftNHFBQi"
+                      VODWXLWc1="left"
+                      ulyne2qTp="16"
+                      m9SGTYfPp="true"
+                      Qv5ilvWEJ="true"
+                      YjoBQIGsw="true"
+                      j2QckImb9="true"
+                      EYavEvqbk="true"
+                      AAIUBlnjH="true"
+                      llMGit0d0="true"
+                      uEUZGvmj9="true"
+                      E3WDbY222="true"
+                   />
+                  <IntegrationsTicker
+                      nodeId="pAc82Wvrp"
+                      width="1fr"
+                      height="76px"
+                      <!-- the component id this instance uses -->
+                      componentId="VE7jZqmTQ"
+                      ma9v2jUiv="yftNHFBQi"
+                      VODWXLWc1="right"
+                      ulyne2qTp="16"
+                      m9SGTYfPp="false"
+                      Qv5ilvWEJ="false"
+                      YjoBQIGsw="true"
+                      j2QckImb9="true"
+                      EYavEvqbk="true"
+                      AAIUBlnjH="true"
+                      llMGit0d0="true"
+                      uEUZGvmj9="true"
+                      E3WDbY222="true"
+                   />
+                </AppLogos>
+                <SeamlessIntegrationsPlugFreelioIntoTheToolsYouLoveSetUpAutom
+                    nodeId="OVrFzof_E"
+                    width="1fr"
+                    height="fit-content"
+                    <!-- project text style path, always starts with / -->
+                    inlineTextStyle="/Body/Body Large"
+                >
+                  Seamless integrations. Plug Dreelio into the tools you love. Set up automations, sync your data, and make your systems work smarter together.
+                </SeamlessIntegrationsPlugFreelioIntoTheToolsYouLoveSetUpAutom>
+              </2>
+            </Top>
+            <Bottom
+                nodeId="xYnedl4BL"
+                width="1fr"
+                height="fit-content"
+                borderRadius="0px"
+                overflow="visible"
+                layout="stack"
+                gap="24px"
+                stackDirection="horizontal"
+                stackDistribution="start"
+                stackAlignment="start"
+            >
+              <BenefitsCard
+                  nodeId="uQyQRdCSI"
+                  width="1fr"
+                  height="fit-content"
+                  <!-- the component id this instance uses -->
+                  componentId="aqLL7JfDT"
+                  variant="wlMJBeDDC"
+                  eQU_fR2hb="Collaborate in realtime"
+                  mnUwQ7cg6="Keep every conversation in sync use comments, messages, and project chats to stay on the same page."
+                  doSxqWPCv="true"
+                  emoIuwAXm="false"
+               />
+              <BenefitsCard
+                  nodeId="K7X0nYsAp"
+                  width="1fr"
+                  height="fit-content"
+                  <!-- the component id this instance uses -->
+                  componentId="aqLL7JfDT"
+                  variant="wlMJBeDDC"
+                  eQU_fR2hb="Speaks your language"
+                  mnUwQ7cg6="Set your language, currency, time, and date preferences for a seamless experience that feels truly local."
+                  doSxqWPCv="false"
+                  emoIuwAXm="true"
+               />
+              <BenefitsCard
+                  nodeId="vlSL5rAGU"
+                  width="1fr"
+                  height="fit-content"
+                  <!-- the component id this instance uses -->
+                  componentId="aqLL7JfDT"
+                  variant="wlMJBeDDC"
+                  eQU_fR2hb="View things your way"
+                  mnUwQ7cg6="Easily toggle between various views, including Kanban, cards, list, table, timeline, and calendar."
+                  doSxqWPCv="false"
+                  emoIuwAXm="true"
+               />
+            </Bottom>
+          </Cards>
+        </Container>
+      </Benefits>
+      <Reviews
+          nodeId="fxPhAsuNv"
+          width="1fr"
+          height="fit-content"
+          borderRadius="0px"
+          overflow="visible"
+          layout="stack"
+          gap="56px"
+          stackDirection="vertical"
+          stackDistribution="start"
+          stackAlignment="center"
+      >
+        <Container
+            nodeId="nGj76lRT_"
+            width="1fr"
+            height="fit-content"
+            maxWidth="1072px"
+            overflow="visible"
+            layout="stack"
+            gap="56px"
+            stackDirection="vertical"
+            stackDistribution="center"
+            stackAlignment="center"
+        >
+          <BigReview
+              nodeId="ItTRppmyn"
+              width="1fr"
+              height="fit-content"
+              maxWidth="900px"
+              <!-- the component id this instance uses -->
+              componentId="WiH3d3HBs"
+              kZeVm8RiS=""Dreelio is by far the best agency tool I have ever used""
+              myzB2Bc_h="Martha Punla"
+              lvmEg89AC="VP Marketing, Meta"
+           />
+          <DesktopTicker
+              nodeId="DMAOVnTTK"
+              width="1fr"
+              height="288px"
+              speed="40"
+              direction="left"
+              alignment="center"
+              gap="24"
+              hoverFactor="0.5"
+           />
+        </Container>
+      </Reviews>
+      <Pricing
+          nodeId="g7Iswtddg"
+          width="1fr"
+          height="fit-content"
+          overflow="visible"
+          layout="stack"
+          stackDirection="vertical"
+          stackDistribution="start"
+          stackAlignment="center"
+      >
+        <Container
+            nodeId="qL9VC7K3D"
+            width="1fr"
+            height="fit-content"
+            maxWidth="1072px"
+            borderRadius="0px"
+            overflow="visible"
+            layout="stack"
+            gap="56px"
+            stackDirection="vertical"
+            stackDistribution="center"
+            stackAlignment="center"
+        >
+          <Header
+              nodeId="j_so902ol"
+              width="1fr"
+              height="fit-content"
+              maxWidth="800px"
+              borderRadius="0px"
+              overflow="visible"
+              layout="stack"
+              gap="20px"
+              stackDirection="vertical"
+              stackDistribution="start"
+              stackAlignment="center"
+          >
+            <Pricing
+                nodeId="y3Je4fzUr"
+                width="1fr"
+                height="fit-content"
+                <!-- project text style path, always starts with / -->
+                inlineTextStyle="/Label & Eyebrow/Eyebrow Large"
+            >
+              pricing
+            </Pricing>
+            <SimplePlansForSeriousWork
+                nodeId="kDKcS4v3_"
+                width="1fr"
+                height="fit-content"
+                <!-- project text style path, always starts with / -->
+                inlineTextStyle="/Heading/Heading 2"
+            >
+              Simple plans for serious work
+            </SimplePlansForSeriousWork>
+          </Header>
+          <MainCards
+              nodeId="nw_qM7b3P"
+              width="1fr"
+              height="fit-content"
+              <!-- the component id this instance uses -->
+              componentId="aSVT7nMKA"
+              variant="OgoqHVctW"
+              ieNAEbdsi="row"
+           />
+          <LogosTicker
+              nodeId="R_bIUXdGa"
+              width="1fr"
+              height="fit-content"
+              maxWidth="1072px"
+              overflow="visible"
+              layout="stack"
+              stackDirection="vertical"
+              stackDistribution="start"
+              stackAlignment="center"
+          >
+            <Container
+                nodeId="JRBeEGr7g"
+                width="1fr"
+                height="fit-content"
+                maxWidth="1072px"
+                zIndex="1"
+                overflow="visible"
+                layout="stack"
+                gap="16px"
+                stackDirection="vertical"
+                stackDistribution="center"
+                stackAlignment="center"
+            >
+              <TrustedBy7000TopStartupsFreelancersAndStudios
+                  nodeId="Kjco4olEI"
+                  width="1fr"
+                  height="fit-content"
+                  <!-- project text style path, always starts with / -->
+                  inlineTextStyle="/Body/Body Normal"
+              >
+                Trusted by 7,000+ top startups, freelancers and studios
+              </TrustedBy7000TopStartupsFreelancersAndStudios>
+              <Ticker
+                  nodeId="EXt9VWLEu"
+                  width="1fr"
+                  height="55px"
+                  maxWidth="900px"
+                  speed="20"
+                  direction="left"
+                  alignment="center"
+                  gap="40"
+                  hoverFactor="1"
+               />
+            </Container>
+          </LogosTicker>
+        </Container>
+      </Pricing>
+      <Blog
+          nodeId="Lelf_AL_4"
+          width="1fr"
+          height="fit-content"
+          overflow="visible"
+          layout="stack"
+          stackDirection="vertical"
+          stackDistribution="start"
+          stackAlignment="center"
+      >
+        <Container
+            nodeId="fRUp_WguN"
+            width="1fr"
+            height="fit-content"
+            maxWidth="1072px"
+            borderRadius="0px"
+            overflow="visible"
+            layout="stack"
+            gap="56px"
+            stackDirection="vertical"
+            stackDistribution="center"
+            stackAlignment="center"
+        >
+          <Header
+              nodeId="uD_GCXSEE"
+              width="1fr"
+              height="fit-content"
+              maxWidth="800px"
+              borderRadius="0px"
+              overflow="visible"
+              layout="stack"
+              gap="20px"
+              stackDirection="vertical"
+              stackDistribution="start"
+              stackAlignment="center"
+          >
+            <Pricing
+                nodeId="hP6nXOSP5"
+                width="1fr"
+                height="fit-content"
+                <!-- project text style path, always starts with / -->
+                inlineTextStyle="/Label & Eyebrow/Eyebrow Large"
+            >
+              blog
+            </Pricing>
+            <SimplePlansForSeriousWork
+                nodeId="ODa0dYDWH"
+                width="1fr"
+                height="fit-content"
+                <!-- project text style path, always starts with / -->
+                inlineTextStyle="/Heading/Heading 2"
+            >
+              Ideas to level-up your freelance game
+            </SimplePlansForSeriousWork>
+          </Header>
+          <Cards
+              nodeId="NFO6CRxpl"
+              width="1fr"
+              height="fit-content"
+              overflow="visible"
+              layout="stack"
+              gap="24px"
+              stackDirection="vertical"
+              stackDistribution="center"
+              stackAlignment="center"
+          >
+            <BigCard
+                nodeId="Oa9z7c7rk"
+                width="1fr"
+                height="fit-content"
+                linkOpenInNewTab="false"
+                layout="stack"
+                gap="20px"
+                stackDirection="vertical"
+                stackDistribution="start"
+                stackAlignment="center"
+            >
+              <BlogCard
+                  nodeId="avDX11sep"
+                  width="1fr"
+                  height="fit-content"
+                  <!-- the component id this instance uses -->
+                  componentId="ceNjEn0pZ"
+                  variant="LZbvw34aB"
+                  GCByEC9Fx="How to start a 100k creative agency in 2025"
+                  pLYLm0921="Learn how to kickstart your journey into agency ownership with our comprehensive guide."
+                  sJR8wjB1z="Dhyna Phils"
+                  UmQTZ_sR3="Head of Marketing"
+                  bYzbMW5xc="Y6mBL48e4"
+                  p_ifO2pfK="Featured"
+                  UYzjJfLeu="rgb(201, 80, 46)"
+                  jnnkAQ3vy="rgb(255, 255, 255)"
+                  cCFzCovcz="/blog/:slug"
+               />
+            </BigCard>
+            <Bottom
+                nodeId="aCyEgKx38"
+                width="1fr"
+                height="fit-content"
+                overflow="visible"
+                layout="stack"
+                gap="24px"
+                stackDirection="horizontal"
+                stackDistribution="center"
+                stackAlignment="start"
+            >
+              <1
+                  nodeId="NyZyUsznf"
+                  width="1fr"
+                  height="fit-content"
+                  layout="stack"
+                  gap="20px"
+                  stackDirection="horizontal"
+                  stackDistribution="start"
+                  stackAlignment="start"
+              >
+                <BlogCard
+                    nodeId="R9s7_ZPg9"
+                    width="1fr"
+                    height="fit-content"
+                    <!-- the component id this instance uses -->
+                    componentId="ceNjEn0pZ"
+                    variant="s4FWatjEv"
+                    GCByEC9Fx="Top 10 digital agency software"
+                    pLYLm0921=""
+                    sJR8wjB1z="Dyna Phils"
+                    UmQTZ_sR3="Head of Marketing"
+                    bYzbMW5xc="Y6mBL48e4"
+                    p_ifO2pfK="Tools"
+                    UYzjJfLeu="rgb(21, 108, 194)"
+                    jnnkAQ3vy="rgb(255, 255, 255)"
+                    cCFzCovcz="/blog/:slug"
+                 />
+              </1>
+              <2
+                  nodeId="call5dF66"
+                  width="1fr"
+                  height="fit-content"
+                  layout="stack"
+                  gap="20px"
+                  stackDirection="horizontal"
+                  stackDistribution="start"
+                  stackAlignment="start"
+              >
+                <BlogCard
+                    nodeId="bf4nSOOqX"
+                    width="1fr"
+                    height="fit-content"
+                    <!-- the component id this instance uses -->
+                    componentId="ceNjEn0pZ"
+                    variant="s4FWatjEv"
+                    GCByEC9Fx="A complete guide to project success in 2026"
+                    pLYLm0921=""
+                    sJR8wjB1z="Dyna Phils"
+                    UmQTZ_sR3="Head of Marketing"
+                    bYzbMW5xc="Y6mBL48e4"
+                    p_ifO2pfK="Insight"
+                    UYzjJfLeu="rgb(207, 141, 19)"
+                    jnnkAQ3vy="rgb(255, 255, 255)"
+                    cCFzCovcz="/blog/:slug"
+                 />
+              </2>
+              <3
+                  nodeId="dI653OHYQ"
+                  width="1fr"
+                  height="fit-content"
+                  layout="stack"
+                  gap="20px"
+                  stackDirection="horizontal"
+                  stackDistribution="start"
+                  stackAlignment="start"
+              >
+                <BlogCard
+                    nodeId="zx7g1U2ZB"
+                    width="1fr"
+                    height="fit-content"
+                    <!-- the component id this instance uses -->
+                    componentId="ceNjEn0pZ"
+                    variant="s4FWatjEv"
+                    GCByEC9Fx="What Are Billable Hours"
+                    pLYLm0921=""
+                    sJR8wjB1z="Dyna Phils"
+                    UmQTZ_sR3="Head of Marketing"
+                    bYzbMW5xc="Y6mBL48e4"
+                    p_ifO2pfK="Management"
+                    UYzjJfLeu="rgb(14, 161, 88)"
+                    jnnkAQ3vy="rgb(255, 255, 255)"
+                    cCFzCovcz="/blog/:slug"
+                 />
+              </3>
+            </Bottom>
+          </Cards>
+        </Container>
+      </Blog>
+      <Community
+          nodeId="NAN7SdLYe"
+          width="1fr"
+          height="fit-content"
+          overflow="visible"
+          layout="stack"
+          stackDirection="vertical"
+          stackDistribution="start"
+          stackAlignment="center"
+      >
+        <Container
+            nodeId="Jkn1pWiAy"
+            width="1fr"
+            height="fit-content"
+            maxWidth="952px"
+            borderRadius="0px"
+            overflow="visible"
+            layout="stack"
+            gap="56px"
+            stackDirection="vertical"
+            stackDistribution="start"
+            stackAlignment="center"
+        >
+          <Header
+              nodeId="UTy5ZkZM4"
+              width="1fr"
+              height="fit-content"
+              maxWidth="800px"
+              borderRadius="0px"
+              overflow="visible"
+              layout="stack"
+              gap="20px"
+              stackDirection="vertical"
+              stackDistribution="start"
+              stackAlignment="center"
+          >
+            <Community
+                nodeId="Mtg4wvOeK"
+                width="1fr"
+                height="fit-content"
+                <!-- project text style path, always starts with / -->
+                inlineTextStyle="/Label & Eyebrow/Eyebrow Large"
+            >
+              Community
+            </Community>
+            <StayInTheLoop
+                nodeId="z_IXepSxl"
+                width="1fr"
+                height="fit-content"
+                <!-- project text style path, always starts with / -->
+                inlineTextStyle="/Heading/Heading 2"
+            >
+              Stay in the loop
+            </StayInTheLoop>
+          </Header>
+          <Cards
+              nodeId="jknQh6nLX"
+              width="1fr"
+              height="fit-content"
+              borderRadius="0px"
+              overflow="visible"
+              layout="stack"
+              gap="24px"
+              stackDirection="horizontal"
+              stackDistribution="start"
+              stackAlignment="start"
+          >
+            <CommunityCard
+                nodeId="anABsEFiI"
+                width="1fr"
+                height="fit-content"
+                <!-- the component id this instance uses -->
+                componentId="qNOTomklG"
+                variant="wGXcwV1xX"
+                cvMU92hp0="15.2K followers"
+                C0cJCgT25="X/Twitter"
+                DfoPGXjxr="Stay updated on new features and discover how others are using Dreelio."
+                m9lesnSoM="https://x.com/Leonc7303"
+                QWxn6UVQ_="Follow us"
+             />
+            <CommunityCard
+                nodeId="zK3rv7ULo"
+                width="1fr"
+                height="fit-content"
+                <!-- the component id this instance uses -->
+                componentId="qNOTomklG"
+                variant="wGXcwV1xX"
+                cvMU92hp0="32k subscribers"
+                C0cJCgT25="YouTube"
+                DfoPGXjxr="Tips, tutorials, and in-depth feature guides to inspire and enhance your Dreelio workflow."
+                m9lesnSoM="https://www.youtube.com/@Framer"
+                QWxn6UVQ_="Subscribe"
+             />
+          </Cards>
+        </Container>
+      </Community>
+    </Content>
+  </Main>
+  <SmoothScroll
+      nodeId="wIQSjSbtS"
+      locked="true"
+      width="fit-content"
+      height="fit-content"
+      intensity="10"
+   />
+</Desktop>
+<!-- This is a non-primary variant. To see children inside, call getNodeXml again on this nodeId. -->
+<Tablet
+    nodeId="xFAlwSYWq"
+    position="absolute"
+    width="810px"
+    height="fit-content"
+    top="0px"
+    left="1300px"
+    <!-- background color string or project color style path (if starts with /) -->
+    backgroundColor="rgb(249, 248, 248)"
+    overflow="clip"
+    layout="stack"
+    stackDirection="vertical"
+    stackDistribution="start"
+    stackAlignment="center"
+ />
+<!-- This is a non-primary variant. To see children inside, call getNodeXml again on this nodeId. -->
+<Phone
+    nodeId="AWqFg3ctj"
+    position="absolute"
+    width="390px"
+    height="fit-content"
+    top="0px"
+    left="2210px"
+    <!-- background color string or project color style path (if starts with /) -->
+    backgroundColor="rgb(249, 248, 248)"
+    overflow="clip"
+    layout="stack"
+    stackDirection="vertical"
+    stackDistribution="start"
+    stackAlignment="center"
+ />
+<WelcomeNote
+    nodeId="IveRMeKno"
+    position="absolute"
+    width="951px"
+    height="fit-content"
+    top="0px"
+    left="-1525px"
+    <!-- background color string or project color style path (if starts with /) -->
+    backgroundColor="/Beige 10"
+    borderRadius="24px"
+    overflow="hidden"
+    layout="stack"
+    gap="40px"
+    padding="60px"
+    stackDirection="vertical"
+    stackDistribution="start"
+    stackAlignment="center"
+>
+  <!-- Call getNodeXml on this node to get more details, character limit was reached -->
+</WelcomeNote>
+<AnnotationComponentBlog
+    nodeId="WUWB3pvmB"
+    position="absolute"
+    width="375px"
+    height="fit-content"
+    top="1222px"
+    left="-1525px"
+    <!-- background color string or project color style path (if starts with /) -->
+    backgroundColor="/Beige 10"
+    borderRadius="24px"
+    overflow="hidden"
+    layout="stack"
+    gap="48px"
+    padding="32px"
+    stackDirection="vertical"
+    stackDistribution="start"
+    stackAlignment="center"
+>
+  <!-- Call getNodeXml on this node to get more details, character limit was reached -->
+</AnnotationComponentBlog>
+<AnnotationNavigation
+    nodeId="WLROL3BDj"
+    position="absolute"
+    width="375px"
+    height="fit-content"
+    top="1222px"
+    left="-949px"
+    <!-- background color string or project color style path (if starts with /) -->
+    backgroundColor="/Beige 10"
+    borderRadius="24px"
+    overflow="hidden"
+    layout="stack"
+    gap="32px"
+    padding="32px"
+    stackDirection="vertical"
+    stackDistribution="start"
+    stackAlignment="center"
+>
+  <!-- Call getNodeXml on this node to get more details, character limit was reached -->
+</AnnotationNavigation>
+<AnnotationLogos
+    nodeId="DaVuqTO_D"
+    position="absolute"
+    width="375px"
+    height="fit-content"
+    top="1677px"
+    left="-949px"
+    <!-- background color string or project color style path (if starts with /) -->
+    backgroundColor="/Beige 10"
+    borderRadius="24px"
+    overflow="hidden"
+    layout="stack"
+    gap="64px"
+    padding="32px"
+    stackDirection="vertical"
+    stackDistribution="start"
+    stackAlignment="center"
+>
+  <!-- Call getNodeXml on this node to get more details, character limit was reached -->
+</AnnotationLogos>
+<AnnotationReviews
+    nodeId="GOJ4xheRJ"
+    position="absolute"
+    width="375px"
+    height="fit-content"
+    top="5755px"
+    left="-1871px"
+    <!-- background color string or project color style path (if starts with /) -->
+    backgroundColor="/Beige 10"
+    borderRadius="24px"
+    overflow="hidden"
+    layout="stack"
+    gap="64px"
+    padding="32px"
+    stackDirection="vertical"
+    stackDistribution="start"
+    stackAlignment="center"
+>
+  <!-- Call getNodeXml on this node to get more details, character limit was reached -->
+</AnnotationReviews>
+<DesktopReview1
+    nodeId="t5GFS_2PH"
+    position="absolute"
+    width="386px"
+    height="fit-content"
+    top="5755px"
+    left="-1413px"
+    <!-- the component id this instance uses -->
+    componentId="ugDauJtmh"
+    variant="jpA_HH3dp"
+    K3T_HZ6vw=""As a fast-moving design team, we needed a tool that matched our pace. From client onboarding to getting paid, this just works clean, fast, and beautifully built.""
+    FrWUmwkt3="Leah Daniel"
+    BUy0U2_Ht="Design Ops Lead, teamwork."
+ />
+<DesktopReview4
+    nodeId="P9YnGvXED"
+    position="absolute"
+    width="386px"
+    height="fit-content"
+    top="6083px"
+    left="-977px"
+    <!-- the component id this instance uses -->
+    componentId="ugDauJtmh"
+    variant="jpA_HH3dp"
+    K3T_HZ6vw=""Managing projects used to mean spreadsheets, DMs, and missed invoices. This platform keeps our workflows tight and our clients impressed.""
+    FrWUmwkt3="Amos Chen"
+    BUy0U2_Ht="Art Director, Pentagram"
+ />
+<DesktopReview3
+    nodeId="ZDhJVaqEz"
+    position="absolute"
+    width="386px"
+    height="fit-content"
+    top="6083px"
+    left="-1413px"
+    <!-- the component id this instance uses -->
+    componentId="ugDauJtmh"
+    variant="jpA_HH3dp"
+    K3T_HZ6vw=""We used to duct-tape tools together. Now our contracts, time tracking, and payments live in one clean system. It's everything a small team needs to stay pro.""
+    FrWUmwkt3="Jane Jay Jay"
+    BUy0U2_Ht="Project Manager, Google"
+ />
+<DesktopReview2
+    nodeId="F_i2o2fo4"
+    position="absolute"
+    width="386px"
+    height="fit-content"
+    top="5755px"
+    left="-977px"
+    <!-- the component id this instance uses -->
+    componentId="ugDauJtmh"
+    variant="jpA_HH3dp"
+    K3T_HZ6vw=""As a fast-moving design team, we needed a tool that matched our pace. From client onboarding to getting paid, this just works clean, fast, and beautifully built.""
+    FrWUmwkt3="Sergio Walker"
+    BUy0U2_Ht="Agency Owner"
+ />
+<MobileReview1
+    nodeId="IGngnSyPU"
+    position="absolute"
+    width="303px"
+    height="fit-content"
+    top="6528px"
+    left="-1413px"
+    <!-- the component id this instance uses -->
+    componentId="ugDauJtmh"
+    variant="NFPD0u5mY"
+    K3T_HZ6vw=""As a fast-moving design team, we needed a tool that matched our pace. From client onboarding to getting paid, this just works clean, fast, and beautifully built.""
+    FrWUmwkt3="Leah Daniel"
+    BUy0U2_Ht="Design Ops Lead, teamwork."
+ />
+<MobileReview4
+    nodeId="RV5JgsYPF"
+    position="absolute"
+    width="303px"
+    height="fit-content"
+    top="6895px"
+    left="-1061px"
+    <!-- the component id this instance uses -->
+    componentId="ugDauJtmh"
+    variant="NFPD0u5mY"
+    K3T_HZ6vw=""Managing projects used to mean spreadsheets, DMs, and missed invoices. This platform keeps our workflows tight and our clients impressed.""
+    FrWUmwkt3="Amos Chen"
+    BUy0U2_Ht="Art Director, Pentagram"
+ />
+<MobileReview3
+    nodeId="cp6mO51LM"
+    position="absolute"
+    width="303px"
+    height="fit-content"
+    top="6895px"
+    left="-1413px"
+    <!-- the component id this instance uses -->
+    componentId="ugDauJtmh"
+    variant="NFPD0u5mY"
+    K3T_HZ6vw=""We used to duct-tape tools together. Now our contracts, time tracking, and payments live in one clean system. It's everything a small team needs to stay pro.""
+    FrWUmwkt3="Jane Jay Jay"
+    BUy0U2_Ht="Project Manager, Google"
+ />
+<MobileReview2
+    nodeId="AD2YJ15k2"
+    position="absolute"
+    width="303px"
+    height="fit-content"
+    top="6528px"
+    left="-1061px"
+    <!-- the component id this instance uses -->
+    componentId="ugDauJtmh"
+    variant="NFPD0u5mY"
+    K3T_HZ6vw=""As a fast-moving design team, we needed a tool that matched our pace. From client onboarding to getting paid, this just works clean, fast, and beautifully built.""
+    FrWUmwkt3="Sergio Walker"
+    BUy0U2_Ht="Agency Owner"
+ />
+<PlaceholderLogo1
+    nodeId="n38e4PYS7"
+    position="absolute"
+    width="113px"
+    height="23px"
+    top="1894px"
+    left="-949px"
+    <!-- background image URL, if you pass a new image url, the image will be uploaded to Framer -->
+    backgroundImage="https://framerusercontent.com/images/OMudghgJ8cOQBZy5AnYNjXwFYqo.svg"
+    overflow="clip"
+ />
+<PlaceholderLogo2
+    nodeId="VCKo9cfHt"
+    position="absolute"
+    width="83px"
+    height="23px"
+    top="1972px"
+    left="-949px"
+    <!-- background image URL, if you pass a new image url, the image will be uploaded to Framer -->
+    backgroundImage="https://framerusercontent.com/images/021VVvexJAvEOe3HzihhFr7Vc.svg"
+    overflow="clip"
+ />
+<PlaceholderLogo3
+    nodeId="G3_9NDHDQ"
+    position="absolute"
+    width="146px"
+    height="23px"
+    top="2040px"
+    left="-949px"
+    <!-- background image URL, if you pass a new image url, the image will be uploaded to Framer -->
+    backgroundImage="https://framerusercontent.com/images/GAPrNTGokhXDrpYlaBRMcEI1eb4.svg"
+    overflow="clip"
+ />
+<PlaceholderLogo4
+    nodeId="Ee4stEV0X"
+    position="absolute"
+    width="124px"
+    height="23px"
+    top="2113px"
+    left="-949px"
+    <!-- background image URL, if you pass a new image url, the image will be uploaded to Framer -->
+    backgroundImage="https://framerusercontent.com/images/x8lLoogiCtXVj0rROYScrZZvHMk.svg"
+    overflow="clip"
+ />
+<PlaceholderLogo5
+    nodeId="nP2_C1P4w"
+    position="absolute"
+    width="95px"
+    height="25px"
+    top="2183px"
+    left="-949px"
+    <!-- background image URL, if you pass a new image url, the image will be uploaded to Framer -->
+    backgroundImage="https://framerusercontent.com/images/JLKCf0k33nXsBtTOLxbgoXjv6Ss.svg"
+    overflow="clip"
+ />
+<PlaceholderLogo5
+    nodeId="SGvjISfQn"
+    position="absolute"
+    width="95px"
+    height="25px"
+    top="2404px"
+    left="-949px"
+    <!-- background image URL, if you pass a new image url, the image will be uploaded to Framer -->
+    backgroundImage="https://framerusercontent.com/images/JLKCf0k33nXsBtTOLxbgoXjv6Ss.svg"
+    overflow="clip"
+ />

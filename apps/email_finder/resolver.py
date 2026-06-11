@@ -141,10 +141,19 @@ def _homepage_confirms(domain: str, tokens: list[str]) -> bool:
 
 
 def resolve_domain(company: str) -> dict:
+    comp_lower = company.strip().lower()
+    result = {"company": company, "clean": None, "domain": None,
+              "confidence": None, "method": None, "candidates_tried": 0}
+    
+    if re.match(r"^[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,6}$", comp_lower):
+        resolves, has_mx = _dns_status(comp_lower)
+        if resolves:
+            result.update(clean=comp_lower, domain=comp_lower, confidence="high" if has_mx else "medium", method="direct-domain")
+            return result
+
     clean = clean_company(company)
     toks = _tokens(clean)
-    result = {"company": company, "clean": clean, "domain": None,
-              "confidence": None, "method": None, "candidates_tried": 0}
+    result.update(clean=clean)
     if not clean:
         return result
 

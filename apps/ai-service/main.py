@@ -229,11 +229,15 @@ class SelfProfileRequest(BaseModel):
 
 def get_brand_context(persona: Optional[str], value_prop: Optional[str], user_context: Optional[Dict] = None) -> str:
     context = ""
+    if user_context and user_context.get("sender_name"):
+        context += f"\nYour Name: {user_context['sender_name']}"
     if persona:
         context += f"\nYour Persona/Role: {persona}"
     if value_prop:
         context += f"\nYour Company Value Proposition: {value_prop}"
     if user_context:
+        if user_context.get("company"):
+            context += f"\nYour Company: {user_context['company']}"
         if user_context.get("companyDescription"):
             context += f"\nCompany Description: {user_context['companyDescription']}"
         if user_context.get("products"):

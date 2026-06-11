@@ -467,6 +467,19 @@ export default function AIProfilePage() {
                 </motion.div>
               )}
             </div>
+            {(() => {
+              const missing = [
+                !form.companyDescription && 'Company Description (Business)',
+                !form.products && 'Products / Services (Business)',
+                !form.targetAudience && 'Target Audience (Audience)',
+                !form.communicationStyle && 'Communication Style (Voice)',
+              ].filter(Boolean) as string[];
+              return missing.length > 0 ? (
+                <p className="text-xs font-semibold text-amber-600 mb-1 sm:mb-0 sm:mr-auto self-center">
+                  To generate a strategy, fill: {missing.join(', ')}
+                </p>
+              ) : null;
+            })()}
             <div className="flex gap-3">
               <button
                 onClick={handleSave}

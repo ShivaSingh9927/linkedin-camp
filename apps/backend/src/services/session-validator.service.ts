@@ -79,20 +79,20 @@ class SessionValidatorService {
             } catch {}
 
             const launchOptions: any = {
-                headless: true,
+                headless: false,
+                channel: 'chrome',
                 args: [
                     '--no-sandbox',
                     '--disable-setuid-sandbox',
                     '--disable-blink-features=AutomationControlled',
-                    '--disable-dev-shm-usage'
                 ]
             };
 
             const contextOptions: any = {
                 userAgent,
                 viewport: null,
-                locale: 'en-IN',
-                timezoneId: 'Asia/Kolkata'
+                locale: 'en-US',
+                timezoneId: 'America/New_York'
             };
 
             try {

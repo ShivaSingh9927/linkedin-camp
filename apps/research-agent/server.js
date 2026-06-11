@@ -1,8 +1,8 @@
 const express = require('express');
 const Redis = require('ioredis');
-const { buildCompetitiveLandscape } = require('./research');
+const { buildCompetitiveLandscape, searchEmailFormat } = require('./research');
 
-const PORT = parseInt(process.env.PORT || '8002', 10);
+const PORT = parseInt(process.env.PORT || '3010', 10);
 const REDIS_URL = process.env.REDIS_URL || '';
 
 const redis = REDIS_URL
@@ -51,6 +51,30 @@ app.post('/research/competitive-landscape', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.error(`[RESEARCH-AGENT] competitive-landscape failed: ${err.message}`);
+    res.status(500).json({ error: err.message });
+  } finally {
+    clearTimeout(timer);
+  }
+});
+
+app.post('/research/email-format', async (req, res) => {
+  const { domain, search_prompt } = req.body || {};
+  if (!domain) return res.status(400).json({ error: 'domain is required' });
+
+  const HARD_DEADLINE_MS = parseInt(process.env.RESEARCH_HARD_DEADLINE_MS || '120000', 10);
+  let timer;
+  const deadline = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`email-format research exceeded ${HARD_DEADLINE_MS}ms`)), HARD_DEADLINE_MS);
+  });
+
+  try {
+    const result = await Promise.race([
+      searchEmailFormat({ domain, search_prompt: search_prompt || '' }, redis),
+      deadline,
+    ]);
+    res.json(result);
+  } catch (err) {
+    console.error(`[RESEARCH-AGENT] email-format failed: ${err.message}`);
     res.status(500).json({ error: err.message });
   } finally {
     clearTimeout(timer);
