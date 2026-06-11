@@ -431,6 +431,77 @@ PYEOF
         send_request "/ai/message" "$payload" "$result_dir" "$label"
         ;;
 
+    comment)
+        if [ -z "$CAMPAIGN_NUM" ] || [ -z "$LEAD_NAME" ]; then
+            echo -e "${RED}ERROR: comment mode needs <campaign-num> and <post-file>${NC}"
+            echo "  $0 comment <user> <campaign-num> <post-file>"
+            exit 1
+        fi
+
+        # Find campaign file
+        campaign_file=$(ls "$CAMPAIGNS_DIR/${CAMPAIGN_NUM}-"*.json 2>/dev/null | head -1)
+        if [ -z "$campaign_file" ]; then
+            echo -e "${RED}ERROR: Campaign '$CAMPAIGN_NUM' not found for $USER_NAME${NC}"
+            echo "Available campaigns:"
+            ls "$CAMPAIGNS_DIR/"
+            exit 1
+        fi
+
+        # Find post file
+        post_file=$(find "$TEST_DIR/posts" -name "${LEAD_NAME}.json" 2>/dev/null | head -1)
+        if [ -z "$post_file" ]; then
+            echo -e "${RED}ERROR: Post '$LEAD_NAME' not found in $TEST_DIR/posts${NC}"
+            ls "$TEST_DIR/posts/"
+            exit 1
+        fi
+
+        campaign_name=$(basename "$campaign_file" .json | sed 's/^[0-9]*-//')
+        post_basename=$(basename "$post_file" .json)
+        label="COMMENT-$USER_NAME-$(printf "%02d" "$CAMPAIGN_NUM")-${campaign_name}-${post_basename}"
+
+        # Load strategy
+        strategy_file="$RESULTS_DIR/A1-strategy-$USER_NAME/response.json"
+        if [ -f "$strategy_file" ]; then
+            strategy_json=$(python3 -c "import json; d=json.load(open('$strategy_file')); print(json.dumps(d.get('strategy',{})))" 2>/dev/null)
+        else
+            strategy_json="{}"
+        fi
+
+        echo "$profile" > /tmp/_profile.json
+
+        payload=$(python3 << PYEOF
+import json
+p = json.load(open('/tmp/_profile.json'))
+c = json.load(open('$campaign_file'))
+post = json.load(open('$post_file'))
+
+req = {
+    "profile_name": post.get("author_name", ""),
+    "profile_headline": post.get("author_headline", ""),
+    "post_content": post.get("content", ""),
+    "campaign_description": c.get("description") or c.get("useCase") or "",
+    "tone": c.get("toneOverride", "professional"),
+    "persona": p.get("persona", ""),
+    "value_proposition": p.get("valueProp", ""),
+    "user_context": {
+        "sender_name": p.get("displayName", ""),
+        "company": p.get("company", ""),
+        "companyDescription": p.get("companyDescription", ""),
+        "products": p.get("products", ""),
+        "differentiators": p.get("differentiators", ""),
+        "communicationStyle": p.get("communicationStyle", ""),
+        "writingSamples": p.get("writingSamples", [])
+    },
+    "ai_strategy": json.loads('''$strategy_json''')
+}
+
+print(json.dumps(req))
+PYEOF
+)
+        result_dir="$RESULTS_DIR/D1-comment-$USER_NAME-$(printf "%02d" "$CAMPAIGN_NUM")-${campaign_name}-${post_basename}"
+        send_request "/ai/comment" "$payload" "$result_dir" "$label"
+        ;;
+
     summary)
         label="SUMMARY-$USER_NAME"
         payload=$(python3 << PYEOF
