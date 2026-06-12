@@ -229,13 +229,19 @@ export async function markAccountHealthy(userId: string): Promise<void> {
             },
         }).catch(err => console.error(`[checkpoint] resume notification failed: ${err.message}`));
 
+        // Best-effort realtime nudge. The Socket.IO server only exists in the
+        // API process; markAccountHealthy often runs in the WORKER (via
+        // loginWithOtp), where `io` is undefined — so guard rather than throw.
+        // The durable Notification above is the source of truth for the UI.
         try {
             const { io } = await import('../../socket');
-            io.to(`user_${userId}`).emit('CAMPAIGN_RESUMED', {
-                userId,
-                campaignIds: toResume.map(c => c.id),
-                timestamp: new Date().toISOString(),
-            });
+            if (io && typeof (io as any).to === 'function') {
+                io.to(`user_${userId}`).emit('CAMPAIGN_RESUMED', {
+                    userId,
+                    campaignIds: toResume.map(c => c.id),
+                    timestamp: new Date().toISOString(),
+                });
+            }
         } catch (err: any) {
             console.error(`[checkpoint] resume socket emit failed: ${err?.message}`);
         }

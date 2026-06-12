@@ -33,7 +33,12 @@ export const humanMoveAndClick = async (page: Page, target: string | Locator) =>
 export const humanType = async (page: Page, target: string | Locator, text: string) => {
     try {
         const box = typeof target === 'string' ? page.locator(target).first() : target;
-        await box.waitFor({ state: 'visible', timeout: 10000 });
+        // `waitFor` only exists on a Locator. Callers also pass ElementHandles
+        // (from page.$$), which are already attached+visible when resolved — so
+        // only wait when the method is present rather than crashing on it.
+        if (typeof (box as any).waitFor === 'function') {
+            await (box as any).waitFor({ state: 'visible', timeout: 10000 });
+        }
         await box.click({ force: true });
         await wait(randomRange(800, 1500));
 
