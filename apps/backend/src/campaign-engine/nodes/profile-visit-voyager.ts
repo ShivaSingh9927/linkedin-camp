@@ -253,7 +253,10 @@ async function resolveVanityToFsd(vanity: string, userId: string, page: any): Pr
         // We import dynamically to avoid a hard dep cycle with the service
         const { voyagerFetch } = await import('../../services/voyager-api.service');
         const r = await voyagerFetch<any>(userId, url, { page, skipRateLimit: true });
-        if (!r.ok) return null;
+        if (!r.ok) {
+            console.log(`[PROFILE-VISIT-VOYAGER] vanity resolve failed: status=${(r as any).status} err=${(r as any).error}`);
+            return null;
+        }
         const data = (r.data as any)?.data || {};
         const included = Array.isArray((r.data as any)?.included) ? (r.data as any).included : [];
         // The response is `data["*profile"]` = "urn:li:fsd_profile:<id>" and

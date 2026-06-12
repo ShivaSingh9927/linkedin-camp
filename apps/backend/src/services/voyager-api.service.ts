@@ -201,7 +201,23 @@ export async function voyagerFetch<T = any>(
         return { ok: false, error: 'No Playwright context available — cannot call Voyager (raw fetch is gated)' };
     }
 
-    const csrf = getCachedCsrf(userId);
+    let csrf = getCachedCsrf(userId);
+    // Fallback: csrf-token IS the JSESSIONID cookie value (minus quotes). When
+    // no Voyager request has been sniffed yet (e.g. profile-visit right after a
+    // warmup nav, with no in-flight voyager traffic), derive it straight from
+    // the cookie so reads work without depending on captureVoyagerHeaders.
+    // page-instance stays optional — read endpoints accept csrf + cookies alone.
+    if (!csrf) {
+        try {
+            const ctx = opts.page?.context() || opts.context;
+            const cookies = ctx ? await ctx.cookies('https://www.linkedin.com') : [];
+            const j = cookies.find((c: any) => c.name === 'JSESSIONID');
+            if (j?.value) {
+                csrf = j.value.replace(/"/g, '');
+                rememberCsrf(userId, csrf);
+            }
+        } catch { /* best-effort */ }
+    }
     const pageInstance = getCachedPageInstance(userId);
     const headers: Record<string, string> = {
         'accept': opts.accept || 'application/vnd.linkedin.normalized+json+2.1',
