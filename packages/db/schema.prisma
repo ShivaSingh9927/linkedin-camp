@@ -92,6 +92,11 @@ model Campaign {
   // Lower = earlier promotion. Only one ACTIVE per user; QUEUED campaigns
   // promote one-at-a-time as the active campaign terminates.
   queuePosition        Int?
+  // Why the campaign is currently PAUSED. Null for manual pauses / not paused.
+  // 'session_expired' is set when the engine/worker auto-pauses the campaign
+  // after a mid-run LinkedIn challenge; markAccountHealthy() reads this to
+  // auto-resume exactly the campaigns it auto-paused (and leaves manual pauses).
+  pausedReason         String?
   workflow             Json?
   workflowJson         Json?
   objective            String?

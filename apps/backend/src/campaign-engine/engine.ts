@@ -43,7 +43,7 @@ import { follow } from './nodes/follow';
 import { readNodeOutputs, writeNodeOutput, updateLeadEnrichment } from './storage';
 import { checkQuota, nextDayRetryAt, DAILY_CAPS, GovernedAction, isWithinWorkingHours, nextWorkingHourAt } from './safety/quota';
 import { transitionLead, recomputeCampaignStatus } from './safety/lifecycle';
-import { classifyPage, handleCheckpoint, isCheckpoint } from './safety/checkpoint';
+import { classifyPage, handleCheckpoint, isCheckpoint, pauseCampaignForSessionExpiry } from './safety/checkpoint';
 import { uploadScreenshotToS3 } from '../services/s3-upload.service';
 
 const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
@@ -299,6 +299,11 @@ async function runLead(
                     info: checkpointInfo,
                     screenshotPath: shotPath,
                 });
+                // STOP the whole campaign (tagged so a successful re-login
+                // auto-resumes it). Previously this path only marked account
+                // health + returned 'paused' but left the Campaign row ACTIVE,
+                // so a mid-sequence challenge looked unhandled to the user.
+                await pauseCampaignForSessionExpiry(campaignId);
                 execResult.status = 'paused';
                 execResult.pausedReason = 'stalled';
                 return execResult;
@@ -371,10 +376,8 @@ async function runLead(
                         await page.screenshot({ path: shotPath, fullPage: false }).catch(() => {});
                         uploadScreenshotToS3(page, userId, `engine_warmup_${lead.firstName || 'unknown'}`).catch(() => {});
                         await handleCheckpoint({ userId, campaignId, leadId: lead.id, info: checkpointInfo, screenshotPath: shotPath });
-                        await prisma.campaign.update({
-                            where: { id: campaignId },
-                            data: { status: 'PAUSED' },
-                        }).catch(err => console.error(`[ENGINE] Failed to pause campaign: ${err.message}`));
+                        // Tagged pause so a successful re-login auto-resumes it.
+                        await pauseCampaignForSessionExpiry(campaignId);
                         execResult.status = 'paused';
                         execResult.pausedReason = 'stalled';
                         return execResult;

@@ -156,6 +156,19 @@ export async function handleCheckpoint(args: HandleCheckpointArgs): Promise<void
 }
 
 /**
+ * Auto-pause a campaign because LinkedIn served a challenge / killed the
+ * session mid-run. Tagged with pausedReason='session_expired' so
+ * markAccountHealthy() can auto-resume exactly the campaigns WE paused and
+ * leave campaigns the user paused by hand untouched. Idempotent.
+ */
+export async function pauseCampaignForSessionExpiry(campaignId: string): Promise<void> {
+    await prisma.campaign.update({
+        where: { id: campaignId },
+        data: { status: 'PAUSED', pausedReason: 'session_expired' },
+    }).catch(err => console.error(`[checkpoint] pauseCampaignForSessionExpiry failed: ${err.message}`));
+}
+
+/**
  * Called by loginWithOtp after a successful refresh. Flips the user back to
  * HEALTHY so the engine's pre-flight gate lets new runs through; the cron
  * picks up the DEFERRED leads on its next tick.
@@ -187,4 +200,46 @@ export async function markAccountHealthy(userId: string): Promise<void> {
           AND  p."statusReason" LIKE 'account_%'
     `;
     console.log(`[checkpoint] user=${userId} → HEALTHY (un-parked ${unparked} leads)`);
+
+    // Auto-resume the campaign(s) WE auto-paused for this session expiry. We
+    // only touch campaigns tagged pausedReason='session_expired' — a campaign
+    // the user paused by hand stays paused. The 1-active-per-user invariant
+    // means there's normally just one, but we handle all defensively. The cron
+    // heartbeat (ACTIVE campaigns) + the un-parked leads above then resume
+    // execution on the next tick; no re-enrollment needed.
+    const toResume = await prisma.campaign.findMany({
+        where: { userId, status: 'PAUSED', pausedReason: 'session_expired' },
+        select: { id: true, name: true },
+    });
+    if (toResume.length > 0) {
+        await prisma.campaign.updateMany({
+            where: { userId, status: 'PAUSED', pausedReason: 'session_expired' },
+            data: { status: 'ACTIVE', pausedReason: null },
+        }).catch(err => console.error(`[checkpoint] auto-resume failed: ${err.message}`));
+
+        await prisma.notification.create({
+            data: {
+                userId,
+                type: 'ACCOUNT_HEALTH',
+                title: 'Campaign resumed',
+                body: toResume.length === 1
+                    ? `Re-login succeeded — "${toResume[0].name}" has resumed.`
+                    : `Re-login succeeded — ${toResume.length} campaigns resumed.`,
+                meta: { resumedCampaignIds: toResume.map(c => c.id) },
+            },
+        }).catch(err => console.error(`[checkpoint] resume notification failed: ${err.message}`));
+
+        try {
+            const { io } = await import('../../socket');
+            io.to(`user_${userId}`).emit('CAMPAIGN_RESUMED', {
+                userId,
+                campaignIds: toResume.map(c => c.id),
+                timestamp: new Date().toISOString(),
+            });
+        } catch (err: any) {
+            console.error(`[checkpoint] resume socket emit failed: ${err?.message}`);
+        }
+
+        console.log(`[checkpoint] user=${userId} auto-resumed ${toResume.length} campaign(s)`);
+    }
 }

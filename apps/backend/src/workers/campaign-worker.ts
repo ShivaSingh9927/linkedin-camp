@@ -78,7 +78,8 @@ const processCampaignJob = async (data: CampaignJobData, job: Job) => {
         console.error(`[CAMPAIGN-WORKER] Session invalid for user ${userId}. Pausing campaign.`);
         await prisma.campaign.update({
             where: { id: campaignId },
-            data: { status: 'PAUSED' }
+            // Tagged 'session_expired' so a successful re-login auto-resumes it.
+            data: { status: 'PAUSED', pausedReason: 'session_expired' }
         });
         await prisma.notification.create({
             data: {

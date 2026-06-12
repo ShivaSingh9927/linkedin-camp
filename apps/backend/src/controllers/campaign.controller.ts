@@ -177,7 +177,7 @@ export const startCampaign = async (req: any, res: Response) => {
 
         const updatedCampaign = await prisma.campaign.update({
             where: { id, userId },
-            data: { status: 'ACTIVE', queuePosition: null },
+            data: { status: 'ACTIVE', queuePosition: null, pausedReason: null },
         });
 
         console.log('Campaign status updated to ACTIVE');
@@ -320,7 +320,8 @@ export const pauseCampaign = async (req: any, res: Response) => {
     try {
         const campaign = await prisma.campaign.update({
             where: { id, userId },
-            data: { status: 'PAUSED' },
+            // Manual pause — clear any auto-pause tag so re-login won't resume it.
+            data: { status: 'PAUSED', pausedReason: null },
         });
         res.json(campaign);
     } catch (error) {
