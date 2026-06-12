@@ -50,6 +50,7 @@ services:
       CRM_ENCRYPTION_KEY: ${CRM_ENCRYPTION_KEY}
       SESSION_STORAGE_PATH: ${SESSION_STORAGE_PATH:-/app/sessions}
       INBOX_DIAG: ${INBOX_DIAG:-}
+      CAPSOLVER_API_KEY: ${CAPSOLVER_API_KEY}
     # Bind the API only to the private-net IP so the public IP never exposes :3001.
     # The Hetzner LB reaches it at 10.0.0.2:3001 over the private network.
     ports:
@@ -103,6 +104,7 @@ services:
       CRM_ENCRYPTION_KEY: ${CRM_ENCRYPTION_KEY}
       SESSION_STORAGE_PATH: ${SESSION_STORAGE_PATH:-/app/sessions}
       INBOX_DIAG: ${INBOX_DIAG:-}
+      CAPSOLVER_API_KEY: ${CAPSOLVER_API_KEY}
     # Local sessions volume (transitional — replaced by object storage in Phase 2).
     volumes:
       - sessions_data:/app/sessions

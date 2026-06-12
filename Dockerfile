@@ -21,10 +21,13 @@ RUN apt-get update && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
 COPY . .
 RUN npm install
 RUN npx prisma generate --schema=packages/db/schema.prisma
+RUN rm -rf /app/node_modules/.cache/turbo
 RUN npx turbo run build --filter=backend
 
 # Drop devDependencies across all workspaces (tsup, typescript, @types/*, …).
 RUN npm prune --omit=dev
+# Sentry is a runtime dependency that gets pruned; reinstall it
+RUN npm install @sentry/node --no-save 2>/dev/null || true
 
 # --------- API RUNNER (slim) ---------
 # No Playwright, no Chromium, no xvfb. Just enough to run the Express +
