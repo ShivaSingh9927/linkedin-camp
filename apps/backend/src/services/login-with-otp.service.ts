@@ -5,6 +5,7 @@ import path from 'path';
 import fs from 'fs';
 import { classifyPage, markAccountHealthy, handleCheckpoint, type CheckpointInfo } from '../campaign-engine/safety/checkpoint';
 import { uploadScreenshotToS3 } from './s3-upload.service';
+import { tryCapsolver } from './captcha-solver.service';
 
 const SCREENSHOT_DIR = process.env.SESSION_STORAGE_PATH || '/app/sessions';
 
@@ -136,6 +137,29 @@ async function solveOtp(page: Page, otpResolver: OtpResolver): Promise<boolean> 
     return false;
 }
 
+/**
+ * Submit the challenge form after a captcha token has been injected. The token
+ * lives in a hidden field; LinkedIn still needs a Verify/Submit click (or Enter)
+ * to post it. Then settle so the caller can re-classify.
+ */
+async function submitChallenge(page: Page): Promise<void> {
+    const submitBtn = await page.$('button[type="submit"]')
+        ?? await page.$('button:has-text("Verify")')
+        ?? await page.$('button:has-text("Submit")')
+        ?? await page.$('button:has-text("Continue")')
+        ?? await page.$('#email-pin-submit-button');
+    if (submitBtn) {
+        const { humanMoveAndClick } = await import('./stealth.service');
+        await humanMoveAndClick(page, submitBtn);
+        console.log('[capsolver] clicked submit');
+    } else {
+        await page.keyboard.press('Enter');
+        console.log('[capsolver] pressed Enter');
+    }
+    await wait(8000);
+    try { await page.waitForLoadState('networkidle', { timeout: 15000 }); } catch {}
+}
+
 export async function loginWithOtp(input: LoginInput): Promise<LoginOutcome> {
     const { userId, email, password, proxy, otpResolver, userAgent } = input;
     console.log(`[login-otp] user=${userId} email=${email} proxy=${proxy.server}`);
@@ -210,6 +234,23 @@ export async function loginWithOtp(input: LoginInput): Promise<LoginOutcome> {
                 throw new Error('OTP unresolved');
             }
             info = await classifyPage(page);
+        }
+
+        if (info.kind === 'challenge_other') {
+            // tryCapsolver self-gates: it detects the captcha type first and only
+            // spends a CapSolver call when it recognizes a solvable one (reCAPTCHA
+            // v2/v3, hCaptcha, FunCaptcha/Arkose). A phone / app-prompt challenge
+            // returns {solved:false, reason:'no_captcha'} with no API spend, and
+            // we fall through to RESTRICTED for the user to handle.
+            console.log('[login-otp] challenge_other — attempting captcha solve');
+            const result = await tryCapsolver(page);
+            if (result.solved) {
+                await submitChallenge(page);
+                info = await classifyPage(page);
+                console.log(`[login-otp] after capsolver(${result.type}) kind=${info.kind} url=${info.url}`);
+            } else {
+                console.log(`[login-otp] captcha not solved (${result.reason}) — leaving as ${info.kind}`);
+            }
         }
 
         if (info.kind !== 'feed') {
