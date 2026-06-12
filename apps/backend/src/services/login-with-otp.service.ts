@@ -6,6 +6,7 @@ import fs from 'fs';
 import { classifyPage, markAccountHealthy, handleCheckpoint, type CheckpointInfo } from '../campaign-engine/safety/checkpoint';
 import { uploadScreenshotToS3 } from './s3-upload.service';
 import { tryCapsolver } from './captcha-solver.service';
+import { captureChallengeScenario } from './challenge-capture.service';
 
 const SCREENSHOT_DIR = process.env.SESSION_STORAGE_PATH || '/app/sessions';
 
@@ -243,6 +244,10 @@ export async function loginWithOtp(input: LoginInput): Promise<LoginOutcome> {
             // returns {solved:false, reason:'no_captcha'} with no API spend, and
             // we fall through to RESTRICTED for the user to handle.
             console.log('[login-otp] challenge_other — attempting captcha solve');
+            // Archive the raw challenge as a reusable offline test fixture before
+            // we mutate the page. LinkedIn challenges are rare + can't be summoned,
+            // so each real one is a valuable detectCaptcha() regression sample.
+            await captureChallengeScenario(page, { userId, label: 'login_challenge_other' }).catch(() => {});
             const result = await tryCapsolver(page);
             if (result.solved) {
                 await submitChallenge(page);

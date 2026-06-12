@@ -1,0 +1,5 @@
+# Real LinkedIn challenge captures land here (pulled from prod / S3). They may
+# contain session-identifying markup, so never commit them — only the synthetic
+# fixtures are tracked. Keep this dir present for the test runner.
+*
+!.gitignore

@@ -94,15 +94,27 @@ const detectFuncaptcha: Detector = async (page, websiteURL) => {
 };
 
 const detectRecaptchaV3: Detector = async (page, websiteURL) => {
-    // v3 has no visible widget: grecaptcha is present but there's no checkbox
-    // anchor. Distinguish from v2 by the absence of the checkbox element.
-    const isV3 = await page
-        .evaluate(() => !!(window as any).grecaptcha && !document.querySelector('.recaptcha-checkbox, iframe[src*="recaptcha/api2/anchor"]'))
+    // v3 has no visible widget. The capture-safe signal is the loader script
+    // `recaptcha/api.js?render=<sitekey>` (a DOM attribute that survives a static
+    // HTML snapshot); the runtime `window.grecaptcha` object is a secondary
+    // signal that only exists on a LIVE page (Google's external script injects
+    // it), so we don't rely on it alone — replayed captures wouldn't have it.
+    // Either way, the presence of a v2 checkbox/anchor means it's v2, not v3.
+    const hasAnchor = await page
+        .$('.recaptcha-checkbox, iframe[src*="recaptcha/api2/anchor"]')
+        .catch(() => null);
+    if (hasAnchor) return null;
+
+    const content = (await page.content().catch(() => '')) || '';
+    const renderKey = content.match(/recaptcha\/(?:api|enterprise)\.js\?[^"'\s]*render=([0-9A-Za-z_-]{30,})/)?.[1];
+    const grecaptchaPresent = await page
+        .evaluate(() => !!(window as any).grecaptcha)
         .catch(() => false);
-    if (!isV3) return null;
+    if (!renderKey && !grecaptchaPresent) return null;
+
     const websiteKey =
+        renderKey ||
         (await page.$eval('[data-sitekey]', (el: Element) => el.getAttribute('data-sitekey')).catch(() => null)) ||
-        (await page.content().catch(() => '')).match(/render=([0-9A-Za-z_-]{30,})/)?.[1] ||
         undefined;
     if (!websiteKey) return null;
     return { type: 'recaptcha_v3', websiteURL, websiteKey, pageAction: 'login' };

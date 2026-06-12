@@ -80,3 +80,4 @@ deepseek_api_test.py
 server.pid
 *.pid
 crm-keys.txt
+test-capsolver.mjs

@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Verify your identity | LinkedIn</title></head>
+<body>
+  <!-- A manual challenge CapSolver cannot solve: authenticator-app / phone prompt.
+       detectCaptcha() must return null so the caller leaves the account RESTRICTED
+       instead of wasting a CapSolver call. -->
+  <h1>Enter the code from your authenticator app</h1>
+  <p>We sent a notification to your phone. Approve it to continue.</p>
+  <input type="text" name="pin" autocomplete="one-time-code" />
+  <button type="submit">Verify</button>
+</body>
+</html>
