@@ -1,0 +1,10 @@
+{
+  "description": "Expected detectCaptcha() output per synthetic fixture. type=null means no solvable captcha (detectCaptcha returns null).",
+  "cases": [
+    { "file": "recaptcha_v2.html", "type": "recaptcha_v2", "key": "6Lc_aCMUAAAAAB1AkzKMzKMzKMzKMzKMzKMzKMzK", "keyField": "websiteKey" },
+    { "file": "funcaptcha.html", "type": "funcaptcha", "key": "3117BF26-4762-4F5A-8ED9-A85E69209A46", "keyField": "publicKey", "apiSubdomain": "client-api.arkoselabs.com" },
+    { "file": "hcaptcha.html", "type": "hcaptcha", "key": "10000000-ffff-ffff-ffff-000000000001", "keyField": "websiteKey" },
+    { "file": "recaptcha_v3.html", "type": "recaptcha_v3", "key": "6LdyC2cUAAAAACGuDKpXeDorzUDWXmdqeg4soa1V", "keyField": "websiteKey" },
+    { "file": "phone_challenge_none.html", "type": null }
+  ]
+}
