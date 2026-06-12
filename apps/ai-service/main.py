@@ -137,6 +137,10 @@ class MessageRequest(BaseModel):
     about: Optional[str] = None
     experience: Optional[List[Dict[str, str]]] = None
     education: Optional[List[Dict[str, str]]] = None
+    # post_content: the lead's most recent LinkedIn post, when the campaign's
+    # profile-visit step ran with enrichPosts. A SOFT signal — the model may
+    # reference it if it's a genuinely relevant hook, but must not force it.
+    post_content: Optional[str] = None
     connection_context: Optional[str] = None
     campaign_description: Optional[str] = None
     tone: str = "professional"
@@ -629,7 +633,18 @@ RECIPIENT PROFILE:
     
     if req.about and len(req.about) > 20:
         profile_ctx += f"\n- About: {req.about[:300]}...\n"
-    
+
+    # Recent post — the strongest personalization hook when present. Soft:
+    # reference it only if it gives a natural, specific reason to reach out.
+    post_ctx = ""
+    if req.post_content and len(req.post_content.strip()) > 20:
+        post_ctx = (
+            "\nTHEIR MOST RECENT POST (use as your opener hook ONLY if it gives a "
+            "genuine, specific reason to reach out — otherwise ignore it; never "
+            "force a reference or misquote it):\n"
+            f'"{req.post_content.strip()[:600]}"\n'
+        )
+
     campaign_ctx = ""
     if req.campaign_description:
         campaign_ctx = f"\nCAMPAIGN OBJECTIVE/DESCRIPTION: {req.campaign_description}\n"
@@ -740,7 +755,7 @@ Your task: Write ONE personalized {channel_label} that shows you've done your re
 STRICT RULES:
 {channel_rules}{sequence_rules}"""
 
-    user = f"""{profile_ctx}
+    user = f"""{profile_ctx}{post_ctx}
 {campaign_ctx}{sequence_ctx}{history_ctx}{custom_ctx}
 Write a personalized outreach {channel_label} that:
 - Shows you've done homework on their profile

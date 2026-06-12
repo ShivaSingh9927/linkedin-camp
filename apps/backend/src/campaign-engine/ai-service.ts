@@ -170,6 +170,7 @@ export async function generateAIMessage(options: AIGenerateOptions): Promise<AIG
             about: options.about,
             experience: options.experience,
             education: options.education,
+            post_content: options.postContent,
 
             // Campaign context
             connection_context: options.connectionContext,

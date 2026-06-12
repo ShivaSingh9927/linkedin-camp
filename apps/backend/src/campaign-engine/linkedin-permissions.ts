@@ -180,3 +180,45 @@ export function predictFlow(
 export function nodeNeedsConnectionGate(nodeType: NodeType): boolean {
     return !!NODE_PERMISSIONS[nodeType]?.needsConnectionGate;
 }
+
+// ─── Stage / acceptance-gate helpers ─────────────────────────
+//
+// A campaign flow is implicitly multi-stage: each `delay` node is a stage
+// boundary. The engine parks a lead at a delay and resumes it later. Some
+// downstream nodes (send-message) only work once the lead is a 1st-degree
+// connection — so before resuming into such a stage we must confirm the
+// invite was accepted. These two helpers answer the structural questions
+// the engine needs to drive that gate, derived purely from the flow shape.
+
+/**
+ * Does the run from `fromIndex` to the end of the flow contain any node that
+ * requires the lead to be a 1st-degree connection? Used at resume time: if
+ * true and the lead isn't connected, the stage can't run — give up cleanly.
+ */
+export function stageRequiresConnection(
+    flow: Array<{ node: NodeType }>,
+    fromIndex: number,
+): boolean {
+    for (let i = Math.max(0, fromIndex); i < flow.length; i++) {
+        if (NODE_PERMISSIONS[flow[i].node]?.requiresConnected) return true;
+    }
+    return false;
+}
+
+/**
+ * For a `delay` at `delayIndex`, does the NEXT stage (the nodes after this
+ * delay, up to the following delay or end) contain a requiresConnected node?
+ * When true, the delay is functioning as an acceptance-wait: a lead that is
+ * ALREADY 1st-degree can skip the wait entirely; one that isn't must park
+ * and have its acceptance re-checked when the delay matures.
+ */
+export function nextStageRequiresConnection(
+    flow: Array<{ node: NodeType }>,
+    delayIndex: number,
+): boolean {
+    for (let i = delayIndex + 1; i < flow.length; i++) {
+        if (flow[i].node === 'delay') break; // reached the next stage boundary
+        if (NODE_PERMISSIONS[flow[i].node]?.requiresConnected) return true;
+    }
+    return false;
+}

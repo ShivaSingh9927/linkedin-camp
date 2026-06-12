@@ -48,6 +48,11 @@ export const sendMessage: NodeHandler = async (ctx, config): Promise<NodeResult>
                 // import / from prior runs) so AI generation isn't blank-slate
                 // when the workflow has no profile-visit step.
                 const pv = storedOutputs['profile-visit'] || {};
+                // Recent post is a soft personalization hook. It's only present
+                // when the profile-visit step ran with enrichPosts — so passing
+                // it is implicitly gated by the template opting in. Absent →
+                // undefined → message generation is unchanged.
+                const latestPost = (pv.latestPost as string | undefined) || undefined;
                 const profileData = {
                     name: profileName,
                     headline:   pv.headline   || pv.jobTitle   || lead.headline  || lead.jobTitle || null,
@@ -78,6 +83,7 @@ export const sendMessage: NodeHandler = async (ctx, config): Promise<NodeResult>
                     about: profileData.about || undefined,
                     experience: profileData.experience,
                     education: profileData.education,
+                    postContent: latestPost,
                     connectionContext: campaignContext.objective || undefined,
                     campaignDescription: campaignContext.description || undefined,
                     tone: campaignContext.tone,

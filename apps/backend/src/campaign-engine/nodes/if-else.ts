@@ -1,7 +1,7 @@
 import { NodeHandler, NodeResult, CampaignFlowNode, IfElseCondition, IfElseOutput, NodeType } from '../types';
 import { executeNode } from '../engine';
 import { writeNodeOutput } from '../storage';
-import { checkConnection } from './check-connection';
+import { runConnectionCheck, resolveConnectionBackend } from './connection-check';
 import { prisma } from '@repo/db';
 
 function readFieldValue(
@@ -75,9 +75,13 @@ export const ifElse: NodeHandler = async (ctx, config): Promise<NodeResult> => {
         // data was missing without forcing users to author an explicit
         // "if null" branch upstream.
         if (condition.probeOnNull && fieldValue == null && ctx.page) {
-            console.log(`[IF-ELSE] field "${condition.field}" is null and probeOnNull is set — running CHECK_CONNECTION first.`);
+            // Voyager by default (cheap, no profile navigation); switchable to
+            // DOM via condition.backend or the CONNECTION_CHECK_BACKEND env.
+            const probeConfig = { node: 'check-connection', backend: condition.backend } as CampaignFlowNode;
+            const backend = resolveConnectionBackend(probeConfig);
+            console.log(`[IF-ELSE] field "${condition.field}" is null and probeOnNull is set — running connection check (backend=${backend}).`);
             try {
-                const probeResult = await checkConnection(ctx, { node: 'check-connection' } as CampaignFlowNode);
+                const probeResult = await runConnectionCheck(ctx, probeConfig);
                 if (probeResult.success && probeResult.output) {
                     // Mirror to storedOutputs so downstream nodes see it too.
                     ctx.storedOutputs['check-connection'] = probeResult.output;

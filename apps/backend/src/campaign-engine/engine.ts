@@ -25,13 +25,11 @@ import {
     SessionContext,
 } from './types';
 import { warmup } from './nodes/warmup';
-import { profileVisit } from './nodes/profile-visit';
 import { profileVisitVoyager } from './nodes/profile-visit-voyager';
 import { connect } from './nodes/connect';
 import { likeNthPost } from './nodes/like-nth-post';
 import { commentNthPost } from './nodes/comment-nth-post';
 import { sendMessage } from './nodes/send-message';
-import { inboxSync } from './nodes/inbox-sync';
 import { inboxSyncVoyager } from './nodes/inbox-sync-voyager';
 import { delay } from './nodes/delay';
 import { ifElse } from './nodes/if-else';
@@ -40,11 +38,18 @@ import { checkConnectionVoyager } from './nodes/check-connection-voyager';
 import { emailNode } from './nodes/email';
 import { emailFinder } from './nodes/email-finder';
 import { follow } from './nodes/follow';
+import { profileVisitDispatch, inboxSyncDispatch } from './nodes/read-backend';
 import { readNodeOutputs, writeNodeOutput, updateLeadEnrichment } from './storage';
 import { checkQuota, nextDayRetryAt, DAILY_CAPS, GovernedAction, isWithinWorkingHours, nextWorkingHourAt } from './safety/quota';
 import { transitionLead, recomputeCampaignStatus } from './safety/lifecycle';
 import { classifyPage, handleCheckpoint, isCheckpoint, pauseCampaignForSessionExpiry } from './safety/checkpoint';
 import { uploadScreenshotToS3 } from '../services/s3-upload.service';
+import { isFirstDegree, getAllConnections } from '../services/voyager-api.service';
+import { stageRequiresConnection, nextStageRequiresConnection } from './linkedin-permissions';
+
+// Extract the LinkedIn vanity/public-id from a profile URL (…/in/<vanity>/…).
+const vanityFromUrl = (url: string): string =>
+    url.split('/in/').pop()?.replace(/\/$/, '').split('?')[0] || '';
 
 const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
 const randomRange = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1) + min);
@@ -53,14 +58,17 @@ const randomRange = (min: number, max: number) => Math.floor(Math.random() * (ma
 
 const NODE_HANDLERS: Record<NodeType, NodeHandler> = {
     'warmup': warmup,
-    'profile-visit': profileVisit,
+    // Read nodes default to Voyager (fast, no navigation) via the dispatcher;
+    // set node config `backend: 'dom'` or READ_NODE_BACKEND=dom to force DOM.
+    // The explicit *-voyager / DOM handlers remain available by node type.
+    'profile-visit': profileVisitDispatch,
     'profile-visit-voyager': profileVisitVoyager,
     'connect': connect,
     'like-nth-post': likeNthPost,
     'comment-nth-post': commentNthPost,
     'send-message': sendMessage,
     'delay': delay,
-    'inbox-sync': inboxSync,
+    'inbox-sync': inboxSyncDispatch,
     'inbox-sync-voyager': inboxSyncVoyager,
     'if-else': ifElse,
     'check-connection': checkConnection,
@@ -206,7 +214,12 @@ async function runLead(
         valueProp?: string;
     },
     sessionContext?: SessionContext,
-    aiContext?: NodeContext['aiContext']
+    aiContext?: NodeContext['aiContext'],
+    // Resume cursor. When a lead was parked at a delay/stage boundary, the
+    // cron sweep re-queues it and we resume the flow from here instead of
+    // re-running stage 1 (re-visit, re-connect). The warmup/feed-land still
+    // fires before the first executed node, so DOM safety is preserved.
+    startIndex: number = 0,
 ): Promise<LeadExecutionResult> {
     const execResult: LeadExecutionResult = {
         leadId: lead.id,
@@ -274,10 +287,15 @@ async function runLead(
         console.log(`[ENGINE] Flow received: ${JSON.stringify(flow)}`);
         console.log(`[ENGINE] Flow length: ${flow?.length}`);
         
-        let needsWarmup = true; // First node always needs warmup
+        let needsWarmup = true; // First executed node always needs warmup
         let profileVisitRan = false;
 
-        for (let i = 0; i < flow.length; i++) {
+        const resumeFrom = Math.min(Math.max(0, startIndex), flow.length);
+        if (resumeFrom > 0) {
+            console.log(`[ENGINE] Lead ${lead.firstName}: resuming flow at node ${resumeFrom}/${flow.length}.`);
+        }
+
+        for (let i = resumeFrom; i < flow.length; i++) {
             const nodeConfig = flow[i];
             const nodeType = nodeConfig.node;
 
@@ -591,13 +609,33 @@ async function runLead(
                 console.log(`[ENGINE] Lead ${lead.firstName}: ${nodeType} FAILED (non-fatal). Continuing to next node.`);
             }
 
-            // If delay node, set warmup needed for next node and mark lead for retry
+            // ---- Delay = stage boundary. Park the lead and resume later. ----
+            // A delay is where a multi-step sequence pauses (e.g. connect →
+            // wait → message). Previously the loop fell through and ran the
+            // next stage in the SAME pass; now we genuinely park: persist the
+            // resume cursor, return `paused`, and let the cron sweep re-queue
+            // the campaign when nextRetryAt matures (the lead resumes at
+            // currentNodeIndex via runLead's startIndex).
             if (nodeType === 'delay') {
-                needsWarmup = true;
+                const hours = nodeConfig.hours ?? 24;
 
-                const hours = nodeConfig.hours || 24;
+                // Acceptance-wait fast path: if the next stage needs a
+                // 1st-degree connection and this lead is ALREADY connected
+                // (Voyager, cache-backed), skip the wait and roll straight on.
+                if (nextStageRequiresConnection(flow, i)) {
+                    const vanity = vanityFromUrl(lead.linkedinUrl);
+                    const already = vanity ? await isFirstDegree(userId, vanity, page).catch(() => false) : false;
+                    if (already) {
+                        console.log(`[ENGINE] Lead ${lead.firstName}: already 1st-degree — skipping ${hours}h acceptance wait.`);
+                        needsWarmup = true;
+                        if (i < flow.length - 1 && flow[i + 1]?.node !== 'delay') {
+                            await wait(randomRange(3000, 8000));
+                        }
+                        continue;
+                    }
+                }
+
                 const nextRetryAt = new Date(Date.now() + hours * 60 * 60 * 1000);
-
                 // Delay is a scheduled-resume, not a forced retry — reset
                 // deferralCount so a long-but-healthy sequence doesn't trip
                 // the STALLED ceiling.
@@ -605,17 +643,17 @@ async function runLead(
                     reason: 'delay_node',
                     nextRetryAt,
                     currentNodeIndex: i + 1,
-                }).then(() => {
-                    // Delays shouldn't count toward the STALLED ceiling — zero it.
-                    return prisma.campaignLeadProgress.update({
-                        where: { campaignId_leadId: { campaignId, leadId: lead.id } },
-                        data: { deferralCount: 0 },
-                    });
-                }).then(() => {
-                    console.log(`[ENGINE] Lead marked for retry at ${nextRetryAt.toISOString()}`);
-                }).catch(err => {
+                }).then(() => prisma.campaignLeadProgress.update({
+                    where: { campaignId_leadId: { campaignId, leadId: lead.id } },
+                    data: { deferralCount: 0 },
+                })).catch(err => {
                     console.log(`[ENGINE] Could not update progress for delay: ${err}`);
                 });
+
+                console.log(`[ENGINE] Lead ${lead.firstName}: parked at delay — resume node ${i + 1} after ${nextRetryAt.toISOString()}.`);
+                execResult.status = 'paused';
+                execResult.pausedReason = 'delay';
+                return execResult;
             }
 
             // Safety gap between nodes
@@ -709,6 +747,43 @@ export async function runCampaign(
         where: { campaignId, isCompleted: false },
     });
 
+    // Per-lead resume cursors. A lead parked at a delay carries a
+    // currentNodeIndex pointing at the next stage; absent/zero means "start
+    // from the top". Loaded once so the loop below can resume each lead.
+    const progressRows = await prisma.campaignLeadProgress.findMany({
+        where: { campaignId },
+        select: { leadId: true, currentNodeIndex: true },
+    });
+    const cursorByLead = new Map(progressRows.map(p => [p.leadId, p.currentNodeIndex ?? 0]));
+
+    // Batched acceptance seed. The first time a resuming lead needs a
+    // 1st-degree check, we fetch the user's ENTIRE connections list once
+    // (cached ~10 min) so every lead's "did they accept?" resolves in-memory
+    // — one Voyager call for the whole pending pool, no per-lead navigation.
+    let connectionsSeeded = false;
+    let seedOk = false;
+    // Returns true only when the connections list was actually fetched. On a
+    // transient launch/fetch failure we return false so the gate fails SAFE
+    // (re-defer the lead) instead of wrongly giving it up as not-accepted.
+    const seedConnections = async (): Promise<boolean> => {
+        if (connectionsSeeded) return seedOk;
+        connectionsSeeded = true;
+        try {
+            const launch = await launchAuthenticatedContext(userId, config.sessionContext);
+            if (launch.ok) {
+                const r = await getAllConnections(userId, launch.page).catch(() => null);
+                seedOk = !!(r && r.ok);
+                await launch.context.close().catch(() => {});
+                await launch.browser.close().catch(() => {});
+            } else {
+                console.warn(`[CAMPAIGN] acceptance seed: launch failed (${launch.failedAt}).`);
+            }
+        } catch (err: any) {
+            console.warn(`[CAMPAIGN] acceptance seed failed: ${err?.message}`);
+        }
+        return seedOk;
+    };
+
     const summary: CampaignSummary = {
         campaignId,
         totalLeads: campaignLeads.length,
@@ -754,7 +829,45 @@ export async function runCampaign(
             phone: leadRecord?.phone || null,
         };
 
-        console.log(`\n[CAMPAIGN] Processing lead: ${leadData.firstName || leadData.linkedinUrl}`);
+        const startIndex = cursorByLead.get(cl.leadId) ?? 0;
+
+        // ---- Batched acceptance gate ----
+        // A lead resuming into a stage that requires a 1st-degree connection
+        // (e.g. send-message) only proceeds if the invite was accepted. We
+        // check this cheaply BEFORE launching a browser — so an unaccepted
+        // lead never spins up Chromium just to discover it should stop. Per
+        // product decision: no re-check — if not accepted by the time the
+        // wait matured, give up immediately (soft terminal) so the campaign
+        // stays bounded and the user can start the next one.
+        if (startIndex > 0 && stageRequiresConnection(config.flow, startIndex)) {
+            const seeded = await seedConnections();
+            if (!seeded) {
+                // Couldn't confirm acceptance this sweep — fail safe: re-defer
+                // and let the next sweep retry, rather than wrongly giving up.
+                console.warn(`[CAMPAIGN] Lead ${leadData.firstName}: acceptance unverifiable (seed failed) — re-deferring.`);
+                await transitionLead(campaignId, cl.leadId, 'DEFERRED', {
+                    reason: 'acceptance_seed_failed',
+                    nextRetryAt: new Date(Date.now() + 60 * 60 * 1000),
+                }).catch(() => {});
+                continue;
+            }
+            const vanity = vanityFromUrl(leadData.linkedinUrl);
+            const accepted = vanity ? await isFirstDegree(userId, vanity).catch(() => false) : false;
+            if (!accepted) {
+                console.log(`[CAMPAIGN] Lead ${leadData.firstName}: invite not accepted by stage deadline — giving up (soft terminal).`);
+                await prisma.campaignLead.update({
+                    where: { id: cl.id },
+                    data: { isCompleted: true, lastActionAt: new Date() },
+                }).catch(() => {});
+                await transitionLead(campaignId, cl.leadId, 'COMPLETED', {
+                    reason: 'connection_not_accepted',
+                }).catch(err => console.error(`[CAMPAIGN] not_accepted terminal failed: ${err.message}`));
+                continue;
+            }
+            console.log(`[CAMPAIGN] Lead ${leadData.firstName}: invite accepted — resuming stage at node ${startIndex}.`);
+        }
+
+        console.log(`\n[CAMPAIGN] Processing lead: ${leadData.firstName || leadData.linkedinUrl} (from node ${startIndex})`);
 
         const result = await runLead(userId, campaignId, leadData, config.flow, {
             objective: config.objective,
@@ -763,7 +876,7 @@ export async function runCampaign(
             toneOverride: config.toneOverride,
             persona: config.persona,
             valueProp: config.valueProp,
-        }, config.sessionContext, aiContext);
+        }, config.sessionContext, aiContext, startIndex);
         summary.leadResults.push(result);
 
         if (result.status === 'completed') {

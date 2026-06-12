@@ -26,6 +26,11 @@ export interface IfElseCondition {
     // correctly when scrape-time degree data was missing without forcing
     // users to author an explicit "if null" branch upstream.
     probeOnNull?: boolean;
+    // Backend for the probeOnNull connection check. Defaults to 'voyager'
+    // (cheap API list-read, no profile navigation); set 'dom' to force the
+    // full DOM profile visit when exact degree (2 vs 3) or PENDING-invite
+    // state is needed. Overrides the CONNECTION_CHECK_BACKEND env default.
+    backend?: 'voyager' | 'dom';
 }
 
 export interface SessionContext {
@@ -249,7 +254,12 @@ export interface LeadExecutionResult {
     //   'off_hours'    — outside the working-hours window; lead deferred to
     //                    next 09:00 IST + jitter.
     //   'stalled'      — exceeded the deferral ceiling; needs human review.
-    pausedReason?: 'lead_replied' | 'daily_cap' | 'off_hours' | 'stalled';
+    //   'delay'        — parked at a delay/stage boundary; cron resumes it
+    //                    from currentNodeIndex when nextRetryAt matures.
+    //   'not_accepted' — resumed into a 1st-degree-only stage but the invite
+    //                    was never accepted; sequence gives up (soft terminal,
+    //                    recorded as COMPLETED+reason, not FAILED).
+    pausedReason?: 'lead_replied' | 'daily_cap' | 'off_hours' | 'stalled' | 'delay' | 'not_accepted';
 }
 
 export interface CampaignSummary {

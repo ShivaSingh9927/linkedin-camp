@@ -54,6 +54,10 @@ export const checkConnectionVoyager: NodeHandler = async (ctx, config): Promise<
         const is1st = await isFirstDegree(userId, vanity, page);
         output.connected = is1st;
         output.connectionStatus = is1st ? 'connected' : 'not_connected';
+        // Surface degree=1 on a confirmed 1st-degree so callers that read
+        // `output.connectionDegree` (e.g. the IF_ELSE probe) get parity with
+        // the DOM node. We never claim 2/3 here — fast mode can't see those.
+        if (is1st) output.connectionDegree = 1;
 
         // Persist Lead.connectionDegree as 1 when we know it; null otherwise
         // (write-only-when-confident so a previous known value isn't wiped).

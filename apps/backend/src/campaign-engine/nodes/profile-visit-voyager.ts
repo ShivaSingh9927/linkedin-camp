@@ -210,11 +210,18 @@ export const profileVisitVoyager: NodeHandler = async (ctx, config): Promise<Nod
                     if (!wrapper) return null;
                     const urn = wrapper.getAttribute('data-urn');
                     const content = (wrapper as HTMLElement).innerText.substring(0, 1000);
-                    return { url: `https://www.linkedin.com/feed/update/${urn}/`, content };
+                    return { urn, url: `https://www.linkedin.com/feed/update/${urn}/`, content };
                 });
                 if (postData) {
-                    output.latestPost = postData.content;
                     output.latestPostUrl = postData.url;
+                    // Prefer the login-free public post page: it returns the full,
+                    // clean articleBody via JSON-LD (vs DOM innerText, which carries
+                    // reaction/UI chrome and is truncated). Falls back to the
+                    // scraped text if the guest fetch is walled/empty.
+                    const { fetchPublicPostContent } = await import('../../services/public-post.service');
+                    const pub = postData.urn ? await fetchPublicPostContent(postData.urn) : null;
+                    output.latestPost = pub?.text || postData.content;
+                    if (pub) console.log(`[PROFILE-VISIT-VOYAGER] post via public page (${pub.text.length} chars, ${pub.likes ?? '?'} likes)`);
                 }
                 // Navigate back to the profile so the engine's next step
                 // (which may be send-message) doesn't start on the activity page.

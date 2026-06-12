@@ -271,16 +271,19 @@ const isUserActive = redisPresence === 'ACTIVE' || (now - lastActivity < twoMins
 
       console.log(`[Scheduler] Found ${delayedLeads.length} leads ready for retry.`);
 
+      // Enqueue the parent campaign ONCE per sweep, not once per matured lead.
+      // runCampaign resumes every lead from its own currentNodeIndex (and
+      // batch-checks acceptance internally), so a single campaign run drains
+      // all of that campaign's matured leads. A stable jobId dedupes against a
+      // run already queued/in-flight.
+      const seenCampaigns = new Set<string>();
       for (const progress of delayedLeads) {
+        if (seenCampaigns.has(progress.campaignId)) continue;
+        seenCampaigns.add(progress.campaignId);
         try {
           const campaign = await prisma.campaign.findUnique({
             where: { id: progress.campaignId },
-            select: { 
-              id: true, 
-              userId: true, 
-              workflowJson: true,
-              status: true
-            }
+            select: { id: true, userId: true, status: true },
           });
 
           if (!campaign || campaign.status !== 'ACTIVE') {
@@ -288,39 +291,21 @@ const isUserActive = redisPresence === 'ACTIVE' || (now - lastActivity < twoMins
             continue;
           }
 
-          const lead = await prisma.lead.findUnique({
-            where: { id: progress.leadId }
-          });
-
-          if (!lead) {
-            console.log(`[Scheduler] Lead ${progress.leadId} not found, skipping.`);
-            continue;
-          }
-
-          console.log(`[Scheduler] Queueing retry for lead ${lead.firstName} in campaign ${campaign.id}`);
-
-          const jobId = `retry_${progress.id}`;
+          console.log(`[Scheduler] Queueing resume for campaign ${campaign.id}`);
 
           if (actionQueue) {
             await actionQueue.add(
               'execute-delayed-lead',
+              { campaignId: campaign.id, userId: campaign.userId },
               {
-                campaignLeadProgressId: progress.id,
-                campaignId: campaign.id,
-                userId: campaign.userId,
-                leadId: progress.leadId,
-                currentNodeIndex: progress.currentNodeIndex,
-                workflowJson: campaign.workflowJson,
-              },
-              {
-                jobId,
+                jobId: `resume-campaign-${campaign.id}`,
                 removeOnComplete: true,
                 priority: 3,
               }
             );
           }
         } catch (err) {
-          console.error(`[Scheduler] Failed to queue delayed lead ${progress.id}:`, err);
+          console.error(`[Scheduler] Failed to queue campaign ${progress.campaignId}:`, err);
         }
       }
     } catch (error) {
