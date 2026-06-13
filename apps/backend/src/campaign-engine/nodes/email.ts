@@ -118,6 +118,20 @@ export const emailNode: NodeHandler = async (ctx, config): Promise<NodeResult> =
         .then(({ emitCrmEvent }) => emitCrmEvent({ event: 'lead.messaged', userId, campaignId, leadId: lead.id, meta: { channel: 'email' } }))
         .catch((err: any) => console.error('[EMAIL] emit lead.messaged failed:', err?.message));
 
+    // Capture the recipient into the S3 confirmed-email dataset (fire-and-forget).
+    // A successful relay accept is a weaker signal than a contact-card read (no
+    // bounce tracking yet), so it's tagged 'email-sent' for later weighting.
+    import('../../services/email-dataset.service')
+        .then(({ recordConfirmedEmail }) => recordConfirmedEmail({
+            email: recipient,
+            source: 'email-sent',
+            firstName: lead.firstName, lastName: lead.lastName,
+            company: lead.company, jobTitle: lead.jobTitle, headline: lead.headline,
+            linkedinUrl: lead.linkedinUrl, connectionDegree: (lead as any).connectionDegree ?? null,
+            userId, campaignId, leadId: lead.id,
+        }))
+        .catch(() => {});
+
     return {
         success: true,
         output: { sent: true, messageId: result.messageId, to: recipient, subject, aiGenerated: aiEnabled },

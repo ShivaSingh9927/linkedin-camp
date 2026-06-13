@@ -2,6 +2,7 @@ import { NodeHandler, NodeResult, ProfileVisitOutput } from '../types';
 import { detectConnectionState } from '../connection-state';
 import { scrollProfile, extractTopCard, extractAbout, extractExperience, extractExperienceList, extractEducationList, scrapeRecentPosts } from '../scrape/profile-scrape';
 import { extractEmailFromText } from '../scrape/email-from-text';
+import { recordConfirmedEmail } from '../../services/email-dataset.service';
 import { cleanPersonField } from '../scrape/sanitize';
 import { prisma } from '@repo/db';
 
@@ -193,12 +194,28 @@ export const profileVisit: NodeHandler = async (ctx, config): Promise<NodeResult
         // --- SELF-PUBLISHED EMAIL in headline/about (all degrees) ---
         // The contact modal above is 1st-degree-only. For everyone else, people
         // often put a contact email in their bio — scan the text we already have.
+        const hadContactEmail = !!output.email;
         if (!output.email) {
             const bioEmail = extractEmailFromText(output.headline, output.about);
             if (bioEmail) {
                 output.email = bioEmail;
                 console.log(`[PROFILE-VISIT] email from bio text: ${bioEmail}`);
             }
+        }
+        // Capture confirmed real email into the S3 dataset (fire-and-forget).
+        if (output.email) {
+            recordConfirmedEmail({
+                email: output.email,
+                source: hadContactEmail ? 'linkedin-contact-card' : 'profile-bio',
+                firstName: output.firstName ?? lead.firstName,
+                lastName: output.lastName ?? lead.lastName,
+                company: output.company ?? lead.company,
+                jobTitle: output.jobTitle ?? lead.jobTitle,
+                headline: output.headline ?? lead.headline,
+                linkedinUrl: lead.linkedinUrl,
+                connectionDegree: (lead as any).connectionDegree ?? null,
+                userId: ctx.userId, campaignId: ctx.campaignId, leadId: lead.id,
+            }).catch(() => {});
         }
 
         // --- EXTRACT LATEST POST (if enrichPosts is set) ---

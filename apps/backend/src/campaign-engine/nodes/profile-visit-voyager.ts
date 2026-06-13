@@ -37,6 +37,7 @@ import {
 } from '../../services/voyager-api.service';
 import { cleanPersonField } from '../scrape/sanitize';
 import { extractEmailFromText } from '../scrape/email-from-text';
+import { recordConfirmedEmail } from '../../services/email-dataset.service';
 
 const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
 const randomRange = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1) + min);
@@ -203,12 +204,28 @@ export const profileVisitVoyager: NodeHandler = async (ctx, config): Promise<Nod
         // The contact modal above only fires for 1st-degree. For everyone else,
         // people often put a contact email right in their bio — and we already
         // have that text from FullProfile. Free, real, no extra request.
+        const hadContactEmail = !!output.email;
         if (!output.email) {
             const bioEmail = extractEmailFromText(output.headline, output.about);
             if (bioEmail) {
                 output.email = bioEmail;
                 console.log(`[PROFILE-VISIT-VOYAGER] email from bio text: ${bioEmail}`);
             }
+        }
+        // Capture confirmed real email into the S3 dataset (fire-and-forget).
+        if (output.email) {
+            recordConfirmedEmail({
+                email: output.email,
+                source: hadContactEmail ? 'linkedin-contact-card' : 'profile-bio',
+                firstName: output.firstName ?? lead.firstName,
+                lastName: output.lastName ?? lead.lastName,
+                company: output.company ?? lead.company,
+                jobTitle: output.jobTitle ?? lead.jobTitle,
+                headline: output.headline ?? lead.headline,
+                linkedinUrl: lead.linkedinUrl,
+                connectionDegree: (lead as any).connectionDegree ?? null,
+                userId, campaignId, leadId: lead.id,
+            }).catch(() => {});
         }
 
         // ---- Step 6: Recent posts (DOM) — only when requested ----
