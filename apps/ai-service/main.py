@@ -961,6 +961,254 @@ Return EXACTLY this JSON shape:
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ─── Reflect-back: "here's what I understand about your business" ──────────────
+
+class UnderstandBusinessRequest(BaseModel):
+    # Mirrors the AI Profile form. All optional — the user may save partway.
+    company: Optional[str] = None
+    companyDescription: Optional[str] = None
+    products: Optional[str] = None
+    differentiators: Optional[str] = None
+    caseStudies: Optional[str] = None
+    targetAudience: Optional[str] = None
+    industry: Optional[str] = None
+    mainPainPoint: Optional[str] = None
+    valueProp: Optional[str] = None
+    communicationStyle: Optional[str] = None
+    tonePreferences: Optional[List[str]] = None
+    website: Optional[str] = None
+
+
+@app.post("/ai/understand-business")
+async def understand_business(req: UnderstandBusinessRequest):
+    """Fast, single-call reflection of what the user just told us about their
+    business. Surfaced inline on the AI Profile page the instant they save, so
+    the form feels like a conversation — "here's the picture I've built of you"
+    — rather than a one-way data dump. This is NOT the full strategy pipeline;
+    it's a cheap confirmation that the AI was listening.
+
+    Returns JSON: { summary, youAre, youTarget, youSolve, yourEdge, voice[] }.
+    Every field is grounded strictly in the provided input — no invention.
+    """
+    import json as _json
+    import re as _re
+
+    fields = []
+    if req.company:
+        fields.append(f"Company: {req.company}")
+    if req.industry:
+        fields.append(f"Industry: {req.industry}")
+    if req.companyDescription:
+        fields.append(f"What they do: {req.companyDescription}")
+    if req.products:
+        fields.append(f"Products/Services: {req.products}")
+    if req.differentiators:
+        fields.append(f"Differentiators: {req.differentiators}")
+    if req.caseStudies:
+        fields.append(f"Results/Case studies: {req.caseStudies}")
+    if req.targetAudience:
+        fields.append(f"Target audience / ICP: {req.targetAudience}")
+    if req.mainPainPoint:
+        fields.append(f"Main pain point they solve: {req.mainPainPoint}")
+    if req.valueProp:
+        fields.append(f"Value proposition: {req.valueProp}")
+    if req.communicationStyle:
+        fields.append(f"Preferred communication style: {req.communicationStyle}")
+    if req.tonePreferences:
+        fields.append(f"Tone preferences: {', '.join(req.tonePreferences)}")
+    if req.website:
+        fields.append(f"Website: {req.website}")
+
+    if not fields:
+        raise HTTPException(status_code=400, detail="No business details provided")
+
+    # Cache the reflection keyed by a hash of the inputs. The understanding only
+    # changes when the profile changes, so an unchanged profile (e.g. every time
+    # the user opens the AI Profile page) is served instantly from Redis instead
+    # of re-paying the LLM round-trip. Same pattern as the strategy cache.
+    from orchestrator import _get_redis
+    import hashlib as _hashlib
+    _cache_key = "understand_cache:" + _hashlib.md5("\n".join(fields).encode()).hexdigest()
+    _r = _get_redis()
+    if _r is not None:
+        try:
+            _hit = _r.get(_cache_key)
+            if _hit:
+                print(f"[cache] understand hit {_cache_key[-8:]}")
+                return _json.loads(_hit)
+        except Exception as _e:
+            print(f"[cache] understand read failed: {_e}")
+
+    system = (
+        "You are an AI sales strategist confirming your understanding of a user's "
+        "business back to them, right after they filled out their profile. Your job "
+        "is to make them feel genuinely understood — confident, specific, warm, and "
+        "grounded ONLY in what they told you. Never invent facts. If something wasn't "
+        "provided, omit that field rather than guessing. Speak in second person "
+        "('You help...', 'You're targeting...'). Return STRICT JSON only — no prose, "
+        "no code fences."
+    )
+
+    user = f"""Here is what the user told us about their business:
+
+{chr(10).join(fields)}
+
+Reflect your understanding back to them. Return EXACTLY this JSON shape:
+{{
+  "summary": "2-3 warm, confident sentences that read like 'here's the picture I've built of you and your business' — who you are, who you help, and what makes you worth talking to.",
+  "youAre": "one short phrase describing them/their company (e.g. 'A founder-led RevOps consultancy')",
+  "youTarget": "one short phrase describing their ideal customer (omit if no audience given)",
+  "youSolve": "one short phrase naming the core problem they solve (omit if none given)",
+  "yourEdge": "one short phrase naming their differentiator/edge (omit if none given)",
+  "voice": ["3-5 lowercase tags describing how their outreach will sound, e.g. 'direct', 'warm', 'data-driven'"]
+}}
+
+Keep each phrase tight (under 12 words). Only include youTarget/youSolve/yourEdge when the input supports them."""
+
+    try:
+        raw = call_llm(system, user, temperature=0.4)
+        cleaned = _re.sub(r"^```(?:json)?|```$", "", raw.strip(), flags=_re.MULTILINE).strip()
+        match = _re.search(r"\{.*\}", cleaned, _re.DOTALL)
+        data = _json.loads(match.group(0) if match else cleaned)
+        result = {
+            "summary": (data.get("summary") or "").strip(),
+            "youAre": (data.get("youAre") or "").strip(),
+            "youTarget": (data.get("youTarget") or "").strip(),
+            "youSolve": (data.get("youSolve") or "").strip(),
+            "yourEdge": (data.get("yourEdge") or "").strip(),
+            "voice": [str(t).strip() for t in (data.get("voice") or []) if str(t).strip()][:5],
+        }
+        if _r is not None:
+            try:
+                _r.set(_cache_key, _json.dumps(result), ex=86400)  # 24h, matches strategy TTL
+            except Exception as _e:
+                print(f"[cache] understand write failed: {_e}")
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─── Infer business from website (minimal-ask onboarding) ─────────────────────
+
+class InferFromWebsiteRequest(BaseModel):
+    website: str
+    # Optional seeds from the user's own LinkedIn profile / job title, used to
+    # disambiguate when the site is thin.
+    jobTitle: Optional[str] = None
+    selfHeadline: Optional[str] = None
+
+
+@app.post("/ai/infer-from-website")
+async def infer_from_website(req: InferFromWebsiteRequest):
+    """Scrape the user's company website and DERIVE a draft business profile +
+    a warm "here's what I understand" reflection in a single LLM call. This is
+    the engine behind minimal-ask onboarding: the user gives us a URL, we infer
+    company description, ICP, pain point, value prop, differentiators and
+    industry, then show it back for them to confirm — instead of making them
+    type a long form.
+
+    Returns: { draft: {...editable business fields}, understanding: {...} }.
+    Grounded strictly in scraped content — never fabricates a business.
+    """
+    import json as _json
+    import re as _re
+    from tools.web_scraper import scrape_website
+
+    url = (req.website or "").strip()
+    if not url:
+        raise HTTPException(status_code=400, detail="website is required")
+    if not url.startswith("http"):
+        url = "https://" + url
+
+    scraped = await scrape_website(url)
+    scraped_desc = scraped.get("companyDescription") or ""
+    scraped_products = scraped.get("products") or []
+    scraped_positioning = scraped.get("marketPositioning") or ""
+
+    # Nothing usable came back — tell the caller so it can fall back to asking.
+    if not scraped_desc and not scraped_products and not scraped_positioning:
+        return {"draft": {}, "understanding": None, "scrapeEmpty": True}
+
+    seed_lines = [f"Website: {url}"]
+    if scraped_positioning:
+        seed_lines.append(f"Site headline/title: {scraped_positioning}")
+    if scraped_desc:
+        seed_lines.append(f"Site description: {scraped_desc}")
+    if scraped_products:
+        seed_lines.append("Site sections / products:\n- " + "\n- ".join(str(p) for p in scraped_products[:10]))
+    if req.jobTitle:
+        seed_lines.append(f"The user's role: {req.jobTitle}")
+    if req.selfHeadline:
+        seed_lines.append(f"The user's LinkedIn headline: {req.selfHeadline}")
+
+    system = (
+        "You are an AI sales strategist analyzing a company's website to build a "
+        "first-pass profile of their business. Infer carefully and conservatively "
+        "from the scraped content — it is OK to make reasonable inferences a smart "
+        "human would make from a homepage, but never fabricate specific claims "
+        "(metrics, customer names) that aren't supported. If you genuinely can't "
+        "tell a field, use an empty string / empty list. Write the 'understanding' "
+        "in warm second person so the user feels seen. Return STRICT JSON only."
+    )
+
+    user = f"""Here is what we scraped from the user's company website:
+
+{chr(10).join(seed_lines)}
+
+Produce EXACTLY this JSON:
+{{
+  "draft": {{
+    "companyDescription": "2-3 sentence plain description of what the company does",
+    "products": "comma-separated main products/services",
+    "industry": "best-fit industry label (e.g. 'SaaS / Software')",
+    "targetAudience": "who they most likely sell to (their ICP), one phrase",
+    "mainPainPoint": "the core customer problem they solve, one sentence",
+    "valueProp": "their value proposition in one sentence",
+    "differentiators": "what seems to set them apart, one sentence (empty if unclear)"
+  }},
+  "understanding": {{
+    "summary": "2-3 warm, confident sentences: 'here's the picture I've built of your business' — what you do, who you help, why you're worth talking to.",
+    "youAre": "one short phrase describing the company",
+    "youTarget": "one short phrase for their ideal customer",
+    "youSolve": "one short phrase naming the core problem they solve",
+    "yourEdge": "one short phrase naming their likely edge (empty if unclear)",
+    "voice": ["3-5 lowercase tags for how their outreach should sound"]
+  }}
+}}
+
+Keep every phrase tight. Base everything ONLY on the scraped content above."""
+
+    try:
+        raw = call_llm(system, user, temperature=0.4, model="deepseek/deepseek-chat")
+        cleaned = _re.sub(r"^```(?:json)?|```$", "", raw.strip(), flags=_re.MULTILINE).strip()
+        match = _re.search(r"\{.*\}", cleaned, _re.DOTALL)
+        data = _json.loads(match.group(0) if match else cleaned)
+        draft = data.get("draft") or {}
+        understanding = data.get("understanding") or {}
+        return {
+            "draft": {
+                "companyDescription": (draft.get("companyDescription") or "").strip(),
+                "products": (draft.get("products") or "").strip(),
+                "industry": (draft.get("industry") or "").strip(),
+                "targetAudience": (draft.get("targetAudience") or "").strip(),
+                "mainPainPoint": (draft.get("mainPainPoint") or "").strip(),
+                "valueProp": (draft.get("valueProp") or "").strip(),
+                "differentiators": (draft.get("differentiators") or "").strip(),
+            },
+            "understanding": {
+                "summary": (understanding.get("summary") or "").strip(),
+                "youAre": (understanding.get("youAre") or "").strip(),
+                "youTarget": (understanding.get("youTarget") or "").strip(),
+                "youSolve": (understanding.get("youSolve") or "").strip(),
+                "yourEdge": (understanding.get("yourEdge") or "").strip(),
+                "voice": [str(t).strip() for t in (understanding.get("voice") or []) if str(t).strip()][:5],
+            },
+            "scrapeEmpty": False,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ─── Health Check ─────────────────────────────────────────────────────────────
 
 @app.get("/health")

@@ -146,7 +146,12 @@ async def _call_research_agent(website: str, industry: str, company: str, force:
     scrape so a research-agent outage never kills strategy gen."""
     payload = {"website": website, "industry": industry or "", "company": company or "", "force": bool(force)}
     try:
-        async with httpx.AsyncClient(timeout=RESEARCH_AGENT_TIMEOUT) as client:
+        # Short CONNECT timeout so an unreachable/firewalled sidecar fails over
+        # to the BS4 fallback in seconds, not after the full read timeout. The
+        # read timeout stays long because a real scrape+LLM run is slow, but we
+        # must never let a dead sidecar hold the whole strategy gen hostage.
+        timeout = httpx.Timeout(RESEARCH_AGENT_TIMEOUT, connect=3.0)
+        async with httpx.AsyncClient(timeout=timeout) as client:
             r = await client.post(f"{RESEARCH_AGENT_URL}/research/competitive-landscape", json=payload)
             if r.status_code != 200:
                 print(f"[orchestrator] research-agent {r.status_code}: {r.text[:200]}")
