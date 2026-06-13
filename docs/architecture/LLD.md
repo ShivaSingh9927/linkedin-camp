@@ -292,6 +292,14 @@ ssh root@89.167.123.143 '
 
 The dump uses `--clean --if-exists --no-owner --no-privileges`, so you can also pipe it into a non-empty DB without the DROP/CREATE step.
 
+**Email-finder learning DB (SQLite, Kamatera box `193.168.172.213`):**
+- Live DB: `/opt/email-finder/data/email_finder.db` (docker volume `./data:/data`). Stays on local disk — object storage can't serve a live DB.
+- Script: `/usr/local/bin/qampi-ef-backup.sh` (consistent snapshot via SQLite backup API inside `ef-api`, then `rclone` upload)
+- Cron: `/etc/cron.d/qampi-ef-backup` — `0 3 * * *` (03:00 UTC daily, offset from pg-backup)
+- Path in bucket: `s3://qampi-user-data/email-finder/ef-kamatera/YYYY-MM-DD_HHMMSS.db.gz`
+- Retention: 30 days · Log: `/var/log/qampi-ef-backup.log`
+- The data (company→domain, domain→pattern) is **regenerable** — this is durability, not a hard dependency. Restore: `rclone copyto hetzner:qampi-user-data/email-finder/ef-kamatera/<TS>.db.gz /tmp/x.gz && gunzip /tmp/x.gz && cp /tmp/x /opt/email-finder/data/email_finder.db` then restart `ef-api`.
+
 ---
 
 ## 9. Environment variables

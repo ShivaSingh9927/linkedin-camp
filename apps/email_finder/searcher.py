@@ -60,13 +60,33 @@ SERP_HOSTS_RE = re.compile(
     r"startpage\.com|yandex\.[a-z.]+|baidu\.com|sogou\.com)$",
     re.IGNORECASE,
 )
+# Data-aggregator and social hosts that sit behind anti-bot walls
+# (PerimeterX / Cloudflare / Datadome). crawl4ai can NEVER get past these,
+# so every fetch is a guaranteed 6-10s waste. We refuse to crawl them — the
+# only emails we can actually harvest are on the company's OWN site and
+# regular content pages (news, blogs, conference/press pages). This is the
+# single biggest latency win for the miss/fallback path.
+BLOCKED_CRAWL_HOSTS_RE = re.compile(
+    r"(^|\.)("
+    r"zoominfo\.com|datanyze\.com|leadiq\.com|rocketreach\.co|lusha\.com|"
+    r"apollo\.io|contactout\.com|kaspr\.io|signalhire\.com|hunter\.io|"
+    r"snov\.io|clearbit\.com|uplead\.com|adapt\.io|lead411\.com|"
+    r"getprospect\.com|anymailfinder\.com|voilanorbert\.com|findthatlead\.com|"
+    r"neverbounce\.com|emailhippo\.com|nymeria\.io|swordfish\.ai|seamless\.ai|"
+    r"prospeo\.io|skrapp\.io|emailfinder\.io|wiza\.co|"
+    r"crunchbase\.com|glassdoor\.[a-z.]+|indeed\.[a-z.]+|ambitionbox\.com|"
+    r"facebook\.com|instagram\.com|twitter\.com|x\.com|pinterest\.[a-z.]+|"
+    r"tiktok\.com|youtube\.com|linkedin\.com"
+    r")$",
+    re.IGNORECASE,
+)
 DDG_HTML = "https://html.duckduckgo.com/html/"
 
 # Hard wall-clock cap for the whole search_email_format call. We aim for
-# ~15s on the happy path; this is the kill switch.
-DEADLINE_S = 18.0
+# ~10s on the happy path; this is the kill switch.
+DEADLINE_S = 12.0
 # Per-page fetch timeout inside crawl4ai.
-PAGE_TIMEOUT_S = 8.0
+PAGE_TIMEOUT_S = 6.0
 
 
 # --- search-engine (DuckDuckGo HTML) ----------------------------------------
@@ -100,7 +120,7 @@ def _ddg_search(query: str, max_results: int = 8, timeout: float = 5.0) -> list[
             except Exception:
                 pass
         host = urlparse(href).hostname.lower() if href else ""
-        if not host or SERP_HOSTS_RE.match(host):
+        if not host or SERP_HOSTS_RE.match(host) or BLOCKED_CRAWL_HOSTS_RE.search(host):
             continue
         if href not in urls:
             urls.append(href)
@@ -115,6 +135,9 @@ async def _crawl_many(urls: list[str], deadline_at: float) -> dict[str, str]:
     """Crawl all urls concurrently with crawl4ai. Returns {url: markdown}."""
     if AsyncWebCrawler is None:
         raise RuntimeError("crawl4ai is not installed")
+    # Safety net: never crawl anti-bot-walled aggregators/social, regardless
+    # of how the url got into the list.
+    urls = [u for u in urls if not BLOCKED_CRAWL_HOSTS_RE.search(urlparse(u).hostname or "")]
     if not urls:
         return {}
 
@@ -268,6 +291,9 @@ async def search_email_format(
             )
         except Exception:
             hits = []
+        # Crawl at most 3 real (non-blocked) result pages — past that we're
+        # well into low-yield territory and just burning the deadline.
+        hits = hits[:3]
         if hits:
             try:
                 web_results = await _crawl_many(hits, deadline_at=deadline_at)

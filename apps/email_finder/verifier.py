@@ -4,12 +4,12 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 
 from config import REACHER_URL
 
-REACHER_TIMEOUT = 30.0
+REACHER_TIMEOUT = 12.0
 
 
 @retry(
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=1, max=5),
+    stop=stop_after_attempt(2),
+    wait=wait_exponential(multiplier=1, min=1, max=3),
     retry=retry_if_exception_type((httpx.TimeoutException, httpx.ConnectError)),
 )
 def verify_email(

@@ -1,0 +1,19 @@
+# Keep the build context lean — Dockerfile uses `COPY . .`, which ignores
+# .gitignore and would otherwise pull the host-built venv/ (hundreds of MB
+# of platform-specific binaries) straight into the image.
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Local artifacts / secrets / tests — never belong in the image
+*.csv
+*.log
+server.log
+.env
+.env.*
+test_*.py
+.git
+.gitignore
+.dockerignore
