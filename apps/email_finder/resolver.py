@@ -27,11 +27,18 @@ except Exception:  # dnspython missing (shouldn't happen — it's in requirement
 
 from searcher import _ddg_search  # reuse the plain-httpx DDG search
 
-# Legal suffixes / boilerplate we strip before building domain candidates.
-_LEGAL = re.compile(
+# Pure legal-entity words — ALWAYS strip (never part of a domain).
+_LEGAL_ENTITY = re.compile(
     r"\b(private|pvt|limited|ltd|llc|llp|inc|incorporated|corp|corporation|"
-    r"co|company|gmbh|ag|sa|srl|bv|plc|technologies|technology|solutions|"
-    r"systems|systemz|labs|software|services|global|group|holdings|ventures)\b",
+    r"co|company|gmbh|ag|sa|srl|bv|plc)\b",
+    re.IGNORECASE,
+)
+# Descriptive words — often DROPPED from the domain ("Stateless Technologies"
+# -> stateless.com) but sometimes KEPT ("statelesstechnologies.com"). We build
+# candidates both ways rather than guessing.
+_DESCRIPTIVE = re.compile(
+    r"\b(technologies|technology|solutions|systems|systemz|labs|software|"
+    r"services|global|group|holdings|ventures)\b",
     re.IGNORECASE,
 )
 _TLDS = ["com", "io", "ai", "co", "in", "tech", "net", "org"]
@@ -39,15 +46,19 @@ _HTTP_TIMEOUT = 6.0
 _DNS_TIMEOUT = 4.0
 
 
-def clean_company(name: str) -> str:
-    """Lowercase, take the first clause (before , | / -), drop legal suffixes."""
+def clean_company(name: str, drop_descriptive: bool = True) -> str:
+    """Lowercase, take the first clause (before , | / -), drop legal suffixes.
+    When drop_descriptive is False, keep words like 'technologies' so we can
+    also try the longer stem (statelesstechnologies vs stateless)."""
     if not name:
         return ""
     s = name.strip()
     # First meaningful clause — LinkedIn gives "Tech Vedika, Harmony CVI | ...".
     s = re.split(r"[|/]|·|—|–| - |,", s)[0]
     s = s.lower()
-    s = _LEGAL.sub(" ", s)
+    s = _LEGAL_ENTITY.sub(" ", s)
+    if drop_descriptive:
+        s = _DESCRIPTIVE.sub(" ", s)
     s = re.sub(r"[^a-z0-9 ]", " ", s)
     s = re.sub(r"\s+", " ", s).strip()
     return s
@@ -57,18 +68,27 @@ def _tokens(clean: str) -> list[str]:
     return [t for t in clean.split(" ") if t]
 
 
-def candidate_domains(clean: str) -> list[str]:
-    """Only the FULL-name stems (joined + hyphenated). We deliberately do NOT
-    truncate to the first 1-2 words — short stems ("hitech", "tech") match
-    unrelated companies and, given the 'never email the wrong person' rule,
-    a false-positive domain is worse than a miss (the search fallback or a
-    manual review can still find it)."""
-    toks = _tokens(clean)
-    if not toks:
-        return []
-    joined = "".join(toks)
-    hyphen = "-".join(toks)
-    stems = [joined] + ([hyphen] if hyphen != joined else [])
+def candidate_domains(clean: str, clean_with_desc: str | None = None) -> list[str]:
+    """FULL-name stems (joined + hyphenated), from BOTH the short stem (legal +
+    descriptive stripped) and, if different, the longer stem that keeps
+    descriptive words. We deliberately do NOT truncate to the first 1-2 words —
+    short stems ("hitech", "tech") match unrelated companies and, given the
+    'never email the wrong person' rule, a false-positive domain is worse than
+    a miss. The short stem is ordered first (more common), the longer stem
+    second so e.g. statelesstechnologies.com is still tried."""
+    def _stems(c: str) -> list[str]:
+        toks = _tokens(c)
+        if not toks:
+            return []
+        joined = "".join(toks)
+        hyphen = "-".join(toks)
+        return [joined] + ([hyphen] if hyphen != joined else [])
+
+    stems: list[str] = []
+    for s in _stems(clean) + (_stems(clean_with_desc) if clean_with_desc else []):
+        if s not in stems:
+            stems.append(s)
+
     out: list[str] = []
     seen = set()
     for stem in stems:
@@ -120,10 +140,18 @@ _GENERIC = {"tech", "soft", "data", "info", "app", "apps", "web", "cloud",
 
 def _homepage_confirms(domain: str, tokens: list[str]) -> bool:
     """Fetch the homepage; true if a DISTINCTIVE company token (len>=4, not a
-    generic word) appears in the page text. Guards against squatters and
-    against generic-stem false positives."""
+    generic word) OR the joined multi-word stem appears in the page. The
+    <title>/<meta> (the head) is the strongest signal, so we check it first and
+    fall back to the body. Guards against squatters and generic-stem false
+    positives."""
     distinctive = [t for t in tokens if len(t) >= 4 and t not in _GENERIC]
-    if not distinctive:
+    # The joined stem ("asianpaints") is distinctive even when individual
+    # tokens ("asian"/"paints") are common — accept it too.
+    joined = "".join(tokens)
+    needles = list(distinctive)
+    if len(joined) >= 6 and joined not in needles:
+        needles.append(joined)
+    if not needles:
         return False
     for scheme in ("https", "http"):
         try:
@@ -132,8 +160,12 @@ def _homepage_confirms(domain: str, tokens: list[str]) -> bool:
                 resp = c.get(f"{scheme}://{domain}")
                 if resp.status_code >= 400:
                     continue
-                text = (resp.text or "")[:20000].lower()
-                if any(t in text for t in distinctive):
+                full = (resp.text or "").lower()
+                # Head (title + meta) first — strongest, least noisy signal.
+                head = full[:full.find("</head>")] if "</head>" in full[:60000] else full[:8000]
+                if any(t in head for t in needles):
+                    return True
+                if any(t in full[:40000] for t in needles):
                     return True
         except Exception:
             continue
@@ -151,20 +183,22 @@ def resolve_domain(company: str) -> dict:
             result.update(clean=comp_lower, domain=comp_lower, confidence="high" if has_mx else "medium", method="direct-domain")
             return result
 
-    clean = clean_company(company)
-    toks = _tokens(clean)
+    clean = clean_company(company)                                   # legal + descriptive stripped
+    clean_desc = clean_company(company, drop_descriptive=False)      # keeps "technologies" etc.
+    # Tokens used for homepage confirmation — the fuller set (with descriptive
+    # words) gives more distinctive needles.
+    toks = _tokens(clean_desc) or _tokens(clean)
     result.update(clean=clean)
     if not clean:
         return result
 
-    candidates = candidate_domains(clean)
+    candidates = candidate_domains(clean, clean_desc if clean_desc != clean else None)
     result["candidates_tried"] = len(candidates)
 
-    # Pass 1: DNS. Candidates are ordered full-name-stem first, .com-first.
-    # A homepage-confirmed MX hit is the strongest signal — prefer it over a
-    # bare-MX .com (which may be a parked sibling of the real .in/.io domain,
-    # e.g. techsierra.com vs the real techsierra.in). Fall back to the first
-    # bare-MX hit, then to an A-record domain whose homepage confirms.
+    # Pass 1: DNS over name-stem candidates (.com-first). A homepage-confirmed
+    # MX hit is the strongest signal — prefer it over a bare-MX .com (which may
+    # be a parked sibling of the real .in/.io domain). Collect weaker hits for
+    # fallback after the search pass.
     first_mx = None
     a_hits: list[str] = []
     for d in candidates:
@@ -178,33 +212,46 @@ def resolve_domain(company: str) -> dict:
         elif resolves:
             a_hits.append(d)
 
-    if first_mx:
-        result.update(domain=first_mx, confidence="medium", method="dns-mx")
-        return result
-
-    for d in a_hits:
-        if _homepage_confirms(d, toks):
-            result.update(domain=d, confidence="medium", method="dns-a+homepage")
-            return result
-
-    # Pass 2: search-engine fallback for the official site.
+    # Pass 2: official-website search, now a CONFIRMED-PRIMARY signal (not a
+    # last resort). The search often finds the exact right domain the stem
+    # candidates missed (wrong TLD, abbreviation, rebrand). A search host whose
+    # homepage confirms the company name beats any unconfirmed DNS guess.
+    search_host = None
+    search_host_mx = False
     try:
         hits = _ddg_search(f"{company} official website", max_results=6)
         for url in hits:
-            host = (urlparse(url).hostname or "").lower().lstrip("www.")
+            host = (urlparse(url).hostname or "").lower()
+            host = re.sub(r"^www\.", "", host)
             if not host:
                 continue
             # Skip aggregators / social so we land on the company's own site.
             if re.search(r"(linkedin|facebook|twitter|x|instagram|crunchbase|"
                          r"glassdoor|indeed|youtube|wikipedia|zaubacorp|"
-                         r"tracxn|bloomberg)\.", host):
+                         r"tracxn|bloomberg|ambitionbox|zoominfo)\.", host):
                 continue
             resolves, has_mx = _dns_status(host)
-            if resolves:
-                result.update(domain=host, confidence="medium" if has_mx else "low",
-                              method="search")
+            if not resolves:
+                continue
+            if _homepage_confirms(host, toks):
+                result.update(domain=host, confidence="high", method="search+homepage")
                 return result
+            if search_host is None:
+                search_host, search_host_mx = host, has_mx
     except Exception:
         pass
+
+    # Pass 3: fallbacks, strongest first.
+    if first_mx:
+        result.update(domain=first_mx, confidence="medium", method="dns-mx")
+        return result
+    for d in a_hits:
+        if _homepage_confirms(d, toks):
+            result.update(domain=d, confidence="medium", method="dns-a+homepage")
+            return result
+    if search_host:
+        result.update(domain=search_host, confidence="medium" if search_host_mx else "low",
+                      method="search")
+        return result
 
     return result
