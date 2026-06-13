@@ -28,6 +28,8 @@ TEMPLATES = [
     "l!!_first!!",
     "first!!.l!!",
     "first!!_l!!",
+    "first!!-last!!",   # jane-doe (hyphen separator)
+    "last!!",           # doe (last name only)
 ]
 
 

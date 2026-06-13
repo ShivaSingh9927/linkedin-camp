@@ -22,23 +22,34 @@ if /data isn't writable (dev / unit tests).
 from __future__ import annotations
 
 import os
+import re
 import time
 import sqlite3
 import threading
+import unicodedata
 from typing import Optional
 
 DB_PATH = os.environ.get("EMAIL_FINDER_DB", "/data/email_finder.db")
 
-# Placeholder patterns in the same notation main.py / searcher.py use.
-# Ordered most-specific (with separators) first so reverse-inference matches
-# deterministically — a dotted local-part should map to "{{first}}.{{last}}"
-# before any ambiguous separator-less form is considered.
+# Placeholder patterns, most-specific first so reverse-inference is
+# deterministic. Tokens (rendered by _name_forms):
+#   first  = first name (joined, ascii)        f      = first initial
+#   last   = last tokens joined (santanaroldan) l     = last initial
+#   lasth  = last tokens hyphen-joined (santana-roldan)
+#   lastfw = first token of last (santana)      lastlw = last token of last (roldan)
+# The hyphenated / multi-word-last forms (lasth, lastfw) matter for compound
+# surnames — Hunter returns e.g. carlos.santana-roldan@... which the joined
+# form alone can't represent or reproduce.
 _PLACEHOLDER_PATTERNS = [
-    "{{first}}.{{last}}", "{{first}}_{{last}}", "{{last}}.{{first}}",
-    "{{last}}_{{first}}", "{{f}}.{{last}}", "{{f}}_{{last}}",
+    "{{first}}.{{last}}", "{{first}}.{{lasth}}", "{{first}}-{{last}}",
+    "{{first}}_{{last}}", "{{first}}.{{lastfw}}",
+    "{{last}}.{{first}}", "{{lasth}}.{{first}}", "{{last}}_{{first}}",
+    "{{f}}.{{last}}", "{{f}}.{{lasth}}", "{{f}}_{{last}}",
     "{{first}}.{{l}}", "{{first}}_{{l}}", "{{last}}.{{f}}",
-    "{{f}}{{last}}", "{{last}}{{f}}", "{{l}}{{first}}", "{{first}}{{l}}",
-    "{{first}}{{last}}", "{{last}}{{first}}", "{{first}}",
+    "{{f}}{{last}}", "{{f}}{{lasth}}", "{{last}}{{f}}",
+    "{{l}}{{first}}", "{{first}}{{l}}",
+    "{{first}}{{last}}", "{{first}}{{lasth}}", "{{last}}{{first}}",
+    "{{first}}", "{{lastfw}}", "{{last}}",
 ]
 
 _lock = threading.Lock()
@@ -77,6 +88,10 @@ def init_db() -> None:
             domain TEXT PRIMARY KEY,
             is_catch_all INTEGER, mx_provider TEXT,
             samples INTEGER DEFAULT 0, updated_at REAL)""")
+        # Negative cache: companies we've already asked Hunter about (hit OR
+        # miss), so we never spend a second credit on the same company.
+        c.execute("""CREATE TABLE IF NOT EXISTS hunter_negcache(
+            company_key TEXT PRIMARY KEY, ts REAL)""")
 
 
 def _now() -> float:
@@ -126,30 +141,51 @@ def put_cached_domain(company: Optional[str], domain: str, confidence=None, meth
 
 # --- domain -> pattern -------------------------------------------------------
 
-def infer_pattern(fn: str, ln: str, local_part: str) -> Optional[str]:
-    """Reverse-map a verified local-part to the placeholder pattern that
-    produced it, given the (normalized) first/last name. Returns None when
-    nothing matches (e.g. multi-token names, nicknames) — we'd rather learn
+def _norm_ascii(s: Optional[str]) -> str:
+    return unicodedata.normalize("NFKD", s or "").encode("ascii", "ignore").decode("ascii").lower()
+
+
+def _name_forms(first: str, last: str) -> dict:
+    """Render all name forms used by the placeholder patterns. Accepts RAW
+    names (with spaces / accents / hyphens) and handles multi-word surnames."""
+    f_toks = [t for t in re.split(r"[^a-z0-9]+", _norm_ascii(first)) if t]
+    l_toks = [t for t in re.split(r"[^a-z0-9]+", _norm_ascii(last)) if t]
+    fr = f_toks[0] if f_toks else ""
+    lj = "".join(l_toks)
+    return {
+        "first": fr, "f": fr[:1],
+        "last": lj, "l": lj[:1],
+        "lasth": "-".join(l_toks),
+        "lastfw": l_toks[0] if l_toks else "",
+        "lastlw": l_toks[-1] if l_toks else "",
+    }
+
+
+def _render(pattern: str, forms: dict) -> str:
+    # Replace longest token names first so {{last}} can't clobber {{lasth}} etc.
+    out = pattern
+    for k in sorted(forms, key=len, reverse=True):
+        out = out.replace("{{" + k + "}}", forms[k])
+    return out
+
+
+def infer_pattern(first: str, last: str, local_part: str) -> Optional[str]:
+    """Reverse-map a verified/harvested local-part to the placeholder pattern
+    that produced it, given the RAW first/last name (multi-word + hyphenated
+    surnames supported). Returns None when nothing matches — we'd rather learn
     nothing than learn a wrong pattern."""
-    f = fn[0] if fn else ""
-    l = ln[0] if ln else ""
+    forms = _name_forms(first, last)
     lp = (local_part or "").lower()
-    if not lp or not fn or not ln:
+    if not lp or not forms["first"] or not forms["last"]:
         return None
     for pat in _PLACEHOLDER_PATTERNS:
-        rendered = (pat.replace("{{first}}", fn).replace("{{last}}", ln)
-                       .replace("{{f}}", f).replace("{{l}}", l))
-        if rendered and rendered == lp:
+        if _render(pat, forms) == lp:
             return pat
     return None
 
 
-def build_email(pattern: str, fn: str, ln: str, domain: str) -> str:
-    f = fn[0] if fn else ""
-    l = ln[0] if ln else ""
-    local = (pattern.replace("{{first}}", fn).replace("{{last}}", ln)
-                    .replace("{{f}}", f).replace("{{l}}", l))
-    return f"{local}@{domain}"
+def build_email(pattern: str, first: str, last: str, domain: str) -> str:
+    return f"{_render(pattern, _name_forms(first, last))}@{domain}"
 
 
 def record_pattern(domain: str, pattern: str, is_catch_all: Optional[bool] = None,
@@ -215,3 +251,32 @@ def get_best_pattern(domain: str) -> Optional[dict]:
         "mx_provider": meta[1] if meta else None,
         "samples": meta[2] if meta else row[1],
     }
+
+
+# --- Hunter negative cache ---------------------------------------------------
+
+def hunter_tried(key: str) -> bool:
+    """True if we've already spent a Hunter credit on this company/domain."""
+    if not key:
+        return False
+    try:
+        with _lock:
+            r = _connect().execute(
+                "SELECT 1 FROM hunter_negcache WHERE company_key=?", (key,)
+            ).fetchone()
+        return r is not None
+    except Exception:
+        return False
+
+
+def mark_hunter_tried(key: str) -> None:
+    if not key:
+        return
+    try:
+        with _lock:
+            _connect().execute(
+                "INSERT OR REPLACE INTO hunter_negcache(company_key, ts) VALUES(?,?)",
+                (key, _now()),
+            )
+    except Exception:
+        pass

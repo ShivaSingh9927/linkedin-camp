@@ -60,9 +60,11 @@ export async function findEmail(input: FindEmailInput): Promise<FindEmailResult 
             },
             {
                 headers: { 'X-API-Key': EMAIL_FINDER_TOKEN, 'Content-Type': 'application/json' },
-                // 60s ceiling: lets catch-all + LLM rank finish, but stops a
-                // single bad lead from stalling a campaign.
-                timeout: 60_000,
+                // 90s ceiling — sits above the box's own 60s hard deadline
+                // (EMAIL_FINDER_GUESS_DEADLINE) plus the Hunter.io fallback, so
+                // the box always returns first; still bounded so one bad lead
+                // can't stall a campaign indefinitely.
+                timeout: 90_000,
                 // 5xx falls into the catch and marks the box down.
                 validateStatus: (s) => s >= 200 && s < 300,
             }

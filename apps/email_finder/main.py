@@ -21,6 +21,7 @@ from guesser import rank_permutations
 from searcher import search_email_format
 from resolver import resolve_domain
 import store
+import hunter
 
 _root_env = os.path.join(os.path.dirname(__file__), "..", "..", ".env")
 if os.path.isfile(_root_env):
@@ -69,7 +70,7 @@ PROBE_BATCH = 3
 # drop) returns a clean miss instead of running to the client timeout. This
 # is the definitive timeout guard — the per-stage caps only bound their own
 # stage; this bounds the sum.
-GUESS_DEADLINE_S = float(os.environ.get("EMAIL_FINDER_GUESS_DEADLINE", "45"))
+GUESS_DEADLINE_S = float(os.environ.get("EMAIL_FINDER_GUESS_DEADLINE", "60"))
 
 
 async def verify_batch(emails: List[str], concurrency: int = 5) -> List[dict]:
@@ -160,8 +161,13 @@ async def _guess_pipeline(req: GuessEmailRequest, fn: str, ln: str):
             res = await loop.run_in_executor(None, resolve_domain, req.company)
             domain = res.get("domain")
             resolved_conf = res.get("confidence")
-            if domain:
-                store.put_cached_domain(req.company, domain, res.get("confidence"), res.get("method"))
+            # Only persist HIGH-confidence (homepage-confirmed) resolutions to
+            # the company->domain cache. Caching a weak search/medium guess
+            # poisons every future lead at that company AND blocks the
+            # resolver's own guards (e.g. parked-domain rejection) from ever
+            # re-running. Weak resolutions are re-derived each time instead.
+            if domain and resolved_conf == "high":
+                store.put_cached_domain(req.company, domain, resolved_conf, res.get("method"))
         if not domain:
             return GuessEmailResponse(
                 success=False, email=None, source=None, verified=False,
@@ -172,7 +178,7 @@ async def _guess_pipeline(req: GuessEmailRequest, fn: str, ln: str):
     # pattern from a previous lead, skip the whole probe/LLM/crawl pipeline.
     learned = store.get_best_pattern(domain)
     if learned:
-        cand = store.build_email(learned["pattern"], fn, ln, domain)
+        cand = store.build_email(learned["pattern"], req.firstName, req.lastName, domain)
         if learned["is_catch_all"]:
             # Catch-all domains can't be SMTP-confirmed by anyone — return the
             # learned pattern as a high-confidence guess (never auto-sent).
@@ -187,7 +193,7 @@ async def _guess_pipeline(req: GuessEmailRequest, fn: str, ln: str):
         # Verifiable domain: confirm the single learned candidate with one probe.
         lhit, _, ltried = await verify_until_hit([cand])
         if lhit and lhit["result"].get("is_reachable") == "safe":
-            store.record_verified_email(domain, fn, ln, cand, is_catch_all=False)
+            store.record_verified_email(domain, req.firstName, req.lastName, cand, is_catch_all=False)
             return GuessEmailResponse(
                 success=True, email=cand, source="learned-pattern",
                 verified=True, confidence="high", is_catch_all=False,
@@ -212,7 +218,7 @@ async def _guess_pipeline(req: GuessEmailRequest, fn: str, ln: str):
     if best and not is_catch_all:
         # Learn the pattern for this domain (strongest signal: SMTP-confirmed).
         if best["result"]["is_reachable"] == "safe":
-            store.record_verified_email(domain, fn, ln, best["email"], is_catch_all=False)
+            store.record_verified_email(domain, req.firstName, req.lastName, best["email"], is_catch_all=False)
         return GuessEmailResponse(
             success=True,
             email=best["email"],
@@ -227,6 +233,40 @@ async def _guess_pipeline(req: GuessEmailRequest, fn: str, ln: str):
             domain=domain,
             domain_confidence=resolved_conf,
         )
+
+    # Hunter.io fallback — runs BEFORE the slow LLM+crawl so a hit short-
+    # circuits the expensive path (also bounds latency). Strictly gated: only
+    # when configured and we haven't already spent a credit on this company
+    # (negative cache). Its pattern is cached into the DB for free reuse.
+    if hunter.enabled():
+        neg_key = store.company_key(req.company) or domain
+        if not store.hunter_tried(neg_key):
+            loop = asyncio.get_event_loop()
+            hres = await loop.run_in_executor(
+                None, lambda: hunter.find_email(req.firstName, req.lastName,
+                                                domain=domain, company=req.company))
+            store.mark_hunter_tried(neg_key)
+            if hres and hres.get("email"):
+                h_email = hres["email"]
+                h_domain = hres.get("domain") or domain
+                h_accept_all = bool(hres.get("accept_all"))
+                h_status = ((hres.get("verification") or {}).get("status"))
+                # Learn the pattern (+ Hunter's corrected domain) for free reuse.
+                store.record_verified_email(h_domain, req.firstName, req.lastName,
+                                            h_email, is_catch_all=h_accept_all)
+                if req.company and h_domain:
+                    store.put_cached_domain(req.company, h_domain, "hunter", "hunter")
+                send_safe = (h_status == "valid" and not h_accept_all)
+                return GuessEmailResponse(
+                    success=True, email=h_email, source="hunter",
+                    verified=send_safe,
+                    confidence="high" if send_safe else "medium",
+                    is_catch_all=h_accept_all,
+                    guesses_tried=tried,
+                    all_guesses=[EmailGuess(email=h_email, rank=1,
+                        reason=f"hunter.io (score={hres.get('score')}, status={h_status})")],
+                    domain=h_domain, domain_confidence=resolved_conf,
+                )
 
     # All failed — try LLM ranking + search fallback.
     # rank_permutations uses a synchronous OpenAI client; run it in a
@@ -307,7 +347,7 @@ async def _guess_pipeline(req: GuessEmailRequest, fn: str, ln: str):
         if refined_hit:
             best = refined_hit
             if best["result"]["is_reachable"] == "safe":
-                store.record_verified_email(domain, fn, ln, best["email"], is_catch_all=False)
+                store.record_verified_email(domain, req.firstName, req.lastName, best["email"], is_catch_all=False)
             for i, g in enumerate(ranked.get("guesses", [])):
                 all_guesses_list.append(EmailGuess(**g))
             return GuessEmailResponse(
