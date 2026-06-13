@@ -55,10 +55,16 @@ export const emailFinder: NodeHandler = async (ctx): Promise<NodeResult> => {
         return { success: true, output: { email: null, source: null, found: false, reason: 'no_company' } };
     }
 
-    console.log(`[EMAIL-FINDER] No email on file — searching for ${lead.firstName} ${lead.lastName} @ ${company}`);
+    // Prefer the Voyager-resolved names over the raw CSV-imported lead row —
+    // they're cleaner (no pronouns/emojis/multi-token noise), which makes the
+    // finder's permutations far more accurate.
+    const firstName = (storedOutputs['profile-visit']?.firstName as string | undefined) || lead.firstName || '';
+    const lastName = (storedOutputs['profile-visit']?.lastName as string | undefined) || lead.lastName || '';
+
+    console.log(`[EMAIL-FINDER] No email on file — searching for ${firstName} ${lastName} @ ${company}`);
     const result = await findEmail({
-        firstName: lead.firstName || '',
-        lastName: lead.lastName || '',
+        firstName,
+        lastName,
         company,
         jobTitle: (storedOutputs['profile-visit']?.jobTitle as string | undefined) || lead.jobTitle || undefined,
     });

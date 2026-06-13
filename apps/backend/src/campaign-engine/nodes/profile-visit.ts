@@ -1,6 +1,7 @@
 import { NodeHandler, NodeResult, ProfileVisitOutput } from '../types';
 import { detectConnectionState } from '../connection-state';
 import { scrollProfile, extractTopCard, extractAbout, extractExperience, extractExperienceList, extractEducationList, scrapeRecentPosts } from '../scrape/profile-scrape';
+import { extractEmailFromText } from '../scrape/email-from-text';
 import { cleanPersonField } from '../scrape/sanitize';
 import { prisma } from '@repo/db';
 
@@ -13,6 +14,8 @@ export const profileVisit: NodeHandler = async (ctx, config): Promise<NodeResult
 
     const output: ProfileVisitOutput = {
         name: null,
+        firstName: null,
+        lastName: null,
         headline: null,
         location: null,
         company: null,
@@ -71,6 +74,13 @@ export const profileVisit: NodeHandler = async (ctx, config): Promise<NodeResult
         try {
             const topCardData = await extractTopCard(page);
             output.name = topCardData.name;
+            // Split the display name into first/last for the email-finder (DOM
+            // has no separate fields; first token = first name, rest = last).
+            if (output.name) {
+                const parts = output.name.trim().split(/\s+/);
+                output.firstName = parts[0] || null;
+                output.lastName = parts.length > 1 ? parts.slice(1).join(' ') : null;
+            }
             output.headline = topCardData.headline;
             output.location = topCardData.location;
             console.log(`[PROFILE-VISIT] Name: ${output.name}, Headline: ${output.headline}`);
@@ -178,6 +188,17 @@ export const profileVisit: NodeHandler = async (ctx, config): Promise<NodeResult
             }
         } catch (e: any) {
             console.log(`[PROFILE-VISIT] Contact error: ${e?.message}`);
+        }
+
+        // --- SELF-PUBLISHED EMAIL in headline/about (all degrees) ---
+        // The contact modal above is 1st-degree-only. For everyone else, people
+        // often put a contact email in their bio — scan the text we already have.
+        if (!output.email) {
+            const bioEmail = extractEmailFromText(output.headline, output.about);
+            if (bioEmail) {
+                output.email = bioEmail;
+                console.log(`[PROFILE-VISIT] email from bio text: ${bioEmail}`);
+            }
         }
 
         // --- EXTRACT LATEST POST (if enrichPosts is set) ---

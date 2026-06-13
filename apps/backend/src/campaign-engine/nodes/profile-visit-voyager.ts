@@ -36,6 +36,7 @@ import {
     getAllConnections,
 } from '../../services/voyager-api.service';
 import { cleanPersonField } from '../scrape/sanitize';
+import { extractEmailFromText } from '../scrape/email-from-text';
 
 const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
 const randomRange = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1) + min);
@@ -47,6 +48,8 @@ export const profileVisitVoyager: NodeHandler = async (ctx, config): Promise<Nod
 
     const output: ProfileVisitOutput = {
         name: null,
+        firstName: null,
+        lastName: null,
         headline: null,
         location: null,
         company: null,
@@ -97,6 +100,8 @@ export const profileVisitVoyager: NodeHandler = async (ctx, config): Promise<Nod
             return { success: false, error: `FullProfile fetch failed: ${(r as any).error || 'unknown'}` };
         }
         const p = r.data;
+        output.firstName = p.firstName || null;
+        output.lastName = p.lastName || null;
         output.name = [p.firstName, p.lastName].filter(Boolean).join(' ').trim() || null;
         output.headline = p.headline;
         output.location = p.location;
@@ -191,6 +196,18 @@ export const profileVisitVoyager: NodeHandler = async (ctx, config): Promise<Nod
                 }
             } catch (e: any) {
                 console.log(`[PROFILE-VISIT-VOYAGER] contact modal failed: ${e.message}`);
+            }
+        }
+
+        // ---- Step 5b: self-published email in headline/about (all degrees) ----
+        // The contact modal above only fires for 1st-degree. For everyone else,
+        // people often put a contact email right in their bio — and we already
+        // have that text from FullProfile. Free, real, no extra request.
+        if (!output.email) {
+            const bioEmail = extractEmailFromText(output.headline, output.about);
+            if (bioEmail) {
+                output.email = bioEmail;
+                console.log(`[PROFILE-VISIT-VOYAGER] email from bio text: ${bioEmail}`);
             }
         }
 

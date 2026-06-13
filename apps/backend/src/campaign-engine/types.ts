@@ -86,6 +86,11 @@ export interface NodeExecution {
 
 export interface ProfileVisitOutput {
     name: string | null;
+    // Clean first/last from Voyager FullProfile (or split from name on the DOM
+    // path). Authoritative for the email-finder's permutations — far cleaner
+    // than the raw CSV-imported lead.firstName/lastName (pronouns, emojis, etc).
+    firstName: string | null;
+    lastName: string | null;
     headline: string | null;
     location: string | null;
     company: string | null;
