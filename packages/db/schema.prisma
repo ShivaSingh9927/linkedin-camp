@@ -45,6 +45,12 @@ model BusinessProfile {
   tonePreferences       String[]  @default([])
   aiStrategy            Json?
   aiStrategyGeneratedAt DateTime?
+  // Soft confirmation of the generated strategy. strategyConfirmedAt is set
+  // once the user reviews & confirms the whole strategy; strategyConfirmedSections
+  // tracks per-section "looks good" state (e.g. { gtm: true, icp: true }). Both
+  // reset to null on regenerate so a fresh strategy is reviewed afresh. Non-blocking.
+  strategyConfirmedAt   DateTime?
+  strategyConfirmedSections Json?
   aiPreferences         Json?     // { commentInstruction: string }
   websiteScrapedAt      DateTime?
   // Self-profile enrichment: scraped from the user's OWN LinkedIn profile after
@@ -254,6 +260,12 @@ model Message {
   messageId  String?
   content    String
   source     String   @default("MANUAL")
+  // Human-readable "why this message" — the personalization signals the AI
+  // actually had when it wrote this (their recent post, role, your messaging
+  // pillar, ICP pain, sequence step). Assembled deterministically at send
+  // time, surfaced in the campaign Messages tab so the user sees the AI did
+  // its homework. Null for manual/template sends.
+  rationale  String?
   sentAt     DateTime @default(now())
   Lead       Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
   User       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
