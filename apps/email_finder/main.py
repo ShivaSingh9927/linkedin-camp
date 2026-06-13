@@ -19,7 +19,7 @@ from permutations import generate_permutations, normalize
 from verifier import verify_email
 from guesser import rank_permutations
 from searcher import search_email_format
-from resolver import resolve_domain
+from resolver import resolve_domain, is_parked
 import store
 import hunter
 
@@ -71,6 +71,19 @@ PROBE_BATCH = 3
 # is the definitive timeout guard — the per-stage caps only bound their own
 # stage; this bounds the sum.
 GUESS_DEADLINE_S = float(os.environ.get("EMAIL_FINDER_GUESS_DEADLINE", "60"))
+
+# Medium/weak company->domain cache entries are trusted for this long before
+# we re-derive them (high-confidence homepage-confirmed entries never expire).
+# Caching weaker resolutions skips the slow crawl path on repeat leads; the
+# TTL + an on-read parked-domain re-check keep a wrong guess from sticking.
+MEDIUM_DOMAIN_TTL_S = float(os.environ.get("EMAIL_FINDER_MEDIUM_TTL", str(7 * 86400)))
+
+# LLM ranking + headless-browser (crawl4ai) fallback. Disabled by default:
+# it's the slowest path in the system and, now that Hunter covers pattern
+# discovery, rarely converts a miss into a verified send (the verified-rate
+# ceiling is mailserver verifiability, not domain/pattern accuracy). The code
+# is retained below — flip EMAIL_FINDER_ENABLE_LLM_FALLBACK=true to re-enable.
+ENABLE_LLM_FALLBACK = os.environ.get("EMAIL_FINDER_ENABLE_LLM_FALLBACK", "false").lower() in ("1", "true", "yes")
 
 
 async def verify_batch(emails: List[str], concurrency: int = 5) -> List[dict]:
@@ -152,21 +165,31 @@ async def _guess_pipeline(req: GuessEmailRequest, fn: str, ln: str):
             raise HTTPException(status_code=400, detail="domain or company is required")
         # Persistent company->domain cache: skip DNS/crawl resolution for a
         # company we've resolved before.
-        cached_dom = store.get_cached_domain(req.company)
+        cached_dom = store.get_cached_domain(req.company, medium_ttl_s=MEDIUM_DOMAIN_TTL_S)
         if cached_dom:
-            domain = cached_dom["domain"]
-            resolved_conf = cached_dom.get("confidence")
-        else:
+            cdom = cached_dom["domain"]
+            cconf = cached_dom.get("confidence")
+            # High-confidence (homepage-confirmed) entries are trusted as-is.
+            # Weaker cached guesses are re-validated cheaply on read: a single
+            # MX lookup rejects a domain that's since gone parked (or was a bad
+            # guess). A rejected entry is purged and we fall through to a fresh
+            # resolve rather than serving poison.
+            if cconf == "high":
+                domain, resolved_conf = cdom, cconf
+            elif not await asyncio.get_event_loop().run_in_executor(None, is_parked, cdom):
+                domain, resolved_conf = cdom, cconf
+            else:
+                store.forget_cached_domain(req.company)
+        if not domain:
             loop = asyncio.get_event_loop()
             res = await loop.run_in_executor(None, resolve_domain, req.company)
             domain = res.get("domain")
             resolved_conf = res.get("confidence")
-            # Only persist HIGH-confidence (homepage-confirmed) resolutions to
-            # the company->domain cache. Caching a weak search/medium guess
-            # poisons every future lead at that company AND blocks the
-            # resolver's own guards (e.g. parked-domain rejection) from ever
-            # re-running. Weak resolutions are re-derived each time instead.
-            if domain and resolved_conf == "high":
+            # Cache high AND medium resolutions. Medium guesses carry a TTL
+            # (re-derived periodically) and a parked re-check on read, so the
+            # slow crawl/search path is skipped for repeat leads without a bad
+            # guess sticking forever. Weak/low resolutions are still not cached.
+            if domain and resolved_conf in ("high", "medium"):
                 store.put_cached_domain(req.company, domain, resolved_conf, res.get("method"))
         if not domain:
             return GuessEmailResponse(
@@ -267,6 +290,18 @@ async def _guess_pipeline(req: GuessEmailRequest, fn: str, ln: str):
                         reason=f"hunter.io (score={hres.get('score')}, status={h_status})")],
                     domain=h_domain, domain_confidence=resolved_conf,
                 )
+
+    # LLM ranking + headless-crawl fallback. Gated off by default (see
+    # ENABLE_LLM_FALLBACK): slow and low-yield now that Hunter covers pattern
+    # discovery. When disabled we return a clean miss here, still surfacing the
+    # resolved domain so the backend can cache it. The code below is retained
+    # and re-enabled via EMAIL_FINDER_ENABLE_LLM_FALLBACK=true.
+    if not ENABLE_LLM_FALLBACK:
+        return GuessEmailResponse(
+            success=False, email=None, source=None, verified=False,
+            guesses_tried=tried, all_guesses=[],
+            domain=domain, domain_confidence=resolved_conf,
+        )
 
     # All failed — try LLM ranking + search fallback.
     # rank_permutations uses a synchronous OpenAI client; run it in a

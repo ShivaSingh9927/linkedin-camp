@@ -113,6 +113,23 @@ _PARKING_MX = re.compile(
 )
 
 
+def is_parked(domain: str) -> bool:
+    """True if `domain`'s MX points at a domain-parking service (for-sale,
+    no real mailbox). Cheap single DNS lookup — used to re-validate weaker
+    cached domains on read so a parked guess never gets trusted."""
+    if not domain or _dnsresolver is None:
+        return False
+    try:
+        r = _dnsresolver.Resolver()
+        r.lifetime = _DNS_TIMEOUT
+        r.timeout = _DNS_TIMEOUT
+        answers = r.resolve(domain, "MX")
+        exchanges = " ".join(str(rr.exchange) for rr in answers).lower()
+        return bool(_PARKING_MX.search(exchanges))
+    except Exception:
+        return False
+
+
 def _dns_status(domain: str) -> tuple[bool, bool]:
     """(resolves, has_mx). MX present => strong corporate-domain signal — but
     MX pointing at a domain-parking service does NOT count (the domain is for

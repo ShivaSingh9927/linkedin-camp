@@ -104,21 +104,48 @@ def company_key(company: Optional[str]) -> str:
 
 # --- company -> domain -------------------------------------------------------
 
-def get_cached_domain(company: Optional[str]) -> Optional[dict]:
+def get_cached_domain(company: Optional[str], medium_ttl_s: Optional[float] = None) -> Optional[dict]:
+    """Return the cached company->domain row, or None on miss.
+
+    `medium_ttl_s`: when set, any entry whose confidence is NOT 'high'
+    (i.e. medium/weak/hunter guesses) is treated as a miss once it's older
+    than this many seconds. High-confidence (homepage-confirmed) entries
+    never expire. This lets us cache weaker resolutions to skip the slow
+    crawl path on repeat leads, while still re-deriving them periodically
+    so a stale/wrong guess self-heals instead of poisoning forever.
+    """
     k = company_key(company)
     if not k:
         return None
     try:
         with _lock:
             r = _connect().execute(
-                "SELECT domain, confidence, method FROM domain_cache WHERE company_key=?",
+                "SELECT domain, confidence, method, updated_at FROM domain_cache WHERE company_key=?",
                 (k,),
             ).fetchone()
     except Exception:
         return None
     if not r or not r[0]:
         return None
-    return {"domain": r[0], "confidence": r[1], "method": r[2]}
+    confidence, updated_at = r[1], r[3]
+    if medium_ttl_s is not None and confidence != "high":
+        age = _now() - (updated_at or 0)
+        if age > medium_ttl_s:
+            return None
+    return {"domain": r[0], "confidence": confidence, "method": r[2]}
+
+
+def forget_cached_domain(company: Optional[str]) -> None:
+    """Drop a cached company->domain entry (e.g. a medium guess that we've
+    since detected as parked/unusable on read)."""
+    k = company_key(company)
+    if not k:
+        return
+    try:
+        with _lock:
+            _connect().execute("DELETE FROM domain_cache WHERE company_key=?", (k,))
+    except Exception:
+        pass
 
 
 def put_cached_domain(company: Optional[str], domain: str, confidence=None, method=None) -> None:
