@@ -102,8 +102,21 @@ def candidate_domains(clean: str, clean_with_desc: str | None = None) -> list[st
     return out
 
 
+# Domain-parking / for-sale MX providers. An MX here means the domain is
+# parked, not a real mailbox — e.g. scaleai.in -> park-mx.above.com. Treat as
+# NO mail infra so we never resolve to (or surface a guess on) a parked domain.
+_PARKING_MX = re.compile(
+    r"(above\.com|sedoparking|bodis\.com|parkingcrew|hugedomains|afternic|"
+    r"dan\.com|fabulous\.com|parklogic|voodoo\.com|domaincontrol-park|"
+    r"parkpage|cashparking|sav\.com|undeveloped\.com)",
+    re.IGNORECASE,
+)
+
+
 def _dns_status(domain: str) -> tuple[bool, bool]:
-    """(resolves, has_mx). MX present => strong corporate-domain signal."""
+    """(resolves, has_mx). MX present => strong corporate-domain signal — but
+    MX pointing at a domain-parking service does NOT count (the domain is for
+    sale, not a real mail host)."""
     has_mx = False
     resolves = False
     if _dnsresolver is not None:
@@ -111,7 +124,12 @@ def _dns_status(domain: str) -> tuple[bool, bool]:
         r.lifetime = _DNS_TIMEOUT
         r.timeout = _DNS_TIMEOUT
         try:
-            r.resolve(domain, "MX")
+            answers = r.resolve(domain, "MX")
+            exchanges = " ".join(str(rr.exchange) for rr in answers).lower()
+            if _PARKING_MX.search(exchanges):
+                # Parked / for-sale domain — unusable for email. Reject it
+                # everywhere (not a candidate, not a search host).
+                return False, False
             has_mx = True
             resolves = True
         except Exception:
