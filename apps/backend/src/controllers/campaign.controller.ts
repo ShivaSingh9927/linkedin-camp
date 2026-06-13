@@ -764,7 +764,8 @@ export const getCampaignMessages = async (req: any, res: Response) => {
             linkedinUrl: m.Lead?.linkedinUrl,
             direction: m.direction,
             content: m.content,
-            source: m.source, // AI / MANUAL / TEMPLATE
+            source: m.source, // AI / MANUAL / TEMPLATE / CAMPAIGN
+            rationale: m.rationale, // "why this message" — null for non-AI sends
             sentAt: m.sentAt,
             reply,
         };

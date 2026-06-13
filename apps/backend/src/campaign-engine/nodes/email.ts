@@ -2,6 +2,7 @@ import { NodeHandler, NodeResult } from '../types';
 import { resolveVariables } from '../variables';
 import { sendEmail } from '../../services/email.service';
 import { generateAIMessage } from '../ai-service';
+import { buildRationale } from '../ai-rationale';
 
 function normalizeBraces(text: string): string {
     return text.replace(/\{([^{}]+)\}/g, '{{$1}}');
@@ -49,6 +50,7 @@ export const emailNode: NodeHandler = async (ctx, config): Promise<NodeResult> =
     let subject = resolveVariables(normalizeBraces(rawSubject), resolveCtx);
 
     let body: string;
+    let aiGeneratedOk = false;
     if (aiEnabled) {
         console.log('[EMAIL] Generating AI subject + body...');
         try {
@@ -80,6 +82,7 @@ export const emailNode: NodeHandler = async (ctx, config): Promise<NodeResult> =
             const aiBody = aiResult.message;
             if (aiBody && aiBody.length > 10) {
                 body = aiBody;
+                aiGeneratedOk = true;
                 if (aiResult.subject && aiResult.subject.length > 0) {
                     subject = aiResult.subject;
                     console.log(`[EMAIL] AI subject: "${subject}"`);
@@ -99,6 +102,18 @@ export const emailNode: NodeHandler = async (ctx, config): Promise<NodeResult> =
 
     console.log(`[EMAIL] Sending to ${recipient}: "${subject.substring(0, 60)}..."`);
 
+    // "Why this message" — only meaningful when the body was AI-generated.
+    const pvForRationale = storedOutputs['profile-visit'] || {};
+    const rationale = aiGeneratedOk ? buildRationale({
+        latestPost: pvForRationale.latestPost,
+        company: pvForRationale.company || lead.company,
+        jobTitle: pvForRationale.jobTitle || lead.jobTitle,
+        headline: pvForRationale.headline || lead.headline,
+        about: pvForRationale.about || lead.aboutInfo,
+        aiStrategy: aiContext?.aiStrategy,
+        campaignProgress: (ctx as any).campaignProgress,
+    }) : undefined;
+
     const result = await sendEmail({
         userId,
         leadId: lead.id,
@@ -107,6 +122,8 @@ export const emailNode: NodeHandler = async (ctx, config): Promise<NodeResult> =
         subject,
         text: body,
         html: config.html,
+        aiGenerated: aiGeneratedOk,
+        rationale,
     });
 
     if (!result.success) {

@@ -1,4 +1,4 @@
-import { prisma } from '@repo/db';
+import { prisma, Prisma } from '@repo/db';
 import Redis from 'ioredis';
 
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8001';
@@ -104,13 +104,16 @@ export class StrategyService {
     // Set rate limit after successful generation
     await setRateLimit(userId);
 
-    // Save to BusinessProfile
+    // Save to BusinessProfile. A fresh strategy resets confirmation so the user
+    // reviews the new version (the old confirm no longer applies).
     await prisma.businessProfile.update({
       where: { userId },
       data: {
         aiStrategy: strategy,
         aiStrategyGeneratedAt: new Date(),
         websiteScrapedAt: businessProfile.website ? new Date() : undefined,
+        strategyConfirmedAt: null,
+        strategyConfirmedSections: Prisma.JsonNull,
       },
     });
 
@@ -137,12 +140,54 @@ export class StrategyService {
   async getStrategy(userId: string) {
     const businessProfile = await prisma.businessProfile.findUnique({
       where: { userId },
-      select: { aiStrategy: true, aiStrategyGeneratedAt: true },
+      select: {
+        aiStrategy: true,
+        aiStrategyGeneratedAt: true,
+        strategyConfirmedAt: true,
+        strategyConfirmedSections: true,
+      },
     });
 
     return {
       strategy: businessProfile?.aiStrategy || null,
       generatedAt: businessProfile?.aiStrategyGeneratedAt || null,
+      confirmedAt: businessProfile?.strategyConfirmedAt || null,
+      confirmedSections: businessProfile?.strategyConfirmedSections || {},
+    };
+  }
+
+  /**
+   * Soft confirmation. Two modes:
+   *  - { section, confirmed }: toggle a single section's "looks good" state.
+   *  - { all: true }: mark the whole strategy confirmed (sets strategyConfirmedAt).
+   * Non-blocking — campaigns run regardless; this just records review state and
+   * powers the dashboard nudge. Returns the updated confirm state.
+   */
+  async confirmStrategy(userId: string, opts: { section?: string; confirmed?: boolean; all?: boolean }) {
+    const bp = await prisma.businessProfile.findUnique({
+      where: { userId },
+      select: { strategyConfirmedSections: true },
+    });
+    if (!bp) throw new Error('Business profile not found');
+
+    const sections: Record<string, boolean> = { ...((bp.strategyConfirmedSections as any) || {}) };
+    const data: any = {};
+
+    if (opts.all) {
+      data.strategyConfirmedAt = new Date();
+    } else if (opts.section) {
+      sections[opts.section] = opts.confirmed !== false;
+      data.strategyConfirmedSections = sections;
+    }
+
+    const updated = await prisma.businessProfile.update({
+      where: { userId },
+      data,
+      select: { strategyConfirmedAt: true, strategyConfirmedSections: true },
+    });
+    return {
+      confirmedAt: updated.strategyConfirmedAt,
+      confirmedSections: updated.strategyConfirmedSections || {},
     };
   }
 
@@ -308,6 +353,94 @@ export class StrategyService {
       },
     });
     return { success: true };
+  }
+
+  /**
+   * Fast "here's what I understand about your business" reflection, surfaced
+   * inline on the AI Profile page the instant the user saves. Single LLM call
+   * — NOT the full strategy pipeline. Reads the persisted BusinessProfile so
+   * it reflects exactly what was just saved. Never writes anything.
+   */
+  async understandBusiness(userId: string) {
+    const businessProfile = await prisma.businessProfile.findUnique({
+      where: { userId },
+    });
+    if (!businessProfile) {
+      throw new Error('Business profile not found');
+    }
+
+    const response = await fetch(`${AI_SERVICE_URL}/ai/understand-business`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        company: businessProfile.company || '',
+        companyDescription: businessProfile.companyDescription || '',
+        products: businessProfile.products || '',
+        differentiators: businessProfile.differentiators || '',
+        caseStudies: businessProfile.caseStudies || '',
+        targetAudience: businessProfile.targetAudience || '',
+        industry: businessProfile.industry || '',
+        mainPainPoint: businessProfile.mainPainPoint || '',
+        valueProp: businessProfile.valueProp || '',
+        communicationStyle: businessProfile.communicationStyle || '',
+        tonePreferences: businessProfile.tonePreferences || [],
+        website: businessProfile.website || '',
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`AI service understand-business error: ${response.statusText}`);
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Minimal-ask onboarding inference: scrape the user's website, derive a draft
+   * business profile + a warm "here's what I understand" reflection, and MERGE
+   * the draft into BusinessProfile — filling only empty fields so we never
+   * clobber anything the user typed. Returns the understanding for the reveal.
+   */
+  async inferFromWebsite(userId: string) {
+    const businessProfile = await prisma.businessProfile.findUnique({ where: { userId } });
+    const website = businessProfile?.website?.trim();
+    if (!website) {
+      return { understanding: null, scrapeEmpty: true, reason: 'no_website' };
+    }
+
+    const response = await fetch(`${AI_SERVICE_URL}/ai/infer-from-website`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        website,
+        jobTitle: businessProfile?.persona || '',
+        selfHeadline: (businessProfile as any)?.selfHeadline || '',
+      }),
+    });
+    if (!response.ok) {
+      throw new Error(`AI service infer-from-website error: ${response.statusText}`);
+    }
+    const result: any = await response.json();
+    if (result.scrapeEmpty) {
+      return { understanding: null, scrapeEmpty: true, reason: 'scrape_empty' };
+    }
+
+    // Fill-empty-only merge: a user's explicit input always wins over inference.
+    const draft = result.draft || {};
+    const fillIfEmpty: Record<string, string> = {};
+    const fields = ['companyDescription', 'products', 'industry', 'targetAudience', 'mainPainPoint', 'valueProp', 'differentiators'] as const;
+    for (const f of fields) {
+      const existing = (businessProfile as any)?.[f];
+      if ((!existing || String(existing).trim() === '') && draft[f]) {
+        fillIfEmpty[f] = draft[f];
+      }
+    }
+    if (Object.keys(fillIfEmpty).length > 0) {
+      await prisma.businessProfile.update({ where: { userId }, data: fillIfEmpty }).catch((e: any) =>
+        console.error('[STRATEGY] inferFromWebsite merge failed:', e.message));
+    }
+
+    return { understanding: result.understanding || null, draft, applied: Object.keys(fillIfEmpty), scrapeEmpty: false };
   }
 
   async getUserContext(userId: string) {

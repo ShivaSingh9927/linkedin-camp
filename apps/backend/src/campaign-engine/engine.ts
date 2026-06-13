@@ -550,7 +550,11 @@ async function runLead(
                         campaignId,
                         direction: 'SENT',
                         content: result.output.messageText,
-                        source: 'CAMPAIGN',
+                        // Tag AI-written DMs so the Messages tab shows the "AI"
+                        // badge + the "why this message" rationale; template /
+                        // fallback sends stay 'CAMPAIGN'.
+                        source: result.output.aiGenerated ? 'AI' : 'CAMPAIGN',
+                        rationale: result.output.rationale || null,
                     },
                 }).catch(err => console.error(`[ENGINE] Message write failed: ${err.message}`));
 

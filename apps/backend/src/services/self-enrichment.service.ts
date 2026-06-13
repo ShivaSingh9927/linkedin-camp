@@ -14,6 +14,25 @@ export interface EnrichmentResult {
     reason?: string;
 }
 
+/**
+ * Push a "I just studied your LinkedIn profile" signal to the user's browser so
+ * the dashboard can reveal what the AI learned the moment enrichment finishes —
+ * rather than the summary silently appearing on the next page load. Best-effort.
+ */
+async function emitSelfEnriched(userId: string, ai: { summary?: string; communicationStyle?: string; tonePreferences?: string[] }) {
+    if (!ai?.summary) return;
+    try {
+        const { io } = await import('../socket');
+        io.to(`user_${userId}`).emit('SELF_PROFILE_ENRICHED', {
+            summary: ai.summary,
+            communicationStyle: ai.communicationStyle || '',
+            tonePreferences: ai.tonePreferences || [],
+        });
+    } catch (e: any) {
+        console.warn(`[SELF-ENRICH] emit failed (ignored): ${e?.message}`);
+    }
+}
+
 export interface EnrichmentOptions {
     /**
      * 'api' (default): Use Voyager API for profile data (~300ms, no browser).
@@ -158,6 +177,7 @@ async function enrichViaApi(userId: string, user: any): Promise<EnrichmentResult
             });
 
             console.log(`[SELF-ENRICH] user=${userId} ✅ enriched via API (industry=${p.industry}, geo=${p.location}, premium=${p.premium}, summary=${ai.summary ? 'yes' : 'no'})`);
+            await emitSelfEnriched(userId, ai);
             return { status: 'done' };
         } finally {
             await context.close().catch(() => {});
@@ -267,6 +287,7 @@ async function enrichViaDom(userId: string, user: any): Promise<EnrichmentResult
         });
 
         console.log(`[SELF-ENRICH] user=${userId} ✅ enriched via DOM (posts=${postContents.length}, summary=${ai.summary ? 'yes' : 'no'})`);
+        await emitSelfEnriched(userId, ai);
         return { status: 'done' };
     } catch (e: any) {
         console.error(`[SELF-ENRICH] user=${userId} DOM failed: ${e?.message}`);

@@ -19,6 +19,11 @@ export interface SendEmailArgs {
      *  log under the correct campaign. */
     campaignId?: string;
     leadId?: string;
+    /** True when the body was AI-generated — tags the Message row source 'AI'
+     *  so the Messages tab shows the AI badge + rationale. */
+    aiGenerated?: boolean;
+    /** Deterministic "why this message" rationale (see ai-rationale.ts). */
+    rationale?: string;
 }
 
 export interface SendEmailResult {
@@ -133,7 +138,8 @@ export async function sendEmail(args: SendEmailArgs): Promise<SendEmailResult> {
                     subject: args.subject,
                     content: args.text,
                     messageId,
-                    source: args.campaignId ? 'CAMPAIGN' : 'MANUAL',
+                    source: args.aiGenerated ? 'AI' : (args.campaignId ? 'CAMPAIGN' : 'MANUAL'),
+                    rationale: args.rationale || null,
                 },
             });
         }

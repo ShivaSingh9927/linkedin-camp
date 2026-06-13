@@ -1,6 +1,7 @@
 import { NodeHandler, NodeResult, SendMessageOutput } from '../types';
 import { resolveVariables } from '../variables';
 import { generateAIMessage } from '../ai-service';
+import { buildRationale } from '../ai-rationale';
 import { detectConnectionState } from '../connection-state';
 
 const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
@@ -101,6 +102,16 @@ export const sendMessage: NodeHandler = async (ctx, config): Promise<NodeResult>
                 const aiMessage = aiResult.message;
                 if (aiMessage && aiMessage.length > 10) {
                     messageText = aiMessage;
+                    output.aiGenerated = true;
+                    output.rationale = buildRationale({
+                        latestPost,
+                        company: profileData.company,
+                        jobTitle: profileData.jobTitle,
+                        headline: profileData.headline,
+                        about: profileData.about,
+                        aiStrategy: aiContext?.aiStrategy,
+                        campaignProgress: (ctx as any).campaignProgress,
+                    });
                     console.log('[SEND-MESSAGE] AI message generated:', messageText.substring(0, 50) + '...');
                 } else {
                     console.log('[SEND-MESSAGE] AI output invalid, using fallback');

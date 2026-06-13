@@ -89,6 +89,37 @@ router.post('/edit-pillar', async (req: AuthRequest, res) => {
   }
 });
 
+router.post('/confirm', async (req: AuthRequest, res) => {
+  try {
+    const { section, confirmed, all } = req.body || {};
+    const result = await strategyService.confirmStrategy(req.user!.id, { section, confirmed, all });
+    res.json({ success: true, ...result });
+  } catch (error: any) {
+    console.error('[STRATEGY] Confirm error:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/infer-from-website', async (req: AuthRequest, res) => {
+  try {
+    const result = await strategyService.inferFromWebsite(req.user!.id);
+    res.json(result);
+  } catch (error: any) {
+    console.error('[STRATEGY] Infer from website error:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/understand', async (req: AuthRequest, res) => {
+  try {
+    const result = await strategyService.understandBusiness(req.user!.id);
+    res.json(result);
+  } catch (error: any) {
+    console.error('[STRATEGY] Understand business error:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 router.get('/context', async (req: AuthRequest, res) => {
   try {
     const context = await strategyService.getUserContext(req.user!.id);

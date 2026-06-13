@@ -149,6 +149,12 @@ export interface SendMessageOutput {
     // Message row, no error log, lead progresses to the next step.
     skipped?: boolean;
     skipReason?: 'not_connected' | 'no_message_ui';
+    // True when the body was AI-generated (vs a resolved template). Drives the
+    // "AI" badge and rationale on the Messages tab.
+    aiGenerated?: boolean;
+    // Deterministic "why this message" — the personalization signals fed to the
+    // AI. Undefined for template/fallback sends. See ai-rationale.ts.
+    rationale?: string;
 }
 
 export interface DelayOutput {
