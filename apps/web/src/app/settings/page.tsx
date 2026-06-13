@@ -16,8 +16,8 @@ import {
     Mail
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import Link from 'next/link';
 import LinkedInConnectivity from '@/components/LinkedInConnectivity';
-import BusinessProfileForm from '@/components/BusinessProfileForm';
 import IntegrationsSettings from '@/components/IntegrationsSettings';
 import EmailAccountSettings from '@/components/EmailAccountSettings';
 import { cn } from '@/lib/utils';
@@ -26,7 +26,10 @@ import { TopBar } from '@/components/TopBar';
 const settingsNav = [
     { label: 'Account', icon: User, key: 'account' },
     { label: 'LinkedIn', icon: Linkedin, key: 'linkedin' },
-    { label: 'Business Profile', icon: Sparkles, key: 'business' },
+    // AI Profile is the canonical business-profile + strategy editor; it lives
+    // at its own rich route, so this nav item links there rather than rendering
+    // an inline tab (the old inline BusinessProfileForm was a stale duplicate).
+    { label: 'AI Profile', icon: Sparkles, key: 'business', href: '/settings/ai-profile' },
     { label: 'Safety & Limits', icon: Shield, key: 'safety' },
     { label: 'Notifications', icon: Bell, key: 'notifications' },
     { label: 'Subscription', icon: CreditCard, key: 'billing' },
@@ -78,24 +81,39 @@ export default function SettingsPage() {
                 {/* Sidemenu */}
                 <div className="space-y-4">
                     <div className="bg-white rounded-[2.5rem] border shadow-sm p-4 space-y-1">
-                        {settingsNav.map((item) => (
-                            <button
-                                key={item.key}
-                                onClick={() => setActiveSection(item.key)}
-                                className={cn(
-                                    "w-full flex items-center justify-between px-4 py-3.5 rounded-2xl transition-all group font-bold text-sm",
-                                    activeSection === item.key
-                                        ? "bg-primary text-white shadow-lg shadow-primary/20"
-                                        : "text-slate-500 hover:bg-slate-50"
-                                )}
-                            >
-                                <div className="flex items-center space-x-3">
-                                    <item.icon className={cn("w-5 h-5", activeSection === item.key ? "text-white" : "text-slate-400 group-hover:text-primary")} />
-                                    <span>{item.label}</span>
-                                </div>
-                                <ChevronRight className={cn("w-4 h-4 opacity-50", activeSection === item.key ? "text-white" : "hidden group-hover:block")} />
-                            </button>
-                        ))}
+                        {settingsNav.map((item) => {
+                            const baseCls = "w-full flex items-center justify-between px-4 py-3.5 rounded-2xl transition-all group font-bold text-sm text-slate-500 hover:bg-slate-50";
+                            // Nav items with an href deep-link to a dedicated page (e.g. AI Profile).
+                            if ('href' in item && item.href) {
+                                return (
+                                    <Link key={item.key} href={item.href} className={baseCls}>
+                                        <div className="flex items-center space-x-3">
+                                            <item.icon className="w-5 h-5 text-slate-400 group-hover:text-primary" />
+                                            <span>{item.label}</span>
+                                        </div>
+                                        <ChevronRight className="w-4 h-4 opacity-50 hidden group-hover:block" />
+                                    </Link>
+                                );
+                            }
+                            return (
+                                <button
+                                    key={item.key}
+                                    onClick={() => setActiveSection(item.key)}
+                                    className={cn(
+                                        "w-full flex items-center justify-between px-4 py-3.5 rounded-2xl transition-all group font-bold text-sm",
+                                        activeSection === item.key
+                                            ? "bg-primary text-white shadow-lg shadow-primary/20"
+                                            : "text-slate-500 hover:bg-slate-50"
+                                    )}
+                                >
+                                    <div className="flex items-center space-x-3">
+                                        <item.icon className={cn("w-5 h-5", activeSection === item.key ? "text-white" : "text-slate-400 group-hover:text-primary")} />
+                                        <span>{item.label}</span>
+                                    </div>
+                                    <ChevronRight className={cn("w-4 h-4 opacity-50", activeSection === item.key ? "text-white" : "hidden group-hover:block")} />
+                                </button>
+                            );
+                        })}
                     </div>
 
                     <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white relative overflow-hidden group border border-white/10 shadow-2xl">
@@ -194,10 +212,6 @@ export default function SettingsPage() {
 
                             {activeSection === 'linkedin' && (
                                 <LinkedInConnectivity />
-                            )}
-
-                            {activeSection === 'business' && (
-                                <BusinessProfileForm />
                             )}
 
                             {activeSection === 'integrations' && (

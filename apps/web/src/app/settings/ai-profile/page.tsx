@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { Building2, Target, PenTool, Globe, Sparkles, Check, Loader2, ArrowRight, Clock } from 'lucide-react';
+import { Building2, Target, PenTool, Globe, Sparkles, Check, Loader2, ArrowRight, Clock, Users, Lightbulb } from 'lucide-react';
 import api from '@/lib/api';
 
 const tabs = [
@@ -43,6 +43,10 @@ export default function AIProfilePage() {
   const [saved, setSaved] = useState(false);
   const [existingProfile, setExistingProfile] = useState<any>(null);
   const [rateLimitError, setRateLimitError] = useState<string | null>(null);
+  // Reflect-back: after a save, ask the AI to confirm what it understood and
+  // show it inline so the form feels like a conversation, not a data dump.
+  const [understanding, setUnderstanding] = useState<any>(null);
+  const [understanding_loading, setUnderstandingLoading] = useState(false);
 
   const [form, setForm] = useState({
     companyDescription: '',
@@ -88,6 +92,15 @@ export default function AIProfilePage() {
           writingSamples: data.businessProfile.writingSamples || [],
           tonePreferences: data.businessProfile.tonePreferences || [],
         }));
+        // If they've already given us substance, greet them with the AI's
+        // understanding immediately — don't make a returning user feel like
+        // they're staring at a blank form. The reflection is Redis-cached on
+        // the AI service, so for an unchanged profile this is an instant hit
+        // (no LLM cost) after the first time.
+        const bp = data.businessProfile;
+        if (bp.companyDescription || bp.products || bp.targetAudience) {
+          reflectUnderstanding();
+        }
       }
     } catch (e) {
       console.error('Failed to load profile', e);
@@ -102,11 +115,30 @@ export default function AIProfilePage() {
       await api.put('/users/business-profile', form);
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
+      // Reflect back what the AI understood from what they just saved. Fire
+      // after the save persists so it reads the canonical profile. Best-effort
+      // — a failure here just means no card, never blocks the save.
+      reflectUnderstanding();
     } catch (e) {
       console.error('Failed to save', e);
       alert('Failed to save profile. Please try again.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const reflectUnderstanding = async () => {
+    // Reads the canonical profile from the DB server-side (empty body), so it
+    // doesn't depend on `form` state — safe to call right after load. The
+    // backend 400s on a truly empty profile, which we swallow below.
+    setUnderstandingLoading(true);
+    try {
+      const { data } = await api.post('/strategy/understand', {});
+      setUnderstanding(data);
+    } catch (e) {
+      console.error('Failed to reflect understanding', e);
+    } finally {
+      setUnderstandingLoading(false);
     }
   };
 
@@ -188,13 +220,108 @@ export default function AIProfilePage() {
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Header */}
+        {/* Header — context-aware: a returning user with a profile is here to
+            review/refine, not fill a blank form. */}
         <div className="mb-8">
           <h1 className="text-3xl font-black text-slate-900">AI Profile</h1>
           <p className="mt-2 text-slate-600">
-            Help Aigeon understand your business so it can write messages that sound like you.
+            {existingProfile?.companyDescription || existingProfile?.products
+              ? 'Here’s what Aigeon knows about your business. Tweak anything below — it re-reads as you edit.'
+              : 'Help Aigeon understand your business so it can write messages that sound like you.'}
           </p>
         </div>
+
+        {/* Reflect-back: "here's what I understood" — appears after a save so
+            the form feels like a conversation, not a one-way data dump. */}
+        {(understanding_loading || understanding) && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="relative overflow-hidden rounded-3xl border border-primary/20 bg-gradient-to-br from-primary/5 via-indigo-50/50 to-purple-50/40 p-6 mb-8 shadow-sm"
+          >
+            <Sparkles className="absolute -right-5 -top-5 w-28 h-28 text-primary/5" />
+            <div className="relative">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-2xl bg-primary/15 flex items-center justify-center flex-shrink-0">
+                  {understanding_loading
+                    ? <Loader2 className="w-5 h-5 text-primary animate-spin" />
+                    : <Sparkles className="w-5 h-5 text-primary" />}
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900 tracking-tight">
+                    {understanding_loading ? 'Reading your profile…' : "Here's what I understand about you"}
+                  </h3>
+                  <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">
+                    Saved · AI confirmation
+                  </p>
+                </div>
+              </div>
+
+              {understanding && (
+                <>
+                  {understanding.summary && (
+                    <p className="text-sm font-bold text-slate-800 leading-relaxed mb-4">
+                      {understanding.summary}
+                    </p>
+                  )}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+                    {understanding.youTarget && (
+                      <div className="flex items-start gap-3 bg-white/70 rounded-2xl p-3 border border-white">
+                        <Users className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+                        <div className="min-w-0">
+                          <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">You target</p>
+                          <p className="text-sm font-black text-slate-900">{understanding.youTarget}</p>
+                        </div>
+                      </div>
+                    )}
+                    {understanding.yourEdge && (
+                      <div className="flex items-start gap-3 bg-white/70 rounded-2xl p-3 border border-white">
+                        <Lightbulb className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" />
+                        <div className="min-w-0">
+                          <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Your edge</p>
+                          <p className="text-sm font-black text-slate-900">{understanding.yourEdge}</p>
+                        </div>
+                      </div>
+                    )}
+                    {understanding.youSolve && (
+                      <div className="flex items-start gap-3 bg-white/70 rounded-2xl p-3 border border-white">
+                        <Target className="w-4 h-4 text-rose-500 mt-0.5 flex-shrink-0" />
+                        <div className="min-w-0">
+                          <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">You solve</p>
+                          <p className="text-sm font-black text-slate-900">{understanding.youSolve}</p>
+                        </div>
+                      </div>
+                    )}
+                    {understanding.youAre && (
+                      <div className="flex items-start gap-3 bg-white/70 rounded-2xl p-3 border border-white">
+                        <Building2 className="w-4 h-4 text-indigo-500 mt-0.5 flex-shrink-0" />
+                        <div className="min-w-0">
+                          <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">You are</p>
+                          <p className="text-sm font-black text-slate-900">{understanding.youAre}</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  {Array.isArray(understanding.voice) && understanding.voice.length > 0 && (
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="inline-flex items-center gap-1.5 text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                        <PenTool className="w-3.5 h-3.5" /> Your voice
+                      </span>
+                      {understanding.voice.map((v: string, i: number) => (
+                        <span key={i} className="text-xs font-bold text-slate-700 bg-white/80 border border-white px-3 py-1 rounded-full">
+                          {v}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <p className="mt-4 text-xs font-semibold text-slate-500">
+                    Not quite right? Edit any field above and save again — I&apos;ll re-read it.
+                  </p>
+                </>
+              )}
+            </div>
+          </motion.div>
+        )}
 
         {/* Tabs */}
         <div className="flex space-x-1 bg-white rounded-xl p-1 border border-slate-200 mb-8">

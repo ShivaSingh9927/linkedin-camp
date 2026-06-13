@@ -1,10 +1,14 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { Sparkles, ArrowRight, Target, Users, Lightbulb, FileText } from 'lucide-react';
+import { io as socketIO, Socket } from 'socket.io-client';
+import { toast } from 'sonner';
 import Link from 'next/link';
 import api from '@/lib/api';
+
+const apiBase = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/v1\/?$/, '');
 
 /**
  * "Here's what Qampi figured out about you" — a confident, digestible jist of
@@ -18,6 +22,8 @@ export function AIInsightSummary() {
   const [strategy, setStrategy] = useState<any>(null);
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [justEnriched, setJustEnriched] = useState(false);
+  const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -29,6 +35,35 @@ export function AIInsightSummary() {
     });
     return () => {
       cancelled = true;
+    };
+  }, []);
+
+  // Live reveal: when self-enrichment finishes (right after the user connects
+  // LinkedIn), the backend emits SELF_PROFILE_ENRICHED. Drop the summary in
+  // immediately and flag it so the card animates a "just studied your profile"
+  // moment, instead of the insight silently appearing on the next page load.
+  useEffect(() => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    if (!token) return;
+    const s = socketIO(apiBase, { transports: ['websocket', 'polling'] });
+    socketRef.current = s;
+    s.on('connect', () => s.emit('join_room', { token }));
+    s.on('SELF_PROFILE_ENRICHED', (payload: { summary?: string; communicationStyle?: string; tonePreferences?: string[] }) => {
+      if (!payload?.summary) return;
+      setProfile((prev: any) => ({
+        ...(prev || {}),
+        selfProfileSummary: payload.summary,
+        communicationStyle: prev?.communicationStyle || payload.communicationStyle,
+        tonePreferences: (prev?.tonePreferences?.length ? prev.tonePreferences : payload.tonePreferences) || [],
+      }));
+      setJustEnriched(true);
+      toast.success('✨ I just studied your LinkedIn profile', {
+        description: "Here's what I learned about you.",
+      });
+    });
+    return () => {
+      s.disconnect();
+      socketRef.current = null;
     };
   }, []);
 
@@ -57,7 +92,7 @@ export function AIInsightSummary() {
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      className="relative overflow-hidden rounded-[2rem] sm:rounded-[2.5rem] border border-primary/20 bg-gradient-to-br from-primary/5 via-indigo-50/50 to-purple-50/40 p-6 sm:p-8 shadow-soft"
+      className={`relative overflow-hidden rounded-[2rem] sm:rounded-[2.5rem] border bg-gradient-to-br from-primary/5 via-indigo-50/50 to-purple-50/40 p-6 sm:p-8 shadow-soft transition-shadow ${justEnriched ? 'border-primary/40 ring-2 ring-primary/20' : 'border-primary/20'}`}
     >
       <Sparkles className="absolute -right-6 -top-6 w-32 h-32 text-primary/5" />
 
@@ -71,7 +106,7 @@ export function AIInsightSummary() {
               Here&apos;s what I&apos;ve learned about you
             </h3>
             <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">
-              {hasStrategy ? 'AI strategy · the jist' : 'From your LinkedIn profile'}
+              {justEnriched ? 'Just studied your profile' : hasStrategy ? 'AI strategy · the jist' : 'From your LinkedIn profile'}
             </p>
           </div>
         </div>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import {
   Users,
   Zap,
@@ -23,6 +23,7 @@ import { motion } from 'framer-motion';
 import { TopBar } from '@/components/TopBar';
 import { GlowContainer } from '@/components/GlowBorder';
 import { SetupChecklist } from '@/components/SetupChecklist';
+import { WelcomeReveal } from '@/components/WelcomeReveal';
 import { AIInsightSummary } from '@/components/AIInsightSummary';
 import { AICommandCenter } from '@/components/AICommandCenter';
 import { cn } from '@/lib/utils';
@@ -86,6 +87,9 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6 sm:space-y-8 lg:space-y-10">
+      <Suspense fallback={null}>
+        <WelcomeReveal />
+      </Suspense>
       <SetupChecklist />
       <AIInsightSummary />
       <GlowContainer active={hasActiveCampaigns} className="p-0 border-none bg-transparent">

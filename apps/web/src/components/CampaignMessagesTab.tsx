@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import api from '@/lib/api';
 import { cn } from '@/lib/utils';
-import { Loader2, MessageSquare, Sparkles, User } from 'lucide-react';
+import { Loader2, MessageSquare, Sparkles, User, Wand2 } from 'lucide-react';
 
 interface Message {
     id: string;
@@ -15,6 +15,7 @@ interface Message {
     direction: 'OUTBOUND' | 'INBOUND' | string;
     content: string;
     source: 'AI' | 'MANUAL' | 'TEMPLATE' | string;
+    rationale: string | null;
     sentAt: string;
     reply: { content: string; sentAt: string } | null;
 }
@@ -103,6 +104,16 @@ export function CampaignMessagesTab({ campaignId }: Props) {
                             <div className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">
                                 {m.content}
                             </div>
+
+                            {m.rationale && (
+                                <div className="flex items-start gap-2 rounded-xl bg-violet-50/70 border border-violet-100 px-3 py-2">
+                                    <Wand2 className="w-3.5 h-3.5 text-violet-500 mt-0.5 flex-shrink-0" />
+                                    <p className="text-xs text-violet-800/90 leading-relaxed">
+                                        <span className="font-black uppercase tracking-widest text-[9px] text-violet-500 mr-1">Why this message</span>
+                                        {m.rationale}
+                                    </p>
+                                </div>
+                            )}
 
                             {m.reply && (
                                 <div className="mt-3 pt-3 border-t border-purple-200/50 flex gap-3 items-start">
