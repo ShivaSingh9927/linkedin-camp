@@ -52,7 +52,10 @@ export const getStats = async (req: any, res: Response) => {
 
         // Process Campaign Stats
         const campaignPerformance = campaignsData.map(camp => {
-            const leads = camp.leads;
+            // Relation is `CampaignLead` in the schema (see select above). Reading
+            // `camp.leads` was undefined → `.length` threw → the whole /stats call
+            // 500'd, so the dashboard saw zero campaigns even when many existed.
+            const leads = camp.CampaignLead;
             return {
                 id: camp.id,
                 name: camp.name,
