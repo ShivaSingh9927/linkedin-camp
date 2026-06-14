@@ -7,25 +7,20 @@ import {
   ArrowUpRight,
   Target,
   Clock,
-  Sparkles,
   Plus,
-  ArrowRight,
   Play,
   Pause,
-  TrendingUp,
   Mail,
-  Send,
   Eye,
   UserPlus,
+  Send,
   Loader2,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { TopBar } from '@/components/TopBar';
 import { GlowContainer } from '@/components/GlowBorder';
-import { SetupChecklist } from '@/components/SetupChecklist';
 import { WelcomeReveal } from '@/components/WelcomeReveal';
-import { AIInsightSummary } from '@/components/AIInsightSummary';
-import { AICommandCenter } from '@/components/AICommandCenter';
+import { ActivationHero } from '@/components/ActivationHero';
+import { StrategySummaryCard } from '@/components/StrategySummaryCard';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
 
@@ -48,11 +43,7 @@ export default function DashboardPage() {
     sentRequests: 0,
     replyRate: 0,
     dailyRemaining: 80,
-    today: {
-      invites: 0,
-      messages: 0,
-      visits: 0
-    }
+    today: { invites: 0, messages: 0, visits: 0 },
   });
 
   useEffect(() => {
@@ -60,17 +51,16 @@ export default function DashboardPage() {
       try {
         const token = localStorage.getItem('token');
         const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/stats`, {
-          headers: { 'Authorization': `Bearer ${token}` }
+          headers: { Authorization: `Bearer ${token}` },
         });
         const data = await res.json();
-
         if (data.global) {
           setStats(data.global);
           setCampaigns(data.campaignPerformance || []);
           setHasActiveCampaigns(data.global.activeCampaigns > 0);
         }
       } catch (error) {
-        console.error("Failed to fetch dashboard stats", error);
+        console.error('Failed to fetch dashboard stats', error);
       } finally {
         setLoading(false);
       }
@@ -79,260 +69,209 @@ export default function DashboardPage() {
   }, []);
 
   const statusConfig: Record<string, { label: string; color: string; bg: string }> = {
-    'ACTIVE': { label: 'Running', color: 'text-emerald-600', bg: 'bg-emerald-500/10' },
-    'PAUSED': { label: 'Paused', color: 'text-amber-600', bg: 'bg-amber-500/10' },
-    'DRAFT': { label: 'Draft', color: 'text-slate-500', bg: 'bg-slate-500/10' },
-    'COMPLETED': { label: 'Completed', color: 'text-blue-600', bg: 'bg-blue-500/10' },
+    ACTIVE: { label: 'Running', color: 'text-emerald-600', bg: 'bg-emerald-500/10' },
+    PAUSED: { label: 'Paused', color: 'text-amber-600', bg: 'bg-amber-500/10' },
+    DRAFT: { label: 'Draft', color: 'text-slate-500', bg: 'bg-slate-500/10' },
+    COMPLETED: { label: 'Completed', color: 'text-blue-600', bg: 'bg-blue-500/10' },
   };
 
+  const hasData = campaigns.length > 0;
+
+  // KPI cards — every value is measured. No fabricated deltas: we don't have
+  // week-over-week data, so we show the real number and (where it exists) a
+  // real secondary like the daily-cap ratio, never an invented "+12.5%".
+  const kpis = [
+    { label: 'Active Leads', value: stats.totalLeads.toLocaleString(), icon: Users, color: 'text-primary', bg: 'bg-primary/10', sub: null as string | null },
+    { label: 'Sent Requests', value: stats.sentRequests.toLocaleString(), icon: Target, color: 'text-emerald-500', bg: 'bg-emerald-500/10', sub: null },
+    { label: 'Reply Rate', value: `${stats.replyRate}%`, icon: Zap, color: 'text-amber-500', bg: 'bg-amber-500/10', sub: null },
+    { label: 'Daily Remaining', value: `${stats.dailyRemaining}`, icon: Clock, color: 'text-blue-500', bg: 'bg-blue-500/10', sub: `of 80` },
+  ];
+
+  const quotas = [
+    { label: 'Invitations', value: stats.today?.invites || 0, total: 30, icon: UserPlus, color: 'text-amber-500', bg: 'bg-amber-500/10' },
+    { label: 'Messages', value: stats.today?.messages || 0, total: 50, icon: Send, color: 'text-blue-500', bg: 'bg-blue-500/10' },
+    { label: 'Profile visits', value: stats.today?.visits || 0, total: 80, icon: Eye, color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
+  ];
+
   return (
-    <div className="space-y-6 sm:space-y-8 lg:space-y-10">
+    <div className="space-y-6 sm:space-y-8">
       <Suspense fallback={null}>
         <WelcomeReveal />
       </Suspense>
-      <SetupChecklist />
-      <AIInsightSummary />
+
+      {/* Title on top */}
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 px-1">
+        <div>
+          <h1 className="text-3xl sm:text-[2.5rem] font-black text-foreground tracking-tight leading-none">Dashboard</h1>
+          <p className="mt-3 text-[15px] sm:text-base font-medium text-muted-foreground">
+            {hasData
+              ? 'Track your campaign performance and manage high-intent leads.'
+              : 'Finish setup to launch your first campaign — real results appear here once it runs.'}
+          </p>
+        </div>
+        <div className="flex items-center gap-3 flex-shrink-0">
+          <div className="px-3 py-1.5 bg-muted rounded-full flex items-center gap-2 border border-border">
+            <div className={cn('w-2 h-2 rounded-full animate-pulse', hasActiveCampaigns ? 'bg-emerald-500' : 'bg-primary')} />
+            <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">
+              {hasActiveCampaigns ? 'Campaign Running' : 'Ready to Start'}
+            </span>
+          </div>
+          <Link href="/campaigns">
+            <button className="flex items-center gap-2 bg-primary text-primary-foreground pl-4 pr-5 py-2.5 rounded-2xl text-sm font-black shadow-lg shadow-primary/20 hover:bg-primary/90 transition-all hover:-translate-y-0.5 active:scale-95 group">
+              <Plus className="w-4 h-4 group-hover:rotate-90 transition-transform duration-300" />
+              <span>New Campaign</span>
+            </button>
+          </Link>
+        </div>
+      </div>
+
+      {/* Compact strategy summary (replaces the old hero + purple command center) */}
+      <StrategySummaryCard />
+
+      {/* Activation hero — self-hides once all four setup steps are done */}
+      <ActivationHero />
+
+      {/* KPI grid — only when there's real activity to report */}
+      {hasData && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+          {kpis.map((kpi, i) => (
+            <motion.div
+              key={kpi.label}
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.06 }}
+              className="bg-card p-5 sm:p-6 rounded-[1.75rem] sm:rounded-[2rem] border border-border shadow-soft"
+            >
+              <div className={cn('w-11 h-11 rounded-2xl bg-muted flex items-center justify-center mb-5', kpi.color)}>
+                <kpi.icon className="w-5 h-5" />
+              </div>
+              <p className="text-3xl sm:text-[2.25rem] font-black text-foreground tracking-tight leading-none">
+                {kpi.value}
+                {kpi.sub && <span className="text-base font-bold text-muted-foreground ml-1.5">{kpi.sub}</span>}
+              </p>
+              <p className="text-[10px] sm:text-xs font-bold text-muted-foreground uppercase tracking-widest mt-2.5">{kpi.label}</p>
+            </motion.div>
+          ))}
+        </div>
+      )}
+
+      {/* Performance + capacity */}
       <GlowContainer active={hasActiveCampaigns} className="p-0 border-none bg-transparent">
-        <div className="bg-background rounded-[inherit] overflow-hidden shadow-xl shadow-slate-200/50">
-          <TopBar
-            title="Dashboard"
-            description="Track your campaign performance and manage high-intent leads."
-            action={
-              <div className="flex items-center space-x-3">
-                <div className="px-3 py-1.5 bg-muted rounded-full flex items-center space-x-2 border border-border">
-                  <div className={cn("w-2 h-2 rounded-full animate-pulse", hasActiveCampaigns ? "bg-emerald-500" : "bg-primary")} />
-                  <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">
-                    {hasActiveCampaigns ? 'Campaign Running' : 'Ready to Start'}
-                  </span>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8">
+          {/* Left: campaign performance / empty state */}
+          <div className="lg:col-span-2 space-y-5">
+            <div className="flex items-center justify-between px-1">
+              <h3 className="text-xl font-black text-foreground tracking-tight">Campaign Performance</h3>
+              {hasData && (
+                <Link href="/campaigns" className="flex items-center gap-2 text-primary font-black text-[10px] sm:text-xs uppercase tracking-widest hover:underline">
+                  <span>View All</span>
+                  <ArrowUpRight className="w-4 h-4" />
+                </Link>
+              )}
+            </div>
+
+            {loading ? (
+              <div className="flex items-center justify-center py-24 bg-card rounded-[2rem] border border-border shadow-soft">
+                <Loader2 className="w-8 h-8 text-primary animate-spin" />
+              </div>
+            ) : !hasData ? (
+              <div className="bg-card rounded-[2rem] sm:rounded-[2.5rem] border border-border shadow-soft p-12 sm:p-16 text-center">
+                <div className="w-16 h-16 bg-muted rounded-[1.5rem] flex items-center justify-center mx-auto mb-6 text-muted-foreground">
+                  <Clock className="w-8 h-8" />
                 </div>
+                <h3 className="text-lg sm:text-xl font-black text-foreground">No performance data yet</h3>
+                <p className="text-sm font-medium text-muted-foreground mt-2 max-w-sm mx-auto leading-relaxed">
+                  Once your first campaign sends, you&apos;ll see live reply rates, sent requests and lead activity here — all measured, never estimated.
+                </p>
                 <Link href="/campaigns">
-                  <button className="flex items-center space-x-2 bg-primary text-primary-foreground pl-4 pr-5 py-2.5 rounded-2xl text-sm font-black shadow-lg shadow-primary/20 hover:bg-primary/90 transition-all hover:-translate-y-0.5 active:scale-95 group">
-                    <Plus className="w-4 h-4 group-hover:rotate-90 transition-transform duration-300" />
-                    <span>New Campaign</span>
+                  <button className="mt-6 inline-flex items-center gap-2 bg-primary text-primary-foreground px-6 py-3 rounded-2xl text-sm font-black shadow-lg shadow-primary/20 hover:bg-primary/90 transition-all">
+                    <Plus className="w-4 h-4" />
+                    <span>Create Campaign</span>
                   </button>
                 </Link>
               </div>
-            }
-          />
-
-          <div className="p-6 lg:p-10 space-y-10 lg:space-y-12">
-            {/* Stats Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
-              {[
-                { label: 'Active Leads', value: stats.totalLeads.toLocaleString(), change: '+12.5%', icon: Users, color: 'text-primary' },
-                { label: 'Sent Requests', value: stats.sentRequests.toLocaleString(), change: '+18.2%', icon: Target, color: 'text-emerald-500' },
-                { label: 'Reply Rate', value: `${stats.replyRate}%`, change: '+4.3%', icon: Zap, color: 'text-amber-500' },
-                { label: 'Daily Remaining', value: `${stats.dailyRemaining}/80`, change: '100%', icon: Clock, color: 'text-blue-500' },
-              ].map((stat, i) => (
-                <motion.div
-                  key={stat.label}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.1 }}
-                  className="bg-card p-5 sm:p-6 rounded-[2rem] sm:rounded-[2.5rem] border border-border shadow-soft group hover:border-primary/20 transition-all"
-                >
-                  <div className="flex justify-between items-start mb-4">
-                    <div className={cn("p-2.5 sm:p-3 rounded-xl sm:rounded-2xl bg-muted", stat.color)}>
-                      <stat.icon className="w-5 h-5 sm:w-6 sm:h-6" />
-                    </div>
-                    <span className={cn(
-                      "text-[9px] sm:text-[10px] font-black px-2 py-1 rounded-full",
-                      stat.change.startsWith('+') ? "bg-emerald-500/10 text-emerald-600" : "bg-muted text-muted-foreground"
-                    )}>
-                      {stat.change}
-                    </span>
-                  </div>
-                  <div>
-                    <p className="text-2xl sm:text-3xl font-black text-foreground tracking-tight">{stat.value}</p>
-                    <p className="text-[10px] sm:text-xs font-bold text-muted-foreground uppercase tracking-widest mt-1">{stat.label}</p>
-                  </div>
-                </motion.div>
-              ))}
-            </div>
-
-            {/* Campaign Performance Section */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              <div className="lg:col-span-2 space-y-6">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-xl font-black text-foreground tracking-tight">Campaign Performance</h3>
-                  <Link href="/campaigns" className="flex items-center space-x-2 text-primary font-black text-[10px] sm:text-xs uppercase tracking-widest hover:underline">
-                    <span>View All</span>
-                    <ArrowUpRight className="w-4 h-4" />
-                  </Link>
-                </div>
-
-                {loading ? (
-                  <div className="flex items-center justify-center py-20">
-                    <Loader2 className="w-8 h-8 text-primary animate-spin" />
-                  </div>
-                ) : campaigns.length === 0 ? (
-                  <div className="bg-card rounded-[2.5rem] sm:rounded-[3rem] border border-border shadow-soft p-10 sm:p-16 text-center">
-                    <div className="w-16 h-16 sm:w-20 sm:h-20 bg-muted rounded-2xl sm:rounded-[2rem] flex items-center justify-center mx-auto mb-6">
-                      <Target className="w-8 h-8 sm:w-10 sm:h-10 text-muted-foreground" />
-                    </div>
-                    <h3 className="text-lg sm:text-xl font-black text-foreground">No Campaigns Yet</h3>
-                    <p className="text-xs sm:text-sm font-bold text-muted-foreground mt-2 max-w-sm mx-auto">
-                      Create your first campaign to start reaching prospects and tracking performance.
-                    </p>
-                    <Link href="/campaigns">
-                      <button className="mt-6 flex items-center space-x-2 bg-primary text-primary-foreground px-5 sm:px-6 py-3 rounded-2xl text-sm font-black mx-auto shadow-lg shadow-primary/20 hover:bg-primary/90 transition-all">
-                        <Plus className="w-4 h-4" />
-                        <span>Create Campaign</span>
-                      </button>
-                    </Link>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {campaigns.slice(0, 5).map((campaign, i) => {
-                      const config = statusConfig[campaign.status] || statusConfig['DRAFT'];
-
-                      return (
-                        <motion.div
-                          key={campaign.id}
-                          initial={{ opacity: 0, y: 15 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          transition={{ delay: 0.05 * i }}
-                          className="bg-card rounded-[1.5rem] sm:rounded-[2rem] border border-border shadow-soft p-5 sm:p-6 hover:border-primary/20 transition-all group"
-                        >
-                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5">
-                            <div className="flex items-center space-x-4">
-                              <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0", config.bg)}>
-                                {campaign.status === 'ACTIVE' ? (
-                                  <Play className={cn("w-5 h-5", config.color)} />
-                                ) : campaign.status === 'PAUSED' ? (
-                                  <Pause className={cn("w-5 h-5", config.color)} />
-                                ) : (
-                                  <Target className={cn("w-5 h-5", config.color)} />
-                                )}
-                              </div>
-                              <div className="min-w-0">
-                                <h4 className="font-black text-foreground tracking-tight group-hover:text-primary transition-colors truncate">{campaign.name}</h4>
-                                <span className={cn("text-[10px] font-black uppercase tracking-widest", config.color)}>{config.label}</span>
-                              </div>
-                            </div>
-                            <Link href={`/campaigns/${campaign.id}/builder`} className="w-full sm:w-auto">
-                              <button className="w-full sm:w-auto px-4 py-2 rounded-xl bg-muted text-muted-foreground hover:bg-primary/10 hover:text-primary font-bold text-xs transition-all flex items-center justify-center sm:justify-start space-x-2">
-                                <span>View</span>
-                                <ArrowUpRight className="w-3.5 h-3.5" />
-                              </button>
-                            </Link>
+            ) : (
+              <div className="space-y-4">
+                {campaigns.slice(0, 5).map((campaign, i) => {
+                  const config = statusConfig[campaign.status] || statusConfig['DRAFT'];
+                  return (
+                    <motion.div
+                      key={campaign.id}
+                      initial={{ opacity: 0, y: 15 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.05 * i }}
+                      className="bg-card rounded-[1.5rem] sm:rounded-[2rem] border border-border shadow-soft p-5 sm:p-6 hover:border-primary/20 transition-all group"
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5">
+                        <div className="flex items-center gap-4">
+                          <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0', config.bg)}>
+                            {campaign.status === 'ACTIVE' ? <Play className={cn('w-5 h-5', config.color)} /> : campaign.status === 'PAUSED' ? <Pause className={cn('w-5 h-5', config.color)} /> : <Target className={cn('w-5 h-5', config.color)} />}
                           </div>
-
-                          {/* Stats row */}
-                          <div className="grid grid-cols-2 xs:grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
-                            <div className="bg-muted/50 rounded-xl p-3 text-center">
-                              <div className="flex items-center justify-center space-x-1.5 mb-1">
-                                <Users className="w-3.5 h-3.5 text-muted-foreground" />
-                              </div>
-                              <p className="text-base sm:text-lg font-black text-foreground">{campaign.totalLeads}</p>
-                              <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">Leads</p>
-                            </div>
-                            <div className="bg-muted/50 rounded-xl p-3 text-center">
-                              <div className="flex items-center justify-center space-x-1.5 mb-1">
-                                <UserPlus className="w-3.5 h-3.5 text-amber-500" />
-                              </div>
-                              <p className="text-base sm:text-lg font-black text-foreground">{campaign.pending}</p>
-                              <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">Pending</p>
-                            </div>
-                            <div className="bg-muted/50 rounded-xl p-3 text-center">
-                              <div className="flex items-center justify-center space-x-1.5 mb-1">
-                                <Eye className="w-3.5 h-3.5 text-emerald-500" />
-                              </div>
-                              <p className="text-base sm:text-lg font-black text-foreground">{campaign.connected}</p>
-                              <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">Connected</p>
-                            </div>
-                            <div className="bg-muted/50 rounded-xl p-3 text-center">
-                              <div className="flex items-center justify-center space-x-1.5 mb-1">
-                                <Mail className="w-3.5 h-3.5 text-blue-500" />
-                              </div>
-                              <p className="text-base sm:text-lg font-black text-foreground">{campaign.replied}</p>
-                              <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">Replied</p>
-                            </div>
+                          <div className="min-w-0">
+                            <h4 className="font-black text-foreground tracking-tight group-hover:text-primary transition-colors truncate">{campaign.name}</h4>
+                            <span className={cn('text-[10px] font-black uppercase tracking-widest', config.color)}>{config.label}</span>
                           </div>
-                        </motion.div>
-                      );
-                    })}
-                  </div>
-                )}
+                        </div>
+                        <Link href={`/campaigns/${campaign.id}/builder`} className="w-full sm:w-auto">
+                          <button className="w-full sm:w-auto px-4 py-2 rounded-xl bg-muted text-muted-foreground hover:bg-primary/10 hover:text-primary font-bold text-xs transition-all flex items-center justify-center sm:justify-start gap-2">
+                            <span>View</span>
+                            <ArrowUpRight className="w-3.5 h-3.5" />
+                          </button>
+                        </Link>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+                        {[
+                          { icon: Users, c: 'text-muted-foreground', v: campaign.totalLeads, k: 'Leads' },
+                          { icon: UserPlus, c: 'text-amber-500', v: campaign.pending, k: 'Pending' },
+                          { icon: Eye, c: 'text-emerald-500', v: campaign.connected, k: 'Connected' },
+                          { icon: Mail, c: 'text-blue-500', v: campaign.replied, k: 'Replied' },
+                        ].map((m) => (
+                          <div key={m.k} className="bg-muted/50 rounded-xl p-3 text-center">
+                            <div className="flex items-center justify-center mb-1"><m.icon className={cn('w-3.5 h-3.5', m.c)} /></div>
+                            <p className="text-base sm:text-lg font-black text-foreground">{m.v}</p>
+                            <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">{m.k}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </motion.div>
+                  );
+                })}
               </div>
+            )}
+          </div>
 
-              {/* Right Sidebar */}
-              <div className="space-y-6">
-                <AICommandCenter />
-
-                <div className="bg-card rounded-[3rem] border border-border p-8 shadow-soft">
-                  <div className="flex items-center justify-between mb-6 px-2">
-                    <h4 className="font-black text-muted-foreground uppercase tracking-widest text-[10px]">Active Quotas</h4>
-                    <div className="flex items-center space-x-2">
-                        <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
-                        <span className="text-[9px] font-black text-emerald-600 uppercase tracking-widest">Processing</span>
-                    </div>
-                  </div>
-                  <div className="space-y-5">
-                    {[
-                      { label: 'Invitations', value: stats.today?.invites || 0, total: 30, icon: UserPlus, color: 'text-amber-500', bg: 'bg-amber-500/10' },
-                      { label: 'Messages', value: stats.today?.messages || 0, total: 50, icon: Send, color: 'text-blue-500', bg: 'bg-blue-500/10' },
-                      { label: 'Direct Visits', value: stats.today?.visits || 0, total: 80, icon: Eye, color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
-                    ].map((q) => (
-                      <div key={q.label} className="group">
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="flex items-center space-x-2">
-                            <div className={cn("p-1.5 rounded-lg", q.bg)}>
-                              <q.icon className={cn("w-3.5 h-3.5", q.color)} />
-                            </div>
-                            <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">{q.label}</span>
-                          </div>
-                          <span className="text-[10px] font-black text-slate-400 tracking-widest">{q.value}/{q.total}</span>
-                        </div>
-                        <div className="w-full h-1 bg-muted rounded-xl overflow-hidden">
-                          <div 
-                            className={cn("h-full rounded-full transition-all duration-1000", q.color.replace('text', 'bg'))}
-                            style={{ width: `${(q.value / q.total) * 100}%` }}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  <Link href="/campaigns/queue">
-                    <button className="w-full mt-6 py-3 border border-border rounded-xl text-[9px] font-black uppercase tracking-widest text-muted-foreground hover:bg-muted hover:text-primary transition-all">
-                      Advanced Queue Manager
-                    </button>
-                  </Link>
-                </div>
-
-                <div className="bg-card rounded-[3rem] border border-border p-8 shadow-soft">
-                  <h4 className="font-black text-muted-foreground uppercase tracking-widest text-[10px] mb-6 px-2">Quick Actions</h4>
-                  <div className="space-y-3">
-                    <Link href="/prospects" className="flex items-center space-x-4 p-4 hover:bg-muted rounded-2xl transition-all cursor-pointer group">
-                      <div className="w-10 h-10 rounded-2xl bg-primary/10 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
-                        <Users className="w-5 h-5 text-primary" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-black text-foreground">View Prospects</p>
-                        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Manage your leads</p>
-                      </div>
-                    </Link>
-                    <Link href="/inbox" className="flex items-center space-x-4 p-4 hover:bg-muted rounded-2xl transition-all cursor-pointer group">
-                      <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
-                        <Mail className="w-5 h-5 text-emerald-500" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-black text-foreground">Check Inbox</p>
-                        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Read messages</p>
-                      </div>
-                    </Link>
-                    <Link href="/campaigns" className="flex items-center space-x-4 p-4 hover:bg-muted rounded-2xl transition-all cursor-pointer group">
-                      <div className="w-10 h-10 rounded-2xl bg-amber-500/10 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
-                        <TrendingUp className="w-5 h-5 text-amber-500" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-black text-foreground">Campaign Builder</p>
-                        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Create automations</p>
-                      </div>
-                    </Link>
-                  </div>
+          {/* Right: capacity / usage */}
+          <div className="space-y-6">
+            <div className="bg-card rounded-[2rem] sm:rounded-[2.5rem] border border-border p-6 sm:p-8 shadow-soft">
+              <div className="flex items-center justify-between mb-6 px-1">
+                <h4 className="font-black text-muted-foreground uppercase tracking-widest text-[10px]">{hasData ? "Today's usage" : "Today's capacity"}</h4>
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+                  <span className="text-[9px] font-black text-emerald-600 uppercase tracking-widest">{hasData ? 'Processing' : 'Ready'}</span>
                 </div>
               </div>
+              <div className="space-y-5">
+                {quotas.map((q) => (
+                  <div key={q.label}>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <div className={cn('p-1.5 rounded-lg', q.bg)}><q.icon className={cn('w-3.5 h-3.5', q.color)} /></div>
+                        <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">{q.label}</span>
+                      </div>
+                      <span className="text-[10px] font-black text-slate-400 tracking-widest">{q.value}/{q.total}</span>
+                    </div>
+                    <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
+                      <div className={cn('h-full rounded-full transition-all duration-1000', q.color.replace('text', 'bg'))} style={{ width: `${(q.value / q.total) * 100}%` }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs font-medium text-muted-foreground mt-5">Safe daily limits to keep your LinkedIn account healthy.</p>
+              <Link href="/campaigns/queue">
+                <button className="w-full mt-5 py-3 border border-border rounded-xl text-[9px] font-black uppercase tracking-widest text-muted-foreground hover:bg-muted hover:text-primary transition-all">
+                  Advanced Queue Manager
+                </button>
+              </Link>
             </div>
           </div>
         </div>
