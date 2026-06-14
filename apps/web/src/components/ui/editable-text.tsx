@@ -57,7 +57,7 @@ export function EditableText({
             },
             placeholder,
             className: cn(
-                'w-full rounded-xl border border-primary/40 bg-white px-3 py-2 text-sm outline-none ring-4 ring-primary/10 resize-none',
+                'w-full rounded-xl border border-primary/40 bg-white px-3 py-2 text-base outline-none ring-4 ring-primary/10 resize-none',
                 className
             ),
         };
@@ -74,8 +74,8 @@ export function EditableText({
             )}
         >
             {value
-                ? <span className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{value}</span>
-                : <span className="text-sm text-muted-foreground italic">{placeholder}</span>}
+                ? <span className="text-base text-slate-700 leading-relaxed whitespace-pre-wrap">{value}</span>
+                : <span className="text-base text-muted-foreground italic">{placeholder}</span>}
             <Pencil className="inline-block w-3 h-3 text-slate-300 ml-1.5 align-middle opacity-0 group-hover/edit:opacity-100 transition-opacity" />
         </button>
     );

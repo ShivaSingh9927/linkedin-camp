@@ -63,38 +63,38 @@ export function GenerationProgress({
   const isDark = variant === 'dark';
 
   return (
-    <div className="w-full max-w-sm mx-auto">
+    <div className="w-full max-w-md mx-auto">
       {/* Header */}
-      <div className="mb-8 text-center">
+      <div className="mb-9 text-center">
         <div className={cn(
-          'inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-black uppercase tracking-widest mb-4',
+          'inline-flex items-center gap-2.5 px-4 py-1.5 rounded-full text-[13px] font-black uppercase tracking-widest mb-4',
           isDark ? 'bg-white/10 text-white/70' : 'bg-primary/10 text-primary'
         )}>
-          <span className="relative flex h-2 w-2">
+          <span className="relative flex h-2.5 w-2.5">
             <span className={cn(
               'animate-ping absolute inline-flex h-full w-full rounded-full opacity-75',
               isDark ? 'bg-white' : 'bg-primary'
             )} />
             <span className={cn(
-              'relative inline-flex rounded-full h-2 w-2',
+              'relative inline-flex rounded-full h-2.5 w-2.5',
               isDark ? 'bg-white' : 'bg-primary'
             )} />
           </span>
           Building your AI strategy
         </div>
         <p className={cn(
-          'text-[11px] font-bold uppercase tracking-widest',
+          'text-xs font-bold uppercase tracking-widest',
           isDark ? 'text-white/40' : 'text-slate-400'
         )}>
           Usually 1–2 min · you can keep working
         </p>
       </div>
 
-      {/* Steps */}
-      <div className="relative">
+      {/* Steps — block is width-fit and centered so it reads balanced in the card */}
+      <div className="relative w-fit mx-auto">
         {/* Vertical connector line */}
         <div className={cn(
-          'absolute left-[15px] top-4 bottom-4 w-px',
+          'absolute left-[18px] top-5 bottom-5 w-px',
           isDark ? 'bg-white/10' : 'bg-slate-200'
         )} />
 
@@ -110,22 +110,22 @@ export function GenerationProgress({
                 initial={{ opacity: 0, x: -8 }}
                 animate={{ opacity: pending ? 0.45 : 1, x: 0 }}
                 transition={{ delay: i * 0.05, duration: 0.25 }}
-                className="relative flex items-start gap-4 py-2"
+                className="relative flex items-start gap-4 py-2.5"
               >
                 {/* Step indicator */}
-                <div className="relative z-10 flex-shrink-0 mt-0.5">
+                <div className="relative z-10 flex-shrink-0">
                   {done ? (
                     <motion.div
                       initial={{ scale: 0 }}
                       animate={{ scale: 1 }}
                       transition={{ type: 'spring', stiffness: 400, damping: 20 }}
-                      className="w-[30px] h-[30px] rounded-full bg-emerald-500 flex items-center justify-center shadow-lg shadow-emerald-500/30"
+                      className="w-9 h-9 rounded-full bg-emerald-500 flex items-center justify-center shadow-lg shadow-emerald-500/30"
                     >
-                      <Check className="w-3.5 h-3.5 text-white stroke-[3]" />
+                      <Check className="w-4 h-4 text-white stroke-[3]" />
                     </motion.div>
                   ) : current ? (
                     <div className={cn(
-                      'w-[30px] h-[30px] rounded-full flex items-center justify-center shadow-lg',
+                      'w-9 h-9 rounded-full flex items-center justify-center shadow-lg',
                       isDark ? 'bg-white shadow-white/20' : 'bg-primary shadow-primary/30'
                     )}>
                       <Loader2 className={cn(
@@ -135,7 +135,7 @@ export function GenerationProgress({
                     </div>
                   ) : (
                     <div className={cn(
-                      'w-[30px] h-[30px] rounded-full border-2 flex items-center justify-center',
+                      'w-9 h-9 rounded-full border-2 flex items-center justify-center',
                       isDark ? 'border-white/20 bg-transparent' : 'border-slate-200 bg-white'
                     )}>
                       <div className={cn(
@@ -147,9 +147,9 @@ export function GenerationProgress({
                 </div>
 
                 {/* Text */}
-                <div className="flex-1 min-w-0 pt-0.5">
+                <div className="flex-1 min-w-0 pt-1">
                   <p className={cn(
-                    'text-sm font-bold leading-tight',
+                    'text-[15px] font-bold leading-tight',
                     done    ? (isDark ? 'text-white/60'  : 'text-slate-500') :
                     current ? (isDark ? 'text-white'      : 'text-slate-900') :
                                (isDark ? 'text-white/30'  : 'text-slate-400')
@@ -157,7 +157,7 @@ export function GenerationProgress({
                     {phase.label}
                     {done && (
                       <span className={cn(
-                        'ml-2 text-[10px] font-black uppercase tracking-widest',
+                        'ml-2 text-[11px] font-black uppercase tracking-widest',
                         isDark ? 'text-emerald-400' : 'text-emerald-500'
                       )}>
                         Done
@@ -169,7 +169,7 @@ export function GenerationProgress({
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       className={cn(
-                        'text-[11px] font-bold mt-0.5',
+                        'text-xs font-bold mt-1',
                         isDark ? 'text-white/40' : 'text-slate-400'
                       )}
                     >

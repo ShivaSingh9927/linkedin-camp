@@ -16,7 +16,7 @@ import { TagInput } from './ui/tag-input';
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
     return (
         <div>
-            <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">{label}</p>
+            <p className="text-[11px] font-black text-slate-400 uppercase tracking-[0.13em] mb-2.5">{label}</p>
             {children}
         </div>
     );

@@ -11,7 +11,6 @@ import { io as socketIO, Socket } from 'socket.io-client';
 import { GenerationProgress } from '@/components/GenerationProgress';
 import PillarEditor from '@/components/PillarEditor';
 import StrategySectionEditor from '@/components/StrategySectionEditor';
-import { SectionRail } from '@/components/ui/section-rail';
 import { cn } from '@/lib/utils';
 import api from '@/lib/api';
 
@@ -29,6 +28,9 @@ const SECTIONS = [
 
 export default function StrategyPage() {
   const [strategy, setStrategy] = useState<any>(null);
+  // Master-detail: which section the right panel shows. 'summary' is the
+  // read-only at-a-glance overview; the rest map to editable strategy keys.
+  const [activeSection, setActiveSection] = useState<string>('summary');
   const [loading, setLoading] = useState(true);
   const [regenerating, setRegenerating] = useState(false);
   const [generatedAt, setGeneratedAt] = useState<string | null>(null);
@@ -241,8 +243,8 @@ export default function StrategyPage() {
   }
   if (regenerating) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center px-4">
-        <div className="w-full max-w-sm bg-white rounded-[2.5rem] border border-slate-200 shadow-xl shadow-slate-200/60 px-10 py-12">
+      <div className="min-h-[calc(100vh-72px)] bg-slate-50 flex items-center justify-center px-4 py-12">
+        <div className="w-full max-w-md bg-white rounded-[2.5rem] border border-slate-200 shadow-xl shadow-slate-200/60 px-12 py-14">
           <GenerationProgress active variant="light" />
         </div>
       </div>
@@ -261,7 +263,7 @@ export default function StrategyPage() {
     );
   }
 
-  // ── Derived bento data ────────────────────────────────────────────────────
+  // ── Derived summary ("at a glance") data ──────────────────────────────────
   const positioning: string | undefined = strategy?.gtm?.positioning;
   const icp = strategy?.icp?.primary || {};
   const icpTitle: string | undefined = icp?.title;
@@ -271,151 +273,188 @@ export default function StrategyPage() {
 
   const confirmedCount = SECTIONS.filter((s) => confirmedSections[s.key]).length;
   const allConfirmed = !!confirmedAt || confirmedCount === SECTIONS.length;
-  const railItems = SECTIONS.map((s) => ({ id: s.key, label: s.label, confirmed: !!confirmedSections[s.key] }));
+
+  // Left-rail items: a read-only "Summary" first, then the editable sections.
+  const NAV = [{ key: 'summary', label: 'Summary', icon: Sparkles, color: 'text-primary', bg: 'bg-primary/10' }, ...SECTIONS] as const;
+  const active = NAV.find((n) => n.key === activeSection) || NAV[0];
+  const ActiveIcon = active.icon;
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="max-w-[1760px] mx-auto px-6 lg:px-10 py-12">
         {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-6">
+        <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-6 mb-9">
           <div>
-            <h1 className="text-3xl font-black text-slate-900 tracking-tight">AI Strategy</h1>
-            <p className="mt-1.5 text-slate-600">Your marketing playbook. Aigeon writes every message from this — review &amp; confirm so it sounds like you.</p>
+            <h1 className="text-4xl lg:text-[2.75rem] font-black text-slate-900 tracking-tight leading-none">AI Strategy</h1>
+            <p className="mt-3.5 text-[17px] text-slate-600 font-medium max-w-2xl leading-relaxed">Your marketing playbook. Aigeon writes every message from this — review &amp; confirm so it sounds like you.</p>
             {generatedAt && (
-              <div className="mt-2 flex items-center gap-2 text-xs text-slate-500">
-                <Clock className="w-3.5 h-3.5" /> Generated {new Date(generatedAt).toLocaleDateString()} at {new Date(generatedAt).toLocaleTimeString()}
-                {savedFlash && <span className="ml-2 inline-flex items-center gap-1 text-emerald-600 font-semibold"><Check className="w-3.5 h-3.5" /> Saved</span>}
-                {saving && <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-400" />}
+              <div className="mt-3.5 flex items-center gap-2 text-[13px] font-bold text-slate-400">
+                <Clock className="w-4 h-4" /> Generated {new Date(generatedAt).toLocaleDateString()} at {new Date(generatedAt).toLocaleTimeString()}
+                {savedFlash && <span className="ml-2 inline-flex items-center gap-1 text-emerald-600"><Check className="w-4 h-4" /> Saved</span>}
+                {saving && <Loader2 className="w-4 h-4 animate-spin text-slate-400" />}
               </div>
             )}
           </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            {isCached && <div className="flex items-center gap-1.5 text-xs text-slate-500 bg-slate-100 px-2.5 py-1.5 rounded-lg"><Zap className="w-3.5 h-3.5" /> Cached</div>}
-            <button onClick={() => handleRegenerate(false)} className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 text-slate-700 rounded-xl text-sm font-bold hover:bg-slate-200 transition-colors" title="Regenerate">
-              <RotateCcw className="w-4 h-4" /> Regenerate
+          <div className="flex items-center gap-3.5 flex-shrink-0 pt-1">
+            {isCached && <div className="flex items-center gap-1.5 text-xs font-bold text-slate-500 bg-slate-100 px-3 py-2 rounded-xl"><Zap className="w-3.5 h-3.5" /> Cached</div>}
+            <button onClick={() => handleRegenerate(false)} className="flex items-center gap-2.5 px-6 py-3.5 bg-white text-slate-700 rounded-[18px] text-[15px] font-extrabold shadow-[0_1px_0_rgba(15,23,42,.04),0_0_0_1px_rgb(226,232,240)] hover:bg-slate-50 transition-colors" title="Regenerate">
+              <RotateCcw className="w-[18px] h-[18px]" /> Regenerate
             </button>
             <button
               onClick={confirmAll}
-              className={cn('flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-black transition-all shadow-lg',
-                allConfirmed ? 'bg-emerald-500 text-white shadow-emerald-500/20' : 'bg-primary text-white shadow-primary/20 hover:bg-primary/90')}
+              className={cn('flex items-center gap-2.5 px-6 py-3.5 rounded-[18px] text-[15px] font-black transition-all',
+                allConfirmed ? 'bg-emerald-500 text-white shadow-[0_10px_24px_-8px_rgba(16,185,129,.6)]' : 'bg-gradient-to-br from-primary to-primary/90 text-white shadow-[0_10px_24px_-8px_rgba(124,92,252,.6)] hover:brightness-105')}
             >
-              {allConfirmed ? <><CheckCircle2 className="w-4 h-4" /> Confirmed</> : <><Check className="w-4 h-4" /> Confirm strategy</>}
+              {allConfirmed ? <><CheckCircle2 className="w-[18px] h-[18px]" /> Confirmed</> : <><Check className="w-[18px] h-[18px]" /> Confirm strategy</>}
             </button>
           </div>
         </div>
 
         {isFallback && (
-          <div className="mb-4 flex items-center gap-2 text-xs text-amber-600 bg-amber-50 px-3 py-2 rounded-lg"><AlertCircle className="w-3.5 h-3.5" /> This is a fallback strategy. Complete your AI Profile for a personalized one.</div>
+          <div className="mb-5 flex items-center gap-2 text-sm font-semibold text-amber-600 bg-amber-50 px-4 py-3 rounded-xl"><AlertCircle className="w-4 h-4" /> This is a fallback strategy. Complete your AI Profile for a personalized one.</div>
         )}
         {rateLimitError && (
-          <div className="mb-4 flex items-center gap-2 text-xs text-amber-600 bg-amber-50 px-3 py-2 rounded-lg"><Clock className="w-3.5 h-3.5" /> {rateLimitError}</div>
+          <div className="mb-5 flex items-center gap-2 text-sm font-semibold text-amber-600 bg-amber-50 px-4 py-3 rounded-xl"><Clock className="w-4 h-4" /> {rateLimitError}</div>
         )}
 
         {/* Confirm nudge */}
         <AnimatePresence>
           {!allConfirmed && !nudgeDismissed && !isFallback && (
             <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, height: 0 }}
-              className="mb-6 flex items-center justify-between gap-4 rounded-2xl border border-primary/20 bg-primary/5 px-5 py-3.5">
-              <div className="flex items-center gap-3">
-                <Sparkles className="w-4 h-4 text-primary flex-shrink-0" />
-                <p className="text-sm font-bold text-slate-700">Review each section and mark it <span className="text-primary">Looks good</span> — the AI writes better when you&apos;ve confirmed your strategy. <span className="font-black">{confirmedCount}/{SECTIONS.length} done.</span></p>
+              className="mb-9 flex items-center justify-between gap-4 rounded-3xl border border-primary/15 bg-gradient-to-br from-primary/[0.06] to-fuchsia-50/60 px-7 py-5">
+              <div className="flex items-center gap-4">
+                <span className="w-9 h-9 rounded-xl bg-white shadow-[0_0_0_1px_rgba(124,92,252,.12)] grid place-items-center flex-shrink-0"><Sparkles className="w-[18px] h-[18px] text-primary" /></span>
+                <p className="text-[15px] font-semibold text-slate-700">Review each section and mark it <span className="text-primary font-extrabold">Looks good</span> — the AI writes better when you&apos;ve confirmed your strategy. <span className="font-black">{confirmedCount}/{SECTIONS.length} done.</span></p>
               </div>
-              <button onClick={() => setNudgeDismissed(true)} className="text-xs font-bold text-slate-400 hover:text-slate-600 flex-shrink-0">Dismiss</button>
+              <button onClick={() => setNudgeDismissed(true)} className="text-xs font-black uppercase tracking-wider text-slate-400 hover:text-slate-600 flex-shrink-0">Dismiss</button>
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* Bento "at a glance" hero */}
-        {!isFallback && (positioning || icpTitle || pillars.length > 0) && (
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-            className="relative overflow-hidden rounded-[2rem] border border-primary/20 bg-gradient-to-br from-primary/5 via-indigo-50/50 to-purple-50/40 p-6 sm:p-7 mb-8 shadow-soft">
-            <Sparkles className="absolute -right-6 -top-6 w-32 h-32 text-primary/5" />
-            <div className="relative">
-              <p className="text-[11px] font-black text-primary uppercase tracking-widest mb-3 flex items-center gap-2"><Sparkles className="w-4 h-4" /> Your strategy at a glance</p>
-              {positioning && <p className="text-base font-bold text-slate-800 leading-relaxed mb-5 max-w-3xl">{positioning}</p>}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                {icpTitle && (
-                  <div className="md:col-span-1 bg-white/70 rounded-2xl p-4 border border-white">
-                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">You target</p>
-                    <p className="text-sm font-black text-slate-900">{icpTitle}</p>
-                    {pains.length > 0 && <div className="flex flex-wrap gap-1.5 mt-2">{pains.map((p, i) => <span key={i} className="text-[11px] font-bold text-rose-700 bg-rose-50 border border-rose-100 px-2 py-0.5 rounded-full">{p}</span>)}</div>}
-                  </div>
-                )}
-                {advantages.length > 0 && (
-                  <div className="bg-white/70 rounded-2xl p-4 border border-white">
-                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Your edge</p>
-                    <div className="flex flex-wrap gap-1.5 mt-1">{advantages.map((a, i) => <span key={i} className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-full">{a}</span>)}</div>
-                  </div>
-                )}
-                {pillars.length > 0 && (
-                  <div className="bg-white/70 rounded-2xl p-4 border border-white">
-                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">How you&apos;ll show up</p>
-                    <div className="space-y-1">{pillars.map((p, i) => <p key={i} className="text-xs font-bold text-slate-700 truncate">• {p?.pillar || `Pillar ${i + 1}`}</p>)}</div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </motion.div>
-        )}
-
-        {/* Rail + content */}
-        <div className="grid grid-cols-1 lg:grid-cols-[220px_1fr] gap-8">
-          <aside className="hidden lg:block">
-            <div className="sticky top-8">
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 px-3">Sections</p>
-              <SectionRail items={railItems} />
-            </div>
+        {/* Master-detail: left rail + single-section panel (no scroll) */}
+        <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-10 items-start">
+          {/* LEFT RAIL */}
+          <aside className="lg:sticky lg:top-8">
+            <nav className="bg-white rounded-[28px] p-[18px] shadow-[0_1px_0_rgba(15,23,42,.04),0_0_0_1px_rgb(226,232,240)]">
+              <p className="text-[11px] font-black text-slate-400 uppercase tracking-[0.16em] px-3.5 pt-2.5 pb-3.5">Sections</p>
+              {NAV.map((item) => {
+                const Icon = item.icon;
+                const isActive = activeSection === item.key;
+                const isConfirmed = item.key !== 'summary' && !!confirmedSections[item.key];
+                return (
+                  <button key={item.key} onClick={() => setActiveSection(item.key)}
+                    className={cn('group flex items-center gap-3.5 w-full text-left px-4 py-4 rounded-2xl text-[16px] font-bold transition-all',
+                      isActive ? 'bg-gradient-to-br from-primary/10 to-fuchsia-50 text-primary' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900')}>
+                    <span className={cn('w-[34px] h-[34px] rounded-xl grid place-items-center flex-shrink-0 transition-colors',
+                      isActive ? 'bg-primary text-white' : 'bg-slate-100 text-slate-500 group-hover:text-primary')}>
+                      <Icon className="w-[18px] h-[18px]" />
+                    </span>
+                    <span className="truncate">{item.label}</span>
+                    {item.key !== 'summary' && (
+                      <span className={cn('ml-auto w-5 h-5 rounded-full grid place-items-center flex-shrink-0 border-2 transition-colors',
+                        isConfirmed ? 'border-emerald-500 bg-emerald-500' : isActive ? 'border-primary/40' : 'border-slate-300')}>
+                        {isConfirmed && <Check className="w-3 h-3 text-white stroke-[3.5]" />}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </nav>
           </aside>
 
-          <div className="space-y-6 min-w-0">
-            {SECTIONS.map((section) => {
-              const value = strategy[section.key];
-              const Icon = section.icon;
-              const confirmed = !!confirmedSections[section.key];
-              return (
-                <section key={section.key} id={`sec-${section.key}`} className="scroll-mt-8">
-                  <motion.div initial={{ opacity: 0, y: 8 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: '-80px' }}
-                    className="bg-white rounded-[1.75rem] border border-slate-200 shadow-soft overflow-hidden">
-                    {/* Section header */}
-                    <div className="flex items-center justify-between gap-3 px-6 py-4 border-b border-slate-100">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className={cn('w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0', section.bg)}><Icon className={cn('w-5 h-5', section.color)} /></div>
-                        <h3 className="font-black text-slate-900 tracking-tight truncate">{section.label}</h3>
-                      </div>
-                      <button onClick={() => toggleConfirm(section.key)}
-                        className={cn('flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-black transition-all flex-shrink-0',
-                          confirmed ? 'bg-emerald-500/10 text-emerald-600' : 'bg-slate-100 text-slate-500 hover:bg-slate-200')}>
-                        {confirmed ? <><CheckCircle2 className="w-3.5 h-3.5" /> Looks good</> : <><Check className="w-3.5 h-3.5" /> Mark good</>}
-                      </button>
-                    </div>
+          {/* DETAIL PANEL */}
+          <div className="min-w-0">
+            <AnimatePresence mode="wait">
+              <motion.div key={activeSection}
+                initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.2 }}
+                className="bg-white rounded-[32px] shadow-[0_1px_0_rgba(15,23,42,.04),0_0_0_1px_rgb(226,232,240)] px-8 lg:px-12 py-10 lg:py-12 min-h-[600px]">
+                {/* Panel header — icon is a hanging marker so the title left-aligns
+                    with the body content below it (one clean left edge). */}
+                <div className="flex items-start gap-4 mb-9">
+                  <span className={cn('w-12 h-12 rounded-[16px] grid place-items-center flex-shrink-0',
+                    activeSection === 'summary' ? 'bg-gradient-to-br from-primary/10 to-fuchsia-50 text-primary' : cn(active.bg, active.color))}>
+                    <ActiveIcon className="w-6 h-6" />
+                  </span>
+                  <h2 className="text-3xl font-black text-slate-900 tracking-tight pt-1.5 min-w-0">{active.label}</h2>
+                  {activeSection !== 'summary' && (
+                    <button onClick={() => toggleConfirm(activeSection)}
+                      className={cn('ml-auto flex items-center gap-2 px-5 py-3 rounded-2xl text-sm font-black transition-all flex-shrink-0',
+                        confirmedSections[activeSection] ? 'bg-emerald-500/10 text-emerald-600' : 'bg-slate-100 text-slate-500 hover:bg-slate-200')}>
+                      {confirmedSections[activeSection] ? <><CheckCircle2 className="w-4 h-4" /> Looks good</> : <><Check className="w-4 h-4" /> Mark good</>}
+                    </button>
+                  )}
+                </div>
 
-                    {/* Section body */}
-                    <div className="p-6">
-                      {section.key === 'messagingPillars' ? (
-                        <PillarEditor pillars={Array.isArray(value) ? value : []} onSave={handlePillarSave} saving={pillarSaving} />
-                      ) : section.key === 'commentStrategy' ? (
-                        <CommentStrategyEditor
-                          value={value}
-                          commentInstruction={commentInstruction}
-                          editCommentInstruction={editCommentInstruction}
-                          setEditCommentInstruction={setEditCommentInstruction}
-                          commentSuggesting={commentSuggesting}
-                          commentSuggestion={commentSuggestion}
-                          setCommentSuggestion={setCommentSuggestion}
-                          commentSaving={commentSaving}
-                          onSuggest={handleSuggestComment}
-                          onAccept={handleAcceptCommentInstruction}
-                        />
-                      ) : (
-                        <StrategySectionEditor sectionKey={section.key} value={value} onChange={(next) => patchSection(section.key, next)} />
-                      )}
-                    </div>
-                  </motion.div>
-                </section>
-              );
-            })}
+                {/* Panel body — indented to align under the title (icon width + gap). */}
+                <div className="lg:pl-16">
+                {activeSection === 'summary' ? (
+                  <SummaryView positioning={positioning} icpTitle={icpTitle} pains={pains} advantages={advantages} pillars={pillars} isFallback={isFallback} />
+                ) : activeSection === 'messagingPillars' ? (
+                  <PillarEditor pillars={Array.isArray(strategy.messagingPillars) ? strategy.messagingPillars : []} onSave={handlePillarSave} saving={pillarSaving} />
+                ) : activeSection === 'commentStrategy' ? (
+                  <CommentStrategyEditor
+                    value={strategy.commentStrategy}
+                    commentInstruction={commentInstruction}
+                    editCommentInstruction={editCommentInstruction}
+                    setEditCommentInstruction={setEditCommentInstruction}
+                    commentSuggesting={commentSuggesting}
+                    commentSuggestion={commentSuggestion}
+                    setCommentSuggestion={setCommentSuggestion}
+                    commentSaving={commentSaving}
+                    onSuggest={handleSuggestComment}
+                    onAccept={handleAcceptCommentInstruction}
+                  />
+                ) : (
+                  <StrategySectionEditor sectionKey={activeSection} value={strategy[activeSection]} onChange={(next) => patchSection(activeSection, next)} />
+                )}
+                </div>
+              </motion.div>
+            </AnimatePresence>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Summary ("at a glance") — read-only overview derived from the strategy ──
+function SummaryView({ positioning, icpTitle, pains, advantages, pillars, isFallback }: {
+  positioning?: string; icpTitle?: string; pains: string[]; advantages: string[]; pillars: any[]; isFallback: boolean;
+}) {
+  if (isFallback || (!positioning && !icpTitle && pillars.length === 0)) {
+    return <p className="text-base text-slate-400 italic">Your overview will appear here once a personalized strategy is generated.</p>;
+  }
+  return (
+    <div>
+      {positioning && <p className="text-2xl font-extrabold tracking-tight text-slate-900 leading-[1.5] mb-10">{positioning}</p>}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {icpTitle && (
+          <div className="rounded-3xl bg-slate-50 border border-slate-100 p-7">
+            <p className="text-xs font-black text-slate-400 uppercase tracking-[0.13em] mb-4">You target</p>
+            <p className="text-lg font-black text-slate-900 mb-4">{icpTitle}</p>
+            {pains.length > 0 && (
+              <div className="flex flex-col gap-2.5">
+                {pains.map((p, i) => <span key={i} className="flex items-start gap-2 text-[15px] font-semibold text-slate-600"><span className="w-1.5 h-1.5 rounded-full bg-rose-400 mt-2 flex-shrink-0" /> {p}</span>)}
+              </div>
+            )}
+          </div>
+        )}
+        {advantages.length > 0 && (
+          <div className="rounded-3xl bg-slate-50 border border-slate-100 p-7">
+            <p className="text-xs font-black text-slate-400 uppercase tracking-[0.13em] mb-4">Your edge</p>
+            <div className="flex flex-col gap-3 items-start">
+              {advantages.map((a, i) => <span key={i} className="text-[15px] font-bold text-amber-700 bg-amber-50 border border-amber-100 px-4 py-2 rounded-xl">{a}</span>)}
+            </div>
+          </div>
+        )}
+        {pillars.length > 0 && (
+          <div className="rounded-3xl bg-slate-50 border border-slate-100 p-7">
+            <p className="text-xs font-black text-slate-400 uppercase tracking-[0.13em] mb-4">How you&apos;ll show up</p>
+            <div className="flex flex-col gap-2.5">
+              {pillars.map((p, i) => <span key={i} className="flex items-start gap-2 text-[15px] font-semibold text-slate-600"><span className="w-1.5 h-1.5 rounded-full bg-primary mt-2 flex-shrink-0" /> {p?.pillar || p?.name || `Pillar ${i + 1}`}</span>)}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
