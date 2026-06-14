@@ -41,7 +41,7 @@ export default function DashboardPage() {
   const [stats, setStats] = useState({
     totalLeads: 0,
     sentRequests: 0,
-    replyRate: 0,
+    connectedLeads: 0,
     dailyRemaining: 80,
     today: { invites: 0, messages: 0, visits: 0 },
   });
@@ -83,7 +83,7 @@ export default function DashboardPage() {
   const kpis = [
     { label: 'Active Leads', value: stats.totalLeads.toLocaleString(), icon: Users, color: 'text-primary', bg: 'bg-primary/10', sub: null as string | null },
     { label: 'Sent Requests', value: stats.sentRequests.toLocaleString(), icon: Target, color: 'text-emerald-500', bg: 'bg-emerald-500/10', sub: null },
-    { label: 'Reply Rate', value: `${stats.replyRate}%`, icon: Zap, color: 'text-amber-500', bg: 'bg-amber-500/10', sub: null },
+    { label: 'Connected', value: stats.connectedLeads.toLocaleString(), icon: Zap, color: 'text-amber-500', bg: 'bg-amber-500/10', sub: null },
     { label: 'Daily Remaining', value: `${stats.dailyRemaining}`, icon: Clock, color: 'text-blue-500', bg: 'bg-blue-500/10', sub: `of 80` },
   ];
 
@@ -161,7 +161,7 @@ export default function DashboardPage() {
           {/* Left: campaign performance / empty state */}
           <div className="lg:col-span-2 space-y-5">
             <div className="flex items-center justify-between px-1">
-              <h3 className="text-xl font-black text-foreground tracking-tight">Campaign Performance</h3>
+              <h3 className="text-xl font-black text-foreground tracking-tight">Recent Campaigns</h3>
               {hasData && (
                 <Link href="/campaigns" className="flex items-center gap-2 text-primary font-black text-[10px] sm:text-xs uppercase tracking-widest hover:underline">
                   <span>View All</span>
@@ -192,7 +192,7 @@ export default function DashboardPage() {
               </div>
             ) : (
               <div className="space-y-4">
-                {campaigns.slice(0, 5).map((campaign, i) => {
+                {campaigns.slice(0, 3).map((campaign, i) => {
                   const config = statusConfig[campaign.status] || statusConfig['DRAFT'];
                   return (
                     <motion.div

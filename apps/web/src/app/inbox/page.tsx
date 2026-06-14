@@ -17,6 +17,14 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { TopBar } from '@/components/TopBar';
 
+// Absolute backend base — every other page calls the backend directly via
+// NEXT_PUBLIC_API_URL (or the shared `api` axios instance). The inbox used
+// relative `/api/v1/...` paths, which depend on the Next.js rewrite proxy
+// (NEXT_PUBLIC_BACKEND_URL) that isn't wired the same way in prod → 404s.
+// Compute the base exactly like src/lib/api.ts so it works with or without an
+// `/api/v1` suffix on the env var.
+const API_BASE = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001').replace(/\/api\/v1\/?$/, '').replace(/\/$/, '');
+
 interface Conversation {
   id: string;
   firstName: string;
@@ -45,7 +53,7 @@ export default function InboxPage() {
   const fetchConversations = async () => {
     try {
       setSyncError(null);
-      const res = await fetch('/api/v1/inbox/conversations', {
+      const res = await fetch(`${API_BASE}/api/v1/inbox/conversations`, {
         headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
       });
       if (!res.ok) {
@@ -77,7 +85,7 @@ export default function InboxPage() {
   const fetchMessages = async (leadId: string) => {
     setIsLoadingMessages(true);
     try {
-      const res = await fetch(`/api/v1/inbox/conversations/${leadId}`, {
+      const res = await fetch(`${API_BASE}/api/v1/inbox/conversations/${leadId}`, {
         headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
       });
       const data = await res.json();
@@ -109,7 +117,7 @@ export default function InboxPage() {
     setIsSyncing(true);
     setSyncError(null);
     try {
-      const res = await fetch('/api/v1/inbox/sync', {
+      const res = await fetch(`${API_BASE}/api/v1/inbox/sync`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
       });
@@ -143,7 +151,7 @@ export default function InboxPage() {
         content: m.content
       }));
 
-      const res = await fetch('/api/v1/ai/enhance', {
+      const res = await fetch(`${API_BASE}/api/v1/ai/enhance`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
