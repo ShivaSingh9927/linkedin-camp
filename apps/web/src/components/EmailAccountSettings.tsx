@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { Mail, Send, Trash2, CheckCircle2, AlertCircle, Loader2, ChevronDown, Key } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '@/lib/api';
+import { BrandLogo } from '@/components/BrandLogo';
 
 interface ProviderPreset {
     label: string;
@@ -181,8 +182,12 @@ export default function EmailAccountSettings() {
         <div className="max-w-3xl space-y-6">
             <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-200">
                 <div className="flex items-center space-x-3 mb-6">
-                    <div className="w-12 h-12 rounded-2xl bg-blue-100 text-blue-600 flex items-center justify-center">
-                        <Mail className="w-6 h-6" />
+                    <div className="w-12 h-12 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-center p-2.5">
+                        {account ? (
+                            <BrandLogo name={account.provider} />
+                        ) : (
+                            <Mail className="w-6 h-6 text-slate-400" />
+                        )}
                     </div>
                     <div>
                         <h2 className="text-xl font-black text-slate-900">Email Account</h2>

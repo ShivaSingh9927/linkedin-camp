@@ -794,7 +794,7 @@ export default function LeadsPage() {
                         ) : (
                             <Card className="overflow-hidden">
                                 <div className="overflow-x-auto">
-                                    <table className="w-full text-[13px]">
+                                    <table className="w-full text-[13px] min-w-[680px]">
                                         <thead>
                                             <tr className="border-b border-line">
                                                 <th className="w-10 pl-4">

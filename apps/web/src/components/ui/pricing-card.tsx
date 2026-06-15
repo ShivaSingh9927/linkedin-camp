@@ -24,7 +24,7 @@ export function PricingCard({ tier, isYearly }: { tier: Tier, isYearly: boolean 
             viewport={{ once: true }}
             whileHover={{ y: -8 }}
             className={cn(
-                "relative flex flex-col rounded-[2.5rem] bg-white p-8 transition-all hover:bg-slate-50",
+                "relative flex flex-col rounded-[2rem] bg-white p-6 transition-all hover:bg-slate-50",
                 "border-2",
                 tier.highlighted ? "border-primary shadow-2xl shadow-primary/10" : "border-slate-100 shadow-xl shadow-slate-200/50"
             )}
@@ -35,36 +35,36 @@ export function PricingCard({ tier, isYearly }: { tier: Tier, isYearly: boolean 
                 </div>
             )}
 
-            <div className="mb-8 flex items-center gap-4">
+            <div className="mb-5 flex items-center gap-3">
                 <div className={cn(
-                    "flex size-14 items-center justify-center rounded-3xl",
+                    "flex size-11 items-center justify-center rounded-2xl",
                     tier.highlighted ? "bg-primary text-primary-foreground shadow-xl shadow-primary/20" : "bg-slate-100 text-slate-600"
                 )}>
-                    <tier.icon className="size-7" />
+                    <tier.icon className="size-5" />
                 </div>
                 <div>
-                    <h3 className="text-xl font-black text-slate-900">{tier.name}</h3>
-                    <p className="text-xs font-bold text-slate-400">{tier.description}</p>
+                    <h3 className="text-lg font-black text-slate-900 leading-tight">{tier.name}</h3>
+                    <p className="text-[11px] font-bold text-slate-400">{tier.description}</p>
                 </div>
             </div>
 
-            <div className="mb-8 p-6 bg-slate-100/50 rounded-3xl">
+            <div className="mb-5 p-4 bg-slate-100/50 rounded-2xl">
                 <div className="flex items-baseline gap-1">
-                    <span className="text-4xl font-black text-slate-900">
+                    <span className="text-3xl font-black text-slate-900">
                         {isYearly ? tier.yearlyPrice : tier.monthlyPrice}
                     </span>
                     <span className="text-sm font-bold text-slate-400">/mo</span>
                 </div>
                 {isYearly && tier.monthlyPrice !== "Free" && (
-                    <p className="mt-2 text-[10px] font-black text-accent uppercase tracking-wider">
+                    <p className="mt-1 text-[10px] font-black text-accent uppercase tracking-wider">
                         Billed annually (Save 50%)
                     </p>
                 )}
             </div>
 
-            <ul className="mb-10 flex-1 space-y-4">
+            <ul className="mb-6 flex-1 space-y-2.5">
                 {tier.features.map((feature) => (
-                    <li key={feature} className="flex items-start gap-4 text-sm font-bold text-slate-600">
+                    <li key={feature} className="flex items-start gap-3 text-[13px] font-bold text-slate-600">
                         <div className={cn(
                             "mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-lg",
                             tier.highlighted ? "bg-primary/20 text-primary" : "bg-slate-200 text-slate-400"
@@ -78,7 +78,7 @@ export function PricingCard({ tier, isYearly }: { tier: Tier, isYearly: boolean 
 
             <button
                 className={cn(
-                    "w-full rounded-[1.5rem] py-4 text-sm font-black uppercase tracking-widest transition-all active:scale-95",
+                    "w-full rounded-2xl py-3 text-[13px] font-black uppercase tracking-widest transition-all active:scale-95",
                     tier.highlighted
                         ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20 hover:bg-primary/90 hover:shadow-xl"
                         : "bg-slate-900 text-white hover:bg-slate-800"

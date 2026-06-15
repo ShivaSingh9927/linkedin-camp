@@ -662,7 +662,8 @@ const removeLeadFromCampaign = async (campaignId: string, leadId: string) => {
                         />
                     ) : (
                         <Card className="overflow-hidden">
-                            <table className="w-full text-[13px]">
+                            <div className="overflow-x-auto">
+                            <table className="w-full text-[13px] min-w-[640px]">
                                 <thead>
                                     <tr className="border-b border-line">
                                         <th className="text-left label px-5 py-3">Campaign</th>
@@ -704,6 +705,7 @@ const removeLeadFromCampaign = async (campaignId: string, leadId: string) => {
                                     })}
                                 </tbody>
                             </table>
+                            </div>
                         </Card>
                     )}
 

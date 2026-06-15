@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Search, Bell, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+import { Search, Bell, CheckCircle2, AlertCircle, Loader2, Menu } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { io, Socket } from 'socket.io-client';
 import { cn } from '@/lib/utils';
@@ -12,7 +12,7 @@ import LinkedInConnectivity from './LinkedInConnectivity';
  * real-time notifications. The notification socket logic is migrated verbatim
  * from the old TopNav (which the sidebar layout replaces).
  */
-export function AppHeader() {
+export function AppHeader({ onMenuClick }: { onMenuClick?: () => void }) {
   const [showNotifications, setShowNotifications] = useState(false);
   const [activities, setActivities] = useState<any[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -30,16 +30,26 @@ export function AppHeader() {
   }, []);
 
   return (
-    <header className="h-16 bg-background/80 backdrop-blur border-b border-line sticky top-0 z-20 flex items-center justify-between px-6 lg:px-8">
-      <div className="relative w-80 max-w-[40vw]">
-        <Search className="w-4 h-4 text-ink-400 absolute left-3 top-1/2 -translate-y-1/2" />
-        <input
-          placeholder="Search leads, campaigns…"
-          className="w-full bg-surface rounded-control pl-9 pr-3 py-2 text-[13px] font-medium outline-none focus:ring-2 focus:ring-brand/30"
-        />
+    <header className="h-16 bg-background/80 backdrop-blur border-b border-line sticky top-0 z-20 flex items-center justify-between gap-2 px-4 sm:px-6 lg:px-8">
+      <div className="flex items-center gap-2 flex-1 min-w-0">
+        {/* Mobile menu trigger */}
+        <button
+          onClick={onMenuClick}
+          aria-label="Open menu"
+          className="lg:hidden w-9 h-9 grid place-items-center rounded-control text-ink-600 hover:bg-surface shrink-0"
+        >
+          <Menu className="w-5 h-5" />
+        </button>
+        <div className="relative w-full sm:w-80 sm:max-w-[40vw]">
+          <Search className="w-4 h-4 text-ink-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <input
+            placeholder="Search…"
+            className="w-full bg-surface rounded-control pl-9 pr-3 py-2 text-[13px] font-medium outline-none focus:ring-2 focus:ring-brand/30"
+          />
+        </div>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 shrink-0">
         <LinkedInConnectivity />
 
         <div className="relative">
