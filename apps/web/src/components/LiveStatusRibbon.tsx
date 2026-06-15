@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from 'react';
+import { Cpu } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface CurrentlyProcessing {
@@ -18,17 +19,17 @@ interface Props {
 // Flavor copy shown when no real action has happened in the last 60s.
 // Each line is something the engine *actually* does, surfaced as
 // human-readable subtext. Truthful narration, not fake activity.
-const FLAVORS: Array<{ emoji: string; text: string }> = [
-    { emoji: '🤖', text: 'Reading target profile for context…' },
-    { emoji: '🧠', text: 'Personalizing message for industry context…' },
-    { emoji: '✨', text: 'Cross-referencing your business profile…' },
-    { emoji: '📊', text: 'Scoring lead engagement signals…' },
-    { emoji: '⏳', text: 'Pacing next action to look human…' },
-    { emoji: '🎯', text: 'Tuning tone to match your style guide…' },
-    { emoji: '🛡', text: 'Checking account-health budget for today…' },
-    { emoji: '🔄', text: 'Syncing connection states from LinkedIn…' },
-    { emoji: '🕵', text: 'Reading prospect\'s latest post…' },
-    { emoji: '⚙', text: 'Calculating optimal send window…' },
+const FLAVORS: string[] = [
+    'Reading target profile for context…',
+    'Personalizing message for industry context…',
+    'Cross-referencing your business profile…',
+    'Scoring lead engagement signals…',
+    'Pacing next action to look human…',
+    'Tuning tone to match your style guide…',
+    'Checking account-health budget for today…',
+    'Syncing connection states from LinkedIn…',
+    'Reading prospect\'s latest post…',
+    'Calculating optimal send window…',
 ];
 
 const ACTION_LABELS: Record<string, string> = {
@@ -62,33 +63,27 @@ export function LiveStatusRibbon({ currentlyProcessing, isLive = true }: Props) 
 
     const flavor = FLAVORS[flavorIdx];
     const showReal = !!currentlyProcessing;
-    const emoji = showReal ? '⚡' : flavor.emoji;
     const text = showReal
         ? `${actionLabel(currentlyProcessing!.action)} ${currentlyProcessing!.leadName}${currentlyProcessing!.leadCompany ? ` · ${currentlyProcessing!.leadCompany}` : ''}`
-        : flavor.text;
+        : flavor;
 
     return (
-        <div className="bg-gradient-to-r from-violet-50 via-white to-emerald-50 border border-violet-200/50 rounded-[2rem] p-6 shadow-soft">
-            <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-2xl bg-violet-500/10 flex items-center justify-center flex-shrink-0">
-                    <span className={cn("text-2xl transition-opacity duration-200", fade && "opacity-20")}>{emoji}</span>
+        <div className="bg-gradient-to-r from-brand-50 to-white border border-brand-100 rounded-card p-4 pl-5 shadow-soft">
+            <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-control bg-card grid place-items-center shrink-0 shadow-soft">
+                    <Cpu className={cn("w-4 h-4 text-brand transition-opacity duration-200", fade && "opacity-20")} />
                 </div>
                 <div className="min-w-0 flex-1">
-                    <div className="text-[10px] font-black uppercase tracking-[0.2em] text-violet-600 mb-1">
-                        {showReal ? 'Currently' : 'Engine'}
-                    </div>
-                    <div className={cn("text-base lg:text-lg font-bold text-slate-800 truncate transition-opacity duration-200", fade && "opacity-20")}>
+                    <div className="label !text-brand">{showReal ? 'Currently' : 'Engine · live'}</div>
+                    <div className={cn("text-[14px] font-semibold text-ink-700 truncate transition-opacity duration-200", fade && "opacity-20")}>
                         {text}
                     </div>
                 </div>
                 {isLive && (
-                    <div className="hidden sm:flex items-center gap-2 text-xs font-bold text-emerald-600 flex-shrink-0">
-                        <span className="relative flex h-2.5 w-2.5">
-                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
-                        </span>
-                        <span className="uppercase tracking-widest">Live</span>
-                    </div>
+                    <span className="hidden sm:flex items-center gap-1.5 text-[12px] font-semibold text-emerald-600 shrink-0">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        Active
+                    </span>
                 )}
             </div>
         </div>

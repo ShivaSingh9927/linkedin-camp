@@ -31,29 +31,36 @@ const FINALIZE_TICKS = [
 export function GenerationProgress({
   active,
   variant = 'dark',
+  startedAt,
 }: {
   active: boolean;
   variant?: 'dark' | 'light';
+  /**
+   * Epoch ms when generation actually began. Driving the timeline from real
+   * elapsed time (instead of a per-mount counter) keeps the steps continuous
+   * across navigation — returning to this view resumes where it really is,
+   * rather than restarting from step 1. Defaults to mount time when omitted.
+   */
+  startedAt?: number;
 }) {
-  const [index, setIndex] = useState(0);
-  // Seconds spent on the sticky final phase — drives escalating reassurance copy.
-  const [finalizeSecs, setFinalizeSecs] = useState(0);
+  // Lazily fall back to mount time so callers without a real start still work.
+  const [fallbackStart] = useState(() => Date.now());
+  const start = startedAt ?? fallbackStart;
 
+  // Tick a clock while active so the derived step/elapsed values advance.
+  const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    if (!active) { setIndex(0); setFinalizeSecs(0); return; }
-    const id = setInterval(() => {
-      setIndex((i) => Math.min(i + 1, PHASES.length - 1));
-    }, STEP_MS);
+    if (!active) return;
+    setNow(Date.now());
+    const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
-  }, [active]);
+  }, [active, start]);
 
-  // Once on the final phase, count elapsed seconds so the sublabel can escalate.
+  const elapsed = Math.max(0, now - start);
+  const index = Math.min(Math.floor(elapsed / STEP_MS), PHASES.length - 1);
   const onFinal = index === PHASES.length - 1;
-  useEffect(() => {
-    if (!active || !onFinal) return;
-    const id = setInterval(() => setFinalizeSecs((s) => s + 1), 1000);
-    return () => clearInterval(id);
-  }, [active, onFinal]);
+  // Seconds spent on the sticky final phase — drives escalating reassurance copy.
+  const finalizeSecs = onFinal ? Math.floor((elapsed - (PHASES.length - 1) * STEP_MS) / 1000) : 0;
 
   const finalizeCopy = FINALIZE_TICKS.reduce(
     (acc, t) => (finalizeSecs >= t.after ? t.text : acc),

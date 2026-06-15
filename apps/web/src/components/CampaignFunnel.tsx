@@ -48,8 +48,8 @@ export function CampaignFunnel({ campaignId, onStageClick }: Props) {
 
     if (loading) {
         return (
-            <div className="bg-card border border-border rounded-[2.5rem] p-8 flex items-center justify-center h-64 shadow-soft">
-                <Loader2 className="w-6 h-6 text-violet-500 animate-spin" />
+            <div className="bg-card border border-line rounded-card p-8 flex items-center justify-center h-64 shadow-soft">
+                <Loader2 className="w-6 h-6 text-brand animate-spin" />
             </div>
         );
     }
@@ -59,15 +59,14 @@ export function CampaignFunnel({ campaignId, onStageClick }: Props) {
     const biggestDrop = findBiggestDrop(data.stages);
 
     return (
-        <div className="bg-card border border-border rounded-[2.5rem] p-8 space-y-6 shadow-soft">
+        <div className="bg-card border border-line rounded-card p-6 space-y-5 shadow-soft">
             <div className="flex items-center justify-between flex-wrap gap-2">
-                <h3 className="text-xl font-black italic uppercase tracking-tight">The funnel</h3>
-                <span className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em]">Click any stage to filter</span>
+                <h3 className="font-bold tracking-tight">The funnel</h3>
+                <span className="label">click a stage to filter leads</span>
             </div>
-            <div className="space-y-3">
+            <div className="space-y-3.5">
                 {data.stages.map((stage, i) => {
                     const pct = total ? Math.round((stage.count / total) * 100) : 0;
-                    const isLast = i === data.stages.length - 1;
                     return (
                         <button
                             key={stage.key}
@@ -75,25 +74,15 @@ export function CampaignFunnel({ campaignId, onStageClick }: Props) {
                             className="w-full text-left group"
                         >
                             <div className="flex justify-between items-center mb-1.5">
-                                <span className={cn(
-                                    "text-xs font-black uppercase tracking-widest",
-                                    isLast ? "text-purple-700" : "text-slate-700"
-                                )}>
-                                    {isLast && '⭐ '}{stage.label}
-                                </span>
-                                <span className={cn("text-xs font-black", isLast ? "text-purple-600" : "text-slate-500")}>
-                                    {stage.count} ({pct}%)
-                                </span>
+                                <span className="text-[12px] font-semibold text-ink-700">{stage.label}</span>
+                                <span className="num text-[12px] text-ink-500">{stage.count} · {pct}%</span>
                             </div>
-                            <div className="h-9 rounded-xl bg-slate-50 overflow-hidden relative">
+                            <div className="h-7 rounded-control bg-surface overflow-hidden">
                                 <div
-                                    className={cn(
-                                        STAGE_COLORS[i] || 'bg-slate-400',
-                                        "h-full rounded-xl flex items-center px-4 transition-all duration-500 group-hover:brightness-95 group-hover:translate-x-0.5"
-                                    )}
+                                    className={cn(STAGE_COLORS[i] || 'bg-ink-400', 'h-full rounded-control flex items-center px-2.5 transition-all duration-500 group-hover:brightness-105')}
                                     style={{ width: `${Math.max(4, pct)}%` }}
                                 >
-                                    <span className="text-white text-xs font-black">{stage.count}</span>
+                                    {pct >= 12 && <span className="text-white text-[11px] font-bold">{stage.count}</span>}
                                 </div>
                             </div>
                         </button>
@@ -101,10 +90,8 @@ export function CampaignFunnel({ campaignId, onStageClick }: Props) {
                 })}
             </div>
             {biggestDrop && (
-                <p className="text-xs text-slate-500 italic">
-                    Biggest drop: <strong className="text-slate-700 not-italic">
-                        {biggestDrop.from} → {biggestDrop.to} ({biggestDrop.fromCount} → {biggestDrop.toCount}, {biggestDrop.dropPct}% drop)
-                    </strong>. Consider tightening your audience or testing new copy at this step.
+                <p className="text-[12px] text-ink-500 font-medium">
+                    Biggest drop: <strong className="text-ink-700">{biggestDrop.from} → {biggestDrop.to}</strong> ({biggestDrop.dropPct}% drop). Consider tightening your audience or testing new copy here.
                 </p>
             )}
         </div>

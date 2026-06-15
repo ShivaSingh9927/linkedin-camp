@@ -227,35 +227,84 @@ export const uploadCsvLeads = async (req: any, res: Response) => {
     }
 
     const leads: any[] = [];
+    // The uploaded file name (minus extension) becomes the list this import
+    // lands in — surfaced as a tag the Prospects "Lists" rail groups by.
+    const listName: string = (req.body?.listName || '').toString().trim();
+
+    // Dynamic column mapping: CSVs come with wildly different headers. We
+    // normalize each header (lowercase, strip spaces/underscores/dashes/dots)
+    // and match against a list of aliases per field, so a column called
+    // "Profile URL", "linkedin_url" or "LinkedIn" all resolve to linkedinUrl.
+    // Only linkedinUrl + a name are required; every other column is optional.
+    const FIELD_ALIASES: Record<string, string[]> = {
+        linkedinUrl: ['linkedinurl', 'linkedin', 'linkedinprofile', 'linkedinprofileurl', 'profileurl', 'profile', 'url', 'publicprofileurl'],
+        firstName: ['firstname', 'first', 'givenname', 'fname'],
+        lastName: ['lastname', 'last', 'surname', 'familyname', 'lname'],
+        fullName: ['name', 'fullname', 'displayname'],
+        jobTitle: ['jobtitle', 'title', 'position', 'role', 'headline', 'currenttitle'],
+        company: ['company', 'companyname', 'organization', 'organisation', 'employer', 'currentcompany'],
+        email: ['email', 'emailaddress', 'workemail', 'mail'],
+        country: ['country', 'location', 'region', 'geo'],
+        gender: ['gender', 'sex'],
+        tags: ['tags', 'segments', 'segment'],
+    };
+    const normKey = (s: string) => s.toLowerCase().replace(/[\s_\-.]+/g, '');
+    // Build alias -> canonical lookup once.
+    const aliasToField: Record<string, string> = {};
+    for (const [field, aliases] of Object.entries(FIELD_ALIASES)) {
+        for (const a of aliases) aliasToField[a] = field;
+    }
 
     try {
         const parser = fs.createReadStream(file.path).pipe(
-            parse({
-                columns: true,
-                skip_empty_lines: true,
-                trim: true
-            })
+            parse({ columns: true, skip_empty_lines: true, trim: true })
         );
 
         for await (const record of parser) {
+            // Resolve known fields from whatever headers the file has.
+            const resolved: Record<string, string> = {};
+            for (const [rawKey, rawVal] of Object.entries(record)) {
+                const field = aliasToField[normKey(rawKey)];
+                if (field && rawVal != null && String(rawVal).trim() && !resolved[field]) {
+                    resolved[field] = String(rawVal).trim();
+                }
+            }
+
+            // Derive first/last from a single full-name column if needed.
+            let firstName = resolved.firstName;
+            let lastName = resolved.lastName;
+            if ((!firstName || !lastName) && resolved.fullName) {
+                const parts = resolved.fullName.split(/\s+/);
+                firstName = firstName || parts[0];
+                lastName = lastName || parts.slice(1).join(' ');
+            }
+
+            const fileTags = (resolved.tags || '').split(',').map((t) => t.trim()).filter(Boolean);
+            const tags = listName ? [listName, ...fileTags] : fileTags;
+
             const mappedLead = {
-                linkedinUrl: record['LinkedIn URL'] || record['url'] || record['linkedinUrl'],
-                firstName: record['First Name'] || record['firstName'],
-                lastName: record['Last Name'] || record['lastName'],
-                jobTitle: cleanPersonField(
-                    record['Job Title'] || record['title'] || record['jobTitle'],
-                    `${record['First Name'] || record['firstName'] || ''} ${record['Last Name'] || record['lastName'] || ''}`
-                ),
-                company: record['Company'] || record['company'],
-                email: record['Email'] || record['email'],
-                country: record['Country'] || record['country'],
-                gender: record['Gender'] || record['gender'],
-                tags: (record['Tags'] || record['tags'] || '').split(',').map((t: string) => t.trim()).filter(Boolean),
+                linkedinUrl: resolved.linkedinUrl,
+                firstName,
+                lastName,
+                jobTitle: cleanPersonField(resolved.jobTitle, `${firstName || ''} ${lastName || ''}`),
+                company: resolved.company,
+                email: resolved.email,
+                country: resolved.country,
+                gender: resolved.gender,
+                tags,
             };
 
-            if (mappedLead.linkedinUrl) {
+            // Required: a LinkedIn URL plus at least a first name.
+            if (mappedLead.linkedinUrl && (mappedLead.firstName || mappedLead.lastName)) {
                 leads.push(mappedLead);
             }
+        }
+
+        if (leads.length === 0) {
+            if (file.path) fs.unlinkSync(file.path);
+            return res.status(400).json({
+                error: 'No valid rows found. Your file must include a LinkedIn URL and a name (first/last or full name) column.',
+            });
         }
 
         const teamUserIds = await getTeamUserIds(userId);

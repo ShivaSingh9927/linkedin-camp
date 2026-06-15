@@ -31,9 +31,9 @@ export function SevenDayChart({ data }: Props) {
     const fmt = (iso: string) => new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 
     return (
-        <div className="bg-card border border-border rounded-[2.5rem] p-8 space-y-6 shadow-soft">
+        <div className="bg-card border border-line rounded-card p-6 space-y-5 shadow-soft">
             <div className="flex items-center justify-between flex-wrap gap-2">
-                <h3 className="text-xl font-black italic uppercase tracking-tight">Last 7 days</h3>
+                <h3 className="font-bold tracking-tight">Last 7 days</h3>
                 <div className="flex items-center gap-4 text-xs">
                     <Legend color="#8b5cf6" label="Invites" />
                     <Legend color="#3b82f6" label="Messages" />
@@ -71,8 +71,8 @@ export function SevenDayChart({ data }: Props) {
 function Legend({ color, label }: { color: string; label: string }) {
     return (
         <span className="flex items-center gap-2">
-            <span className="w-3 h-3 rounded-full" style={{ background: color }} />
-            <span className="font-bold text-slate-600">{label}</span>
+            <span className="w-2.5 h-2.5 rounded-full" style={{ background: color }} />
+            <span className="text-[11px] font-semibold text-ink-500">{label}</span>
         </span>
     );
 }

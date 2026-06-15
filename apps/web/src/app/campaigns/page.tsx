@@ -36,6 +36,30 @@ import { CampaignEta } from '@/components/CampaignEta';
 import { CampaignNameModal } from '@/components/CampaignNameModal';
 import { io, Socket } from 'socket.io-client';
 import { toast } from 'sonner';
+import { Card, Badge, Button, EmptyState, Skeleton, PageHeader } from '@/components/ui';
+import { FALLBACK_TEMPLATES } from '@/lib/template-data';
+import { Layers, ChevronRight, Clock as ClockIcon } from 'lucide-react';
+
+// Humanize a stepSequence subtype into a short chip label.
+const SUBTYPE_LABEL: Record<string, string> = {
+  PROFILE_VISIT: 'Visit', VISIT: 'Visit', INVITE: 'Invite', CONNECT: 'Connect',
+  MESSAGE: 'Message', EMAIL: 'Email', WAIT: 'Wait', DELAY: 'Wait', LIKE: 'Like', COMMENT: 'Comment',
+};
+const stepLabel = (s: string) => SUBTYPE_LABEL[s] || s.replace(/_/g, ' ');
+
+const CATEGORY_META: Record<string, { label: string; icon: any; tone: 'info' | 'brand' | 'success' }> = {
+  linkedin: { label: 'LinkedIn', icon: Linkedin, tone: 'info' },
+  'multi-channel': { label: 'Multi-channel', icon: Layers, tone: 'brand' },
+  email: { label: 'Email', icon: Mail, tone: 'success' },
+};
+
+// Template group tabs (matches the /templates grouping).
+const GROUP_TABS: { key: string; label: string }[] = [
+  { key: 'all', label: 'All' },
+  { key: 'my-network', label: 'My Network' },
+  { key: 'out-of-network', label: 'Out of Network' },
+  { key: 'objective-based', label: 'Objective-Based' },
+];
 
 interface CampaignActivity {
     campaignId: string;
@@ -74,6 +98,11 @@ export default function CampaignsPage() {
     const [statusPanel, setStatusPanel] = useState<{ campaignId: string; data: any } | null>(null);
     const [statusLoading, setStatusLoading] = useState(false);
     const [filter, setFilter] = useState<string>('ALL');
+    const [view, setView] = useState<'mine' | 'templates'>('mine');
+    const [tplGroup, setTplGroup] = useState<string>('all');
+    const [templates, setTemplates] = useState<any[]>([]);
+    const [templatesLoading, setTemplatesLoading] = useState(true);
+    const [pendingTemplate, setPendingTemplate] = useState<any | null>(null);
     const [showCreateMenu, setShowCreateMenu] = useState(false);
     const createMenuRef = useRef<HTMLDivElement>(null);
     const [pendingCreate, setPendingCreate] = useState<{ defaultName: string; workflowJson: any; aiDetails?: { objective: string; description: string; cta: string; toneOverride: string; } } | null>(null);
@@ -92,6 +121,13 @@ export default function CampaignsPage() {
     useEffect(() => {
         fetchCampaigns();
         fetchUserStrategy();
+        api.get('/templates')
+            .then((res) => setTemplates(res.data.templates || []))
+            .catch((err) => {
+                console.error('Failed to load templates from API, using fallback:', err);
+                setTemplates(FALLBACK_TEMPLATES);
+            })
+            .finally(() => setTemplatesLoading(false));
     }, []);
 
     const fetchUserStrategy = async () => {
@@ -400,6 +436,38 @@ const removeLeadFromCampaign = async (campaignId: string, leadId: string) => {
         });
     };
 
+    // Template create flow — fetches the full workflow (summaries omit it), then
+    // creates the campaign and opens the builder. Mirrors the templates hub page.
+    const handleTemplateConfirm = async (name: string) => {
+        if (!pendingTemplate) return;
+        const summary = pendingTemplate;
+        setPendingTemplate(null);
+        try {
+            let tpl = summary.workflow ? summary : null;
+            if (!tpl) {
+                try {
+                    const res = await api.get<{ template: any }>(`/templates/${summary.id}`);
+                    tpl = res.data.template;
+                } catch {
+                    tpl = FALLBACK_TEMPLATES.find((t) => t.id === summary.id) || null;
+                }
+            }
+            if (!tpl) throw new Error('Template not found');
+            const res = await api.post('/campaigns', {
+                name,
+                workflowJson: tpl.workflow,
+                objective: tpl.aiStrategyHint?.objective,
+                description: tpl.aiStrategyHint?.description,
+                cta: tpl.aiStrategyHint?.cta,
+                toneOverride: tpl.aiStrategyHint?.toneOverride,
+            });
+            router.push(`/campaigns/${res.data.id}/builder`);
+        } catch (err) {
+            console.error(err);
+            toast.error('Error creating campaign from template.');
+        }
+    };
+
     const handleConfirmCreate = async (name: string, details: any) => {
         if (!pendingCreate) return;
         setPendingCreate(null);
@@ -449,352 +517,204 @@ const removeLeadFromCampaign = async (campaignId: string, leadId: string) => {
         DRAFT: campaigns.filter(c => c.status === 'DRAFT').length,
     };
 
-    if (loading) return (
-        <div className="flex h-[60vh] items-center justify-center p-20">
-            <Loader2 className="w-10 h-10 text-primary animate-spin" />
+    const filteredTemplates = tplGroup === 'all' ? templates : templates.filter((t) => t.group === tplGroup);
+    const groupCount = (key: string) => (key === 'all' ? templates.length : templates.filter((t) => t.group === key).length);
+
+    const createButton = (
+        <div className="relative" ref={createMenuRef}>
+            <Button onClick={() => setShowCreateMenu(!showCreateMenu)}>
+                <Plus className="w-4 h-4" />
+                New Campaign
+                <ChevronDown className={cn('w-4 h-4 transition-transform', showCreateMenu && 'rotate-180')} />
+            </Button>
+            <AnimatePresence>
+                {showCreateMenu && (
+                    <motion.div
+                        initial={{ opacity: 0, y: 8, scale: 0.98 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: 8, scale: 0.98 }}
+                        className="absolute right-0 top-full mt-2 w-64 bg-card border border-line rounded-card shadow-lift z-40 p-2"
+                    >
+                        {[
+                            { type: 'linkedin' as const, icon: Linkedin, label: 'LinkedIn', sub: 'Connect & message', tone: 'bg-blue-50 text-blue-600' },
+                            { type: 'email' as const, icon: Mail, label: 'Cold email', sub: 'Direct inbox', tone: 'bg-emerald-50 text-emerald-600' },
+                            { type: 'enrichment' as const, icon: Wrench, label: 'Lead enrichment', sub: 'Scrape & save', tone: 'bg-amber-50 text-amber-600' },
+                            { type: 'custom' as const, icon: Wrench, label: 'Custom builder', sub: 'Full control', tone: 'bg-surface text-ink-500' },
+                        ].map((o) => (
+                            <button key={o.type} onClick={() => startCreateCampaign(o.type)} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-control hover:bg-surface transition-colors text-left">
+                                <div className={cn('w-9 h-9 rounded-control grid place-items-center', o.tone)}><o.icon className="w-[18px] h-[18px]" /></div>
+                                <div><p className="text-[13px] font-semibold text-foreground">{o.label}</p><p className="text-[11px] font-medium text-ink-400">{o.sub}</p></div>
+                            </button>
+                        ))}
+                        <div className="border-t border-line my-1.5" />
+                        <button onClick={() => { setShowCreateMenu(false); setView('templates'); }} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-control hover:bg-brand-50 transition-colors text-left group">
+                            <div className="w-9 h-9 rounded-control bg-brand-50 text-brand grid place-items-center group-hover:bg-white"><LayoutTemplate className="w-[18px] h-[18px]" /></div>
+                            <div><p className="text-[13px] font-semibold text-brand">Browse templates</p><p className="text-[11px] font-medium text-brand/60">{templates.length} prebuilt flows</p></div>
+                        </button>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </div>
     );
 
     return (
-        <div className="space-y-8 lg:space-y-12 animate-in fade-in duration-500">
-            {/* Header */}
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6">
-                <div className="space-y-3">
-                    <div>
-                        <h2 className="text-4xl font-black text-foreground tracking-tight italic uppercase">My Campaigns</h2>
-                        <p className="text-muted-foreground font-bold text-sm mt-1 uppercase tracking-widest opacity-60">Automate your outreach ecosystem.</p>
-                    </div>
-                    <SafetyQuotaBadge />
-                </div>
-                <div className="relative group" ref={createMenuRef}>
-                    <button
-                        onClick={() => setShowCreateMenu(!showCreateMenu)}
-                        className="flex items-center space-x-3 bg-primary text-primary-foreground px-8 py-4 rounded-[2rem] font-black uppercase text-xs tracking-widest hover:bg-primary/90 transition-all shadow-xl shadow-primary/20 hover:-translate-y-1 active:scale-95"
-                    >
-                        <Plus className="w-5 h-5" />
-                        <span>Start a Campaign</span>
-                        <ChevronDown className={`w-4 h-4 transition-transform duration-300 ${showCreateMenu ? 'rotate-180' : ''}`} />
-                    </button>
+        <div className="space-y-6">
+            <PageHeader
+                title="Campaigns"
+                subtitle="One campaign runs at a time; the rest queue automatically."
+                actions={createButton}
+            />
 
-                    {showCreateMenu && (
-                        <div className="absolute right-0 top-full mt-4 w-72 bg-background border border-border rounded-[2.5rem] shadow-2xl z-40 overflow-hidden animate-in fade-in slide-in-from-top-4 duration-300 p-2">
-                            <div className="space-y-1">
-                                <button
-                                    onClick={() => startCreateCampaign('linkedin')}
-                                    className="w-full flex items-center space-x-4 px-5 py-4 rounded-3xl hover:bg-muted transition-all text-left group"
-                                >
-                                    <div className="w-10 h-10 bg-primary/10 rounded-2xl flex items-center justify-center group-hover:bg-primary/20 transition-colors">
-                                        <Linkedin className="w-5 h-5 text-primary" />
-                                    </div>
-                                    <div>
-                                        <p className="text-sm font-black text-foreground uppercase tracking-tight">LinkedIn</p>
-                                        <p className="text-[10px] font-bold text-muted-foreground uppercase opacity-60">Growth Machine</p>
-                                    </div>
-                                </button>
-                                <button
-                                    onClick={() => startCreateCampaign('enrichment')}
-                                    className="w-full flex items-center space-x-4 px-5 py-4 rounded-3xl hover:bg-muted transition-all text-left group"
-                                >
-                                    <div className="w-10 h-10 bg-amber-500/10 rounded-2xl flex items-center justify-center group-hover:bg-amber-500/20 transition-colors">
-                                        <Wrench className="w-5 h-5 text-amber-500" />
-                                    </div>
-                                    <div>
-                                        <p className="text-sm font-black text-foreground uppercase tracking-tight">Lead Enrichment</p>
-                                        <p className="text-[10px] font-bold text-muted-foreground uppercase opacity-60">Scrape & Save</p>
-                                    </div>
-                                </button>
-                                <button
-                                    onClick={() => startCreateCampaign('email')}
-                                    className="w-full flex items-center space-x-4 px-5 py-4 rounded-3xl hover:bg-muted transition-all text-left group"
-                                >
-                                    <div className="w-10 h-10 bg-emerald-500/10 rounded-2xl flex items-center justify-center group-hover:bg-emerald-500/20 transition-colors">
-                                        <Mail className="w-5 h-5 text-emerald-500" />
-                                    </div>
-                                    <div>
-                                        <p className="text-sm font-black text-foreground uppercase tracking-tight">Cold Email</p>
-                                        <p className="text-[10px] font-bold text-muted-foreground uppercase opacity-60">Direct Inbox</p>
-                                    </div>
-                                </button>
-                                <button
-                                    onClick={() => startCreateCampaign('custom')}
-                                    className="w-full flex items-center space-x-4 px-5 py-4 rounded-3xl hover:bg-muted transition-all text-left group"
-                                >
-                                    <div className="w-10 h-10 bg-slate-500/10 rounded-2xl flex items-center justify-center group-hover:bg-slate-500/20 transition-colors">
-                                        <Wrench className="w-5 h-5 text-slate-500" />
-                                    </div>
-                                    <div>
-                                        <p className="text-sm font-black text-foreground uppercase tracking-tight">Custom Builder</p>
-                                        <p className="text-[10px] font-bold text-muted-foreground uppercase opacity-60">Full Control</p>
-                                    </div>
-                                </button>
-                                <div className="border-t border-border mx-4 my-2" />
-                                <Link
-                                    href="/campaigns/templates"
-                                    onClick={() => setShowCreateMenu(false)}
-                                    className="w-full flex items-center space-x-4 px-5 py-4 rounded-3xl hover:bg-primary/5 transition-all group"
-                                >
-                                    <div className="w-10 h-10 bg-primary/10 rounded-2xl flex items-center justify-center group-hover:bg-primary/20 transition-colors">
-                                        <LayoutTemplate className="w-5 h-5 text-primary" />
-                                    </div>
-                                    <div>
-                                        <p className="text-sm font-black text-primary uppercase tracking-tight">Templates</p>
-                                        <p className="text-[10px] font-bold text-primary/60 uppercase">Prebuilt Flows</p>
-                                    </div>
-                                </Link>
-                            </div>
+            {/* Segmented toggle: My Campaigns | Templates */}
+            <div className="flex items-center justify-between gap-4 flex-wrap">
+                <div className="bg-card border border-line rounded-control p-1 inline-flex gap-1 shadow-soft">
+                    <button onClick={() => setView('mine')} className={cn('px-4 py-2 rounded-chip text-[13px] font-semibold flex items-center gap-2 transition-colors', view === 'mine' ? 'bg-brand text-white' : 'text-ink-500 hover:text-foreground')}>
+                        <Target className="w-4 h-4" /> My Campaigns <span className="text-[11px] opacity-70">{campaigns.length}</span>
+                    </button>
+                    <button onClick={() => setView('templates')} className={cn('px-4 py-2 rounded-chip text-[13px] font-semibold flex items-center gap-2 transition-colors', view === 'templates' ? 'bg-brand text-white' : 'text-ink-500 hover:text-foreground')}>
+                        <LayoutTemplate className="w-4 h-4" /> Templates <span className="text-[11px] opacity-70">{templates.length}</span>
+                    </button>
+                </div>
+                {view === 'mine' && <SafetyQuotaBadge />}
+            </div>
+
+            {loading ? (
+                <Skeleton className="h-64 rounded-card" />
+            ) : view === 'templates' ? (
+                /* ===== TEMPLATES ===== */
+                <div className="space-y-5">
+                    <div className="flex flex-wrap items-center gap-2">
+                        {GROUP_TABS.map((g) => (
+                            <button key={g.key} onClick={() => setTplGroup(g.key)} className={cn('px-3.5 py-2 rounded-chip text-[12px] font-semibold transition-colors flex items-center gap-1.5', tplGroup === g.key ? 'bg-ink-900 text-white' : 'bg-card border border-line text-ink-500 hover:bg-surface')}>
+                                {g.label} <span className="opacity-70">{groupCount(g.key)}</span>
+                            </button>
+                        ))}
+                    </div>
+                    {templatesLoading ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                            {[0, 1, 2, 3, 4, 5].map((i) => <Skeleton key={i} className="h-52 rounded-card" />)}
+                        </div>
+                    ) : filteredTemplates.length === 0 ? (
+                        <EmptyState icon={LayoutTemplate} title="No templates here" description="Try a different group — your templates are organized by intent." />
+                    ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                            {filteredTemplates.map((tpl) => {
+                                const meta = CATEGORY_META[tpl.category] || CATEGORY_META.linkedin;
+                                const steps: string[] = tpl.stepSequence || [];
+                                return (
+                                    <Card key={tpl.id} interactive onClick={() => router.push(`/campaigns/templates/${tpl.id}`)} className="p-5 flex flex-col cursor-pointer">
+                                        <div className="flex items-center justify-between">
+                                            <Badge tone={meta.tone}><meta.icon className="w-3 h-3" />{meta.label}</Badge>
+                                            <span className="text-xl leading-none">{tpl.icon}</span>
+                                        </div>
+                                        <h3 className="font-semibold text-[15px] mt-3 text-foreground">{tpl.name}</h3>
+                                        <p className="text-[12px] text-ink-500 font-medium mt-1 leading-relaxed flex-1 line-clamp-2">{tpl.description}</p>
+                                        {steps.length > 0 && (
+                                            <div className="flex items-center gap-1 flex-wrap mt-3">
+                                                {steps.slice(0, 6).map((s, i) => (
+                                                    <span key={i} className="inline-flex items-center gap-1">
+                                                        <span className="text-[10px] font-semibold text-ink-500 bg-surface rounded-chip px-2 py-1">{stepLabel(s)}</span>
+                                                        {i < Math.min(steps.length, 6) - 1 && <ChevronRight className="w-3 h-3 text-ink-400" />}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        )}
+                                        <div className="flex items-center gap-3 mt-3 text-[11px] font-medium text-ink-400">
+                                            {tpl.durationDays ? <span className="flex items-center gap-1"><ClockIcon className="w-3 h-3" />{tpl.durationDays}d</span> : null}
+                                            {tpl.stepCount ? <span>{tpl.stepCount} steps</span> : null}
+                                            {tpl.bestFor ? <span className="truncate">· {tpl.bestFor}</span> : null}
+                                        </div>
+                                        <div className="mt-4">
+                                            <Button className="w-full" onClick={(e) => { e.stopPropagation(); setPendingTemplate(tpl); }}>Use template</Button>
+                                        </div>
+                                    </Card>
+                                );
+                            })}
                         </div>
                     )}
                 </div>
-            </div>
+            ) : (
+                /* ===== MY CAMPAIGNS ===== */
+                <div className="space-y-4">
+                    {/* Status filter chips */}
+                    <div className="flex flex-wrap items-center gap-2">
+                        {(['ALL', 'ACTIVE', 'QUEUED', 'PAUSED', 'DRAFT'] as const).map((tab) => (
+                            <button
+                                key={tab}
+                                onClick={() => setFilter(tab)}
+                                className={cn(
+                                    'px-3.5 py-2 rounded-chip text-[12px] font-semibold transition-colors',
+                                    filter === tab ? 'bg-ink-900 text-white' : 'bg-card border border-line text-ink-500 hover:bg-surface',
+                                )}
+                            >
+                                {tab === 'ALL' ? 'All' : tab.charAt(0) + tab.slice(1).toLowerCase()} <span className="opacity-70">{statusCounts[tab]}</span>
+                            </button>
+                        ))}
+                    </div>
 
-            {/* Filter Tabs */}
-            <div className="flex flex-wrap items-center gap-2">
-                {(['ALL', 'ACTIVE', 'QUEUED', 'PAUSED', 'DRAFT'] as const).map((tab) => {
-                    const icons: Record<string, any> = { ALL: Target, ACTIVE: Play, QUEUED: Clock, PAUSED: Pause, DRAFT: Clock };
-                    const Icon = icons[tab];
-                    const colors: Record<string, string> = {
-                        ALL: 'text-primary',
-                        ACTIVE: 'text-emerald-500',
-                        QUEUED: 'text-blue-500',
-                        PAUSED: 'text-amber-500',
-                        DRAFT: 'text-muted-foreground',
-                    };
-                    return (
-                        <button
-                            key={tab}
-                            onClick={() => setFilter(tab)}
-                            className={cn(
-                                "flex items-center space-x-3 px-6 py-3 rounded-full text-[10px] font-black uppercase tracking-[0.1em] transition-all border",
-                                filter === tab
-                                    ? "bg-foreground text-background border-foreground shadow-lg"
-                                    : "bg-background text-muted-foreground border-border hover:bg-muted"
-                            )}
-                        >
-                            <Icon className={cn("w-3.5 h-3.5", filter === tab ? "text-background" : colors[tab])} />
-                            <span>{tab}</span>
-                            <span className={cn(
-                                "ml-1.5 px-2 py-0.5 rounded-full font-black min-w-[20px] text-center",
-                                filter === tab ? "bg-background/20 text-background" : "bg-muted text-muted-foreground"
-                            )}>
-                                {statusCounts[tab]}
-                            </span>
-                        </button>
-                    );
-                })}
-            </div>
-
-            {/* Workflow List (Table on Desktop, Cards on Mobile) */}
-            <div className="bg-card border border-border rounded-[2.5rem] sm:rounded-[3rem] shadow-soft overflow-hidden">
-                {/* Desktop view */}
-                <div className="hidden md:block overflow-x-auto">
-                    <table className="w-full text-left">
-                        <thead className="bg-muted/50 text-[10px] font-black border-b border-border text-muted-foreground uppercase tracking-[0.2em]">
-                            <tr>
-                                <th className="px-10 py-8">Workflow</th>
-                                <th className="px-10 py-8">Status</th>
-                                <th className="px-10 py-8">Performance</th>
-                                <th className="px-10 py-8 text-right">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-border">
-                            {filteredCampaigns.length === 0 ? (
-                                <tr>
-                                    <td colSpan={4} className="p-24 text-center">
-                                        <motion.div
-                                            initial={{ scale: 0.8, opacity: 0 }}
-                                            animate={{ scale: 1, opacity: 1 }}
-                                            className="mb-8 bg-muted w-24 h-24 rounded-[2rem] flex items-center justify-center mx-auto border-4 border-dashed border-border"
-                                        >
-                                            <Plus className="w-10 h-10 text-muted-foreground/30" />
-                                        </motion.div>
-                                        <h3 className="text-xl font-black text-foreground uppercase tracking-tight">Empty Ecosystem</h3>
-                                        <p className="text-muted-foreground font-medium text-sm mt-1">
-                                            {filter === 'ALL' ? "You haven't initialized any campaigns." : `No ${filter.toLowerCase()} iterations found.`}
-                                        </p>
-                                        <Link href="/campaigns/new/builder" className="inline-flex mt-8 bg-primary text-primary-foreground px-8 py-3 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-primary/90 transition-all hover:scale-105">
-                                            Start Your First Campaign
-                                        </Link>
-                                    </td>
-                                </tr>
-                            ) : filteredCampaigns.map((campaign) => (
-                                <tr key={campaign.id} className="hover:bg-muted/30 transition-all group">
-                                    <td className="px-10 py-8">
-                                        <Link href={`/campaigns/${campaign.id}`} className="block">
-                                            <span className="text-lg font-black text-foreground hover:text-primary transition-colors tracking-tight uppercase">
-                                                {campaign.name}
-                                            </span>
-                                            <div className="flex items-center space-x-2 mt-1.5 opacity-60">
-                                                <div className="w-1 h-1 rounded-full bg-muted-foreground" />
-                                                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-none">ID: {campaign.id.slice(0, 8)}</span>
-                                            </div>
-                                        </Link>
-                                    </td>
-                                    <td className="px-10 py-8">
-                                        <div className="flex items-center space-x-3">
-                                            {campaign.status === 'ACTIVE' && (
-                                                <span className="relative flex h-3 w-3">
-                                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                                                    <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
-                                                </span>
-                                            )}
-                                            <span className={cn(
-                                                "text-[10px] font-black px-4 py-1.5 rounded-full uppercase tracking-widest border shadow-sm",
-                                                campaign.status === 'ACTIVE'
-                                                    ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20'
-                                                    : campaign.status === 'QUEUED'
-                                                        ? 'bg-blue-500/10 text-blue-600 border-blue-500/20'
-                                                        : campaign.status === 'PAUSED'
-                                                            ? 'bg-amber-500/10 text-amber-600 border-amber-500/20'
-                                                            : 'bg-muted text-muted-foreground border-border'
-                                            )}>
-                                                {campaign.status}{campaign.status === 'QUEUED' && campaign.queuePosition ? ` #${campaign.queuePosition}` : ''}
-                                            </span>
-                                            {(campaign.status === 'ACTIVE' || campaign.status === 'QUEUED') && (
-                                                <CampaignEta campaignId={campaign.id} />
-                                            )}
-                                        </div>
-                                    </td>
-                                    <td className="px-10 py-8">
-                                        <div className="space-y-2">
-                                            <div className="flex justify-between items-end">
-                                                <span className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.1em]">Engine health</span>
-                                                <span className="text-[10px] font-black text-emerald-500 uppercase tracking-widest">Normal</span>
-                                            </div>
-                                            <div className="w-32 h-1.5 bg-muted rounded-full overflow-hidden">
-                                                <div className="h-full bg-emerald-500 w-full opacity-80" />
-                                            </div>
-                                        </div>
-                                        {/* Live activity count for this campaign */}
-                                        {campaign.status === 'ACTIVE' && (() => {
-                                            const campaignActivities = activities.filter(a => a.campaignId === campaign.id);
-                                            const completed = campaignActivities.filter(a => a.action === 'success').length;
-                                            const failed = campaignActivities.filter(a => a.action === 'failed').length;
-                                            if (completed > 0 || failed > 0) {
-                                                return (
-                                                    <div className="mt-2 flex items-center gap-2 text-[10px]">
-                                                        <CheckCircle2 className="w-3 h-3 text-emerald-500" />
-                                                        <span className="font-bold text-emerald-600">{completed}</span>
-                                                        {failed > 0 && (
-                                                            <>
-                                                                <AlertCircle className="w-3 h-3 text-red-500 ml-2" />
-                                                                <span className="font-bold text-red-600">{failed}</span>
-                                                            </>
-                                                        )}
-                                                    </div>
-                                                );
-                                            }
-                                            return null;
-                                        })()}
-                                    </td>
-                                    <td className="px-10 py-8 text-right">
-                                        <div className="flex items-center justify-end space-x-2">
-                                            <button
-                                                onClick={() => fetchStatus(campaign.id)}
-                                                className="w-12 h-12 flex items-center justify-center bg-muted/50 text-muted-foreground hover:text-primary hover:bg-muted rounded-2xl transition-all group/info"
-                                                title="View Status"
-                                            >
-                                                <Info className="w-5 h-5 group-hover/info:scale-110 transition-transform" />
-                                            </button>
-                                            <button
-                                                onClick={() => toggleStatus(campaign.id, campaign.status)}
-                                                className={cn(
-                                                    "w-12 h-12 flex items-center justify-center rounded-2xl transition-all shadow-soft",
-                                                    campaign.status === 'ACTIVE'
-                                                        ? "bg-amber-500/10 text-amber-600 hover:bg-amber-500/20"
-                                                        : "bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20"
-                                                )}
-                                            >
-                                                {campaign.status === 'ACTIVE' ? (
-                                                    <Pause className="w-5 h-5 fill-current" />
-                                                ) : (
-                                                    <Play className="w-5 h-5 fill-current ml-1" />
-                                                )}
-                                            </button>
-                                            <button
-                                                onClick={() => deleteCampaign(campaign.id)}
-                                                className="w-12 h-12 flex items-center justify-center bg-muted/50 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-2xl transition-all group/del"
-                                                title="Delete Campaign"
-                                            >
-                                                <Trash2 className="w-5 h-5 group-hover/del:scale-110 transition-transform" />
-                                            </button>
-                                            <Link
-                                                href={`/campaigns/${campaign.id}/builder`}
-                                                className="w-12 h-12 flex items-center justify-center bg-muted/50 text-muted-foreground hover:bg-muted rounded-2xl transition-all"
-                                            >
-                                                <MoreVertical className="w-5 h-5" />
-                                            </Link>
-                                        </div>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-
-                {/* Mobile view */}
-                <div className="md:hidden divide-y divide-border">
+                    {/* Table */}
                     {filteredCampaigns.length === 0 ? (
-                        <div className="p-10 text-center">
-                            <h3 className="text-lg font-black text-foreground uppercase tracking-tight">Empty Ecosystem</h3>
-                            <p className="text-muted-foreground text-xs mt-1">No iterations found.</p>
-                            <Link href="/campaigns/new/builder" className="inline-flex mt-6 bg-primary text-primary-foreground px-6 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest">
-                                Start Campaign
-                            </Link>
-                        </div>
-                    ) : filteredCampaigns.map((campaign) => (
-                        <div key={campaign.id} className="p-6 space-y-6">
-                            <div className="flex justify-between items-start">
-                                <Link href={`/campaigns/${campaign.id}`} className="min-w-0 flex-1">
-                                    <h4 className="text-base font-black text-foreground uppercase truncate tracking-tight">{campaign.name}</h4>
-                                    <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mt-0.5">ID: {campaign.id.slice(0, 8)}</p>
-                                </Link>
-                                <span className={cn(
-                                    "text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-widest border shrink-0",
-                                    campaign.status === 'ACTIVE' ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20'
-                                        : campaign.status === 'QUEUED' ? 'bg-blue-500/10 text-blue-600 border-blue-500/20'
-                                        : 'bg-muted text-muted-foreground'
-                                )}>
-                                    {campaign.status}{campaign.status === 'QUEUED' && campaign.queuePosition ? ` #${campaign.queuePosition}` : ''}
-                                </span>
-                            </div>
-                            <div className="flex items-center justify-between">
-                                <div className="space-y-1">
-                                    <p className="text-[9px] font-black text-muted-foreground uppercase opacity-50">Engine Status</p>
-                                    <div className="flex items-center space-x-2">
-                                        <div className="w-20 h-1 bg-muted rounded-full">
-                                            <div className="h-full bg-emerald-500 w-full" />
-                                        </div>
-                                        <span className="text-[9px] font-black text-emerald-500 uppercase">100%</span>
-                                    </div>
-                                </div>
-                                <div className="flex items-center space-x-2">
-                                    <button
-                                        onClick={() => fetchStatus(campaign.id)}
-                                        className="w-10 h-10 flex items-center justify-center bg-muted/50 text-muted-foreground rounded-xl"
-                                    >
-                                        <Info className="w-4 h-4" />
-                                    </button>
-                                    <button
-                                        onClick={() => toggleStatus(campaign.id, campaign.status)}
-                                        className={cn(
-                                            "w-10 h-10 flex items-center justify-center rounded-xl",
-                                            campaign.status === 'ACTIVE' ? "bg-amber-500/10 text-amber-600" : "bg-emerald-500/10 text-emerald-600"
-                                        )}
-                                    >
-                                        {campaign.status === 'ACTIVE' ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current ml-0.5" />}
-                                    </button>
-                                    <button
-                                        onClick={() => deleteCampaign(campaign.id)}
-                                        className="w-10 h-10 flex items-center justify-center bg-muted/50 text-muted-foreground rounded-xl"
-                                    >
-                                        <Trash2 className="w-4 h-4" />
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    ))}
+                        <EmptyState
+                            icon={Target}
+                            title={filter === 'ALL' ? 'No campaigns yet' : `No ${filter.toLowerCase()} campaigns`}
+                            description={filter === 'ALL' ? 'Start from a prebuilt template or build your own — your campaigns will appear here.' : 'Try a different filter, or start a new campaign.'}
+                            action={<Button onClick={() => setView('templates')}><LayoutTemplate className="w-4 h-4" />Browse templates</Button>}
+                        />
+                    ) : (
+                        <Card className="overflow-hidden">
+                            <table className="w-full text-[13px]">
+                                <thead>
+                                    <tr className="border-b border-line">
+                                        <th className="text-left label px-5 py-3">Campaign</th>
+                                        <th className="text-left label px-5 py-3">Status</th>
+                                        <th className="text-left label px-5 py-3 hidden sm:table-cell">Leads</th>
+                                        <th className="px-5 py-3"></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {filteredCampaigns.map((campaign) => {
+                                        const tone = campaign.status === 'ACTIVE' ? 'success' : campaign.status === 'QUEUED' ? 'info' : campaign.status === 'PAUSED' ? 'warning' : 'neutral';
+                                        const leadCount = campaign._count?.CampaignLead ?? campaign.leadCount ?? null;
+                                        return (
+                                            <tr key={campaign.id} className="border-b border-line last:border-0 hover:bg-[#faf9ff] transition-colors">
+                                                <td className="px-5 py-4">
+                                                    <Link href={`/campaigns/${campaign.id}`} className="block group">
+                                                        <span className="font-semibold text-foreground group-hover:text-brand transition-colors">{campaign.name}</span>
+                                                        <span className="block text-[11px] text-ink-400 font-medium mt-0.5">ID {campaign.id.slice(0, 8)}</span>
+                                                    </Link>
+                                                </td>
+                                                <td className="px-5 py-4">
+                                                    <div className="flex items-center gap-2">
+                                                        <Badge tone={tone} dot>
+                                                            {campaign.status.charAt(0) + campaign.status.slice(1).toLowerCase()}{campaign.status === 'QUEUED' && campaign.queuePosition ? ` #${campaign.queuePosition}` : ''}
+                                                        </Badge>
+                                                        {(campaign.status === 'ACTIVE' || campaign.status === 'QUEUED') && <CampaignEta campaignId={campaign.id} />}
+                                                    </div>
+                                                </td>
+                                                <td className="px-5 py-4 num hidden sm:table-cell">{leadCount ?? '—'}</td>
+                                                <td className="px-5 py-4">
+                                                    <div className="flex gap-1 justify-end">
+                                                        <button onClick={() => toggleStatus(campaign.id, campaign.status)} title={campaign.status === 'ACTIVE' ? 'Pause' : 'Start'} className={cn('w-8 h-8 rounded-control grid place-items-center transition-colors', campaign.status === 'ACTIVE' ? 'text-amber-600 hover:bg-amber-50' : 'text-emerald-600 hover:bg-emerald-50')}>{campaign.status === 'ACTIVE' ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}</button>
+                                                        <Link href={`/campaigns/${campaign.id}/builder`} title="Edit" className="w-8 h-8 rounded-control grid place-items-center text-ink-400 hover:bg-surface hover:text-foreground transition-colors"><Wrench className="w-4 h-4" /></Link>
+                                                        <button onClick={() => deleteCampaign(campaign.id)} title="Delete" className="w-8 h-8 rounded-control grid place-items-center text-ink-400 hover:bg-red-50 hover:text-red-600 transition-colors"><Trash2 className="w-4 h-4" /></button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </Card>
+                    )}
+
+                    {/* Templates nudge */}
+                    <div className="rounded-card bg-gradient-to-r from-brand-50 to-white border border-brand-100 p-4 pl-5 flex items-center gap-4">
+                        <div className="w-9 h-9 rounded-control bg-card text-brand grid place-items-center shrink-0 shadow-soft"><LayoutTemplate className="w-4 h-4" /></div>
+                        <p className="text-[13px] font-medium text-ink-700 flex-1">Not sure where to start? <b>{templates.length} prebuilt templates</b> — launch in one click.</p>
+                        <Button variant="outline" size="sm" onClick={() => setView('templates')}>Browse templates →</Button>
+                    </div>
                 </div>
-            </div>
+            )}
 
             {/* Status Panel Modal */}
             <AnimatePresence>
@@ -1051,6 +971,13 @@ const removeLeadFromCampaign = async (campaignId: string, leadId: string) => {
                 defaultName={pendingCreate?.defaultName || 'New Campaign'}
                 onConfirm={handleConfirmCreate}
                 onCancel={() => setPendingCreate(null)}
+            />
+
+            <CampaignNameModal
+                isOpen={!!pendingTemplate}
+                defaultName={pendingTemplate?.name || 'New Campaign'}
+                onConfirm={handleTemplateConfirm}
+                onCancel={() => setPendingTemplate(null)}
             />
         </div>
     );

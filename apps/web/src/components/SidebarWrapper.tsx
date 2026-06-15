@@ -1,7 +1,8 @@
 'use client';
 
 import { usePathname } from 'next/navigation';
-import { TopNav } from './TopNav';
+import { Sidebar } from './Sidebar';
+import { AppHeader } from './AppHeader';
 import { AccountHealthBanner } from './AccountHealthBanner';
 
 export function SidebarWrapper({ children }: { children: React.ReactNode }) {
@@ -11,14 +12,22 @@ export function SidebarWrapper({ children }: { children: React.ReactNode }) {
   if (isAuthPage) return <>{children}</>;
 
   return (
-    <div className="min-h-screen bg-muted/30 flex flex-col">
-      <TopNav />
-      <AccountHealthBanner />
-      <main className="flex-1">
-        <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8 lg:py-10 max-w-[1800px]">
-          {children}
-        </div>
-      </main>
+    <div className="h-screen flex bg-surface overflow-hidden">
+      {/* Left sidebar — hidden on small screens (mobile nav is a follow-up) */}
+      <div className="hidden lg:flex flex-shrink-0 h-full">
+        <Sidebar />
+      </div>
+
+      {/* Main column */}
+      <div className="flex-1 min-w-0 flex flex-col h-full">
+        <AppHeader />
+        <AccountHealthBanner />
+        <main className="flex-1 overflow-y-auto">
+          <div className="px-6 lg:px-8 2xl:px-12 py-6 lg:py-8">
+            {children}
+          </div>
+        </main>
+      </div>
     </div>
   );
 }

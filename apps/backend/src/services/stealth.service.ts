@@ -1,4 +1,9 @@
-import type { Page, Locator } from 'patchright';
+import type { Page, Locator, ElementHandle } from 'patchright';
+
+// Callers pass either a selector string, a Locator, or an ElementHandle (from
+// page.$ / page.$$). All three expose boundingBox()/click(), so the helpers
+// work on any of them — the union keeps the types honest.
+type ClickTarget = string | Locator | ElementHandle<SVGElement | HTMLElement>;
 
 const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
 export const randomRange = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1) + min);
@@ -6,7 +11,7 @@ export const randomRange = (min: number, max: number) => Math.floor(Math.random(
 /**
  * Moves the mouse in a human-like (non-linear) way to an element and clicks it.
  */
-export const humanMoveAndClick = async (page: Page, target: string | Locator) => {
+export const humanMoveAndClick = async (page: Page, target: ClickTarget) => {
     try {
         const element = typeof target === 'string' ? page.locator(target).first() : target;
         const box = await element.boundingBox();
@@ -30,7 +35,7 @@ export const humanMoveAndClick = async (page: Page, target: string | Locator) =>
 /**
  * Types text with human-like rhythm, including occasional typos and corrections.
  */
-export const humanType = async (page: Page, target: string | Locator, text: string) => {
+export const humanType = async (page: Page, target: ClickTarget, text: string) => {
     try {
         const box = typeof target === 'string' ? page.locator(target).first() : target;
         // `waitFor` only exists on a Locator. Callers also pass ElementHandles

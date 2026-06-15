@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { Loader2 } from 'lucide-react';
+import { LoadingScreen } from '@/components/ui';
+import api from '@/lib/api';
 
 export function AuthWrapper({ children }: { children: React.ReactNode }) {
     const router = useRouter();
@@ -13,45 +14,64 @@ export function AuthWrapper({ children }: { children: React.ReactNode }) {
     const onboardingRoute = '/onboarding';
 
     useEffect(() => {
-        const token = localStorage.getItem('token');
-        const userStr = localStorage.getItem('user');
-        const user = userStr ? JSON.parse(userStr) : null;
+        let cancelled = false;
 
-        if (!token) {
-            if (!authRoutes.includes(pathname)) {
-                router.push('/login');
+        (async () => {
+            const token = localStorage.getItem('token');
+
+            if (!token) {
+                if (!authRoutes.includes(pathname)) router.push('/login');
+                setLoading(false);
+                return;
             }
+
+            // Already authenticated and sitting on a login/register page → home.
+            if (authRoutes.includes(pathname)) {
+                router.push('/');
+                return;
+            }
+
+            // Validate the token against the server and read the AUTHORITATIVE
+            // registrationStep from there — never trust a possibly-stale cached
+            // `user` blob. A stale token 401s here, which the api interceptor
+            // turns into a clean logout→/login (no confusing redirect loop); a
+            // valid token refreshes the cache so the onboarding gate is correct.
+            let registrationStep: string | undefined;
+            try {
+                const { data } = await api.get('/users/me');
+                if (cancelled) return;
+                registrationStep = data?.registrationStep;
+                try {
+                    const prev = JSON.parse(localStorage.getItem('user') || '{}');
+                    localStorage.setItem('user', JSON.stringify({ ...prev, ...data }));
+                } catch { /* ignore */ }
+            } catch {
+                // 401 is handled by the api interceptor (clears token → /login).
+                // For other errors, fall back to the cached value so a transient
+                // network blip doesn't lock the user out.
+                if (cancelled) return;
+                try {
+                    registrationStep = JSON.parse(localStorage.getItem('user') || '{}').registrationStep;
+                } catch { /* ignore */ }
+            }
+
+            if (registrationStep && registrationStep !== 'COMPLETED' && pathname !== onboardingRoute) {
+                router.push(onboardingRoute);
+                return;
+            }
+            if (registrationStep === 'COMPLETED' && pathname === onboardingRoute) {
+                router.push('/');
+                return;
+            }
+
             setLoading(false);
-            return;
-        }
+        })();
 
-        // If logged in
-        if (authRoutes.includes(pathname)) {
-            router.push('/');
-            return;
-        }
-
-        // Check onboarding status
-        if (user && user.registrationStep !== 'COMPLETED' && pathname !== onboardingRoute) {
-            router.push(onboardingRoute);
-            return;
-        }
-
-        // If completed onboarding but trying to access onboarding page
-        if (user && user.registrationStep === 'COMPLETED' && pathname === onboardingRoute) {
-            router.push('/');
-            return;
-        }
-
-        setLoading(false);
+        return () => { cancelled = true; };
     }, [pathname, router]);
 
     if (loading && !authRoutes.includes(pathname)) {
-        return (
-            <div className="h-screen w-full flex items-center justify-center bg-slate-50">
-                <Loader2 className="w-10 h-10 text-primary animate-spin" />
-            </div>
-        );
+        return <LoadingScreen fullScreen label="Signing you in…" />;
     }
 
     return <>{children}</>;

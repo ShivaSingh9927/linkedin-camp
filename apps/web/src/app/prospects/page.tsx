@@ -3,12 +3,11 @@
 import { useState, useEffect, useRef } from 'react';
 import {
     Search,
-    Filter,
     Linkedin,
     ChevronRight,
     ChevronDown,
     Plus,
-    Zap,
+    UserPlus,
     Loader2,
     Upload,
     Trash2,
@@ -16,21 +15,32 @@ import {
     Tag,
     List,
     Users,
+    Bookmark,
     FolderOpen,
-    Layers,
+    Rocket,
     ArrowUpRight,
     Database,
     Mail,
     Briefcase,
+    SlidersHorizontal,
+    ListPlus,
+    Circle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { degreeLabel, timeAgo } from '@/components/LeadEnrichmentDrawer';
-import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import api from '@/lib/api';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import ProspectTagPicker from '@/components/ProspectTagPicker';
+import {
+    Card,
+    Badge,
+    Button,
+    Avatar,
+    EmptyState,
+    PageHeader,
+} from '@/components/ui';
 
 function cn(...inputs: ClassValue[]) {
     return twMerge(clsx(inputs));
@@ -69,15 +79,22 @@ interface Campaign {
 
 const STATUS_OPTIONS = ['UNCONNECTED', 'INVITE_PENDING', 'CONNECTED', 'REPLIED', 'BOUNCED'];
 const GENDER_OPTIONS = ['male', 'female']; // Lowercase to match data
+const DEGREE_OPTIONS = ['1', '2', '3']; // connectionDegree
+const IMPORT_DATE_OPTIONS = ['today', '7d', '30d']; // client-side createdAt windows
 
-const FILTER_PILLS = [
-    { key: 'status', label: 'Status', icon: '🔵' },
-    { key: 'campaignId', label: 'Campaign', icon: '🚀' },
-    { key: 'tags', label: 'Segments', icon: '🏷️' },
-    { key: 'botAction', label: 'Bot Activity', icon: '🤖' },
-    { key: 'gender', label: 'Gender', icon: '👤' },
-    { key: 'hasEmail', label: 'Email', icon: '✉️' },
-    { key: 'country', label: 'Country', icon: '🌍' },
+// Primary pills shown inline; the rest live behind "More".
+const PRIMARY_PILLS = [
+    { key: 'status', label: 'Status' },
+    { key: 'connectionDegree', label: 'Connection' },
+    { key: 'campaignId', label: 'Campaign' },
+    { key: 'hasEmail', label: 'Has email' },
+];
+const MORE_PILLS = [
+    { key: 'country', label: 'Country' },
+    { key: 'gender', label: 'Gender' },
+    { key: 'jobTitle', label: 'Job title' },
+    { key: 'company', label: 'Company' },
+    { key: 'createdWindow', label: 'Import date' },
 ];
 
 interface SmartList {
@@ -115,17 +132,18 @@ export default function LeadsPage() {
     const initialCompany = searchParams.get('company');
 
     // Sidebar: list-based navigation
-    const [activeList, setActiveList] = useState<string | null>(null); // null = "All Prospects"
+    const [activeList, setActiveList] = useState<string | null>(null); // null = "All prospects"
 
     // Filters
     const [activeFilter, setActiveFilter] = useState<string | null>(null);
     const [filters, setFilters] = useState<Record<string, string>>({});
+    const [showMoreFilters, setShowMoreFilters] = useState(false);
 
     useEffect(() => {
         fetchLeads();
         fetchCampaigns();
         fetchSmartLists();
-        
+
         if (initialCompany) {
             setSearchQuery(initialCompany);
         }
@@ -204,7 +222,6 @@ export default function LeadsPage() {
     };
 
     const handleManualLeadSubmit = async (e: React.FormEvent) => {
-        // ... (existing submit logic)
         e.preventDefault();
         setActionLoading(true);
         try {
@@ -236,7 +253,7 @@ export default function LeadsPage() {
     const handleBulkTag = async () => {
         const trimmed = bulkTagInput.trim();
         if (!trimmed) return;
-        
+
         setActionLoading(true);
         try {
             await api.post('/leads/bulk-tags', {
@@ -244,7 +261,7 @@ export default function LeadsPage() {
                 tags: [trimmed],
                 operation: 'ADD'
             });
-            
+
             // Optimistic Update: Update tags for all selected leads in state
             setLeads(prev => prev.map(l => {
                 if (selectedLeads.has(l.id)) {
@@ -254,7 +271,7 @@ export default function LeadsPage() {
                 }
                 return l;
             }));
-            
+
             setShowBulkTagModal(false);
             setBulkTagInput('');
             setSelectedLeads(new Set());
@@ -283,15 +300,21 @@ export default function LeadsPage() {
         const file = event.target.files?.[0];
         if (!file) return;
 
+        // Use the file name (without extension) as the list name, so the import
+        // lands in its own browsable list in the rail.
+        const listName = file.name.replace(/\.[^.]+$/, '').trim();
+
         const formData = new FormData();
         formData.append('file', file);
+        if (listName) formData.append('listName', listName);
 
         setActionLoading(true);
         try {
             const response = await api.post('/leads/upload', formData, {
                 headers: { 'Content-Type': 'multipart/form-data' }
             });
-            alert(`Success! ${response.data.count} leads imported.`);
+            const d = response.data;
+            toast.success(`Imported ${d.importedTotal ?? d.count ?? 0} prospects${listName ? ` into "${listName}"` : ''}${d.duplicatesSkipped ? ` · ${d.duplicatesSkipped} duplicates skipped` : ''}.`);
             fetchLeads();
         } catch (error) {
             console.error('Upload failed:', error);
@@ -374,6 +397,20 @@ export default function LeadsPage() {
         }
     };
 
+    const handleBulkDelete = async () => {
+        if (selectedLeads.size === 0) return;
+        if (!confirm(`Delete ${selectedLeads.size} prospect(s)?`)) return;
+        const ids = Array.from(selectedLeads);
+        try {
+            await Promise.all(ids.map(id => api.delete(`/leads/${id}`)));
+            setLeads(prev => prev.filter(l => !selectedLeads.has(l.id)));
+            setSelectedLeads(new Set());
+        } catch (error) {
+            console.error('Bulk delete failed:', error);
+            alert('Failed to delete some prospects.');
+        }
+    };
+
     const setFilter = (key: string, value: string) => {
         setFilters(prev => {
             if (prev[key] === value) {
@@ -400,9 +437,12 @@ export default function LeadsPage() {
     };
 
     // ─── Derived data ───
-    // Get unique tags across all leads (for sidebar lists)
+    // Lists are derived from tags (excluding bot:* tags).
     const uniqueTags = [...new Set(leads.flatMap(l => l.tags || []))].sort();
+    const listTags = uniqueTags.filter(t => !t.startsWith('bot:'));
     const uniqueCountries = [...new Set(leads.map(l => l.country).filter(Boolean))].sort();
+    const uniqueJobTitles = [...new Set(leads.map(l => l.jobTitle).filter(Boolean))].sort();
+    const uniqueCompanies = [...new Set(leads.map(l => l.company).filter(Boolean))].sort();
 
     // Count leads per tag
     const tagCounts = uniqueTags.reduce((acc, tag) => {
@@ -414,6 +454,18 @@ export default function LeadsPage() {
     const listFilteredLeads = activeList
         ? leads.filter(lead => (lead.tags || []).includes(activeList))
         : leads;
+
+    // Helper: import-date window match
+    const matchesCreatedWindow = (createdAt: string, window: string) => {
+        const created = new Date(createdAt).getTime();
+        if (Number.isNaN(created)) return false;
+        const now = Date.now();
+        const day = 24 * 60 * 60 * 1000;
+        if (window === 'today') return now - created < day;
+        if (window === '7d') return now - created < 7 * day;
+        if (window === '30d') return now - created < 30 * day;
+        return true;
+    };
 
     // Step 2: Apply search + filters on top of list-filtered leads
     const filteredLeads = listFilteredLeads.filter(lead => {
@@ -429,100 +481,144 @@ export default function LeadsPage() {
         if (filters.status && lead.status !== filters.status) return false;
         // Campaign Membership
         if (filters.campaignId && !lead.campaignLeads?.some(cl => (cl.campaign as any).id === filters.campaignId)) return false;
+        // Connection degree
+        if (filters.connectionDegree && String(lead.connectionDegree ?? '') !== filters.connectionDegree) return false;
         // Gender (case-insensitive comparison)
         if (filters.gender && lead.gender?.toLowerCase() !== filters.gender.toLowerCase()) return false;
         // Tags filter (additional tag filter on top of sidebar list)
         if (filters.tags && !(lead.tags || []).includes(filters.tags)) return false;
-        // Bot Action
-        if (filters.botAction && !(lead.tags || []).includes(`bot:${filters.botAction}`)) return false;
         // Has Email
         if (filters.hasEmail === 'yes' && !lead.email) return false;
         if (filters.hasEmail === 'no' && lead.email) return false;
         // Country
         if (filters.country && lead.country !== filters.country) return false;
+        // Job title
+        if (filters.jobTitle && lead.jobTitle !== filters.jobTitle) return false;
+        // Company
+        if (filters.company && lead.company !== filters.company) return false;
+        // Import date window
+        if (filters.createdWindow && !matchesCreatedWindow(lead.createdAt, filters.createdWindow)) return false;
 
         return true;
     });
 
-    const statusColor = (status: string) => {
+    const statusTone = (status: string): 'success' | 'warning' | 'info' | 'danger' | 'neutral' => {
         switch (status) {
-            case 'CONNECTED': return 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20';
-            case 'INVITE_PENDING': return 'bg-amber-500/10 text-amber-600 border-amber-500/20';
-            case 'REPLIED': return 'bg-blue-500/10 text-blue-600 border-blue-500/20';
-            case 'BOUNCED': return 'bg-red-500/10 text-red-600 border-red-500/20';
-            default: return 'bg-muted text-muted-foreground border-border';
+            case 'CONNECTED': return 'success';
+            case 'INVITE_PENDING': return 'warning';
+            case 'REPLIED': return 'info';
+            case 'BOUNCED': return 'danger';
+            default: return 'neutral';
         }
     };
 
     const filterDisplayValue = (key: string, value: string) => {
         if (key === 'hasEmail') return value === 'yes' ? 'Has email' : 'No email';
         if (key === 'gender') return value.charAt(0).toUpperCase() + value.slice(1);
-        if (key === 'status') return value.replace('_', ' ');
+        if (key === 'status') return value.replace('_', ' ').toLowerCase().replace(/^\w/, c => c.toUpperCase());
         if (key === 'campaignId') return campaigns.find(c => c.id === value)?.name || 'Campaign';
-        if (key === 'botAction') return value.replace('_', ' ');
+        if (key === 'connectionDegree') return `${value}${value === '1' ? 'st' : value === '2' ? 'nd' : 'rd'}`;
+        if (key === 'createdWindow') return value === 'today' ? 'Today' : value === '7d' ? 'Last 7 days' : 'Last 30 days';
         return value;
     };
 
     if (loading) return (
         <div className="flex h-[60vh] items-center justify-center">
-            <Loader2 className="w-10 h-10 text-primary animate-spin" />
+            <Loader2 className="w-9 h-9 text-brand animate-spin" />
         </div>
     );
 
-    return (
-        <div className="min-h-[calc(100vh-64px)] bg-[#F8FAFC] p-8 lg:p-12 animate-in fade-in duration-500">
-            <div className="max-w-[1600px] mx-auto space-y-10">
-                {/* ─── Ecosystem Navigator (Horizontal Chips) ─── */}
-                {smartLists.length > 0 && (
-                    <div className="flex items-center space-x-2 overflow-x-auto pb-4 sm:pb-6 scrollbar-hide -mx-4 px-4 sm:mx-0 sm:px-0">
-                        {/* Smart Lists Chips */}
-                        {smartLists.map(list => (
-                            <button
-                                key={list.id}
-                                onClick={() => { setFilters(list.filters); setActiveList(null); setSelectedLeads(new Set()); }}
-                                className={cn(
-                                    "px-4 sm:px-8 py-3 sm:py-4 rounded-2xl sm:rounded-[1.5rem] text-[10px] sm:text-[11px] font-black uppercase tracking-widest transition-all flex items-center space-x-2 sm:space-x-3 whitespace-nowrap border-2 group shadow-soft flex-shrink-0",
-                                    JSON.stringify(filters) === JSON.stringify(list.filters)
-                                        ? "bg-primary/10 text-primary border-primary/20 scale-[1.02] sm:scale-[1.05] z-10"
-                                        : "bg-white text-muted-foreground hover:bg-muted border-transparent"
-                                )}
-                            >
-                                <Zap className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                                <span>{list.name}</span>
-                                <Trash2 
-                                    className="w-3 h-3 sm:w-3.5 sm:h-3.5 ml-1 sm:ml-2 opacity-0 group-hover:opacity-100 hover:text-red-500 transition-all" 
-                                    onClick={(e) => deleteSmartList(list.id, e)}
-                                />
-                            </button>
+    // Render a single filter pill + its dropdown
+    const renderPill = (fp: { key: string; label: string }) => {
+        const isActive = !!filters[fp.key];
+        return (
+            <div key={fp.key} className="relative filter-dropdown-container flex-shrink-0">
+                <button
+                    onClick={() => setActiveFilter(activeFilter === fp.key ? null : fp.key)}
+                    className={cn(
+                        "px-3 py-2.5 rounded-control border text-[13px] font-semibold transition-all flex items-center gap-1.5",
+                        isActive
+                            ? "bg-brand text-white border-brand shadow-lift"
+                            : "bg-white text-ink-700 border-line hover:border-brand-200"
+                    )}
+                >
+                    {fp.key === 'status' && !isActive && <Circle className="w-3.5 h-3.5 text-blue-500" />}
+                    {fp.key === 'campaignId' && !isActive && <Rocket className="w-3.5 h-3.5 text-ink-400" />}
+                    {fp.key === 'hasEmail' && !isActive && <Mail className="w-3.5 h-3.5 text-ink-400" />}
+                    <span>{fp.label}</span>
+                    {isActive ? (
+                        <span className="bg-white/20 px-1.5 py-0.5 rounded-chip text-[11px]">
+                            {filterDisplayValue(fp.key, filters[fp.key])}
+                        </span>
+                    ) : (
+                        <ChevronDown className="w-3 h-3 opacity-50" />
+                    )}
+                </button>
+
+                {activeFilter === fp.key && (
+                    <div className="absolute top-full left-0 mt-2 bg-white border border-line rounded-card shadow-lift z-50 p-2 min-w-[200px] max-h-[320px] overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-150">
+                        {fp.key === 'status' && STATUS_OPTIONS.map(s => {
+                            const count = listFilteredLeads.filter(l => l.status === s).length;
+                            return (
+                                <DropdownOption key={s} active={filters.status === s} onClick={() => setFilter('status', s)} label={s.replace('_', ' ')} count={count} />
+                            );
+                        })}
+                        {fp.key === 'connectionDegree' && DEGREE_OPTIONS.map(d => {
+                            const count = listFilteredLeads.filter(l => String(l.connectionDegree ?? '') === d).length;
+                            return (
+                                <DropdownOption key={d} active={filters.connectionDegree === d} onClick={() => setFilter('connectionDegree', d)} label={degreeLabel(Number(d)) || `${d}`} count={count} />
+                            );
+                        })}
+                        {fp.key === 'campaignId' && campaigns.map(c => {
+                            const count = listFilteredLeads.filter(l => l.campaignLeads?.some(cl => (cl.campaign as any).id === c.id)).length;
+                            return (
+                                <DropdownOption key={c.id} active={filters.campaignId === c.id} onClick={() => setFilter('campaignId', c.id)} label={c.name} count={count} />
+                            );
+                        })}
+                        {fp.key === 'hasEmail' && ['yes', 'no'].map(v => (
+                            <DropdownOption key={v} active={filters.hasEmail === v} onClick={() => setFilter('hasEmail', v)} label={v === 'yes' ? 'Has email' : 'No email'} />
                         ))}
+                        {fp.key === 'country' && uniqueCountries.map(c => {
+                            const count = listFilteredLeads.filter(l => l.country === c).length;
+                            return (
+                                <DropdownOption key={c} active={filters.country === c} onClick={() => setFilter('country', c)} label={c} count={count} />
+                            );
+                        })}
+                        {fp.key === 'gender' && GENDER_OPTIONS.map(g => (
+                            <DropdownOption key={g} active={filters.gender === g} onClick={() => setFilter('gender', g)} label={g.charAt(0).toUpperCase() + g.slice(1)} />
+                        ))}
+                        {fp.key === 'jobTitle' && uniqueJobTitles.map(t => {
+                            const count = listFilteredLeads.filter(l => l.jobTitle === t).length;
+                            return (
+                                <DropdownOption key={t} active={filters.jobTitle === t} onClick={() => setFilter('jobTitle', t)} label={t} count={count} />
+                            );
+                        })}
+                        {fp.key === 'company' && uniqueCompanies.map(c => {
+                            const count = listFilteredLeads.filter(l => l.company === c).length;
+                            return (
+                                <DropdownOption key={c} active={filters.company === c} onClick={() => setFilter('company', c)} label={c} count={count} />
+                            );
+                        })}
+                        {fp.key === 'createdWindow' && IMPORT_DATE_OPTIONS.map(w => {
+                            const count = listFilteredLeads.filter(l => matchesCreatedWindow(l.createdAt, w)).length;
+                            return (
+                                <DropdownOption key={w} active={filters.createdWindow === w} onClick={() => setFilter('createdWindow', w)} label={filterDisplayValue('createdWindow', w)} count={count} />
+                            );
+                        })}
                     </div>
                 )}
+            </div>
+        );
+    };
 
-                {/* ─── Main Interface Container ─── */}
-                <div className="bg-white rounded-[2rem] sm:rounded-[4rem] shadow-premium border border-border/40 overflow-hidden flex flex-col min-h-[600px] sm:min-h-[800px]">
-                {/* Header Section */}
-                <div className="p-6 sm:p-8 lg:p-10 border-b border-border bg-white/50 backdrop-blur-sm">
-                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-8 sm:mb-10">
-                        <div className="space-y-1">
-                            <div className="flex items-center space-x-3 mb-1">
-                                <span className="bg-primary/10 text-primary px-2 sm:px-3 py-1 rounded-full text-[9px] sm:text-[10px] font-black uppercase tracking-[0.2em]">Live Database</span>
-                                {activeList && <span className="text-muted-foreground">/</span>}
-                                {activeList && <span className="bg-emerald-500/10 text-emerald-600 px-2 sm:px-3 py-1 rounded-full text-[9px] sm:text-[10px] font-black uppercase tracking-[0.2em]">{activeList}</span>}
-                            </div>
-                            <h2 className="text-2xl sm:text-4xl font-black text-foreground uppercase tracking-tight italic leading-none">
-                                {activeList ? activeList : 'Global Prospects'}
-                            </h2>
-                        </div>
-
-                        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-                            <button
-                                onClick={() => { fetchLeads(); fetchCampaigns(); fetchSmartLists(); toast.success('Ecosystem updated'); }}
-                                className="flex items-center space-x-2 bg-white border border-border px-4 sm:px-6 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl font-black text-muted-foreground hover:text-primary hover:border-primary/30 transition-all shadow-soft text-[9px] sm:text-[10px] uppercase tracking-widest group"
-                            >
-                                <Zap className={cn("w-3.5 h-3.5 sm:w-4 sm:h-4", actionLoading && "animate-spin")} />
-                                <span className="hidden xs:inline">Refresh</span>
-                            </button>
-
+    return (
+        <div className="animate-in fade-in duration-300">
+            <div>
+                <PageHeader
+                    title="Prospects"
+                    subtitle={`${leads.length.toLocaleString()} ${leads.length === 1 ? 'person' : 'people'} across ${listTags.length} ${listTags.length === 1 ? 'list' : 'lists'}. Filter, tag, and add them to campaigns.`}
+                    actions={
+                        <>
                             <input
                                 type="file"
                                 ref={fileInputRef}
@@ -530,622 +626,522 @@ export default function LeadsPage() {
                                 accept=".csv"
                                 className="hidden"
                             />
-                            <button
-                                onClick={() => setShowManualModal(true)}
-                                className="flex items-center space-x-2 bg-indigo-50 border border-indigo-100 px-4 sm:px-6 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl font-black text-indigo-600 hover:bg-indigo-100 transition-all shadow-soft text-[9px] sm:text-[10px] uppercase tracking-widest"
-                            >
-                                <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                                <span>Add Lead</span>
-                            </button>
+                            <Button variant="outline" onClick={() => setShowManualModal(true)}>
+                                <UserPlus className="w-4 h-4" />
+                                Add manually
+                            </Button>
+                            <Button onClick={() => fileInputRef.current?.click()} disabled={actionLoading}>
+                                {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                                Import list
+                            </Button>
+                        </>
+                    }
+                />
 
-                            <button
-                                onClick={() => fileInputRef.current?.click()}
-                                className="flex items-center space-x-2 bg-white border border-border px-4 sm:px-6 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl font-black text-muted-foreground hover:text-foreground hover:border-primary/30 transition-all shadow-soft text-[9px] sm:text-[10px] uppercase tracking-widest"
-                            >
-                                {actionLoading ? <Loader2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-spin" /> : <Upload className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
-                                <span className="hidden xs:inline">Import Data</span>
-                                <ChevronDown className="w-3 h-3 opacity-50" />
-                            </button>
-
-                            {selectedLeads.size > 0 && (
-                                <div className="flex items-center gap-2 sm:gap-3 animate-in fade-in slide-in-from-right-4 duration-300 w-full xs:w-auto mt-2 xs:mt-0">
-                                    <button
-                                        onClick={() => setShowBulkTagModal(true)}
-                                        className="flex-1 xs:flex-none flex items-center justify-center space-x-2 bg-indigo-50 border border-indigo-200 text-indigo-700 px-4 sm:px-6 py-2.5 sm:py-3.5 rounded-xl sm:rounded-2xl font-black hover:bg-indigo-100 transition-all shadow-soft text-[9px] sm:text-[10px] uppercase tracking-[0.1em] group"
-                                    >
-                                        <Tag className="w-3.5 h-3.5 sm:w-4 sm:h-4 group-hover:scale-110 transition-transform" />
-                                        <span>Segment {selectedLeads.size}</span>
-                                    </button>
-
-                                    <button
-                                        onClick={() => setShowAssignModal(true)}
-                                        className="flex-1 xs:flex-none flex items-center justify-center space-x-2 bg-primary text-primary-foreground px-4 sm:px-8 py-2.5 sm:py-3.5 rounded-xl sm:rounded-2xl font-black hover:bg-primary/90 transition-all shadow-xl shadow-primary/20 text-[9px] sm:text-[10px] uppercase tracking-[0.1em] group"
-                                    >
-                                        <Layers className="w-3.5 h-3.5 sm:w-4 sm:h-4 group-hover:rotate-12 transition-transform" />
-                                        <span>Sync {selectedLeads.size}</span>
-                                    </button>
-                                </div>
-                            )}
-
-                            {selectedLeads.size === 0 && leads.length === 0 && !loading && (
+                <div className="grid grid-cols-1 lg:grid-cols-[230px_1fr] gap-6">
+                    {/* ─── LISTS RAIL ─── */}
+                    <aside className="space-y-5">
+                        <div>
+                            <div className="label mb-2 px-1">Lists</div>
+                            <div className="space-y-0.5">
                                 <button
-                                    onClick={generateDemo}
-                                    disabled={actionLoading}
-                                    className="flex items-center space-x-3 bg-slate-100 text-slate-900 border border-slate-200 px-6 py-3 rounded-2xl font-black hover:bg-slate-200 transition-all shadow-soft text-[10px] uppercase tracking-widest"
+                                    onClick={() => { setActiveList(null); setSelectedLeads(new Set()); }}
+                                    className={cn(
+                                        "w-full flex items-center justify-between px-3 py-2 rounded-control text-[13px] font-semibold transition-colors",
+                                        activeList === null ? "bg-brand text-white" : "text-ink-700 hover:bg-white"
+                                    )}
                                 >
-                                    {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
-                                    <span>Bootstrap Demo</span>
+                                    <span className="flex items-center gap-2"><Users className="w-4 h-4" />All prospects</span>
+                                    <span className={activeList === null ? "opacity-80" : "text-ink-400"}>{leads.length}</span>
                                 </button>
-                            )}
+                                {listTags.map(tag => (
+                                    <button
+                                        key={tag}
+                                        onClick={() => { setActiveList(tag); setSelectedLeads(new Set()); }}
+                                        className={cn(
+                                            "w-full flex items-center justify-between px-3 py-2 rounded-control text-[13px] font-semibold transition-colors",
+                                            activeList === tag ? "bg-brand text-white" : "text-ink-700 hover:bg-white"
+                                        )}
+                                    >
+                                        <span className="flex items-center gap-2 min-w-0">
+                                            <List className={cn("w-4 h-4 flex-shrink-0", activeList === tag ? "text-white/80" : "text-ink-400")} />
+                                            <span className="truncate">{tag}</span>
+                                        </span>
+                                        <span className={activeList === tag ? "opacity-80" : "text-ink-400"}>{tagCounts[tag]}</span>
+                                    </button>
+                                ))}
+                            </div>
                         </div>
-                    </div>
-                    
-                    {/* Search & Global Controls */}
-                    <div className="flex flex-col md:flex-row gap-4">
-                        <div className="flex-1 relative group">
-                            <Search className="absolute left-6 top-1/2 -translate-y-1/2 w-4 h-4 sm:w-5 sm:h-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
-                            <input
-                                type="text"
-                                placeholder="Search Name, Company, LinkedIn..."
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                className="w-full pl-12 sm:pl-14 pr-6 py-3 sm:py-4.5 border border-border bg-muted/20 rounded-xl sm:rounded-[1.5rem] focus:outline-none focus:ring-4 focus:ring-primary/5 focus:border-primary/30 transition-all font-bold text-xs sm:text-sm"
-                            />
-                        </div>
-                    </div>
-                </div>
 
-                {/* Main Table Interface */}
-                <div className="flex-1 overflow-hidden flex flex-col">
-                    {/* Control Bar */}
-                    <div className="px-4 sm:px-8 py-4 border-b border-border bg-muted/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                        <div className="flex items-center space-x-2 sm:space-x-3 overflow-x-auto pb-2 sm:pb-0 scrollbar-hide -mx-2 px-2 sm:mx-0 sm:px-0">
-                            {FILTER_PILLS.map((fp) => {
-                                const isActive = !!filters[fp.key];
-                                return (
-                                    <div key={fp.key} className="relative filter-dropdown-container flex-shrink-0">
+                        <div>
+                            <div className="label mb-2 px-1 flex items-center justify-between">
+                                <span>Saved views</span>
+                                <button
+                                    onClick={() => setShowSaveSmartListModal(true)}
+                                    className="text-ink-400 hover:text-brand transition-colors"
+                                    title="Save current filters as a view"
+                                >
+                                    <Plus className="w-3.5 h-3.5" />
+                                </button>
+                            </div>
+                            <div className="space-y-0.5">
+                                {smartLists.length === 0 ? (
+                                    <p className="px-3 py-2 text-[12px] font-medium text-ink-400">No saved views yet.</p>
+                                ) : smartLists.map(list => {
+                                    const isActive = JSON.stringify(filters) === JSON.stringify(list.filters);
+                                    return (
                                         <button
-                                            onClick={() => setActiveFilter(activeFilter === fp.key ? null : fp.key)}
+                                            key={list.id}
+                                            onClick={() => { setFilters(list.filters); setActiveList(null); setSelectedLeads(new Set()); }}
                                             className={cn(
-                                                "px-3 sm:px-4 py-1.5 sm:py-2 rounded-full border text-[8px] sm:text-[9px] font-black uppercase tracking-widest transition-all flex items-center space-x-1.5 sm:space-x-2",
-                                                isActive
-                                                    ? "bg-primary text-primary-foreground border-primary shadow-lg shadow-primary/10"
-                                                    : "bg-white text-muted-foreground border-border hover:border-primary/40"
+                                                "group w-full flex items-center justify-between px-3 py-2 rounded-control text-[13px] font-semibold transition-colors",
+                                                isActive ? "bg-brand text-white" : "text-ink-700 hover:bg-white"
                                             )}
                                         >
-                                            <span>{fp.label}</span>
-                                            {isActive && (
-                                                <span className="bg-white/20 px-1.5 sm:px-2 py-0.5 rounded-full ml-1">
-                                                    {filterDisplayValue(fp.key, filters[fp.key])}
-                                                </span>
-                                            )}
-                                            {!isActive && <ChevronDown className="w-2.5 h-2.5 sm:w-3 sm:h-3 opacity-50" />}
+                                            <span className="flex items-center gap-2 min-w-0">
+                                                <Bookmark className={cn("w-4 h-4 flex-shrink-0", isActive ? "text-white/80" : "text-ink-400")} />
+                                                <span className="truncate">{list.name}</span>
+                                            </span>
+                                            <Trash2
+                                                className={cn("w-3.5 h-3.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-all", isActive ? "hover:text-red-200" : "hover:text-red-500")}
+                                                onClick={(e) => deleteSmartList(list.id, e)}
+                                            />
                                         </button>
-
-                                        {activeFilter === fp.key && (
-                                            <div className="absolute top-full left-0 mt-2 bg-background border border-border rounded-[1.5rem] sm:rounded-[2rem] shadow-2xl z-50 p-2 sm:p-3 min-w-[180px] sm:min-w-[200px] animate-in fade-in slide-in-from-top-2 duration-200">
-                                                {fp.key === 'status' && STATUS_OPTIONS.map(s => {
-                                                    const count = listFilteredLeads.filter(l => l.status === s).length;
-                                                    return (
-                                                        <button
-                                                            key={s}
-                                                            onClick={() => setFilter('status', s)}
-                                                            className={cn(
-                                                                "w-full flex items-center justify-between text-left px-4 py-2.5 sm:px-5 sm:py-3 text-[9px] sm:text-[10px] font-black uppercase tracking-widest rounded-xl sm:rounded-2xl transition-all mb-1",
-                                                                filters.status === s ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"
-                                                            )}
-                                                        >
-                                                            <span>{s.replace('_', ' ')}</span>
-                                                            <span className="opacity-40">{count}</span>
-                                                        </button>
-                                                    );
-                                                })}
-                                                {/* Other filter options simplified for mobile if needed, but keeping logic */}
-                                                {fp.key === 'campaignId' && campaigns.map(c => {
-                                                    const count = listFilteredLeads.filter(l => l.campaignLeads?.some(cl => (cl.campaign as any).id === c.id)).length;
-                                                    return (
-                                                        <button key={c.id} onClick={() => setFilter('campaignId', c.id)} className={cn("w-full flex items-center justify-between text-left px-5 py-3 text-[10px] font-black uppercase tracking-widest rounded-2xl transition-all mb-1", filters.campaignId === c.id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted")}>
-                                                            <span className="truncate pr-2">{c.name}</span>
-                                                            <span className="opacity-40 flex-shrink-0">{count}</span>
-                                                        </button>
-                                                    );
-                                                })}
-                                                {fp.key === 'tags' && uniqueTags.filter(t => !t.startsWith('bot:')).map(t => {
-                                                    const count = tagCounts[t] || 0;
-                                                    return (
-                                                        <button key={t} onClick={() => setFilter('tags', t)} className={cn("w-full flex items-center justify-between text-left px-5 py-3 text-[10px] font-black uppercase tracking-widest rounded-2xl transition-all mb-1", filters.tags === t ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted")}>
-                                                            <span>{t}</span>
-                                                            <span className="opacity-40">{count}</span>
-                                                        </button>
-                                                    );
-                                                })}
-                                                {fp.key === 'botAction' && ['invite_sent', 'messaged'].map(a => {
-                                                    const tag = `bot:${a}`;
-                                                    const count = tagCounts[tag] || 0;
-                                                    return (
-                                                        <button key={a} onClick={() => setFilter('botAction', a)} className={cn("w-full flex items-center justify-between text-left px-5 py-3 text-[10px] font-black uppercase tracking-widest rounded-2xl transition-all mb-1", filters.botAction === a ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted")}>
-                                                            <span>{a.replace('_', ' ')}</span>
-                                                            <span className="opacity-40">{count}</span>
-                                                        </button>
-                                                    );
-                                                })}
-                                                {fp.key === 'country' && uniqueCountries.map(c => {
-                                                    const count = listFilteredLeads.filter(l => l.country === c).length;
-                                                    return (
-                                                        <button key={c} onClick={() => setFilter('country', c)} className={cn("w-full flex items-center justify-between text-left px-5 py-3 text-[10px] font-black uppercase tracking-widest rounded-2xl transition-all mb-1", filters.country === c ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted")}>
-                                                            <span>{c}</span>
-                                                            <span className="opacity-40">{count}</span>
-                                                        </button>
-                                                    );
-                                                })}
-                                                {fp.key === 'gender' && GENDER_OPTIONS.map(g => (
-                                                    <button key={g} onClick={() => setFilter('gender', g)} className={cn("w-full text-left px-5 py-3 text-[10px] font-black uppercase tracking-widest rounded-2xl transition-all mb-1", filters.gender === g ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted")}>
-                                                        {g}
-                                                    </button>
-                                                ))}
-                                                {fp.key === 'hasEmail' && ['yes', 'no'].map(v => (
-                                                    <button key={v} onClick={() => setFilter('hasEmail', v)} className={cn("w-full text-left px-5 py-3 text-[10px] font-black uppercase tracking-widest rounded-2xl transition-all mb-1", filters.hasEmail === v ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted")}>
-                                                        {v === 'yes' ? 'Verified Email' : 'No Email'}
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        )}
-                                    </div>
-                                );
-                            })}
+                                    );
+                                })}
+                            </div>
                         </div>
+                    </aside>
 
-                        <div className="flex items-center justify-between sm:justify-end gap-3">
-                            <div className="text-[9px] sm:text-[10px] font-black text-muted-foreground uppercase tracking-widest opacity-50 px-2">
-                                {filteredLeads.length} Ident Units
+                    {/* ─── MAIN ─── */}
+                    <div className="space-y-4">
+                        {/* Search + filters */}
+                        <div className="flex items-center gap-2 flex-wrap">
+                            <div className="relative flex-1 min-w-[220px]">
+                                <Search className="w-4 h-4 text-ink-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                                <input
+                                    placeholder="Search name, company, title…"
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    className="w-full bg-white border border-line rounded-control pl-9 pr-3 py-2.5 text-[13px] font-medium outline-none focus:ring-2 focus:ring-brand/30"
+                                />
+                            </div>
+                            {PRIMARY_PILLS.map(renderPill)}
+                            <div className="relative filter-dropdown-container flex-shrink-0">
+                                <button
+                                    onClick={() => setShowMoreFilters(v => !v)}
+                                    className={cn(
+                                        "px-3 py-2.5 rounded-control border text-[13px] font-semibold transition-all flex items-center gap-1.5",
+                                        showMoreFilters || MORE_PILLS.some(p => filters[p.key])
+                                            ? "bg-white text-ink-700 border-brand-200"
+                                            : "bg-white text-ink-400 border-line hover:border-brand-200"
+                                    )}
+                                >
+                                    <SlidersHorizontal className="w-3.5 h-3.5" />
+                                    More
+                                </button>
                             </div>
                             {Object.keys(filters).length > 0 && (
                                 <button
                                     onClick={clearFilters}
-                                    className="px-3 py-1.5 rounded-full text-[8px] sm:text-[9px] font-black text-red-500 hover:bg-red-50 transition-colors uppercase tracking-widest flex items-center space-x-1"
+                                    className="px-2.5 py-1.5 text-[12px] font-semibold text-red-500 hover:bg-red-50 rounded-chip transition-colors flex items-center gap-1"
                                 >
-                                    <X className="w-2.5 h-2.5" />
-                                    <span>Reset</span>
+                                    <X className="w-3 h-3" />
+                                    Reset
                                 </button>
                             )}
                         </div>
-                    </div>
 
-                    {/* Table View */}
-                    <div className="flex-1 overflow-x-auto scrollbar-hide">
-                        <table className="w-full text-left min-w-[1400px]">
-                            <thead className="sticky top-0 bg-white/10 backdrop-blur-md text-[9px] font-black border-b border-border text-muted-foreground uppercase tracking-[0.2em] z-20">
-                                <tr>
-                                    <th className="px-6 py-6 w-12">
-                                        <div className="flex items-center justify-center">
-                                            <input
-                                                type="checkbox"
-                                                className="rounded-lg border-2 border-border text-primary focus:ring-primary w-5 h-5 transition-all cursor-pointer"
-                                                checked={filteredLeads.length > 0 && selectedLeads.size === filteredLeads.length}
-                                                onChange={toggleSelectAll}
-                                            />
-                                        </div>
-                                    </th>
-                                    <th className="px-6 py-6 min-w-[250px]">Identity</th>
-                                    <th className="px-6 py-6 min-w-[200px]">Organization</th>
-                                    <th className="px-6 py-6 min-w-[200px]">E-Mail</th>
-                                    <th className="px-6 py-6 w-[120px]">Status</th>
-                                    <th className="px-6 py-6 min-w-[180px]">In Campaign</th>
-                                    <th className="px-6 py-6 min-w-[250px]">Segments</th>
-                                    <th className="px-6 py-6 text-right w-[140px]">Nexus</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-border/50">
-                                {filteredLeads.length === 0 ? (
-                                    <tr>
-                                        <td colSpan={7} className="p-32 text-center">
-                                            <div className="max-w-md mx-auto space-y-6 opacity-40">
-                                                <div className="w-24 h-24 bg-muted rounded-[3rem] flex items-center justify-center mx-auto border-4 border-dashed border-muted-foreground/20">
-                                                    <Search className="w-10 h-10" />
-                                                </div>
-                                                <div>
-                                                    <h3 className="text-xl font-black text-foreground uppercase tracking-tight">Zero Collision Detected</h3>
-                                                    <p className="text-sm font-bold mt-1 text-muted-foreground uppercase tracking-widest leading-relaxed">Adjust your scanning parameters or import new prospects to populating the ecosystem.</p>
-                                                </div>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ) : filteredLeads.map((lead) => (
-                                    <tr
-                                        key={lead.id}
-                                        className={cn(
-                                            "hover:bg-muted/30 transition-all cursor-pointer group",
-                                            selectedLeads.has(lead.id) && "bg-primary/5",
-                                            selectedLead?.id === lead.id && "bg-primary/10 border-l-4 border-l-primary"
-                                        )}
-                                        onClick={() => setSelectedLead(lead)}
-                                    >
-                                        <td className="px-6 py-7" onClick={(e) => e.stopPropagation()}>
-                                            <div className="flex items-center justify-center">
-                                                <input
-                                                    type="checkbox"
-                                                    className="rounded-lg border-2 border-border text-primary focus:ring-primary w-5 h-5 transition-all cursor-pointer"
-                                                    checked={selectedLeads.has(lead.id)}
-                                                    onChange={() => toggleSelectLead(lead.id)}
-                                                />
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-7">
-                                            <div className="flex items-center space-x-4">
-                                                <div className="w-12 h-12 rounded-[1.25rem] bg-muted flex items-center justify-center font-black text-primary text-sm shadow-soft border border-border group-hover:scale-105 transition-transform">
-                                                    {lead.firstName.charAt(0)}{lead.lastName.charAt(0)}
-                                                </div>
-                                                <div className="min-w-0 flex-1">
-                                                    <div className="flex items-center gap-2">
-                                                        <p className="text-sm font-black text-foreground uppercase tracking-tight group-hover:text-primary transition-colors truncate">{lead.firstName} {lead.lastName}</p>
-                                                        {degreeLabel(lead.connectionDegree) && (
-                                                            <span className="text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded-full bg-blue-500/10 text-blue-600 border border-blue-500/20">{degreeLabel(lead.connectionDegree)}</span>
-                                                        )}
-                                                        {lead.enrichedAt && (
-                                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" title={`Enriched ${timeAgo(lead.enrichedAt)}`} />
-                                                        )}
-                                                    </div>
-                                                    <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-0.5 truncate max-w-[300px]">{lead.jobTitle || lead.headline || 'Human Resource'}</p>
-                                                </div>
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-7">
-                                            <p className="text-xs font-black text-foreground/80 uppercase tracking-tight">{lead.company || '—'}</p>
-                                            <div className="flex items-center space-x-2 mt-1 opacity-50">
-                                                <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">{lead.location || lead.country || 'Global'}</span>
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-7">
-                                            {lead.email ? (
-                                                <div className="flex items-center space-x-2">
-                                                    <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-sm shadow-emerald-500/50" />
-                                                    <span className="text-xs font-bold text-muted-foreground">{lead.email}</span>
-                                                </div>
-                                            ) : (
-                                                <span className="text-[9px] font-black text-muted-foreground/30 uppercase tracking-[0.2em] italic">Encrypted</span>
-                                            )}
-                                        </td>
-                                        <td className="px-6 py-7">
-                                            <span className={cn(
-                                                "text-[9px] font-black px-4 py-1.5 rounded-full uppercase tracking-widest border shadow-sm",
-                                                statusColor(lead.status)
-                                            )}>
-                                                {lead.status.replace('_', ' ')}
-                                            </span>
-                                        </td>
-                                        <td className="px-6 py-7">
-                                            <div className="flex flex-col gap-1">
-                                                {lead.campaignLeads && lead.campaignLeads.length > 0 ? (
-                                                    lead.campaignLeads.map((cl, i) => (
-                                                        <span key={i} className="text-[9px] font-black text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded uppercase tracking-tighter truncate max-w-[200px]" title={cl.campaign.name}>
-                                                            {cl.campaign.name}
-                                                        </span>
-                                                    ))
-                                                ) : (
-                                                    <span className="text-[9px] font-bold text-muted-foreground/30 uppercase">Not Assigned</span>
-                                                )}
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-7">
-                                            <div className="flex flex-wrap gap-1.5 max-w-[300px]">
-                                                {lead.tags?.length > 0 ? lead.tags.slice(0, 2).map(tag => (
-                                                    <span key={tag} className="text-[8px] font-black bg-muted text-foreground/60 border border-border px-2 py-0.5 rounded-md uppercase tracking-widest">
-                                                        {tag}
-                                                    </span>
-                                                )) : <span className="text-[9px] text-muted-foreground/30 font-black">UNSEGMENTED</span>}
-                                                {lead.tags?.length > 2 && <span className="text-[8px] font-black bg-primary/10 text-primary px-1.5 py-0.5 rounded-md">+{lead.tags.length - 2}</span>}
-                                            </div>
-                                            <div onClick={(e) => e.stopPropagation()}>
-                                                <ProspectTagPicker
-                                                    leadId={lead.id}
-                                                    currentTags={lead.tags || []}
-                                                    allAvailableTags={uniqueTags}
-                                                    onTagsUpdated={(newTags) => {
-                                                        setLeads(prev => prev.map(l => l.id === lead.id ? { ...l, tags: newTags } : l));
-                                                    }}
-                                                />
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-7 text-right">
-                                            <div className="flex items-center justify-end space-x-2">
-                                                {lead.linkedinUrl && (
-                                                    <a
-                                                        href={lead.linkedinUrl}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        className="w-10 h-10 flex items-center justify-center rounded-[1rem] bg-muted text-muted-foreground hover:text-primary hover:bg-primary/10 hover:border-primary/20 transition-all border border-transparent shadow-soft"
-                                                        onClick={(e) => e.stopPropagation()}
-                                                    >
-                                                        <ArrowUpRight className="w-5 h-5" />
-                                                    </a>
-                                                )}
-                                                <button
-                                                    onClick={(e) => handleEnrich(lead.id, e)}
-                                                    className="w-10 h-10 flex items-center justify-center rounded-[1rem] bg-indigo-50 text-indigo-500 hover:text-indigo-700 hover:bg-indigo-100 transition-all border border-indigo-100 shadow-soft group/enrich"
-                                                    title="Deep Enrichment Scanning"
+                        {/* Secondary (More) filter pills */}
+                        {showMoreFilters && (
+                            <div className="flex items-center gap-2 flex-wrap">
+                                {MORE_PILLS.map(renderPill)}
+                            </div>
+                        )}
+
+                        {/* Bulk action bar */}
+                        {selectedLeads.size > 0 && (
+                            <div className="bg-ink-900 text-white rounded-control px-4 py-2.5 flex items-center gap-3 animate-in fade-in slide-in-from-top-2 duration-200">
+                                <span className="text-[13px] font-semibold">{selectedLeads.size} selected</span>
+                                <div className="w-px h-5 bg-white/20" />
+                                <button onClick={() => setShowAssignModal(true)} className="text-[13px] font-semibold flex items-center gap-1.5 hover:text-brand-200 transition-colors">
+                                    <Rocket className="w-4 h-4" />Add to campaign
+                                </button>
+                                <button onClick={() => setShowBulkTagModal(true)} className="text-[13px] font-semibold flex items-center gap-1.5 hover:text-brand-200 transition-colors">
+                                    <Tag className="w-4 h-4" />Tag
+                                </button>
+                                <button onClick={() => setShowBulkTagModal(true)} className="text-[13px] font-semibold flex items-center gap-1.5 hover:text-brand-200 transition-colors">
+                                    <ListPlus className="w-4 h-4" />Move to list
+                                </button>
+                                <button onClick={handleBulkDelete} className="text-[13px] font-semibold flex items-center gap-1.5 hover:text-red-300 transition-colors ml-auto">
+                                    <Trash2 className="w-4 h-4" />Delete
+                                </button>
+                            </div>
+                        )}
+
+                        {/* Table */}
+                        {filteredLeads.length === 0 ? (
+                            <EmptyState
+                                icon={Search}
+                                title="No prospects match"
+                                description={leads.length === 0
+                                    ? "You haven't imported any prospects yet. Import a list or add someone manually to get started."
+                                    : "Try clearing filters or adjusting your search."}
+                                action={leads.length === 0
+                                    ? <Button onClick={() => fileInputRef.current?.click()}><Upload className="w-4 h-4" />Import list</Button>
+                                    : <Button variant="outline" onClick={() => { clearFilters(); setSearchQuery(''); setActiveList(null); }}>Clear filters</Button>}
+                            />
+                        ) : (
+                            <Card className="overflow-hidden">
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-[13px]">
+                                        <thead>
+                                            <tr className="border-b border-line">
+                                                <th className="w-10 pl-4">
+                                                    <input
+                                                        type="checkbox"
+                                                        className="rounded border-line text-brand focus:ring-brand/30 w-4 h-4 cursor-pointer"
+                                                        checked={filteredLeads.length > 0 && selectedLeads.size === filteredLeads.length}
+                                                        onChange={toggleSelectAll}
+                                                    />
+                                                </th>
+                                                <th className="text-left label px-4 py-3">Name</th>
+                                                <th className="text-left label px-4 py-3">Title &amp; company</th>
+                                                <th className="text-left label px-4 py-3">Status</th>
+                                                <th className="text-left label px-4 py-3">Lists</th>
+                                                <th className="px-4 py-3" />
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {filteredLeads.map((lead) => (
+                                                <tr
+                                                    key={lead.id}
+                                                    onClick={() => setSelectedLead(lead)}
+                                                    className={cn(
+                                                        "border-b border-line last:border-0 hover:bg-brand-50/40 transition-colors cursor-pointer group",
+                                                        selectedLeads.has(lead.id) && "bg-brand-50/60",
+                                                        selectedLead?.id === lead.id && "bg-brand-50"
+                                                    )}
                                                 >
-                                                    <Database className="w-4 h-4 group-hover/enrich:scale-110 transition-transform" />
-                                                </button>
-                                                <button
-                                                    onClick={(e) => handleDeleteLead(lead.id, e)}
-                                                    className="w-10 h-10 flex items-center justify-center rounded-[1rem] bg-muted/50 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all group/del shadow-soft"
-                                                >
-                                                    <Trash2 className="w-4 h-4 group-hover/del:scale-110 transition-transform" />
-                                                </button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
+                                                    <td className="pl-4" onClick={(e) => e.stopPropagation()}>
+                                                        <input
+                                                            type="checkbox"
+                                                            className="rounded border-line text-brand focus:ring-brand/30 w-4 h-4 cursor-pointer"
+                                                            checked={selectedLeads.has(lead.id)}
+                                                            onChange={() => toggleSelectLead(lead.id)}
+                                                        />
+                                                    </td>
+                                                    <td className="px-4 py-3.5">
+                                                        <div className="flex items-center gap-3">
+                                                            <Avatar name={`${lead.firstName} ${lead.lastName}`} size="md" />
+                                                            <div className="min-w-0">
+                                                                <div className="font-semibold text-foreground flex items-center gap-1.5">
+                                                                    <span className="truncate">{lead.firstName} {lead.lastName}</span>
+                                                                    {degreeLabel(lead.connectionDegree) && (
+                                                                        <Badge tone="neutral" className="!px-1.5 !py-0.5 !text-[10px]">{degreeLabel(lead.connectionDegree)}</Badge>
+                                                                    )}
+                                                                    {lead.enrichedAt && (
+                                                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 flex-shrink-0" title={`Enriched ${timeAgo(lead.enrichedAt)}`} />
+                                                                    )}
+                                                                </div>
+                                                                {lead.email && (
+                                                                    <div className="text-[12px] text-ink-400 truncate max-w-[240px]">{lead.email}</div>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-4 py-3.5">
+                                                        <div className="font-medium text-ink-700 truncate max-w-[260px]">{lead.jobTitle || lead.headline || '—'}</div>
+                                                        <div className="text-[12px] text-ink-400 truncate max-w-[260px]">{lead.company || lead.location || lead.country || '—'}</div>
+                                                    </td>
+                                                    <td className="px-4 py-3.5">
+                                                        <Badge tone={statusTone(lead.status)}>{lead.status.replace('_', ' ').toLowerCase().replace(/^\w/, c => c.toUpperCase())}</Badge>
+                                                    </td>
+                                                    <td className="px-4 py-3.5">
+                                                        <div className="flex flex-wrap items-center gap-1.5 max-w-[240px]">
+                                                            {(lead.tags || []).filter(t => !t.startsWith('bot:')).slice(0, 2).map(tag => (
+                                                                <Badge key={tag} tone="neutral">{tag}</Badge>
+                                                            ))}
+                                                            {(lead.tags || []).filter(t => !t.startsWith('bot:')).length > 2 && (
+                                                                <Badge tone="brand">+{(lead.tags || []).filter(t => !t.startsWith('bot:')).length - 2}</Badge>
+                                                            )}
+                                                            <div onClick={(e) => e.stopPropagation()}>
+                                                                <ProspectTagPicker
+                                                                    leadId={lead.id}
+                                                                    currentTags={lead.tags || []}
+                                                                    allAvailableTags={uniqueTags}
+                                                                    onTagsUpdated={(newTags) => {
+                                                                        setLeads(prev => prev.map(l => l.id === lead.id ? { ...l, tags: newTags } : l));
+                                                                    }}
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-4 py-3.5 text-right">
+                                                        <div className="flex gap-1 justify-end">
+                                                            <button
+                                                                onClick={(e) => { e.stopPropagation(); setSelectedLeads(new Set([lead.id])); setShowAssignModal(true); }}
+                                                                className="w-8 h-8 rounded-control bg-surface hover:bg-brand-50 hover:text-brand grid place-items-center text-ink-500 transition-colors"
+                                                                title="Add to campaign"
+                                                            >
+                                                                <Plus className="w-4 h-4" />
+                                                            </button>
+                                                            <button
+                                                                onClick={(e) => handleEnrich(lead.id, e)}
+                                                                className="w-8 h-8 rounded-control hover:bg-surface grid place-items-center text-ink-400 transition-colors"
+                                                                title="Enrich"
+                                                            >
+                                                                <Database className="w-4 h-4" />
+                                                            </button>
+                                                            <button
+                                                                onClick={(e) => handleDeleteLead(lead.id, e)}
+                                                                className="w-8 h-8 rounded-control hover:bg-red-50 hover:text-red-500 grid place-items-center text-ink-400 transition-colors"
+                                                                title="Delete"
+                                                            >
+                                                                <Trash2 className="w-4 h-4" />
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </Card>
+                        )}
+
+                        {filteredLeads.length > 0 && (
+                            <div className="flex items-center justify-between text-[12px] font-medium text-ink-400 px-1">
+                                <span>Showing {filteredLeads.length} of {leads.length}</span>
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
-        </div>
 
             {/* MODAL: Save Smart List */}
             {showSaveSmartListModal && (
-                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[150] flex items-center justify-center p-4">
-                    <div className="bg-background border border-border w-full max-w-md rounded-[2.5rem] shadow-2xl overflow-hidden p-10 animate-in zoom-in-95 duration-200">
-                        <div className="w-16 h-16 bg-primary/10 rounded-3xl flex items-center justify-center mb-6 text-primary">
-                            <Zap className="w-8 h-8" />
+                <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[150] flex items-center justify-center p-4">
+                    <Card panel className="w-full max-w-md p-8 animate-in zoom-in-95 duration-150">
+                        <div className="w-12 h-12 bg-brand-50 rounded-control grid place-items-center mb-5 text-brand">
+                            <Bookmark className="w-6 h-6" />
                         </div>
-                        <h2 className="text-3xl font-black text-foreground uppercase tracking-tight italic mb-2">Save List</h2>
-                        <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest mb-8">Save these filters for instant access</p>
+                        <h2 className="text-xl font-bold tracking-tight text-foreground">Save view</h2>
+                        <p className="text-[13px] font-medium text-ink-500 mt-1 mb-6">Save these filters for quick access.</p>
 
-                        <div className="space-y-6">
-                            <div className="space-y-2">
-                                <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest px-2">List Designation</label>
-                                <input
-                                    type="text"
-                                    placeholder="e.g. Connected High Intent"
-                                    className="w-full px-6 py-4 bg-muted/30 border border-border rounded-2xl focus:outline-none focus:ring-4 focus:ring-primary/5 font-bold"
-                                    value={smartListName}
-                                    onChange={(e) => setSmartListName(e.target.value)}
-                                    autoFocus
-                                />
-                            </div>
+                        <div className="space-y-2">
+                            <label className="label">View name</label>
+                            <input
+                                type="text"
+                                placeholder="e.g. Connected high intent"
+                                className="w-full bg-white border border-line rounded-control px-4 py-2.5 text-[13px] font-medium outline-none focus:ring-2 focus:ring-brand/30"
+                                value={smartListName}
+                                onChange={(e) => setSmartListName(e.target.value)}
+                                autoFocus
+                            />
                         </div>
 
-                        <div className="flex gap-3 mt-10">
-                            <button
-                                onClick={() => setShowSaveSmartListModal(false)}
-                                className="flex-1 py-4 px-6 rounded-2xl font-black text-[10px] uppercase tracking-widest text-muted-foreground hover:bg-muted transition-all border border-border"
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                onClick={handleSaveSmartList}
-                                disabled={!smartListName.trim() || actionLoading}
-                                className="flex-3 py-4 px-10 rounded-2xl font-black text-[10px] uppercase tracking-widest text-primary-foreground bg-primary hover:bg-primary/90 transition-all shadow-xl shadow-primary/20 disabled:opacity-50"
-                            >
-                                {actionLoading ? 'Saving...' : 'Solidify List'}
-                            </button>
+                        <div className="flex gap-2 mt-7">
+                            <Button variant="outline" className="flex-1" onClick={() => setShowSaveSmartListModal(false)}>Cancel</Button>
+                            <Button className="flex-1" onClick={handleSaveSmartList} disabled={!smartListName.trim() || actionLoading}>
+                                {actionLoading ? 'Saving…' : 'Save view'}
+                            </Button>
                         </div>
-                    </div>
+                    </Card>
                 </div>
             )}
 
-            {/* Campaign Sync Modal */}
+            {/* Add to campaign modal */}
             {showAssignModal && (
                 <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
-                    <div className="absolute inset-0 bg-slate-950/40 backdrop-blur-xl animate-in fade-in duration-300" onClick={() => setShowAssignModal(false)} />
-                    <div className="bg-background w-full max-w-lg rounded-[3.5rem] shadow-2xl border border-white/20 p-12 relative z-[120] animate-in zoom-in-95 slide-in-from-bottom-8 duration-300 text-center">
-                        <div className="w-20 h-20 bg-primary/10 rounded-[2.5rem] flex items-center justify-center mx-auto mb-6">
-                            <Layers className="w-10 h-10 text-primary" />
+                    <div className="absolute inset-0 bg-black/40 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setShowAssignModal(false)} />
+                    <Card panel className="w-full max-w-lg p-8 relative z-[120] animate-in zoom-in-95 duration-150">
+                        <div className="w-12 h-12 bg-brand-50 rounded-control grid place-items-center mb-5 text-brand">
+                            <Rocket className="w-6 h-6" />
                         </div>
-                        <h3 className="text-3xl font-black text-foreground uppercase tracking-tight italic">Initiate Sync</h3>
-                        <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest mt-2 mb-10">{selectedLeads.size} identified units ready for deployment.</p>
+                        <h3 className="text-xl font-bold tracking-tight text-foreground">Add to campaign</h3>
+                        <p className="text-[13px] font-medium text-ink-500 mt-1 mb-6">{selectedLeads.size} prospect{selectedLeads.size === 1 ? '' : 's'} selected.</p>
 
-                        <div className="space-y-3 mb-10 max-h-[300px] overflow-y-auto scrollbar-hide">
-                            {campaigns.map(campaign => (
+                        <div className="space-y-2 mb-6 max-h-[320px] overflow-y-auto">
+                            {campaigns.length === 0 ? (
+                                <p className="text-[13px] font-medium text-ink-400 py-6 text-center">No active campaigns.</p>
+                            ) : campaigns.map(campaign => (
                                 <button
                                     key={campaign.id}
                                     onClick={() => assignToCampaign(campaign.id)}
-                                    className="w-full flex items-center justify-between p-6 bg-muted/20 border-2 border-transparent hover:border-primary/30 hover:bg-white rounded-[2rem] transition-all group"
+                                    className="w-full flex items-center justify-between p-4 bg-surface border border-transparent hover:border-brand-200 hover:bg-white rounded-control transition-all group text-left"
                                 >
-                                    <div className="text-left">
-                                        <p className="font-black text-foreground uppercase tracking-tight group-hover:text-primary transition-colors leading-none">{campaign.name}</p>
-                                        <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.2em] mt-2 block opacity-50 italic">{campaign.status} ENGINE</span>
+                                    <div>
+                                        <p className="font-semibold text-foreground group-hover:text-brand transition-colors">{campaign.name}</p>
+                                        <Badge tone="neutral" className="mt-1.5">{campaign.status}</Badge>
                                     </div>
-                                    <ChevronRight className="w-6 h-6 text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition-all" />
+                                    <ChevronRight className="w-5 h-5 text-ink-400 group-hover:text-brand group-hover:translate-x-1 transition-all" />
                                 </button>
                             ))}
                         </div>
 
-                        <button
-                            onClick={() => setShowAssignModal(false)}
-                            className="w-full py-5 rounded-[2rem] bg-foreground text-background font-black uppercase text-xs tracking-[0.2em] hover:bg-foreground/90 transition-all active:scale-95"
-                        >
-                            Abort Sync
-                        </button>
-                    </div>
+                        <Button variant="outline" className="w-full" onClick={() => setShowAssignModal(false)}>Cancel</Button>
+                    </Card>
                 </div>
             )}
 
             {/* Bulk Tag Modal */}
             {showBulkTagModal && (
                 <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
-                    <div className="absolute inset-0 bg-slate-950/40 backdrop-blur-xl animate-in fade-in duration-300" onClick={() => setShowBulkTagModal(false)} />
-                    <div className="bg-background w-full max-w-lg rounded-[2.5rem] shadow-2xl border border-border p-10 relative z-[120] animate-in zoom-in-95 duration-200">
-                        <div className="text-center mb-10">
-                            <div className="w-16 h-16 bg-indigo-50 border border-indigo-100 rounded-3xl flex items-center justify-center mx-auto mb-6">
-                                <Tag className="w-8 h-8 text-indigo-600" />
-                            </div>
-                            <h3 className="text-2xl font-black text-foreground uppercase tracking-tight italic">Mass Segmentation</h3>
-                            <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mt-2 italic">Define segment for {selectedLeads.size} units.</p>
+                    <div className="absolute inset-0 bg-black/40 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setShowBulkTagModal(false)} />
+                    <Card panel className="w-full max-w-lg p-8 relative z-[120] animate-in zoom-in-95 duration-150">
+                        <div className="w-12 h-12 bg-brand-50 rounded-control grid place-items-center mb-5 text-brand">
+                            <Tag className="w-6 h-6" />
                         </div>
+                        <h3 className="text-xl font-bold tracking-tight text-foreground">Tag prospects</h3>
+                        <p className="text-[13px] font-medium text-ink-500 mt-1 mb-6">Add a tag to {selectedLeads.size} prospect{selectedLeads.size === 1 ? '' : 's'}. Tags also act as lists.</p>
 
-                        <div className="space-y-4 mb-10">
-                            <input
-                                autoFocus
-                                type="text"
-                                placeholder="Segment name..."
-                                value={bulkTagInput}
-                                onChange={(e) => setBulkTagInput(e.target.value)}
-                                className="w-full px-6 py-4 border border-border bg-muted/20 rounded-2xl focus:outline-none focus:border-primary/30 transition-all font-black text-sm uppercase"
-                            />
-                        </div>
+                        <input
+                            autoFocus
+                            type="text"
+                            placeholder="Tag name…"
+                            value={bulkTagInput}
+                            onChange={(e) => setBulkTagInput(e.target.value)}
+                            className="w-full bg-white border border-line rounded-control px-4 py-2.5 text-[13px] font-medium outline-none focus:ring-2 focus:ring-brand/30 mb-6"
+                        />
 
-                        <div className="grid grid-cols-2 gap-3">
-                            <button onClick={() => setShowBulkTagModal(false)} className="py-4 rounded-2xl bg-muted font-black uppercase text-[10px] tracking-widest">Cancel</button>
-                            <button onClick={handleBulkTag} disabled={actionLoading || !bulkTagInput.trim()} className="py-4 rounded-2xl bg-indigo-600 text-white font-black uppercase text-[10px] tracking-widest disabled:opacity-50">Apply</button>
+                        <div className="flex gap-2">
+                            <Button variant="outline" className="flex-1" onClick={() => setShowBulkTagModal(false)}>Cancel</Button>
+                            <Button className="flex-1" onClick={handleBulkTag} disabled={actionLoading || !bulkTagInput.trim()}>
+                                {actionLoading ? 'Applying…' : 'Apply tag'}
+                            </Button>
                         </div>
-                    </div>
+                    </Card>
                 </div>
             )}
 
             {/* Manual Add Modal */}
             {showManualModal && (
                 <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
-                    <div className="absolute inset-0 bg-slate-950/40 backdrop-blur-xl" onClick={() => setShowManualModal(false)} />
-                    <form onSubmit={handleManualLeadSubmit} className="bg-background w-full max-w-2xl rounded-[3rem] shadow-2xl border border-border p-12 relative z-[120] animate-in zoom-in-95 slide-in-from-bottom-8 duration-300 overflow-y-auto max-h-[90vh]">
-                        <div className="flex justify-between items-center mb-10">
-                            <div>
-                                <h3 className="text-3xl font-black text-foreground uppercase tracking-tight italic">New Intake</h3>
-                                <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mt-2">Manual unit registration.</p>
+                    <div className="absolute inset-0 bg-black/40 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setShowManualModal(false)} />
+                    <form onSubmit={handleManualLeadSubmit} className="relative z-[120] w-full max-w-2xl animate-in zoom-in-95 duration-150">
+                        <Card panel className="p-8 overflow-y-auto max-h-[90vh]">
+                            <div className="flex justify-between items-start mb-7">
+                                <div>
+                                    <h3 className="text-xl font-bold tracking-tight text-foreground">Add prospect</h3>
+                                    <p className="text-[13px] font-medium text-ink-500 mt-1">Add a single prospect manually.</p>
+                                </div>
+                                <button type="button" onClick={() => setShowManualModal(false)} className="w-9 h-9 rounded-control grid place-items-center text-ink-400 hover:bg-surface hover:text-foreground transition-colors">
+                                    <X className="w-5 h-5" />
+                                </button>
                             </div>
-                            <button type="button" onClick={() => setShowManualModal(false)} className="w-10 h-10 bg-muted rounded-xl flex items-center justify-center hover:text-red-500 transition-all">
-                                <X className="w-5 h-5" />
-                            </button>
-                        </div>
 
-                        <div className="grid grid-cols-2 gap-6 mb-10">
-                            <div className="space-y-2">
-                                <label className="text-[9px] font-black text-muted-foreground uppercase tracking-widest px-1">First Name</label>
-                                <input required type="text" value={manualLeadData.firstName} onChange={e => setManualLeadData({ ...manualLeadData, firstName: e.target.value })} className="w-full bg-muted/30 border border-border rounded-2xl px-5 py-4 font-bold text-sm focus:border-primary/30 outline-none" />
+                            <div className="grid grid-cols-2 gap-4 mb-7">
+                                <div className="space-y-1.5">
+                                    <label className="label">First name</label>
+                                    <input required type="text" value={manualLeadData.firstName} onChange={e => setManualLeadData({ ...manualLeadData, firstName: e.target.value })} className="w-full bg-white border border-line rounded-control px-4 py-2.5 text-[13px] font-medium outline-none focus:ring-2 focus:ring-brand/30" />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <label className="label">Last name</label>
+                                    <input required type="text" value={manualLeadData.lastName} onChange={e => setManualLeadData({ ...manualLeadData, lastName: e.target.value })} className="w-full bg-white border border-line rounded-control px-4 py-2.5 text-[13px] font-medium outline-none focus:ring-2 focus:ring-brand/30" />
+                                </div>
+                                <div className="col-span-2 space-y-1.5">
+                                    <label className="label">LinkedIn URL</label>
+                                    <input required type="url" value={manualLeadData.linkedinUrl} onChange={e => setManualLeadData({ ...manualLeadData, linkedinUrl: e.target.value })} className="w-full bg-white border border-line rounded-control px-4 py-2.5 text-[13px] font-medium outline-none focus:ring-2 focus:ring-brand/30" />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <label className="label">Job title</label>
+                                    <input type="text" value={manualLeadData.jobTitle} onChange={e => setManualLeadData({ ...manualLeadData, jobTitle: e.target.value })} className="w-full bg-white border border-line rounded-control px-4 py-2.5 text-[13px] font-medium outline-none focus:ring-2 focus:ring-brand/30" />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <label className="label">Company</label>
+                                    <input type="text" value={manualLeadData.company} onChange={e => setManualLeadData({ ...manualLeadData, company: e.target.value })} className="w-full bg-white border border-line rounded-control px-4 py-2.5 text-[13px] font-medium outline-none focus:ring-2 focus:ring-brand/30" />
+                                </div>
+                                <div className="col-span-2 space-y-1.5">
+                                    <label className="label">Tags (comma separated)</label>
+                                    <input type="text" value={manualLeadData.tags} onChange={e => setManualLeadData({ ...manualLeadData, tags: e.target.value })} placeholder="hot-lead, saas, enterprise" className="w-full bg-white border border-line rounded-control px-4 py-2.5 text-[13px] font-medium outline-none focus:ring-2 focus:ring-brand/30" />
+                                </div>
                             </div>
-                            <div className="space-y-2">
-                                <label className="text-[9px] font-black text-muted-foreground uppercase tracking-widest px-1">Last Name</label>
-                                <input required type="text" value={manualLeadData.lastName} onChange={e => setManualLeadData({ ...manualLeadData, lastName: e.target.value })} className="w-full bg-muted/30 border border-border rounded-2xl px-5 py-4 font-bold text-sm focus:border-primary/30 outline-none" />
-                            </div>
-                            <div className="col-span-2 space-y-2">
-                                <label className="text-[9px] font-black text-muted-foreground uppercase tracking-widest px-1">LinkedIn URL</label>
-                                <input required type="url" value={manualLeadData.linkedinUrl} onChange={e => setManualLeadData({ ...manualLeadData, linkedinUrl: e.target.value })} className="w-full bg-muted/30 border border-border rounded-2xl px-5 py-4 font-bold text-sm focus:border-primary/30 outline-none" />
-                            </div>
-                            <div className="space-y-2">
-                                <label className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] px-2">Job Title</label>
-                                <input
-                                    type="text"
-                                    value={manualLeadData.jobTitle}
-                                    onChange={e => setManualLeadData({ ...manualLeadData, jobTitle: e.target.value })}
-                                    className="w-full bg-muted/30 border border-border rounded-2xl px-5 py-4 font-bold text-sm focus:ring-2 focus:ring-primary/20 outline-none"
-                                />
-                            </div>
-                            <div className="space-y-2">
-                                <label className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] px-2">Company</label>
-                                <input
-                                    type="text"
-                                    value={manualLeadData.company}
-                                    onChange={e => setManualLeadData({ ...manualLeadData, company: e.target.value })}
-                                    className="w-full bg-muted/30 border border-border rounded-2xl px-5 py-4 font-bold text-sm focus:ring-2 focus:ring-primary/20 outline-none"
-                                />
-                            </div>
-                            <div className="col-span-2 space-y-2">
-                                <label className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] px-2">Tags (comma separated)</label>
-                                <input
-                                    type="text"
-                                    value={manualLeadData.tags}
-                                    onChange={e => setManualLeadData({ ...manualLeadData, tags: e.target.value })}
-                                    placeholder="hot-lead, saas, enterprise"
-                                    className="w-full bg-muted/30 border border-border rounded-2xl px-5 py-4 font-bold text-sm focus:ring-2 focus:ring-primary/20 outline-none"
-                                />
-                            </div>
-                        </div>
 
-                        <button
-                            type="submit"
-                            disabled={actionLoading}
-                            className="w-full py-5 rounded-[2rem] bg-primary text-primary-foreground font-black uppercase text-xs tracking-[0.2em] hover:bg-primary/90 transition-all shadow-xl shadow-primary/20 flex items-center justify-center space-x-3 active:scale-95"
-                        >
-                            {actionLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Plus className="w-5 h-5" />}
-                            <span>Complete Identification</span>
-                        </button>
+                            <Button type="submit" className="w-full" disabled={actionLoading}>
+                                {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                                Add prospect
+                            </Button>
+                        </Card>
                     </form>
                 </div>
             )}
+
             {/* LEAD DETAIL DRAWER */}
             {selectedLead && (
-                <div 
+                <div
                     className="fixed inset-0 z-[200] flex justify-end"
                     onClick={() => setSelectedLead(null)}
                 >
-                    <div className="absolute inset-0 bg-black/40 backdrop-blur-sm animate-in fade-in duration-300" />
-                    <div 
-                        className="relative w-full max-w-2xl bg-white h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-500"
+                    <div className="absolute inset-0 bg-black/40 backdrop-blur-sm animate-in fade-in duration-200" />
+                    <div
+                        className="relative w-full max-w-2xl bg-white h-full shadow-lift flex flex-col animate-in slide-in-from-right duration-300"
                         onClick={(e) => e.stopPropagation()}
                     >
                         {/* Drawer Header */}
-                        <div className="p-8 border-b border-border bg-gradient-to-br from-slate-50 to-white">
-                            <div className="flex items-center justify-between mb-8">
-                                <div className="flex items-center space-x-4">
-                                    <div className="w-16 h-16 rounded-[2rem] bg-indigo-500 text-white flex items-center justify-center text-2xl font-black shadow-xl">
-                                        {selectedLead.firstName.charAt(0)}{selectedLead.lastName.charAt(0)}
-                                    </div>
+                        <div className="p-8 border-b border-line bg-surface">
+                            <div className="flex items-start justify-between mb-6">
+                                <div className="flex items-center gap-4">
+                                    <Avatar name={`${selectedLead.firstName} ${selectedLead.lastName}`} size="lg" />
                                     <div>
                                         <div className="flex items-center gap-2">
-                                            <h2 className="text-3xl font-black text-slate-900 uppercase tracking-tight italic leading-none">{selectedLead.firstName} {selectedLead.lastName}</h2>
+                                            <h2 className="text-2xl font-bold tracking-tight text-foreground leading-none">{selectedLead.firstName} {selectedLead.lastName}</h2>
                                             {degreeLabel(selectedLead.connectionDegree) && (
-                                                <span className="text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600 border border-blue-500/20 not-italic">{degreeLabel(selectedLead.connectionDegree)}</span>
+                                                <Badge tone="info">{degreeLabel(selectedLead.connectionDegree)}</Badge>
                                             )}
                                         </div>
-                                        <p className="text-xs font-bold text-indigo-500 uppercase tracking-[0.2em] mt-2 italic">{[selectedLead.jobTitle, selectedLead.company].filter(Boolean).join(' · ') || selectedLead.headline || 'Human Resource'}</p>
+                                        <p className="text-[13px] font-medium text-ink-500 mt-2">{[selectedLead.jobTitle, selectedLead.company].filter(Boolean).join(' · ') || selectedLead.headline || '—'}</p>
                                         {(selectedLead.location || selectedLead.enrichedAt) && (
-                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1.5 not-italic flex items-center gap-2">
-                                                {selectedLead.location && <span>📍 {selectedLead.location}</span>}
-                                                {selectedLead.enrichedAt && <span className="text-emerald-600">✦ Enriched {timeAgo(selectedLead.enrichedAt)}</span>}
+                                            <p className="text-[12px] font-medium text-ink-400 mt-1 flex items-center gap-2">
+                                                {selectedLead.location && <span>{selectedLead.location}</span>}
+                                                {selectedLead.enrichedAt && <span className="text-emerald-600">Enriched {timeAgo(selectedLead.enrichedAt)}</span>}
                                             </p>
                                         )}
                                     </div>
                                 </div>
-                                <button 
+                                <button
                                     onClick={() => setSelectedLead(null)}
-                                    className="p-3 rounded-2xl hover:bg-slate-100 text-slate-400 hover:text-slate-900 transition-all"
+                                    className="w-9 h-9 rounded-control grid place-items-center text-ink-400 hover:bg-white hover:text-foreground transition-colors"
                                 >
-                                    <X className="w-6 h-6" />
+                                    <X className="w-5 h-5" />
                                 </button>
                             </div>
 
-                            <div className="flex items-center space-x-6">
-                                <a 
-                                    href={selectedLead.linkedinUrl} 
-                                    target="_blank" 
-                                    className="flex items-center space-x-2 bg-slate-900 text-white px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-800 transition-all shadow-lg"
-                                >
-                                    <Linkedin className="w-4 h-4" />
-                                    <span>Sync Profile</span>
-                                </a>
+                            <div className="flex items-center gap-4">
+                                <Button asChild variant="dark" size="sm">
+                                    <a href={selectedLead.linkedinUrl} target="_blank" rel="noopener noreferrer">
+                                        <Linkedin className="w-4 h-4" />
+                                        View profile
+                                    </a>
+                                </Button>
                                 {selectedLead.email && (
                                     <div className="flex flex-col">
-                                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Secured Email</span>
-                                        <span className="text-sm font-bold text-slate-700">{selectedLead.email}</span>
+                                        <span className="label">Email</span>
+                                        <span className="text-[13px] font-medium text-ink-700">{selectedLead.email}</span>
                                     </div>
                                 )}
                             </div>
                         </div>
 
                         {/* Drawer Content */}
-                        <div className="flex-1 overflow-y-auto p-10 space-y-12 bg-white">
+                        <div className="flex-1 overflow-y-auto p-8 space-y-8 bg-white">
                             {/* Summary / About */}
-                            <section className="space-y-4">
-                                <div className="flex items-center space-x-3">
-                                    <div className="p-2 bg-amber-50 rounded-lg text-amber-600"><Zap className="w-4 h-4" /></div>
-                                    <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">Strategic Context</h3>
-                                </div>
-                                <div className="bg-slate-50 rounded-[2rem] p-8 border border-slate-100">
+                            <section className="space-y-3">
+                                <h3 className="label">About</h3>
+                                <Card className="p-6">
                                     {selectedLead.aboutInfo ? (
-                                        <p className="text-sm font-medium text-slate-600 leading-relaxed italic whitespace-pre-wrap">"{selectedLead.aboutInfo}"</p>
+                                        <p className="text-[13px] font-medium text-ink-700 leading-relaxed whitespace-pre-wrap">{selectedLead.aboutInfo}</p>
                                     ) : (
-                                        <div className="py-6 flex flex-col items-center justify-center text-center space-y-3 opacity-30">
-                                            <FolderOpen className="w-10 h-10" />
-                                            <p className="text-[10px] font-black uppercase tracking-widest italic">Contextual data pending deep scan</p>
-                                            <button 
+                                        <div className="py-4 flex flex-col items-center justify-center text-center gap-3 text-ink-400">
+                                            <FolderOpen className="w-8 h-8" />
+                                            <p className="text-[13px] font-medium">No about info yet.</p>
+                                            <button
                                                 onClick={(e) => handleEnrich(selectedLead.id, e)}
-                                                className="text-[9px] font-black text-indigo-600 underline"
-                                            >Trigger Enrichment</button>
+                                                className="text-[13px] font-semibold text-brand hover:underline"
+                                            >Enrich this prospect</button>
                                         </div>
                                     )}
-                                </div>
+                                </Card>
                             </section>
 
                             {/* Career history (from PROFILE_VISIT enrichment) */}
@@ -1154,55 +1150,46 @@ export default function LeadsPage() {
                                 const edu = Array.isArray(selectedLead.education) ? selectedLead.education : [];
                                 if (!exp.length && !edu.length) return null;
                                 return (
-                                    <section className="space-y-4">
-                                        <div className="flex items-center space-x-3">
-                                            <div className="p-2 bg-indigo-50 rounded-lg text-indigo-600"><Briefcase className="w-4 h-4" /></div>
-                                            <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">Career & Education</h3>
-                                        </div>
-                                        <div className="bg-slate-50 rounded-[2rem] p-8 border border-slate-100 space-y-5">
+                                    <section className="space-y-3">
+                                        <h3 className="label flex items-center gap-2"><Briefcase className="w-3.5 h-3.5" />Career &amp; education</h3>
+                                        <Card className="p-6 space-y-4">
                                             {exp.map((e: any, i: number) => (
-                                                <div key={`x${i}`} className="border-l-2 border-indigo-200 pl-4">
-                                                    <p className="text-sm font-black text-slate-800">{e.title || e.jobTitle || '—'}</p>
-                                                    <p className="text-xs font-bold text-slate-500">{[e.company, e.dateRange || e.duration].filter(Boolean).join(' · ')}</p>
+                                                <div key={`x${i}`} className="border-l-2 border-brand-200 pl-4">
+                                                    <p className="text-[13px] font-semibold text-foreground">{e.title || e.jobTitle || '—'}</p>
+                                                    <p className="text-[12px] font-medium text-ink-500">{[e.company, e.dateRange || e.duration].filter(Boolean).join(' · ')}</p>
                                                 </div>
                                             ))}
                                             {edu.map((e: any, i: number) => (
                                                 <div key={`e${i}`} className="border-l-2 border-emerald-200 pl-4">
-                                                    <p className="text-sm font-black text-slate-800">{e.school || '—'}</p>
-                                                    <p className="text-xs font-bold text-slate-500">{[e.degree, e.dateRange || e.dates].filter(Boolean).join(' · ')}</p>
+                                                    <p className="text-[13px] font-semibold text-foreground">{e.school || '—'}</p>
+                                                    <p className="text-[12px] font-medium text-ink-500">{[e.degree, e.dateRange || e.dates].filter(Boolean).join(' · ')}</p>
                                                 </div>
                                             ))}
-                                        </div>
+                                        </Card>
                                     </section>
                                 );
                             })()}
 
-                            {/* Activity Feed */}
-                            <section className="space-y-4">
-                                <div className="flex items-center space-x-3">
-                                    <div className="p-2 bg-emerald-50 rounded-lg text-emerald-600"><ArrowUpRight className="w-4 h-4" /></div>
-                                    <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">Latest Engagement Vector</h3>
-                                </div>
+                            {/* Activity */}
+                            <section className="space-y-3">
+                                <h3 className="label flex items-center gap-2"><ArrowUpRight className="w-3.5 h-3.5" />Recent activity</h3>
                                 {selectedLead.latestPost ? (
-                                    <div className="group bg-gradient-to-br from-indigo-50 to-white rounded-[2rem] p-8 border border-indigo-100 shadow-sm hover:shadow-md transition-all">
-                                        <p className="text-sm font-medium text-slate-700 leading-relaxed line-clamp-4 mb-6">{selectedLead.latestPost}</p>
-                                        <a 
-                                            href={selectedLead.latestPostUrl} 
-                                            target="_blank" 
-                                            className="inline-flex items-center space-x-2 text-indigo-600 font-black text-[10px] uppercase tracking-widest hover:translate-x-1 transition-transform"
+                                    <Card className="p-6">
+                                        <p className="text-[13px] font-medium text-ink-700 leading-relaxed line-clamp-4 mb-4">{selectedLead.latestPost}</p>
+                                        <a
+                                            href={selectedLead.latestPostUrl}
+                                            target="_blank"
+                                            className="inline-flex items-center gap-1.5 text-brand font-semibold text-[13px] hover:underline"
                                         >
-                                            <span>Full Collision Intelligence</span>
-                                            <ChevronRight className="w-3 h-3" />
+                                            <span>View post</span>
+                                            <ChevronRight className="w-3.5 h-3.5" />
                                         </a>
-                                    </div>
+                                    </Card>
                                 ) : (
-                                    <div className="bg-slate-50 rounded-[2rem] p-12 flex flex-col items-center justify-center text-center space-y-4 border border-slate-100">
-                                        <Mail className="w-10 h-10 text-slate-200" />
-                                        <div>
-                                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">No recent activations detected</p>
-                                            <p className="text-[9px] font-bold text-slate-300 uppercase tracking-[0.1em] mt-1">Run visit node to identify social signals</p>
-                                        </div>
-                                    </div>
+                                    <Card className="p-8 flex flex-col items-center justify-center text-center gap-3 text-ink-400">
+                                        <Mail className="w-8 h-8" />
+                                        <p className="text-[13px] font-medium">No recent posts found.</p>
+                                    </Card>
                                 )}
                             </section>
                         </div>
@@ -1210,5 +1197,21 @@ export default function LeadsPage() {
                 </div>
             )}
         </div>
+    );
+}
+
+// Reusable dropdown option for filter pills
+function DropdownOption({ active, onClick, label, count }: { active: boolean; onClick: () => void; label: string; count?: number }) {
+    return (
+        <button
+            onClick={onClick}
+            className={cn(
+                "w-full flex items-center justify-between text-left px-3 py-2 text-[13px] font-semibold rounded-control transition-colors mb-0.5",
+                active ? "bg-brand text-white" : "text-ink-700 hover:bg-surface"
+            )}
+        >
+            <span className="truncate pr-2">{label}</span>
+            {count !== undefined && <span className={active ? "opacity-80" : "text-ink-400"}>{count}</span>}
+        </button>
     );
 }

@@ -2,40 +2,47 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { 
-  BarChart3, 
-  Users, 
-  Layers, 
-  Settings, 
-  Send,
-  Sparkles,
+import { useEffect, useState } from 'react';
+import {
+  Users,
+  Layers,
   Inbox,
   LayoutDashboard,
   Target,
-  LogOut,
-  ChevronRight,
-  HelpCircle,
   Gem,
   Plus,
-  Building2
+  Building2,
+  Sparkles,
+  UsersRound,
+  LogOut,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { motion } from 'framer-motion';
 
 const menuItems = [
-  { label: 'Workflows', icon: LayoutDashboard, href: '/' },
+  { label: 'Dashboard', icon: LayoutDashboard, href: '/' },
+  { label: 'AI Profile', icon: Sparkles, href: '/settings/ai-profile' },
   { label: 'Campaigns', icon: Target, href: '/campaigns' },
   { label: 'Prospects', icon: Users, href: '/prospects' },
   { label: 'Companies', icon: Building2, href: '/companies' },
   { label: 'Inbox', icon: Inbox, href: '/inbox' },
-  { label: 'Queue', icon: Layers, href: '/queue' },
-  { label: 'Analytics', icon: BarChart3, href: '/analytics' },
+  { label: 'Crew', icon: UsersRound, href: '/team' },
+  { label: 'Queue', icon: Layers, href: '/campaigns/queue' },
   { label: 'Pricing', icon: Sparkles, href: '/pricing' },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
+  const [user, setUser] = useState<{ name?: string; email?: string } | null>(null);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('user');
+      if (raw) setUser(JSON.parse(raw));
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   const handleLogout = () => {
     localStorage.removeItem('token');
@@ -43,103 +50,87 @@ export function Sidebar() {
     router.push('/login');
   };
 
+  const initials = (user?.name || user?.email || 'Q')
+    .split(/[\s@.]+/)
+    .slice(0, 2)
+    .map((s) => s[0]?.toUpperCase())
+    .join('');
+
   return (
-    <div className="w-72 bg-white border-r border-slate-100 flex flex-col h-full sticky top-0 overflow-y-auto custom-scrollbar">
+    <div className="w-64 bg-white border-r border-line flex flex-col h-full sticky top-0 overflow-y-auto">
       {/* Brand */}
-      <div className="p-8 mb-4">
-        <Link href="/" className="flex items-center space-x-3 group">
-          <img 
-            src="/qampi_wbg.png" 
-            alt="Qampi" 
-            className="w-10 h-10 object-contain group-hover:scale-105 transition-all duration-300" 
-          />
+      <div className="px-6 py-6">
+        <Link href="/" className="flex items-center gap-3 group">
+          <img src="/qampi_wbg.png" alt="Qampi" className="w-9 h-9 object-contain group-hover:scale-105 transition-transform" />
           <div>
-            <span className="text-xl font-black text-slate-900 tracking-tight leading-none block">QAMPI</span>
-            <span className="text-[9px] font-black text-primary tracking-[0.3em] uppercase mt-1 block">LinkedIn Hero</span>
+            <span className="font-bold tracking-tight leading-none block text-foreground">Qampi</span>
+            <span className="label !text-[9px] !tracking-[0.22em] !text-brand mt-1 block">LinkedIn Autopilot</span>
           </div>
         </Link>
       </div>
 
-      {/* Main Nav */}
-      <nav className="flex-1 px-4 space-y-1">
-        <div className="px-4 mb-4">
-          <button className="w-full flex items-center justify-center space-x-2 py-4 bg-primary text-white rounded-3xl font-black text-sm shadow-xl shadow-primary/20 hover:shadow-primary/30 transition-all hover:-translate-y-1 active:scale-95 group">
-            <Plus className="w-5 h-5 group-hover:rotate-90 transition-transform duration-300" />
-            <span>Create Campaign</span>
-          </button>
-        </div>
+      {/* Create */}
+      <div className="px-4">
+        <Link
+          href="/campaigns"
+          className="w-full flex items-center justify-center gap-2 py-2.5 bg-brand text-white rounded-control font-semibold text-[13px] shadow-lift hover:bg-brand-600 transition-all active:scale-[.98] group"
+        >
+          <Plus className="w-4 h-4 group-hover:rotate-90 transition-transform duration-300" />
+          <span>New Campaign</span>
+        </Link>
+      </div>
 
+      {/* Nav */}
+      <nav className="px-3 mt-5 space-y-0.5 flex-1">
         {menuItems.map((item) => {
-          const active = pathname === item.href;
+          const active = item.href === '/' ? pathname === '/' : pathname.startsWith(item.href);
           return (
             <Link
               key={item.href}
               href={item.href}
               className={cn(
-                "flex items-center justify-between px-4 py-3.5 rounded-2xl transition-all group font-bold text-sm",
-                active 
-                  ? "bg-primary text-white shadow-lg shadow-primary/15" 
-                  : "text-slate-500 hover:bg-slate-50 hover:text-primary"
+                'flex items-center gap-3 px-3 py-2.5 rounded-control transition-all font-semibold text-[13px]',
+                active ? 'bg-brand text-white shadow-lift' : 'text-ink-500 hover:bg-surface hover:text-foreground',
               )}
             >
-              <div className="flex items-center space-x-3">
-                <item.icon className={cn("w-5 h-5", active ? "text-white" : "text-slate-400 group-hover:text-primary")} />
-                <span>{item.label}</span>
-              </div>
-              {active && <ChevronRight className="w-4 h-4 text-white/70" />}
+              <item.icon className={cn('w-[18px] h-[18px]', active ? 'text-white' : 'text-ink-400')} />
+              <span>{item.label}</span>
             </Link>
           );
         })}
       </nav>
 
-      {/* Footer Nav */}
-      <div className="p-4 space-y-4">
-        {/* Pro Banner */}
-        <div className="bg-slate-900 rounded-[32px] p-6 relative overflow-hidden group border border-white/10 shadow-2xl">
-          <div className="absolute -right-4 -top-4 w-24 h-24 bg-primary/20 rounded-full blur-2xl group-hover:bg-primary/40 transition-colors" />
+      {/* Footer */}
+      <div className="p-4 space-y-3">
+        <div className="rounded-card bg-ink-900 text-white p-4 relative overflow-hidden">
+          <div className="absolute -right-6 -top-6 w-20 h-20 rounded-full bg-brand/40 blur-2xl" />
           <div className="relative z-10">
-            <div className="flex items-center space-x-2 text-primary">
-              <Gem className="w-4 h-4" />
-              <span className="text-[10px] font-black uppercase tracking-widest">Upgrade</span>
+            <div className="label !text-brand-200 flex items-center gap-1.5">
+              <Gem className="w-3 h-3" /> Upgrade
             </div>
-            <p className="text-sm font-bold text-white mt-1">Get 500% more leads</p>
-            <Link 
-              href="/pricing" 
-              className="mt-4 w-full py-2.5 bg-white text-slate-900 rounded-2xl text-[10px] font-black uppercase tracking-wider flex items-center justify-center hover:bg-primary hover:text-white transition-all"
+            <p className="text-[13px] font-semibold mt-1">Unlock unlimited campaigns</p>
+            <Link
+              href="/pricing"
+              className="mt-3 w-full py-2 bg-white text-ink-900 rounded-chip text-[12px] font-semibold flex items-center justify-center hover:bg-brand-50 transition-colors"
             >
-              Upgrade Now
+              See plans
             </Link>
           </div>
         </div>
 
-        <div className="px-2 space-y-1">
-          <Link
-            href="/settings"
-            className={cn(
-              "flex items-center space-x-3 px-4 py-3 rounded-2xl font-bold text-sm transition-all",
-              pathname === '/settings' ? "bg-slate-100 text-slate-900" : "text-slate-500 hover:bg-slate-50"
-            )}
-          >
-            <Settings className="w-5 h-5" />
-            <span>Settings</span>
+        <div className="flex items-center gap-2.5 px-2 py-2 rounded-control hover:bg-surface transition-colors">
+          <Link href="/settings" className="flex items-center gap-2.5 min-w-0 flex-1">
+            <div className="w-8 h-8 rounded-full bg-brand-100 text-brand grid place-items-center text-[12px] font-bold shrink-0">
+              {initials || 'Q'}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="text-[13px] font-semibold truncate text-foreground">{user?.name || 'Your account'}</div>
+              <div className="text-[11px] font-medium text-ink-400 truncate">{user?.email || 'Settings'}</div>
+            </div>
           </Link>
-          <button
-            onClick={handleLogout}
-            className="w-full flex items-center space-x-3 px-4 py-3 text-red-500 hover:bg-red-50 rounded-2xl transition-all font-bold text-sm"
-          >
-            <LogOut className="w-5 h-5" />
-            <span>Sign Out</span>
+          <button onClick={handleLogout} title="Sign out" className="text-ink-400 hover:text-ink-700 transition-colors">
+            <LogOut className="w-4 h-4" />
           </button>
-        </div>
-
-        <div className="pt-4 border-t border-slate-100 px-4 flex items-center justify-between">
-          <button className="text-slate-400 hover:text-slate-600">
-            <HelpCircle className="w-5 h-5" />
-          </button>
-          <div className="flex items-center space-x-2">
-             <div className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
-             <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">System Cloud</span>
-          </div>
         </div>
       </div>
     </div>

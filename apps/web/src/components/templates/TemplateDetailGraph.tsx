@@ -4,7 +4,6 @@ import {
   ReactFlow,
   Background,
   Controls,
-  MiniMap,
   Node,
   Edge,
   NodeProps,
@@ -58,12 +57,12 @@ function ActionNode({ data }: NodeProps) {
   const color = NODE_COLORS[d.subType] || '#94a3b8';
   return (
     <div className="px-4 py-2.5 rounded-xl border-2 shadow-sm bg-white" style={{ borderColor: color }}>
-      <Handle type="target" position={Position.Top} />
+      <Handle type="target" position={Position.Left} />
       <div className="flex items-center gap-2">
         <span className="text-lg">{NODE_ICONS[d.subType] || '•'}</span>
         <span className="text-xs font-bold text-slate-700 whitespace-nowrap">{d.label || d.subType}</span>
       </div>
-      <Handle type="source" position={Position.Bottom} />
+      <Handle type="source" position={Position.Right} />
     </div>
   );
 }
@@ -77,13 +76,13 @@ function ConditionNode({ data }: NodeProps) {
       style={{ borderColor: color, transform: 'rotate(45deg)', width: 80, height: 80 }}
     >
       <div style={{ transform: 'rotate(-45deg)' }} className="flex flex-col items-center">
-        <Handle type="target" position={Position.Top} />
+        <Handle type="target" position={Position.Left} />
         <span className="text-lg">{NODE_ICONS[d.subType] || '🔀'}</span>
         <span className="text-[9px] font-bold text-slate-600 text-center leading-tight mt-0.5">
           {d.label || 'Branch'}
         </span>
         <Handle type="source" position={Position.Bottom} id="true" />
-        <Handle type="source" position={Position.Right} id="false" style={{ top: '50%', right: -8 }} />
+        <Handle type="source" position={Position.Top} id="false" />
       </div>
     </div>
   );
@@ -93,7 +92,7 @@ function DelayNode({ data }: NodeProps) {
   const d = data as unknown as NodeData;
   return (
     <div className="px-4 py-2.5 rounded-xl border-2 border-amber-300 bg-amber-50 shadow-sm">
-      <Handle type="target" position={Position.Top} />
+      <Handle type="target" position={Position.Left} />
       <div className="flex items-center gap-2">
         <span className="text-lg">⏳</span>
         <div className="flex flex-col">
@@ -101,7 +100,7 @@ function DelayNode({ data }: NodeProps) {
           <span className="text-[10px] text-amber-500 font-semibold">{d.delayDays || d.hours ? `${d.delayDays || d.hours}d` : ''}</span>
         </div>
       </div>
-      <Handle type="source" position={Position.Bottom} />
+      <Handle type="source" position={Position.Right} />
     </div>
   );
 }
@@ -113,7 +112,7 @@ function TerminalNode({ data }: NodeProps) {
   const color = isSuccess ? '#22c55e' : '#ef4444';
   return (
     <div className="px-4 py-2 rounded-full border-2 shadow-sm bg-white" style={{ borderColor: color }}>
-      <Handle type="target" position={Position.Top} />
+      <Handle type="target" position={Position.Left} />
       <div className="flex items-center gap-1.5">
         <span className="text-sm">{isSuccess ? '✅' : '❌'}</span>
         <span className="text-[10px] font-bold whitespace-nowrap" style={{ color }}>{label}</span>
@@ -139,8 +138,11 @@ const NODE_W = 180;
 const NODE_H = 60;
 const CONDITION_SIZE = 100;
 const COL_GAP = 80;
-const ROW_GAP = 60;
-const BRANCH_X_OFFSET = 200;
+// Depth gap between sequential steps. Because the graph is rendered left-to-right
+// (axes swapped at render time), this becomes the HORIZONTAL gap — so it must
+// clear the node width (~180px), not the height. Keep it generous.
+const ROW_GAP = 170;
+const BRANCH_X_OFFSET = 150;
 
 function getNodeSize(n: { subType: string }): { w: number; h: number } {
   if (n.subType === 'IF_ELSE') return { w: CONDITION_SIZE, h: CONDITION_SIZE };
@@ -266,10 +268,13 @@ export function TemplateDetailGraph({ nodes, edges }: TemplateDetailGraphProps) 
     else if (n.subType === 'END' || n.subType === 'SUCCESS' || n.subType === 'REPLIED') nodeTypeLabel = 'TERMINAL';
     else if (n.type === 'TRIGGER') nodeTypeLabel = 'TRIGGER';
 
+    // The layout computes a top-to-bottom tree (depth on Y, branches on X).
+    // Swap the axes so the flow reads left-to-right (depth on X, branches on Y).
+    const p = layout.positions[n.id] || n.position || { x: 0, y: 0 };
     return {
       id: n.id,
       type: nodeTypeLabel,
-      position: layout.positions[n.id] || n.position || { x: 0, y: 0 },
+      position: { x: p.y, y: p.x },
       data: { label: n.data?.label || n.subType, subType: n.subType, ...n.data },
     };
   });
@@ -304,12 +309,6 @@ export function TemplateDetailGraph({ nodes, edges }: TemplateDetailGraphProps) 
       >
         <Background color="#e2e8f0" gap={20} />
         <Controls showInteractive={false} />
-        <MiniMap
-          nodeStrokeColor="#94a3b8"
-          nodeColor="#f1f5f9"
-          maskColor="rgba(0,0,0,0.05)"
-          style={{ borderRadius: 12, border: '1px solid #e2e8f0' }}
-        />
       </ReactFlow>
     </div>
   );

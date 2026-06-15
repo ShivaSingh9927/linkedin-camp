@@ -2,12 +2,18 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, Clock, Layers, Target, Zap, Check, Loader2, Play } from 'lucide-react';
+import {
+    ArrowLeft, Clock, Play, Loader2, Check, GitBranch, ListOrdered,
+    User, UserPlus, MessageCircle, MessageSquare, ThumbsUp, Mail, Radar,
+    Footprints, Database, Sparkles, Linkedin, Layers,
+} from 'lucide-react';
 import Link from 'next/link';
 import api from '@/lib/api';
 import { FALLBACK_TEMPLATES } from '@/lib/template-data';
 import { CampaignNameModal } from '@/components/CampaignNameModal';
 import { TemplateDetailGraph } from '@/components/templates/TemplateDetailGraph';
+import { Card, Button, Badge, Skeleton } from '@/components/ui';
+import { cn } from '@/lib/utils';
 
 interface FullTemplate {
     id: string;
@@ -24,44 +30,35 @@ interface FullTemplate {
     stepCount: number;
     delayCount: number;
     requires?: string[];
-    aiStrategyHint: {
-        objective: string;
-        description: string;
-        cta: string;
-        toneOverride: string;
-    };
-    workflow: {
-        nodes: any[];
-        edges: any[];
-    };
+    aiStrategyHint: { objective: string; description: string; cta: string; toneOverride: string };
+    workflow: { nodes: any[]; edges: any[] };
 }
 
-const NODE_LABELS: Record<string, { icon: string; color: string; label: string }> = {
-    PROFILE_VISIT: { icon: '👤', color: 'text-blue-600 bg-blue-50 border-blue-200', label: 'Visit Profile' },
-    WAIT: { icon: '⏳', color: 'text-amber-600 bg-amber-50 border-amber-200', label: 'Wait' },
-    CONNECT: { icon: '🔗', color: 'text-purple-600 bg-purple-50 border-purple-200', label: 'Send Invite' },
-    MESSAGE: { icon: '💬', color: 'text-pink-600 bg-pink-50 border-pink-200', label: 'Send Message' },
-    LIKE: { icon: '👍', color: 'text-red-600 bg-red-50 border-red-200', label: 'Like Post' },
-    COMMENT: { icon: '💭', color: 'text-orange-600 bg-orange-50 border-orange-200', label: 'Comment' },
-    EMAIL_FINDER: { icon: '📡', color: 'text-cyan-600 bg-cyan-50 border-cyan-200', label: 'Find Email' },
-    EMAIL: { icon: '📧', color: 'text-emerald-600 bg-emerald-50 border-emerald-200', label: 'Send Email' },
-    FOLLOW: { icon: '👣', color: 'text-gray-600 bg-gray-50 border-gray-200', label: 'Follow' },
-    CRM_SYNC: { icon: '📊', color: 'text-indigo-600 bg-indigo-50 border-indigo-200', label: 'CRM Sync' },
-    IF_ELSE: { icon: '🔀', color: 'text-teal-600 bg-teal-50 border-teal-200', label: 'Decision' },
+// Map a workflow node subType to a lucide icon + tinted chip for the timeline.
+const NODE_META: Record<string, { Icon: any; cls: string; label: string }> = {
+    PROFILE_VISIT: { Icon: User, cls: 'bg-blue-50 text-blue-600', label: 'Visit profile' },
+    WAIT: { Icon: Clock, cls: 'bg-amber-50 text-amber-600', label: 'Wait' },
+    CONNECT: { Icon: UserPlus, cls: 'bg-brand-50 text-brand', label: 'Send invite' },
+    MESSAGE: { Icon: MessageCircle, cls: 'bg-pink-50 text-pink-600', label: 'Send message' },
+    LIKE: { Icon: ThumbsUp, cls: 'bg-red-50 text-red-600', label: 'Like post' },
+    COMMENT: { Icon: MessageSquare, cls: 'bg-orange-50 text-orange-600', label: 'Comment' },
+    EMAIL_FINDER: { Icon: Radar, cls: 'bg-cyan-50 text-cyan-600', label: 'Find email' },
+    EMAIL: { Icon: Mail, cls: 'bg-emerald-50 text-emerald-600', label: 'Send email' },
+    FOLLOW: { Icon: Footprints, cls: 'bg-surface text-ink-500', label: 'Follow' },
+    CRM_SYNC: { Icon: Database, cls: 'bg-indigo-50 text-indigo-600', label: 'CRM sync' },
+    IF_ELSE: { Icon: GitBranch, cls: 'bg-teal-50 text-teal-600', label: 'Decision' },
 };
 
 const GROUP_LABELS: Record<string, string> = {
     'my-network': 'My Network',
     'out-of-network': 'Out of Network',
-    'action-triggered': 'Action-Triggered',
     'objective-based': 'Objective-Based',
 };
 
-const GROUP_COLORS: Record<string, string> = {
-    'my-network': 'bg-blue-100 text-blue-700',
-    'out-of-network': 'bg-purple-100 text-purple-700',
-    'action-triggered': 'bg-amber-100 text-amber-700',
-    'objective-based': 'bg-emerald-100 text-emerald-700',
+const CHANNEL_META: Record<string, { label: string; icon: any; tone: 'info' | 'brand' | 'success' }> = {
+    linkedin: { label: 'LinkedIn', icon: Linkedin, tone: 'info' },
+    'multi-channel': { label: 'Multi-channel', icon: Layers, tone: 'brand' },
+    email: { label: 'Email', icon: Mail, tone: 'success' },
 };
 
 export default function TemplateDetailPage() {
@@ -71,6 +68,7 @@ export default function TemplateDetailPage() {
     const [loading, setLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);
     const [creating, setCreating] = useState(false);
+    const [showFlow, setShowFlow] = useState(false);
 
     useEffect(() => {
         if (!params.id) return;
@@ -79,11 +77,8 @@ export default function TemplateDetailPage() {
             .catch(err => {
                 console.error('Failed to load template from API, using fallback:', err);
                 const fallback = FALLBACK_TEMPLATES.find((t: any) => t.id === params.id);
-                if (fallback) {
-                    setTemplate(fallback);
-                } else {
-                    router.push('/campaigns/templates');
-                }
+                if (fallback) setTemplate(fallback);
+                else router.push('/campaigns/templates');
             })
             .finally(() => setLoading(false));
     }, [params.id, router]);
@@ -112,8 +107,13 @@ export default function TemplateDetailPage() {
 
     if (loading) {
         return (
-            <div className="flex items-center justify-center py-20">
-                <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
+            <div className="space-y-6">
+                <Skeleton className="h-9 w-72 rounded-control" />
+                <Skeleton className="h-24 rounded-card" />
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <Skeleton className="h-96 rounded-card lg:col-span-2" />
+                    <Skeleton className="h-96 rounded-card" />
+                </div>
             </div>
         );
     }
@@ -121,157 +121,144 @@ export default function TemplateDetailPage() {
     if (!template) return null;
 
     const steps = template.workflow.nodes.filter(n => n.subType !== 'START');
+    const branched = template.workflow.nodes.some(n => n.subType === 'IF_ELSE');
+    const channel = CHANNEL_META[template.category] || CHANNEL_META.linkedin;
+
+    const useBtn = (
+        <Button onClick={() => setShowModal(true)} disabled={creating}>
+            <Play className="w-4 h-4" />
+            {creating ? 'Creating…' : 'Use this template'}
+        </Button>
+    );
 
     return (
-        <div className="space-y-6 animate-in fade-in duration-500">
-            {/* Back navigation */}
-            <div className="flex items-center space-x-4">
-                <Link href="/campaigns/templates" className="p-2 hover:bg-slate-100 rounded-xl transition-all">
-                    <ArrowLeft className="w-5 h-5 text-slate-500" />
-                </Link>
-                <div>
-                    <h1 className="text-3xl font-black text-slate-800 uppercase tracking-tight italic">{template.name}</h1>
-                    <p className="text-slate-500 font-medium">{template.description}</p>
+        <div className="space-y-6">
+            <Link href="/campaigns" className="label !text-brand inline-flex items-center gap-1 hover:underline">
+                <ArrowLeft className="w-4 h-4" /> Templates
+            </Link>
+
+            {/* Header */}
+            <div className="flex flex-col sm:flex-row items-start justify-between gap-5">
+                <div className="flex items-start gap-4">
+                    <div className="w-12 h-12 rounded-control bg-surface text-2xl grid place-items-center shrink-0">{template.icon}</div>
+                    <div>
+                        <div className="flex items-center gap-2 mb-1.5">
+                            <Badge tone={channel.tone}><channel.icon className="w-3 h-3" />{channel.label}</Badge>
+                            {GROUP_LABELS[template.group] && <Badge tone="neutral">{GROUP_LABELS[template.group]}</Badge>}
+                            {branched && <Badge tone="info"><GitBranch className="w-3 h-3" />Branches on response</Badge>}
+                        </div>
+                        <h1 className="text-[26px] font-bold tracking-tight leading-none text-foreground">{template.name}</h1>
+                        <p className="text-ink-500 font-medium mt-2 max-w-2xl">{template.description}</p>
+                    </div>
                 </div>
+                <div className="shrink-0">{useBtn}</div>
             </div>
 
-            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-                {/* Left panel — Info */}
-                <div className="xl:col-span-1 space-y-6">
-                    {/* Metadata card */}
-                    <div className="bg-white rounded-3xl border shadow-sm p-6 space-y-5">
-                        <div className="flex items-center space-x-3">
-                            <span className="text-4xl">{template.icon}</span>
-                            <div>
-                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{template.category}</p>
-                            </div>
+            {/* Decision stats */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <Card className="p-4"><div className="label">Steps</div><p className="num text-[24px] mt-1">{template.stepCount || steps.length}</p></Card>
+                <Card className="p-4"><div className="label">Delays</div><p className="num text-[24px] mt-1">{template.delayCount}</p></Card>
+                <Card className="p-4"><div className="label">Duration</div><p className="num text-[24px] mt-1">{template.durationDays}<span className="text-ink-400 text-[15px] ml-0.5">days</span></p></Card>
+                <Card className="p-4"><div className="label">Channel</div><p className="text-[15px] font-semibold mt-1.5">{channel.label}</p></Card>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Main */}
+                <div className="lg:col-span-2 space-y-6">
+                    {/* The sequence — graph for branched, timeline (+graph toggle) for linear */}
+                    <Card className="p-6">
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="font-bold tracking-tight">The sequence</h3>
+                            {!branched && (
+                                <button onClick={() => setShowFlow((v) => !v)} className="text-[12px] font-semibold text-brand flex items-center gap-1.5">
+                                    {showFlow ? <><ListOrdered className="w-4 h-4" />Show as steps</> : <><GitBranch className="w-4 h-4" />View full flow diagram</>}
+                                </button>
+                            )}
                         </div>
 
-                        {/* Stats */}
-                        <div className="grid grid-cols-3 gap-3">
-                            <div className="bg-slate-50 rounded-2xl p-3 text-center">
-                                <Layers className="w-4 h-4 text-indigo-500 mx-auto mb-1" />
-                                <p className="text-lg font-black text-slate-800">{template.stepCount || steps.length}</p>
-                                <p className="text-[10px] font-bold text-slate-400 uppercase">Steps</p>
-                            </div>
-                            <div className="bg-slate-50 rounded-2xl p-3 text-center">
-                                <Clock className="w-4 h-4 text-amber-500 mx-auto mb-1" />
-                                <p className="text-lg font-black text-slate-800">{template.delayCount}</p>
-                                <p className="text-[10px] font-bold text-slate-400 uppercase">Delays</p>
-                            </div>
-                            <div className="bg-slate-50 rounded-2xl p-3 text-center">
-                                <Zap className="w-4 h-4 text-emerald-500 mx-auto mb-1" />
-                                <p className="text-lg font-black text-slate-800">{template.durationDays}d</p>
-                                <p className="text-[10px] font-bold text-slate-400 uppercase">Duration</p>
-                            </div>
-                        </div>
-
-                        {/* Use case */}
-                        <div className="space-y-2">
-                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Use Case</label>
-                            <p className="text-sm text-slate-600 leading-relaxed">{template.useCase}</p>
-                        </div>
-
-                        {/* Best for */}
-                        <div className="bg-indigo-50/60 rounded-2xl p-4 border border-indigo-100 space-y-2">
-                            <label className="text-[10px] font-black text-indigo-500 uppercase tracking-widest flex items-center gap-1.5">
-                                <Target className="w-3 h-3" /> Best for
-                            </label>
-                            <ul className="space-y-1">
-                                {template.recommendedFor.map((r, i) => (
-                                    <li key={i} className="text-xs text-slate-600 flex items-start">
-                                        <Check className="w-3 h-3 text-indigo-400 mr-2 mt-0.5 flex-shrink-0" />
-                                        <span>{r}</span>
-                                    </li>
-                                ))}
-                            </ul>
-                        </div>
-
-                        {/* Requires */}
-                        {template.requires && template.requires.length > 0 && (
-                            <div className="space-y-2">
-                                <label className="text-[10px] font-black text-amber-600 uppercase tracking-widest">Requires</label>
-                                <div className="flex flex-wrap gap-1.5">
-                                    {template.requires.map(r => (
-                                        <span key={r} className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-1 rounded-full border border-amber-200">
-                                            {r}
-                                        </span>
-                                    ))}
+                        {branched || showFlow ? (
+                            <>
+                                {branched && (
+                                    <p className="text-[13px] text-ink-500 font-medium mb-3">This template branches based on whether the prospect connects or replies — shown as a flow.</p>
+                                )}
+                                <div className="rounded-control border border-line overflow-hidden h-[460px]">
+                                    <TemplateDetailGraph nodes={template.workflow.nodes} edges={template.workflow.edges} />
                                 </div>
+                            </>
+                        ) : (
+                            <div className="space-y-0">
+                                {steps.map((node: any, i: number) => {
+                                    const meta = NODE_META[node.subType] || { Icon: Sparkles, cls: 'bg-surface text-ink-500', label: node.subType };
+                                    const last = i === steps.length - 1;
+                                    return (
+                                        <div key={node.id || i} className="flex gap-3">
+                                            <div className="flex flex-col items-center">
+                                                <div className={cn('w-9 h-9 rounded-control grid place-items-center', meta.cls)}>
+                                                    <meta.Icon className="w-4 h-4" />
+                                                </div>
+                                                {!last && <div className="w-px flex-1 bg-line my-1" />}
+                                            </div>
+                                            <div className={cn(last ? '' : 'pb-5')}>
+                                                <div className="text-[14px] font-semibold text-foreground">{node.data?.label || meta.label}</div>
+                                                {node.subType === 'WAIT' && node.data?.delayDays && (
+                                                    <div className="text-[12px] text-amber-600 font-medium">{node.data.delayDays} day delay</div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
                             </div>
                         )}
-
-                        {/* CTA */}
-                        <button
-                            onClick={() => setShowModal(true)}
-                            disabled={creating}
-                            className="w-full py-3.5 bg-indigo-600 text-white rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 disabled:opacity-60 flex items-center justify-center gap-2"
-                        >
-                            <Play className="w-4 h-4" />
-                            {creating ? 'Creating…' : 'Use This Template'}
-                        </button>
-                    </div>
-
-                    {/* Steps timeline */}
-                    <div className="bg-white rounded-3xl border shadow-sm p-6 space-y-4">
-                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Steps Timeline</label>
-                        <div className="space-y-0">
-                            {steps.map((node: any, i: number) => {
-                                const meta = NODE_LABELS[node.subType];
-                                return (
-                                    <div key={node.id || i} className="flex items-start space-x-3 py-2">
-                                        <div className="flex flex-col items-center">
-                                            <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-sm border ${meta?.color || 'bg-slate-100 border-slate-200'}`}>
-                                                <span className="text-xs">{meta?.icon || '•'}</span>
-                                            </div>
-                                            {i < steps.length - 1 && (
-                                                <div className="w-0.5 h-6 bg-slate-200 mt-1" />
-                                            )}
-                                        </div>
-                                        <div className="flex-1 pt-1">
-                                            <p className="text-xs font-bold text-slate-700">{node.data?.label || meta?.label || node.subType}</p>
-                                            {node.subType === 'WAIT' && node.data?.delayDays && (
-                                                <p className="text-[10px] text-amber-500 font-semibold">{node.data.delayDays} day delay</p>
-                                            )}
-                                            {node.subType === 'IF_ELSE' && (
-                                                <p className="text-[10px] text-teal-500 font-semibold">Branching condition</p>
-                                            )}
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    </div>
+                    </Card>
                 </div>
 
-                {/* Right panel — Graph */}
-                <div className="xl:col-span-2 space-y-6">
-                    <div className="bg-white rounded-3xl border shadow-sm p-1 h-[640px]">
-                        <TemplateDetailGraph
-                            nodes={template.workflow.nodes}
-                            edges={template.workflow.edges}
-                        />
-                    </div>
+                {/* Side rail */}
+                <div className="space-y-4">
+                    {/* What this does */}
+                    <Card className="p-5">
+                        <h3 className="font-bold tracking-tight mb-2">What this does</h3>
+                        <p className="text-[13px] text-ink-700 font-medium leading-relaxed">{template.useCase}</p>
+                    </Card>
 
-                    <div className="bg-white rounded-3xl border shadow-sm p-6">
-                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3 block">AI Strategy</label>
-                        <div className="space-y-3 text-sm text-slate-600">
-                            <div>
-                                <span className="font-bold text-slate-700">Objective:</span> {template.aiStrategyHint.objective}
-                            </div>
-                            <div>
-                                <span className="font-bold text-slate-700">Description:</span> {template.aiStrategyHint.description}
-                            </div>
-                            <div className="flex gap-4">
-                                <span className="bg-slate-50 px-3 py-1.5 rounded-xl text-xs font-bold">
-                                    CTA: <span className="text-indigo-600">{template.aiStrategyHint.cta}</span>
-                                </span>
-                                <span className="bg-slate-50 px-3 py-1.5 rounded-xl text-xs font-bold">
-                                    Tone: <span className="text-indigo-600">{template.aiStrategyHint.toneOverride}</span>
-                                </span>
-                            </div>
+                    {/* Best for + requires */}
+                    <Card className="p-5">
+                        <div className="label mb-3">Best for</div>
+                        <ul className="space-y-2.5">
+                            {template.recommendedFor.map((r, i) => (
+                                <li key={i} className="flex items-start gap-2 text-[13px] font-medium text-ink-700">
+                                    <Check className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0" />{r}
+                                </li>
+                            ))}
+                        </ul>
+                        {template.requires && template.requires.length > 0 && (
+                            <>
+                                <div className="border-t border-line my-4" />
+                                <div className="label mb-2">Requires</div>
+                                <div className="flex flex-wrap gap-2">
+                                    {template.requires.map((r) => (
+                                        <span key={r} className="text-[12px] font-semibold text-ink-500 bg-surface rounded-chip px-2.5 py-1">{r}</span>
+                                    ))}
+                                </div>
+                            </>
+                        )}
+                    </Card>
+
+                    {/* How the AI writes it */}
+                    <Card className="p-5">
+                        <div className="flex items-center gap-2 mb-3">
+                            <Sparkles className="w-4 h-4 text-brand" />
+                            <h3 className="font-bold tracking-tight">How the AI writes it</h3>
                         </div>
-                    </div>
+                        <p className="text-[13px] text-ink-700 font-medium leading-relaxed">
+                            <b className="text-foreground">Goal:</b> {template.aiStrategyHint.objective}
+                        </p>
+                        <p className="text-[12px] text-ink-500 font-medium leading-relaxed mt-2">{template.aiStrategyHint.description}</p>
+                        <div className="flex flex-wrap gap-2 mt-3">
+                            <span className="text-[12px] font-semibold text-ink-700 bg-surface rounded-chip px-3 py-1.5">CTA · <span className="text-brand">{template.aiStrategyHint.cta}</span></span>
+                            <span className="text-[12px] font-semibold text-ink-700 bg-surface rounded-chip px-3 py-1.5">Tone · <span className="text-brand">{template.aiStrategyHint.toneOverride}</span></span>
+                        </div>
+                    </Card>
+
                 </div>
             </div>
 

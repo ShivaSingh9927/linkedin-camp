@@ -52,6 +52,25 @@ router.get('/me', async (req: AuthRequest, res) => {
     }
 });
 
+// Update the user's own display name. Email is intentionally NOT mutable here
+// (it's the login identity); changing it would need a verification flow.
+router.put('/profile', async (req: AuthRequest, res) => {
+    try {
+        const { firstName, lastName } = req.body;
+        const user = await prisma.user.update({
+            where: { id: req.user!.id },
+            data: {
+                firstName: typeof firstName === 'string' ? firstName.trim() : undefined,
+                lastName: typeof lastName === 'string' ? lastName.trim() : undefined,
+            },
+        });
+        res.json({ success: true, firstName: user.firstName, lastName: user.lastName });
+    } catch (error: any) {
+        console.error('[USER-ROUTES] Error updating profile:', error.message);
+        res.status(500).json({ error: 'Failed to update profile' });
+    }
+});
+
 router.put('/business-profile', async (req: AuthRequest, res) => {
     try {
         const { 

@@ -2,38 +2,43 @@
 
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Building2, Linkedin, Mail, Database, Check, ArrowRight, Loader2 } from 'lucide-react';
+import { Building2, Linkedin, Mail, Database, Check } from 'lucide-react';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import api from '@/lib/api';
+import { Card, Button } from '@/components/ui';
 
-interface Step {
-  key: string;
-  title: string;
-  description: string;
-  cta: string;
-  href: string;
-  icon: any;
-  done: boolean;
+export interface SetupStatus {
+  requiredDone: boolean;
+  profileDone: boolean;
+  linkedinDone: boolean;
+  crmDone: boolean;
+  emailDone: boolean;
 }
 
 /**
- * Dark "let's get your first campaign live" activation hero shown on the
- * dashboard until the four setup steps (AI profile, LinkedIn, CRM, email) are
- * complete. Reflects live completion from /users/me, /email-account and
- * /auth/linkedin-status — same sources as the old SetupChecklist, which this
- * replaces on the dashboard. Self-hides once all four are done.
+ * Onboarding (State 1). Renders the full-page "launch your first campaign" flow:
+ * a horizontal milestone for the two REQUIRED steps (AI profile → LinkedIn) and
+ * a secondary row of OPTIONAL add-ons (CRM, email). Shown by the dashboard only
+ * while required setup is incomplete; returns null once both required steps are
+ * done (the dashboard then renders its performance view).
  *
- * onResolved(done) lets the parent know whether setup is complete so it can
- * decide which performance view to render (it fires once after the fetch).
+ * Reports full setup status to the parent via onResolved so the dashboard can
+ * (a) decide which view to show and (b) surface leftover optional steps.
  */
-export function ActivationHero({ onResolved }: { onResolved?: (allDone: boolean) => void }) {
+export function ActivationHero({ onResolved }: { onResolved?: (status: SetupStatus) => void }) {
   const [loading, setLoading] = useState(true);
-  const [steps, setSteps] = useState<Step[]>([]);
+  const [status, setStatus] = useState<SetupStatus | null>(null);
+  const [firstName, setFirstName] = useState('');
 
   useEffect(() => {
+    try {
+      const raw = localStorage.getItem('user');
+      if (raw) setFirstName((JSON.parse(raw)?.name || '').split(/\s+/)[0] || '');
+    } catch { /* ignore */ }
+
     let cancelled = false;
-    const load = async () => {
+    (async () => {
       const [meRes, emailRes, liRes] = await Promise.allSettled([
         api.get('/users/me'),
         api.get('/email-account'),
@@ -41,101 +46,129 @@ export function ActivationHero({ onResolved }: { onResolved?: (allDone: boolean)
       ]);
       const me = meRes.status === 'fulfilled' ? meRes.value.data : null;
       const bp = me?.businessProfile || null;
-      const emailAccount = emailRes.status === 'fulfilled' ? emailRes.value.data?.account : null;
-      const linkedinConnected = liRes.status === 'fulfilled' ? !!liRes.value.data?.connected : false;
-
       const profileDone = !!bp && !!(bp.company || bp.companyDescription || bp.aiStrategy);
+      const linkedinDone = liRes.status === 'fulfilled' ? !!liRes.value.data?.connected : false;
       const crmDone = !!(me?.hasHubspot || me?.hasPipedrive || me?.hasNotion);
-      const emailDone = !!emailAccount;
+      const emailDone = emailRes.status === 'fulfilled' ? !!emailRes.value.data?.account : false;
 
-      const next: Step[] = [
-        { key: 'business', title: 'Your AI profile', description: 'Aigeon studies your business and builds your strategy.', cta: 'Set up profile', href: '/settings/ai-profile', icon: Building2, done: profileDone },
-        { key: 'linkedin', title: 'Connect LinkedIn', description: 'Securely link your account so Aigeon can act for you.', cta: 'Connect LinkedIn', href: '/settings?tab=linkedin', icon: Linkedin, done: linkedinConnected },
-        { key: 'crm', title: 'Connect your CRM', description: 'Sync replies & leads to HubSpot, Pipedrive or Notion.', cta: 'Connect CRM', href: '/settings/integrations', icon: Database, done: crmDone },
-        { key: 'email', title: 'Connect your email', description: 'Add email outreach alongside your LinkedIn sequence.', cta: 'Connect email', href: '/settings/email', icon: Mail, done: emailDone },
-      ];
-
+      const s: SetupStatus = { profileDone, linkedinDone, crmDone, emailDone, requiredDone: profileDone && linkedinDone };
       if (!cancelled) {
-        setSteps(next);
+        setStatus(s);
         setLoading(false);
-        onResolved?.(next.every((s) => s.done));
+        onResolved?.(s);
       }
-    };
-    load();
+    })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  if (loading || steps.length === 0) return null;
+  if (loading || !status) return null;
+  if (status.requiredDone) return null; // dashboard takes over
 
-  const completed = steps.filter((s) => s.done).length;
-  const total = steps.length;
-  const pct = Math.round((completed / total) * 100);
-  if (completed === total) return null; // all set — get out of the way
-
-  // First not-done step is the "next" highlighted action.
-  const nextKey = steps.find((s) => !s.done)?.key;
+  const required = [
+    { key: 'profile', title: 'Your AI profile', desc: 'Aigeon studied your business and built your strategy.', icon: Building2, href: '/settings/ai-profile', done: status.profileDone, cta: 'Set up' },
+    { key: 'linkedin', title: 'Connect LinkedIn', desc: 'Securely link your account so Aigeon can act for you.', icon: Linkedin, href: '/settings?tab=linkedin', done: status.linkedinDone, cta: 'Connect now' },
+  ];
+  const optional = [
+    { key: 'crm', title: 'Connect your CRM', desc: 'Sync replies & leads to HubSpot, Pipedrive or Notion.', icon: Database, href: '/settings/integrations', done: status.crmDone },
+    { key: 'email', title: 'Connect your email', desc: 'Add email outreach alongside your LinkedIn sequence.', icon: Mail, href: '/settings/email', done: status.emailDone },
+  ];
+  const requiredCount = required.filter((s) => s.done).length;
+  const nextKey = required.find((s) => !s.done)?.key;
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="relative overflow-hidden rounded-[2rem] sm:rounded-[2.5rem] bg-gradient-to-br from-[#0f1024] to-[#241a4d] text-white p-7 sm:p-10 shadow-xl shadow-slate-300/40"
-    >
-      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-5 mb-8">
-        <div>
-          <h2 className="text-2xl sm:text-[28px] font-black tracking-tight">Let&apos;s get your first campaign live</h2>
-          <p className="mt-2.5 text-[15px] sm:text-base font-medium text-white/60 max-w-xl">
-            Complete these to unlock the full power of your AI. <span className="font-black text-white">{completed} of {total} done.</span>
-          </p>
-        </div>
-        <div className="flex items-center gap-3 bg-white/[0.08] border border-white/10 rounded-2xl px-4 py-2.5 self-start">
-          <span className="text-[13px] font-bold text-white/70">Setup</span>
-          <div className="w-28 h-[7px] rounded-full bg-white/15 overflow-hidden">
-            <motion.div initial={{ width: 0 }} animate={{ width: `${pct}%` }} transition={{ duration: 0.5 }} className="h-full rounded-full bg-emerald-500" />
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+      <div className="mb-7">
+        <span className="label !text-brand">Welcome to Qampi</span>
+        <h1 className="text-[28px] font-bold tracking-tight leading-none mt-2 text-foreground">
+          Let&apos;s launch your first campaign{firstName ? `, ${firstName}` : ''}
+        </h1>
+        <p className="text-ink-500 font-medium mt-2">
+          Two quick steps to go live. Your performance shows up here once your first campaign runs.
+        </p>
+      </div>
+
+      {/* REQUIRED — horizontal milestone */}
+      <Card className="p-7">
+        <div className="flex items-center justify-between mb-6">
+          <span className="label">Required to launch</span>
+          <div className="flex items-center gap-3">
+            <span className="text-[12px] font-semibold text-ink-500">{requiredCount} of 2 done</span>
+            <div className="w-28 h-2 bg-surface rounded-full overflow-hidden">
+              <motion.div initial={{ width: 0 }} animate={{ width: `${(requiredCount / 2) * 100}%` }} transition={{ duration: 0.5 }} className="h-full rounded-full bg-brand" />
+            </div>
           </div>
-          <span className="text-[13px] font-black">{pct}%</span>
+        </div>
+
+        <div className="flex items-stretch">
+          {required.map((step, i) => {
+            const isNext = step.key === nextKey;
+            const Icon = step.icon;
+            return (
+              <div key={step.key} className="contents">
+                <div className="flex-1 flex flex-col items-center text-center px-4">
+                  <div className={cn('w-14 h-14 rounded-full grid place-items-center mb-3',
+                    step.done ? 'bg-emerald-500 text-white' : isNext ? 'bg-brand text-white shadow-lift ring-4 ring-brand-100' : 'bg-surface text-ink-400')}>
+                    {step.done ? <Check className="w-6 h-6" /> : <Icon className="w-6 h-6" />}
+                  </div>
+                  <div className="text-[15px] font-semibold text-foreground">{step.title}</div>
+                  <p className="text-[12px] text-ink-500 font-medium mt-1 max-w-[210px]">{step.desc}</p>
+                  {step.done ? (
+                    <span className="label !text-emerald-600 mt-3">Completed</span>
+                  ) : (
+                    <Link href={step.href} className="mt-3">
+                      <Button size="sm">
+                        {step.key === 'linkedin' && <Linkedin className="w-4 h-4" />}
+                        {step.cta}
+                      </Button>
+                    </Link>
+                  )}
+                </div>
+                {i < required.length - 1 && (
+                  <div className="flex items-center pt-7">
+                    <div className={cn('h-[2px] w-12 lg:w-24 rounded-full', required[0].done ? 'bg-emerald-400' : 'bg-line')} />
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </Card>
+
+      {/* OPTIONAL — secondary add-ons */}
+      <div className="mt-6">
+        <div className="flex items-center gap-2 mb-3">
+          <span className="label">Optional add-ons</span>
+          <span className="text-[12px] text-ink-400 font-medium">— boost results, do anytime</span>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {optional.map((step) => {
+            const Icon = step.icon;
+            return (
+              <Card key={step.key} className={cn('p-5 flex items-center gap-4', step.done ? '!border-emerald-200' : 'border-dashed')}>
+                <div className={cn('w-10 h-10 rounded-control grid place-items-center shrink-0', step.done ? 'bg-emerald-50 text-emerald-600' : 'bg-surface text-ink-500')}>
+                  {step.done ? <Check className="w-5 h-5" /> : <Icon className="w-5 h-5" />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold text-[14px] text-foreground">{step.title}</div>
+                  <p className="text-[12px] text-ink-500 font-medium">{step.desc}</p>
+                </div>
+                {step.done ? (
+                  <span className="label !text-emerald-600">Done</span>
+                ) : (
+                  <Link href={step.href}>
+                    <Button variant="outline" size="sm">Connect</Button>
+                  </Link>
+                )}
+              </Card>
+            );
+          })}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        {steps.map((step, i) => {
-          const isNext = step.key === nextKey;
-          return (
-            <motion.div
-              key={step.key}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.06 }}
-              className={cn(
-                'rounded-2xl border p-5 flex flex-col',
-                step.done ? 'bg-emerald-500/[0.12] border-emerald-500/30' : 'bg-white/[0.06] border-white/10'
-              )}
-            >
-              <div className={cn(
-                'w-8 h-8 rounded-full grid place-items-center font-black text-sm mb-4',
-                step.done ? 'bg-emerald-500 text-white' : isNext ? 'bg-white text-[#1a1140]' : 'bg-white/12 text-white'
-              )}>
-                {step.done ? <Check className="w-4 h-4 stroke-[3]" /> : i + 1}
-              </div>
-              <h3 className="text-[17px] font-extrabold">{step.title}</h3>
-              <p className="text-[13px] font-medium text-white/55 mt-1.5 leading-snug flex-1">{step.description}</p>
-              {step.done ? (
-                <div className="mt-4 text-xs font-black uppercase tracking-wider text-emerald-400">✓ Done</div>
-              ) : (
-                <Link href={step.href}>
-                  <button className={cn(
-                    'mt-4 w-full flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-[13px] font-extrabold transition-all',
-                    isNext ? 'bg-white text-[#1a1140] hover:bg-white/90' : 'bg-white/[0.12] text-white hover:bg-white/[0.18]'
-                  )}>
-                    {step.cta} <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                </Link>
-              )}
-            </motion.div>
-          );
-        })}
-      </div>
+      <p className="text-center text-[13px] text-ink-400 font-medium mt-8">
+        Finish the two required steps and your dashboard unlocks automatically.
+      </p>
     </motion.div>
   );
 }

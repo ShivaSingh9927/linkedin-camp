@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { Building2, Target, PenTool, Globe, Sparkles, Check, Loader2, ArrowRight, Clock, Users, Lightbulb } from 'lucide-react';
 import api from '@/lib/api';
+import { StrategyWorkspace } from '@/components/StrategyWorkspace';
 
 const tabs = [
   { id: 'business', label: 'Business', icon: Building2 },
@@ -35,7 +35,10 @@ const toneOptions = [
 ];
 
 export default function AIProfilePage() {
-  const router = useRouter();
+  // Top-level view: Overview (AI's read-back) · Strategy (generated sections) ·
+  // Inputs (the editable business-profile form). `activeTab` below is the
+  // sub-tab within Inputs (Business/Audience/Voice).
+  const [view, setView] = useState<'overview' | 'strategy' | 'inputs'>('overview');
   const [activeTab, setActiveTab] = useState('business');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -65,7 +68,28 @@ export default function AIProfilePage() {
 
   const [keywordInput, setKeywordInput] = useState('');
 
+  // Draft persistence: the form only reaches the server on Save/Generate, so
+  // navigating away mid-edit would otherwise lose everything typed. We mirror
+  // the form into localStorage as the user edits and restore it on return,
+  // then clear it once the input is durably saved.
+  const DRAFT_KEY = 'qampi_ai_profile_draft';
+  // Set when a strategy generation is kicked off; lets us resume the progress
+  // view if the user navigates back to AI Profile while it's still running.
+  const GENERATING_KEY = 'qampi_strategy_generating';
+  const GENERATING_TTL_MS = 5 * 60 * 1000;
+  const hydrated = useRef(false);
+
   useEffect(() => {
+    // If a strategy generation is still in flight, open the Strategy tab so the
+    // user sees live progress instead of the form (which feels like starting over).
+    try {
+      const ts = Number(localStorage.getItem(GENERATING_KEY));
+      if (ts && Date.now() - ts < GENERATING_TTL_MS) {
+        setView('strategy');
+      } else if (ts) {
+        localStorage.removeItem(GENERATING_KEY); // stale flag
+      }
+    } catch { /* ignore */ }
     loadProfile();
   }, []);
 
@@ -102,17 +126,41 @@ export default function AIProfilePage() {
           reflectUnderstanding();
         }
       }
+
+      // An unsaved draft from a previous visit takes precedence over the
+      // server copy — it's the user's most recent (uncommitted) input.
+      try {
+        const raw = localStorage.getItem(DRAFT_KEY);
+        if (raw) {
+          const draft = JSON.parse(raw);
+          if (draft && typeof draft === 'object') {
+            setForm(prev => ({ ...prev, ...draft }));
+          }
+        }
+      } catch { /* ignore malformed draft */ }
     } catch (e) {
       console.error('Failed to load profile', e);
     } finally {
       setLoading(false);
+      // Allow the auto-save effect to start persisting only after the initial
+      // load+restore, so we never overwrite the draft with the empty default.
+      hydrated.current = true;
     }
   };
+
+  // Mirror the form into localStorage on every edit (after hydration).
+  useEffect(() => {
+    if (!hydrated.current) return;
+    try {
+      localStorage.setItem(DRAFT_KEY, JSON.stringify(form));
+    } catch { /* quota / private mode — non-fatal */ }
+  }, [form]);
 
   const handleSave = async () => {
     setSaving(true);
     try {
       await api.put('/users/business-profile', form);
+      try { localStorage.removeItem(DRAFT_KEY); } catch { /* ignore */ }
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
       // Reflect back what the AI understood from what they just saved. Fire
@@ -149,10 +197,13 @@ export default function AIProfilePage() {
       // Save the latest form first so generation runs against current input,
       // then kick off generation — both authenticated via the api client.
       await api.put('/users/business-profile', form);
+      try { localStorage.removeItem(DRAFT_KEY); } catch { /* ignore */ }
       await api.post('/strategy/generate', { trigger: 'manual' });
-      // ?generating=1 tells the strategy page to show staged progress while
-      // the background pipeline runs (the POST only returns a 202).
-      router.push('/settings/strategy?generating=1');
+      // Flag the in-flight generation so returning to AI Profile (or a reload)
+      // resumes the progress view. The embedded StrategyWorkspace reads this
+      // flag on mount and shows staged progress while the pipeline runs.
+      try { localStorage.setItem(GENERATING_KEY, String(Date.now())); } catch { /* ignore */ }
+      setView('strategy');
     } catch (e: any) {
       if (e?.response?.status === 429) {
         setRateLimitError(e.response.data?.error || 'Rate limit exceeded. Please wait before generating another strategy.');
@@ -211,15 +262,18 @@ export default function AIProfilePage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+      <div className="min-h-[60vh] flex items-center justify-center">
         <Loader2 className="w-8 h-8 text-primary animate-spin" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    // Full-bleed: SidebarWrapper already provides the page background + padding.
+    // Left-aligned (no mx-auto) so content doesn't float in the middle. The
+    // Strategy tab uses a wide master-detail layout; the forms stay readable.
+    <div className="animate-in fade-in duration-300">
+      <div>
         {/* Header — context-aware: a returning user with a profile is here to
             review/refine, not fill a blank form. */}
         <div className="mb-8">
@@ -231,9 +285,36 @@ export default function AIProfilePage() {
           </p>
         </div>
 
+        {/* Top-level tabs: Overview · Strategy · Inputs */}
+        <div className="flex space-x-1 bg-white rounded-xl p-1 border border-slate-200 mb-8 max-w-md">
+          {([
+            { id: 'overview', label: 'Overview' },
+            { id: 'strategy', label: 'Strategy' },
+            { id: 'inputs', label: 'Inputs' },
+          ] as const).map(t => (
+            <button
+              key={t.id}
+              onClick={() => setView(t.id)}
+              className={`flex-1 py-2.5 px-4 rounded-lg text-sm font-semibold transition-all ${
+                view === t.id ? 'bg-primary text-white shadow-sm' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {/* OVERVIEW: the AI's read-back of the profile. */}
+        {view === 'overview' && !understanding_loading && !understanding && (
+          <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center">
+            <Sparkles className="w-8 h-8 text-primary/40 mx-auto mb-3" />
+            <p className="text-slate-600 font-medium">Fill in your business details under <button onClick={() => setView('inputs')} className="text-primary font-bold hover:underline">Inputs</button> and the AI will summarize what it understands here.</p>
+          </div>
+        )}
+
         {/* Reflect-back: "here's what I understood" — appears after a save so
             the form feels like a conversation, not a one-way data dump. */}
-        {(understanding_loading || understanding) && (
+        {view === 'overview' && (understanding_loading || understanding) && (
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
@@ -323,6 +404,12 @@ export default function AIProfilePage() {
           </motion.div>
         )}
 
+        {/* STRATEGY: the generated sections, rendered inline as a tab. */}
+        {view === 'strategy' && <StrategyWorkspace embedded />}
+
+        {/* INPUTS: the editable business-profile form. */}
+        {view === 'inputs' && (
+        <>
         {/* Tabs */}
         <div className="flex space-x-1 bg-white rounded-xl p-1 border border-slate-200 mb-8">
           {tabs.map(tab => (
@@ -635,6 +722,8 @@ export default function AIProfilePage() {
             </div>
           </div>
         </div>
+        </>
+        )}
       </div>
     </div>
   );
