@@ -22,6 +22,7 @@ class MessagingStrategyAgent(BaseAgent):
         }
         
         prompt = self.load_prompt(
+            _goal_type=state.user_input.get("goalType"),
             business_analysis=json.dumps(state.business_analysis or {}, indent=2),
             competitor_analysis=json.dumps(state.competitor_analysis or {}, indent=2),
             research_output=json.dumps(state.research_output or {}, indent=2),
@@ -29,7 +30,8 @@ class MessagingStrategyAgent(BaseAgent):
         )
         
         response = await self.call_groq_async(
-            system="You are a senior marketing strategist. Return ONLY valid JSON.",
+            system=self.system_role(state.user_input.get("goalType"),
+                                    "You are a senior marketing strategist. Return ONLY valid JSON."),
             user=prompt,
         )
         

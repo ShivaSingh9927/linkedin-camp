@@ -25,13 +25,15 @@ class CompetitorAnalysisAgent(BaseAgent):
         }
 
         prompt = self.load_prompt(
+            _goal_type=state.user_input.get("goalType"),
             business_analysis=json.dumps(business_analysis, indent=2),
             user_input=json.dumps(user_input, indent=2),
             web_research=json.dumps(web_research, indent=2),
         )
 
         response = await self.call_groq_async(
-            system="You are a competitive intelligence analyst. Return ONLY valid JSON.",
+            system=self.system_role(state.user_input.get("goalType"),
+                                    "You are a competitive intelligence analyst. Return ONLY valid JSON."),
             user=prompt,
         )
 

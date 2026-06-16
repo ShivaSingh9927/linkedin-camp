@@ -5,12 +5,7 @@ import { motion } from 'framer-motion';
 import { Building2, Target, PenTool, Globe, Sparkles, Check, Loader2, ArrowRight, Clock, Users, Lightbulb } from 'lucide-react';
 import api from '@/lib/api';
 import { StrategyWorkspace } from '@/components/StrategyWorkspace';
-
-const tabs = [
-  { id: 'business', label: 'Business', icon: Building2 },
-  { id: 'audience', label: 'Audience', icon: Target },
-  { id: 'voice', label: 'Voice', icon: PenTool },
-];
+import { getStrategyLabels } from '@/lib/strategyLabels';
 
 const industries = [
   'SaaS/Software', 'Marketing Agency', 'Sales/Recruitment', 'Consulting',
@@ -40,6 +35,8 @@ export default function AIProfilePage() {
   // sub-tab within Inputs (Business/Audience/Voice).
   const [view, setView] = useState<'overview' | 'strategy' | 'inputs'>('overview');
   const [activeTab, setActiveTab] = useState('business');
+  // The user's goal drives every visible label on this form (and the strategy).
+  const [goalType, setGoalType] = useState<string>('sell');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -101,6 +98,7 @@ export default function AIProfilePage() {
       const { data } = await api.get('/users/me');
       if (data.businessProfile) {
         setExistingProfile(data.businessProfile);
+        if (data.businessProfile.goalType) setGoalType(data.businessProfile.goalType);
         setForm(prev => ({
           ...prev,
           companyDescription: data.businessProfile.companyDescription || '',
@@ -268,6 +266,14 @@ export default function AIProfilePage() {
     );
   }
 
+  // Visible labels flex with the user's goal; the form keys never change.
+  const L = getStrategyLabels(goalType);
+  const tabs = [
+    { id: 'business', label: L.inputs.businessTab, icon: Building2 },
+    { id: 'audience', label: L.inputs.audienceTab, icon: Target },
+    { id: 'voice', label: 'Voice', icon: PenTool },
+  ];
+
   return (
     // Full-bleed: SidebarWrapper already provides the page background + padding.
     // Left-aligned (no mx-auto) so content doesn't float in the middle. The
@@ -434,31 +440,31 @@ export default function AIProfilePage() {
             <div className="space-y-6">
               <div>
                 <label className="block text-sm font-bold text-slate-900 mb-2">
-                  Company Description <span className="text-red-500">*</span>
+                  {L.inputs.companyDescription} <span className="text-red-500">*</span>
                 </label>
                 <textarea
                   value={form.companyDescription}
                   onChange={e => setForm(prev => ({ ...prev, companyDescription: e.target.value }))}
-                  placeholder="Describe what your company does in 2-3 sentences..."
+                  placeholder={L.inputs.companyDescriptionPlaceholder}
                   className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none resize-none h-24 text-sm"
                 />
               </div>
 
               <div>
                 <label className="block text-sm font-bold text-slate-900 mb-2">
-                  Products / Services <span className="text-red-500">*</span>
+                  {L.inputs.products} <span className="text-red-500">*</span>
                 </label>
                 <textarea
                   value={form.products}
                   onChange={e => setForm(prev => ({ ...prev, products: e.target.value }))}
-                  placeholder="List your main products or services, comma-separated..."
+                  placeholder={L.inputs.productsPlaceholder}
                   className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none resize-none h-20 text-sm"
                 />
               </div>
 
               <div>
                 <label className="block text-sm font-bold text-slate-900 mb-2">
-                  Website URL
+                  {L.inputs.website}
                 </label>
                 <div className="flex gap-3">
                   <input
@@ -474,24 +480,24 @@ export default function AIProfilePage() {
 
               <div>
                 <label className="block text-sm font-bold text-slate-900 mb-2">
-                  Key Differentiators
+                  {L.inputs.differentiators}
                 </label>
                 <textarea
                   value={form.differentiators}
                   onChange={e => setForm(prev => ({ ...prev, differentiators: e.target.value }))}
-                  placeholder="What makes you different from competitors..."
+                  placeholder={L.inputs.differentiatorsPlaceholder}
                   className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none resize-none h-20 text-sm"
                 />
               </div>
 
               <div>
                 <label className="block text-sm font-bold text-slate-900 mb-2">
-                  Case Studies / Results
+                  {L.inputs.caseStudies}
                 </label>
                 <textarea
                   value={form.caseStudies}
                   onChange={e => setForm(prev => ({ ...prev, caseStudies: e.target.value }))}
-                  placeholder="Key metrics, results, or testimonials..."
+                  placeholder={L.inputs.caseStudiesPlaceholder}
                   className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none resize-none h-20 text-sm"
                 />
               </div>
@@ -502,12 +508,12 @@ export default function AIProfilePage() {
             <div className="space-y-6">
               <div>
                 <label className="block text-sm font-bold text-slate-900 mb-2">
-                  Target Audience / ICP <span className="text-red-500">*</span>
+                  {L.inputs.targetAudience} <span className="text-red-500">*</span>
                 </label>
                 <textarea
                   value={form.targetAudience}
                   onChange={e => setForm(prev => ({ ...prev, targetAudience: e.target.value }))}
-                  placeholder="Describe your ideal customer profile..."
+                  placeholder={L.inputs.targetAudiencePlaceholder}
                   className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none resize-none h-24 text-sm"
                 />
               </div>
@@ -556,12 +562,12 @@ export default function AIProfilePage() {
 
               <div>
                 <label className="block text-sm font-bold text-slate-900 mb-2">
-                  Main Pain Point You Solve
+                  {L.inputs.mainPainPoint}
                 </label>
                 <textarea
                   value={form.mainPainPoint}
                   onChange={e => setForm(prev => ({ ...prev, mainPainPoint: e.target.value }))}
-                  placeholder="What's the main problem you solve for your customers..."
+                  placeholder={L.inputs.mainPainPointPlaceholder}
                   className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none resize-none h-20 text-sm"
                 />
               </div>
@@ -683,9 +689,9 @@ export default function AIProfilePage() {
             </div>
             {(() => {
               const missing = [
-                !form.companyDescription && 'Company Description (Business)',
-                !form.products && 'Products / Services (Business)',
-                !form.targetAudience && 'Target Audience (Audience)',
+                !form.companyDescription && `${L.inputs.companyDescription} (${L.inputs.businessTab})`,
+                !form.products && `${L.inputs.products} (${L.inputs.businessTab})`,
+                !form.targetAudience && `${L.inputs.targetAudience} (${L.inputs.audienceTab})`,
                 !form.communicationStyle && 'Communication Style (Voice)',
               ].filter(Boolean) as string[];
               return missing.length > 0 ? (

@@ -71,6 +71,7 @@ def get_cache_key(user_input: Dict[str, Any]) -> str:
         "differentiators": user_input.get("differentiators", ""),
         "caseStudies": user_input.get("caseStudies", ""),
         "communicationStyle": user_input.get("communicationStyle", ""),
+        "goalType": user_input.get("goalType", ""),
     }
     cache_str = json.dumps(cache_fields, sort_keys=True)
     return "strategy_cache:" + hashlib.md5(cache_str.encode()).hexdigest()

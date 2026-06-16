@@ -11,23 +11,28 @@ import { io as socketIO, Socket } from 'socket.io-client';
 import { GenerationProgress } from '@/components/GenerationProgress';
 import PillarEditor from '@/components/PillarEditor';
 import StrategySectionEditor from '@/components/StrategySectionEditor';
+import { getStrategyLabels } from '@/lib/strategyLabels';
 import { cn } from '@/lib/utils';
 import api from '@/lib/api';
 
 const apiBase = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/v1\/?$/, '');
 
-const SECTIONS = [
-  { key: 'gtm', label: 'Go-to-Market', icon: Target, color: 'text-primary', bg: 'bg-primary/10' },
-  { key: 'icp', label: 'Ideal Customer', icon: Users, color: 'text-indigo-500', bg: 'bg-indigo-500/10' },
-  { key: 'messagingPillars', label: 'Messaging Pillars', icon: MessageCircle, color: 'text-amber-500', bg: 'bg-amber-500/10' },
-  { key: 'outreachAngles', label: 'Outreach Angles', icon: Crosshair, color: 'text-rose-500', bg: 'bg-rose-500/10' },
-  { key: 'objections', label: 'Objection Handling', icon: Shield, color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
-  { key: 'competitiveLandscape', label: 'Competitive Landscape', icon: Swords, color: 'text-slate-600', bg: 'bg-slate-500/10' },
-  { key: 'commentStrategy', label: 'Comment Strategy', icon: MessageSquare, color: 'text-blue-500', bg: 'bg-blue-500/10' },
+// Icon/colour per section is goal-independent; the visible label is resolved
+// per goalType at render via getStrategyLabels (see SECTIONS in the component).
+const SECTION_META = [
+  { key: 'gtm', icon: Target, color: 'text-primary', bg: 'bg-primary/10' },
+  { key: 'icp', icon: Users, color: 'text-indigo-500', bg: 'bg-indigo-500/10' },
+  { key: 'messagingPillars', icon: MessageCircle, color: 'text-amber-500', bg: 'bg-amber-500/10' },
+  { key: 'outreachAngles', icon: Crosshair, color: 'text-rose-500', bg: 'bg-rose-500/10' },
+  { key: 'objections', icon: Shield, color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
+  { key: 'competitiveLandscape', icon: Swords, color: 'text-slate-600', bg: 'bg-slate-500/10' },
+  { key: 'commentStrategy', icon: MessageSquare, color: 'text-blue-500', bg: 'bg-blue-500/10' },
 ] as const;
 
 export function StrategyWorkspace({ embedded = false }: { embedded?: boolean }) {
   const [strategy, setStrategy] = useState<any>(null);
+  // What the user is on Qampi to do — drives all visible strategy labels.
+  const [goalType, setGoalType] = useState<string>('sell');
   // Master-detail: which section the right panel shows. 'summary' is the
   // read-only at-a-glance overview; the rest map to editable strategy keys.
   const [activeSection, setActiveSection] = useState<string>('summary');
@@ -100,6 +105,7 @@ export function StrategyWorkspace({ embedded = false }: { embedded?: boolean }) 
         const fresh = data?.strategy && data.generatedAt && data.generatedAt !== regenBaselineRef.current;
         if (fresh) {
           setStrategy(data.strategy);
+          if (data.goalType) setGoalType(data.goalType);
           setGeneratedAt(data.generatedAt);
           setIsFallback(data.strategy?._metadata?.isFallback || false);
           setIsCached(false);
@@ -150,6 +156,7 @@ export function StrategyWorkspace({ embedded = false }: { embedded?: boolean }) 
     setLoading(true);
     try {
       const { data } = await api.get('/strategy');
+      if (data.goalType) setGoalType(data.goalType);
       if (data.strategy) {
         setStrategy(data.strategy);
         setGeneratedAt(data.generatedAt);
@@ -295,6 +302,10 @@ export function StrategyWorkspace({ embedded = false }: { embedded?: boolean }) 
   const advantages: string[] = Array.isArray(strategy?.competitiveLandscape?.ourAdvantages) ? strategy.competitiveLandscape.ourAdvantages.slice(0, 3) : [];
   const pillars: any[] = Array.isArray(strategy?.messagingPillars) ? strategy.messagingPillars.slice(0, 3) : [];
 
+  // Visible labels are resolved per goal; the section keys/icons never change.
+  const labels = getStrategyLabels(goalType);
+  const SECTIONS = SECTION_META.map((s) => ({ ...s, label: labels.sections[s.key] || s.key }));
+
   const confirmedCount = SECTIONS.filter((s) => confirmedSections[s.key]).length;
   const allConfirmed = !!confirmedAt || confirmedCount === SECTIONS.length;
 
@@ -426,7 +437,7 @@ export function StrategyWorkspace({ embedded = false }: { embedded?: boolean }) 
                     onAccept={handleAcceptCommentInstruction}
                   />
                 ) : (
-                  <StrategySectionEditor sectionKey={activeSection} value={strategy[activeSection]} onChange={(next) => patchSection(activeSection, next)} />
+                  <StrategySectionEditor sectionKey={activeSection} value={strategy[activeSection]} goalType={goalType} onChange={(next) => patchSection(activeSection, next)} />
                 )}
                 </div>
               </motion.div>

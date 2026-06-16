@@ -14,8 +14,60 @@ class BaseAgent:
         self.client = client
         self.base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     
-    def load_prompt(self, **kwargs) -> str:
-        prompt_file = os.path.join(self.base_dir, self.config["prompt_file"])
+    def resolve_prompt_file(self, goal_type: Optional[str]) -> str:
+        """Pick the prompt file for this agent given the user's goal.
+
+        Default (goal_type falsy or 'sell') uses the flat prompts/<agent>.txt
+        — the original B2B-sales framing, so existing users are untouched.
+        Any other goal (e.g. 'job_seeking') looks for a per-goal override at
+        prompts/<goal_type>/<basename>; if that file doesn't exist we fall back
+        to the default. This lets us add one goal at a time without writing a
+        full prompt set for every agent up front."""
+        default_rel = self.config["prompt_file"]
+        if goal_type and goal_type != "sell":
+            basename = os.path.basename(default_rel)
+            override_abs = os.path.join(self.base_dir, "prompts", goal_type, basename)
+            if os.path.exists(override_abs):
+                return override_abs
+        return os.path.join(self.base_dir, default_rel)
+
+    # Per-goal system roles. The big task framing lives in the prompt files;
+    # this just keeps the one-line role from contradicting the goal. Falls
+    # back to the sales role for any goal without an explicit entry.
+    SYSTEM_ROLES = {
+        "job_seeking": {
+            "business_analysis": "You are a senior career strategist who positions candidates for their target roles. Return ONLY valid JSON.",
+            "competitor_analysis": "You are a career-market analyst mapping the competitive landscape a candidate faces. Return ONLY valid JSON.",
+            "messaging_strategy": "You are a senior career coach and personal-branding strategist who has helped 100+ professionals land roles through LinkedIn outreach. Return ONLY valid JSON.",
+            "synthesizer": "You are a technical writer. Return ONLY valid JSON.",
+        },
+        "recruiting": {
+            "business_analysis": "You are a senior talent strategist who assesses how attractive a hiring opportunity is to candidates. Return ONLY valid JSON.",
+            "competitor_analysis": "You are a talent-market analyst mapping the employers competing for the same candidates. Return ONLY valid JSON.",
+            "messaging_strategy": "You are a senior talent-sourcing strategist who has run outbound recruiting for 100+ roles. Return ONLY valid JSON.",
+            "synthesizer": "You are a technical writer. Return ONLY valid JSON.",
+        },
+        "fundraising": {
+            "business_analysis": "You are a startup fundraising advisor who frames a company's investment thesis for investors. Return ONLY valid JSON.",
+            "competitor_analysis": "You are a venture-market analyst mapping comparable companies and how investors evaluate them. Return ONLY valid JSON.",
+            "messaging_strategy": "You are a fundraising strategist who has helped founders run 100+ investor outreach campaigns on LinkedIn. Return ONLY valid JSON.",
+            "synthesizer": "You are a technical writer. Return ONLY valid JSON.",
+        },
+        "networking": {
+            "business_analysis": "You are a personal-brand strategist who positions professionals to build influence and relationships. Return ONLY valid JSON.",
+            "competitor_analysis": "You are a community-landscape analyst mapping the people and voices in a professional's target space. Return ONLY valid JSON.",
+            "messaging_strategy": "You are a relationship-building and personal-branding strategist who has helped 100+ professionals grow their network on LinkedIn. Return ONLY valid JSON.",
+            "synthesizer": "You are a technical writer. Return ONLY valid JSON.",
+        },
+    }
+
+    def system_role(self, goal_type: Optional[str], default: str) -> str:
+        if goal_type and goal_type in self.SYSTEM_ROLES:
+            return self.SYSTEM_ROLES[goal_type].get(self.name, default)
+        return default
+
+    def load_prompt(self, _goal_type: Optional[str] = None, **kwargs) -> str:
+        prompt_file = self.resolve_prompt_file(_goal_type)
         try:
             with open(prompt_file, "r") as f:
                 template = f.read()

@@ -10,9 +10,26 @@ import {
     Sparkles,
     ChevronRight,
     Loader2,
+    Target,
+    Search,
+    Banknote,
+    Users,
+    UserPlus,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
 import api from '@/lib/api';
+
+// The goal drives the whole AI strategy (prompts + labels). sell + job_seeking
+// are live; the rest are on the roadmap and shown disabled so the picker
+// communicates the direction without producing mis-framed strategies yet.
+const GOALS = [
+    { key: 'sell', label: 'Generate leads', sub: 'Reach buyers & win customers', icon: Target, live: true },
+    { key: 'recruiting', label: 'Hire talent', sub: 'Source great candidates', icon: UserPlus, live: true },
+    { key: 'job_seeking', label: 'Find a job', sub: 'Reach hiring managers', icon: Search, live: true },
+    { key: 'fundraising', label: 'Raise funding', sub: 'Connect with investors', icon: Banknote, live: true },
+    { key: 'networking', label: 'Grow my network', sub: 'Build relationships', icon: Users, live: true },
+] as const;
 
 /**
  * Minimal-ask onboarding.
@@ -33,9 +50,12 @@ export default function OnboardingPage() {
     const [loading, setLoading] = useState(false);
     const [user, setUser] = useState<any>(null);
 
+    const [goalType, setGoalType] = useState<string>('');
     const [jobTitle, setJobTitle] = useState('');
     const [linkedinUrl, setLinkedinUrl] = useState('');
     const [website, setWebsite] = useState('');
+
+    const isJobSeeking = goalType === 'job_seeking';
 
     useEffect(() => {
         const storedUser = localStorage.getItem('user');
@@ -45,6 +65,10 @@ export default function OnboardingPage() {
     }, []);
 
     const handleSubmit = async () => {
+        if (!goalType) {
+            toast.error('Pick what brings you to Qampi so the AI can tailor your strategy.');
+            return;
+        }
         if (!linkedinUrl.trim()) {
             toast.error('Your LinkedIn profile URL is required to run automations.');
             return;
@@ -52,6 +76,7 @@ export default function OnboardingPage() {
         setLoading(true);
         try {
             await api.put('/users/onboarding', {
+                goalType,
                 jobTitle: jobTitle.trim() || undefined,
                 linkedinUrl: linkedinUrl.trim(),
                 website: website.trim() || undefined,
@@ -85,8 +110,9 @@ export default function OnboardingPage() {
                         Welcome{firstName} — let&apos;s get to know you
                     </h1>
                     <p className="text-muted-foreground font-medium mt-3 max-w-md mx-auto">
-                        Just two things. From these, the AI figures out your business, your ICP and your
-                        positioning — so you don&apos;t have to fill out a long form.
+                        {isJobSeeking
+                            ? 'From a couple of details, the AI figures out your strengths, your target roles and how to stand out — so you don’t have to fill out a long form.'
+                            : 'Just a few things. From these, the AI builds your tailored outreach strategy — who to reach, what to say and how to stand out — so you don’t have to fill out a long form.'}
                     </p>
                 </div>
 
@@ -99,6 +125,42 @@ export default function OnboardingPage() {
                     <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-primary/40 via-primary to-primary/40" />
 
                     <div className="space-y-7">
+                        {/* Goal picker — drives the entire AI strategy (prompts + labels) */}
+                        <div className="space-y-3">
+                            <label className="text-xs font-black text-muted-foreground uppercase tracking-widest ml-1 flex items-center gap-2">
+                                What brings you to Qampi? <span className="text-red-500">*</span>
+                            </label>
+                            <div className="grid grid-cols-2 gap-3">
+                                {GOALS.map((g) => {
+                                    const selected = goalType === g.key;
+                                    return (
+                                        <button
+                                            key={g.key}
+                                            type="button"
+                                            disabled={!g.live}
+                                            onClick={() => g.live && setGoalType(g.key)}
+                                            className={cn(
+                                                'relative text-left rounded-2xl border p-4 transition-all',
+                                                !g.live && 'opacity-50 cursor-not-allowed border-slate-200',
+                                                g.live && !selected && 'border-slate-200 hover:border-primary/50 hover:shadow-sm',
+                                                selected && 'border-primary ring-4 ring-primary/10 bg-primary/[0.03]',
+                                            )}
+                                        >
+                                            <div className={cn('w-9 h-9 rounded-xl grid place-items-center mb-2.5',
+                                                selected ? 'bg-primary text-white' : 'bg-slate-100 text-slate-500')}>
+                                                <g.icon className="w-[18px] h-[18px]" />
+                                            </div>
+                                            <p className="text-sm font-black text-foreground leading-tight">{g.label}</p>
+                                            <p className="text-[11px] font-bold text-muted-foreground mt-0.5">{g.sub}</p>
+                                            {!g.live && (
+                                                <span className="absolute top-3 right-3 text-[9px] font-black uppercase tracking-wider text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-full">Soon</span>
+                                            )}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+
                         <div className="space-y-2">
                             <label className="text-xs font-black text-muted-foreground uppercase tracking-widest ml-1 flex items-center gap-2">
                                 Your LinkedIn Profile URL <span className="text-red-500">*</span>
@@ -121,7 +183,7 @@ export default function OnboardingPage() {
 
                         <div className="space-y-2">
                             <label className="text-xs font-black text-muted-foreground uppercase tracking-widest ml-1">
-                                Company Website <span className="text-slate-400 normal-case font-bold">(optional, but recommended)</span>
+                                {isJobSeeking ? 'Portfolio / Personal Site' : 'Company Website'} <span className="text-slate-400 normal-case font-bold">(optional, but recommended)</span>
                             </label>
                             <div className="group relative">
                                 <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-primary transition-colors">
@@ -130,18 +192,20 @@ export default function OnboardingPage() {
                                 <input
                                     value={website}
                                     onChange={e => setWebsite(e.target.value)}
-                                    placeholder="https://yourcompany.com"
+                                    placeholder={isJobSeeking ? 'https://your-portfolio.com' : 'https://yourcompany.com'}
                                     className="w-full bg-white border border-slate-200 rounded-2xl p-4 pl-12 text-sm font-bold focus:outline-none focus:ring-4 focus:ring-primary/5 focus:border-primary/50 transition-all shadow-sm"
                                 />
                             </div>
                             <p className="text-[10px] text-muted-foreground font-bold px-1">
-                                We read your site to draft your company description, ICP and positioning — you just confirm it.
+                                {isJobSeeking
+                                    ? 'We read it to draft your background, target roles and positioning — you just confirm it.'
+                                    : 'We read your site to draft your company description, ICP and positioning — you just confirm it.'}
                             </p>
                         </div>
 
                         <div className="space-y-2">
                             <label className="text-xs font-black text-muted-foreground uppercase tracking-widest ml-1">
-                                Your Role <span className="text-slate-400 normal-case font-bold">(optional)</span>
+                                {isJobSeeking ? 'Your Current / Target Role' : 'Your Role'} <span className="text-slate-400 normal-case font-bold">(optional)</span>
                             </label>
                             <div className="group relative">
                                 <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-primary transition-colors">
@@ -150,7 +214,7 @@ export default function OnboardingPage() {
                                 <input
                                     value={jobTitle}
                                     onChange={e => setJobTitle(e.target.value)}
-                                    placeholder="e.g. Founder, Sales Manager, SDR"
+                                    placeholder={isJobSeeking ? 'e.g. Senior Backend Engineer' : 'e.g. Founder, Sales Manager, SDR'}
                                     className="w-full bg-white border border-slate-200 rounded-2xl p-4 pl-12 text-sm font-bold focus:outline-none focus:ring-4 focus:ring-primary/5 focus:border-primary/50 transition-all shadow-sm"
                                 />
                             </div>
@@ -164,7 +228,7 @@ export default function OnboardingPage() {
                             {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : (
                                 <>
                                     <Sparkles className="w-5 h-5" />
-                                    <span>Let the AI analyze my business</span>
+                                    <span>{isJobSeeking ? 'Let the AI build my job-search plan' : 'Let the AI analyze my business'}</span>
                                     <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
                                 </>
                             )}

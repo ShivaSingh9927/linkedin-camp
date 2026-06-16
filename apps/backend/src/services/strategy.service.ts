@@ -84,6 +84,7 @@ export class StrategyService {
       writingSamples: businessProfile.writingSamples || [],
       tonePreferences: businessProfile.tonePreferences || [],
       website: businessProfile.website || '',
+      goalType: businessProfile.goalType || 'sell',
       trigger,
       force_regenerate: forceRegenerate,
     };
@@ -145,6 +146,7 @@ export class StrategyService {
         aiStrategyGeneratedAt: true,
         strategyConfirmedAt: true,
         strategyConfirmedSections: true,
+        goalType: true,
       },
     });
 
@@ -153,6 +155,7 @@ export class StrategyService {
       generatedAt: businessProfile?.aiStrategyGeneratedAt || null,
       confirmedAt: businessProfile?.strategyConfirmedAt || null,
       confirmedSections: businessProfile?.strategyConfirmedSections || {},
+      goalType: businessProfile?.goalType || 'sell',
     };
   }
 

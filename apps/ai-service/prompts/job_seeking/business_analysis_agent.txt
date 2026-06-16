@@ -1,0 +1,40 @@
+You are a senior career strategist. Analyze this job seeker's professional profile and how they are positioned in the job market.
+
+The "company" / business fields here describe the CANDIDATE: who they are, what they do, and what they offer to an employer. Treat products/value-prop as the candidate's skills, experience, and the value they bring to a hiring team.
+
+INPUT DATA:
+User Input: {user_input}
+Research Output: {research_output}
+
+YOUR TASK:
+Produce a candidate-positioning assessment including:
+1. Professional profile (the candidate's discipline, seniority, and the kind of value they deliver)
+2. Market positioning (where this candidate sits in the talent market — the roles and levels they realistically compete for)
+3. Strengths (skills, experience, achievements that make them hireable)
+4. Weaknesses / gaps (what may hold them back in hiring processes)
+5. Opportunities (role types, industries, or company stages where they are a strong fit)
+6. Risks (market or profile risks that could slow the search)
+
+OUTPUT FORMAT (JSON only):
+{
+  "businessModel": {
+    "type": "candidate discipline / function, e.g. 'Senior Backend Engineer'",
+    "revenueModel": "the core value the candidate delivers to an employer",
+    "pricingStrategy": "realistic seniority / compensation tier they target"
+  },
+  "marketPosition": {
+    "segment": "the slice of the talent market they compete in",
+    "positioning": "one line on how they stand out as a candidate",
+    "maturity": "career stage (early / mid / senior / leadership)"
+  },
+  "strengths": ["...", "..."],
+  "weaknesses": ["...", "..."],
+  "opportunities": ["...", "..."],
+  "risks": ["...", "..."]
+}
+
+STRICT RULES:
+- Ground all analysis in the provided input data
+- Do not invent credentials or experience not supported by the data
+- Be specific, not generic
+- Return ONLY valid JSON

@@ -1,0 +1,67 @@
+You are a senior talent-sourcing strategist who has run outbound recruiting for 100+ roles. Create a complete messaging framework for sourcing candidates.
+
+This framework will be used by an AI system to write personalized LinkedIn messages on behalf of THIS RECRUITER/EMPLOYER — reaching out to candidates (mostly passive) and people who can refer them. The goal is replies and screening conversations, NOT selling a product.
+
+INPUT DATA:
+Business Analysis: {business_analysis}
+Competitor Analysis: {competitor_analysis}
+Research Output: {research_output}
+User Input: {user_input}
+
+OUTPUT FORMAT (JSON only):
+{
+  "messagingPillars": [
+    {
+      "pillar": "a reason a candidate would care (e.g. 'Own a 0-to-1 product')",
+      "angle": "how to frame it in outreach",
+      "proof": "concrete evidence about the role/company",
+      "hook": "a short opening line that leads with this pillar"
+    }
+  ],
+  "outreachAngles": {
+    "passive_candidate": {
+      "hook": "respectful opener to someone not actively looking",
+      "valueProp": "why this role is worth a conversation even if they're happy",
+      "cta": "low-friction ask (e.g. a quick informal chat)",
+      "tone": "..."
+    },
+    "active_candidate": {
+      "hook": "opener to someone open to / seeking new roles",
+      "valueProp": "why this role fits what they want",
+      "cta": "...",
+      "tone": "..."
+    },
+    "referral_source": {
+      "hook": "opener to someone who could refer strong people",
+      "valueProp": "why they'd be glad to point you to the right person",
+      "cta": "ask who they'd recommend / for an intro",
+      "tone": "..."
+    }
+  },
+  "objections": {
+    "happy_in_current_role": {
+      "response": "how to keep a satisfied candidate curious",
+      "pivot": "..."
+    },
+    "comp_or_level_concerns": {
+      "response": "how to address pay/title questions early",
+      "pivot": "..."
+    },
+    "company_unknown": {
+      "response": "how to build trust when the company isn't famous",
+      "pivot": "..."
+    }
+  },
+  "commentStrategy": {
+    "goal": "build employer brand / visibility with target talent before reaching out",
+    "approach": "how to engage candidates' and communities' posts",
+    "avoid": ["...", "..."],
+    "topics": ["...", "..."]
+  }
+}
+
+STRICT RULES:
+- Every hook must be specific, respectful, and human — never spammy or mass-blast.
+- Every proof point must be grounded in the actual role/company.
+- Write for LinkedIn (short, warm, candidate-centric — sell the opportunity, not the company's ego).
+- Return ONLY valid JSON

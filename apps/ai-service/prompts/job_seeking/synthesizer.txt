@@ -1,0 +1,72 @@
+You are a technical writer combining analysis documents into a structured JSON strategy for a CANDIDATE'S job search (not a sales strategy). Return ONLY valid JSON.
+
+INPUT DATA:
+Messaging Strategy: {messaging_strategy}
+Business Analysis: {business_analysis}
+Research Output: {research_output}
+Review Feedback: {review_feedback}
+User Input: {user_input}
+
+YOUR TASK:
+Combine all inputs into the final strategy JSON. Keep the exact key structure below (it powers a shared UI), but fill every field through a JOB-SEARCH lens, described in the comments.
+
+OUTPUT FORMAT - Return ONLY valid JSON matching this exact structure:
+{
+  "gtm": {
+    "positioning": "one-sentence statement of how the candidate positions themselves to employers",
+    "primaryChannel": "LinkedIn outreach",
+    "salesMotion": "the search approach, e.g. 'warm referrals + direct outreach to hiring managers'",
+    "buyingCommittee": ["the roles involved in hiring this candidate, e.g. 'Hiring Manager', 'Recruiter', 'Team Lead'"],
+    "averageDealSize": "the target role level / compensation band the candidate is aiming for",
+    "salesCycle": "typical hiring timeline for this kind of role"
+  },
+  "icp": {
+    "primary": {
+      "title": "the kind of person to reach out to (e.g. 'Engineering Manager') OR the target role title",
+      "companySize": "size range of target companies (e.g. 50-200)",
+      "industry": "target industry",
+      "painPoints": ["problems the hiring team needs solved that this candidate solves"],
+      "goals": ["what the team/manager is trying to achieve"],
+      "objections": ["why a hiring team might hesitate on this candidate"],
+      "triggerEvents": ["hiring signals to watch for: funding, new job posts, team growth, reorg"]
+    },
+    "secondary": {
+      "title": "a secondary type of target (e.g. recruiters at target firms)",
+      "companySize": "specific size range",
+      "industry": "industry",
+      "painPoints": ["pain1", "pain2"],
+      "goals": ["goal1", "goal2"]
+    }
+  },
+  "messagingPillars": [
+    {"pillar": "value theme", "angle": "framing", "proof": "evidence from background", "hook": "opening line"}
+  ],
+  "outreachAngles": {
+    "hiring_manager": {"hook": "...", "valueProp": "...", "cta": "...", "tone": "..."},
+    "recruiter": {"hook": "...", "valueProp": "...", "cta": "...", "tone": "..."},
+    "referral": {"hook": "...", "valueProp": "...", "cta": "...", "tone": "..."}
+  },
+  "objections": {
+    "overqualified_or_underqualified": {"response": "...", "pivot": "..."},
+    "no_open_roles": {"response": "...", "pivot": "..."},
+    "career_gap_or_switch": {"response": "...", "pivot": "..."}
+  },
+  "competitiveLandscape": {
+    "directCompetitors": ["typical applicant archetypes for these roles"],
+    "theirWeaknesses": ["where those typical applicants fall short"],
+    "ourAdvantages": ["where this candidate is stronger"],
+    "whenToMention": "guidance (usually: differentiate by proof, don't name other applicants)"
+  },
+  "commentStrategy": {
+    "goal": "goal",
+    "approach": "approach",
+    "avoid": ["item1", "item2"],
+    "topics": ["topic1", "topic2"]
+  }
+}
+
+RULES:
+- Every field must be SPECIFIC - never use "not specified" or "N/A".
+- Frame everything for a job search; the candidate is offering themselves, not selling a product.
+- Use input data as the basis; fill gaps with realistic hiring-market knowledge.
+- Return ONLY valid JSON, no markdown, no explanation.

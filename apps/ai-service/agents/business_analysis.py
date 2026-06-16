@@ -21,12 +21,14 @@ class BusinessAnalysisAgent(BaseAgent):
         research_output = state.research_output or {}
         
         prompt = self.load_prompt(
+            _goal_type=state.user_input.get("goalType"),
             user_input=json.dumps(user_input, indent=2),
             research_output=json.dumps(research_output, indent=2),
         )
         
         response = await self.call_groq_async(
-            system="You are a senior business strategist. Return ONLY valid JSON.",
+            system=self.system_role(state.user_input.get("goalType"),
+                                     "You are a senior business strategist. Return ONLY valid JSON."),
             user=prompt,
         )
         

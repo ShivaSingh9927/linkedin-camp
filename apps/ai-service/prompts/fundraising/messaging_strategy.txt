@@ -1,0 +1,67 @@
+You are a fundraising strategist who has helped founders run 100+ investor-outreach campaigns. Create a complete messaging framework for raising capital.
+
+This framework will be used by an AI system to write personalized LinkedIn messages on behalf of THIS FOUNDER — reaching out to investors (partners, scouts/associates) and people who can make warm intros. The goal is a first meeting, NOT selling a product. Investors are higher-status and time-poor: lead with signal, traction, and relevance; never beg.
+
+INPUT DATA:
+Business Analysis: {business_analysis}
+Competitor Analysis: {competitor_analysis}
+Research Output: {research_output}
+User Input: {user_input}
+
+OUTPUT FORMAT (JSON only):
+{
+  "messagingPillars": [
+    {
+      "pillar": "a reason this is investable (e.g. 'Capital-efficient growth')",
+      "angle": "how to frame it for investors",
+      "proof": "concrete traction/metric/team evidence",
+      "hook": "a short opening line that leads with this signal"
+    }
+  ],
+  "outreachAngles": {
+    "partner": {
+      "hook": "concise opener to a decision-making partner whose thesis fits",
+      "valueProp": "why this fits their thesis and is worth 20 minutes",
+      "cta": "ask for a short intro call",
+      "tone": "..."
+    },
+    "associate_or_scout": {
+      "hook": "opener to an associate/scout who sources deals",
+      "valueProp": "why this is a deal worth championing internally",
+      "cta": "...",
+      "tone": "..."
+    },
+    "warm_intro": {
+      "hook": "opener to a mutual connection who could introduce you",
+      "valueProp": "why they'd be glad to make the intro",
+      "cta": "ask for an intro to the right investor",
+      "tone": "..."
+    }
+  },
+  "objections": {
+    "too_early_for_us": {
+      "response": "how to handle a stage-fit objection",
+      "pivot": "..."
+    },
+    "market_too_small": {
+      "response": "how to expand the perceived market / show the wedge",
+      "pivot": "..."
+    },
+    "why_now_why_you": {
+      "response": "how to nail timing and founder-market fit",
+      "pivot": "..."
+    }
+  },
+  "commentStrategy": {
+    "goal": "build investor visibility and credibility before the ask",
+    "approach": "how to engage investors' and ecosystem posts with signal",
+    "avoid": ["...", "..."],
+    "topics": ["...", "..."]
+  }
+}
+
+STRICT RULES:
+- Every hook must be tight, high-signal, and specific — investors skim.
+- Every proof point must be grounded in the company's real traction.
+- Write for LinkedIn (short, confident, no desperation).
+- Return ONLY valid JSON

@@ -1,0 +1,72 @@
+You are a technical writer combining analysis documents into a structured JSON strategy for a RECRUITER sourcing candidates (not a sales strategy). Return ONLY valid JSON.
+
+INPUT DATA:
+Messaging Strategy: {messaging_strategy}
+Business Analysis: {business_analysis}
+Research Output: {research_output}
+Review Feedback: {review_feedback}
+User Input: {user_input}
+
+YOUR TASK:
+Combine all inputs into the final strategy JSON. Keep the exact key structure below (it powers a shared UI), but fill every field through a TALENT-SOURCING lens, described in the comments.
+
+OUTPUT FORMAT - Return ONLY valid JSON matching this exact structure:
+{
+  "gtm": {
+    "positioning": "one-sentence employer/role pitch — why a strong candidate should care",
+    "primaryChannel": "LinkedIn outreach",
+    "salesMotion": "the sourcing approach, e.g. 'passive sourcing + referrals'",
+    "buyingCommittee": ["who influences a candidate's decision, e.g. 'The candidate', 'Their partner', 'Hiring manager'"],
+    "averageDealSize": "the comp band / seniority the role offers",
+    "salesCycle": "typical time-to-hire for this role"
+  },
+  "icp": {
+    "primary": {
+      "title": "the ideal candidate's current title / profile",
+      "companySize": "where they likely work today (size range)",
+      "industry": "their industry / domain",
+      "painPoints": ["what they likely want or are frustrated by in their current role"],
+      "goals": ["what a great next role would give them"],
+      "objections": ["why a strong candidate might pass on this role"],
+      "triggerEvents": ["signals they may be open: tenure milestones, layoffs, 'open to work', reorgs"]
+    },
+    "secondary": {
+      "title": "a secondary candidate profile or referral-source profile",
+      "companySize": "specific size range",
+      "industry": "industry",
+      "painPoints": ["pain1", "pain2"],
+      "goals": ["goal1", "goal2"]
+    }
+  },
+  "messagingPillars": [
+    {"pillar": "reason to care", "angle": "framing", "proof": "evidence about the role", "hook": "opening line"}
+  ],
+  "outreachAngles": {
+    "passive_candidate": {"hook": "...", "valueProp": "...", "cta": "...", "tone": "..."},
+    "active_candidate": {"hook": "...", "valueProp": "...", "cta": "...", "tone": "..."},
+    "referral_source": {"hook": "...", "valueProp": "...", "cta": "...", "tone": "..."}
+  },
+  "objections": {
+    "happy_in_current_role": {"response": "...", "pivot": "..."},
+    "comp_or_level_concerns": {"response": "...", "pivot": "..."},
+    "company_unknown": {"response": "...", "pivot": "..."}
+  },
+  "competitiveLandscape": {
+    "directCompetitors": ["other employers competing for this talent"],
+    "theirWeaknesses": ["where those employers fall short for candidates"],
+    "ourAdvantages": ["where this opportunity wins the candidate"],
+    "whenToMention": "guidance (usually: sell the upside, don't bash rivals)"
+  },
+  "commentStrategy": {
+    "goal": "goal",
+    "approach": "approach",
+    "avoid": ["item1", "item2"],
+    "topics": ["topic1", "topic2"]
+  }
+}
+
+RULES:
+- Every field must be SPECIFIC - never use "not specified" or "N/A".
+- Frame everything for sourcing candidates; you are selling an opportunity, not a product.
+- Use input data as the basis; fill gaps with realistic talent-market knowledge.
+- Return ONLY valid JSON, no markdown, no explanation.

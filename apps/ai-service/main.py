@@ -201,6 +201,7 @@ class StrategyRequest(BaseModel):
     writingSamples: Optional[List[Dict[str, str]]] = None
     tonePreferences: Optional[List[str]] = None
     website: Optional[str] = None
+    goalType: Optional[str] = None  # "sell" (default) | "job_seeking" | ... — selects the prompt set
     trigger: str = "manual"
     force_regenerate: bool = False
 

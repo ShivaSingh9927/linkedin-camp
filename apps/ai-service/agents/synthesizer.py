@@ -23,6 +23,7 @@ class SynthesizerAgent(BaseAgent):
         }
         
         prompt = self.load_prompt(
+            _goal_type=state.user_input.get("goalType"),
             messaging_strategy=json.dumps(state.messaging_strategy or {}, indent=2),
             competitor_analysis=json.dumps(state.competitor_analysis or {}, indent=2),
             business_analysis=json.dumps(state.business_analysis or {}, indent=2),

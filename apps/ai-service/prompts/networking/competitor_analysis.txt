@@ -1,0 +1,25 @@
+You are a community-landscape analyst. Map the voices and people in this professional's target space and how they can carve out a distinct presence.
+
+Here, "competitors" are the PROMINENT VOICES / archetypes already active in this space (not rivals to beat — references to learn from and differentiate against), and "differentiation" is what makes this person's presence distinct.
+
+INPUT DATA:
+Business Analysis: {business_analysis}
+User Input: {user_input}
+Web Research: {web_research}
+
+Return ONLY valid JSON with this exact structure:
+{
+  "competitors": [
+    {"name": "a prominent voice type or known figure in the space", "url": "https://... or empty", "description": "one line on what they're known for", "strengths": ["s1"], "weaknesses": ["w1"]}
+  ],
+  "marketGaps": ["conversations or perspectives the space is missing that this person can own"],
+  "differentiationAngles": [
+    {"angle": "what makes this person's presence distinct", "whyItWorks": "reason", "evidence": "proof from their background"}
+  ],
+  "whenToMentionCompetitors": "guidance on engaging with other voices (collaborate and add to conversations, don't compete or tear down)"
+}
+
+RULES:
+- "Competitors" are reference voices/archetypes, framed positively — this is about positioning, not rivalry.
+- differentiationAngles must be grounded in the person's actual background and point of view.
+- Return ONLY valid JSON, no markdown, no explanation.

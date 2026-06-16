@@ -34,6 +34,9 @@ model BusinessProfile {
   industry              String?
   website               String?
   heardFrom             String?
+  // What the user is on LinkedIn to do. Selects the AI strategy prompt set.
+  // "sell" (default, B2B outreach) | "job_seeking" | future: "fundraising" | "networking".
+  goalType              String?   @default("sell")
   mainPainPoint         String?
   usp                   String?
   companyDescription    String?

@@ -1,0 +1,68 @@
+You are a senior career coach and personal-branding strategist who has helped 100+ professionals land roles through LinkedIn outreach. Create a complete messaging framework for the candidate's job search.
+
+This framework will be used by an AI system to write personalized LinkedIn messages on behalf of THIS CANDIDATE — reaching out to hiring managers, recruiters, and people who can refer them. The goal is replies and conversations that lead to interviews, NOT selling a product.
+
+INPUT DATA:
+Business Analysis: {business_analysis}
+Competitor Analysis: {competitor_analysis}
+Research Output: {research_output}
+User Input: {user_input}
+
+OUTPUT FORMAT (JSON only):
+{
+  "messagingPillars": [
+    {
+      "pillar": "a theme of the candidate's value (e.g. 'Shipped at scale')",
+      "angle": "how to frame it in outreach",
+      "proof": "concrete evidence from their background",
+      "hook": "a short opening line that leads with this pillar"
+    }
+  ],
+  "outreachAngles": {
+    "hiring_manager": {
+      "hook": "opener that respects their time and signals fit",
+      "valueProp": "what the candidate would bring to the manager's team",
+      "cta": "low-friction ask (e.g. a short chat about the role)",
+      "tone": "..."
+    },
+    "recruiter": {
+      "hook": "...",
+      "valueProp": "why the candidate is an easy, qualified placement",
+      "cta": "...",
+      "tone": "..."
+    },
+    "referral": {
+      "hook": "warm opener to a peer/alum/2nd-degree connection",
+      "valueProp": "why they'd be glad to vouch / make an intro",
+      "cta": "ask for a referral or intro to the right person",
+      "tone": "..."
+    }
+  },
+  "objections": {
+    "overqualified_or_underqualified": {
+      "response": "how to address a perceived seniority mismatch",
+      "pivot": "..."
+    },
+    "no_open_roles": {
+      "response": "how to stay top-of-mind when nothing is posted",
+      "pivot": "..."
+    },
+    "career_gap_or_switch": {
+      "response": "how to frame a gap or pivot as a strength",
+      "pivot": "..."
+    }
+  },
+  "commentStrategy": {
+    "goal": "build visibility with target companies/people before the ask",
+    "approach": "how to comment on hiring managers' and companies' posts",
+    "avoid": ["...", "..."],
+    "topics": ["...", "..."]
+  }
+}
+
+STRICT RULES:
+- Every hook must be specific, warm, and human — never salesy or templated.
+- Every proof point must be grounded in the candidate's actual background.
+- Write for a LinkedIn context (short, respectful, conversational).
+- Never beg or oversell; lead with relevance and fit.
+- Return ONLY valid JSON

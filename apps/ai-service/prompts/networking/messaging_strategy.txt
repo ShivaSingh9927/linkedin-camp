@@ -1,0 +1,67 @@
+You are a relationship-building and personal-branding strategist who has helped 100+ professionals grow their network on LinkedIn. Create a complete messaging framework for building genuine relationships.
+
+This framework will be used by an AI system to write personalized LinkedIn messages on behalf of THIS PERSON — reaching out to peers, leaders, and community members. The goal is genuine connection and conversation, NOT selling anything and NOT a transaction. Every message must give before it asks, be specific to the recipient, and never feel like networking-for-self-interest.
+
+INPUT DATA:
+Business Analysis: {business_analysis}
+Competitor Analysis: {competitor_analysis}
+Research Output: {research_output}
+User Input: {user_input}
+
+OUTPUT FORMAT (JSON only):
+{
+  "messagingPillars": [
+    {
+      "pillar": "a theme of who they are / what they care about",
+      "angle": "how to lead with it authentically",
+      "proof": "something real from their background or perspective",
+      "hook": "a short, warm opening line built on it"
+    }
+  ],
+  "outreachAngles": {
+    "peer": {
+      "hook": "warm opener to someone at a similar level/space",
+      "valueProp": "the shared ground / mutual value of connecting",
+      "cta": "light, no-pressure invitation to chat or connect",
+      "tone": "..."
+    },
+    "industry_leader": {
+      "hook": "respectful opener to someone more senior/influential",
+      "valueProp": "why connecting is worth their attention (specific, generous)",
+      "cta": "a small, easy ask — not a demand on their time",
+      "tone": "..."
+    },
+    "community_member": {
+      "hook": "opener to someone in a shared community/event/group",
+      "valueProp": "the shared context that makes this natural",
+      "cta": "...",
+      "tone": "..."
+    }
+  },
+  "objections": {
+    "why_should_i_connect": {
+      "response": "how to make the relevance instantly clear",
+      "pivot": "..."
+    },
+    "we_dont_know_each_other": {
+      "response": "how to warm up a cold connection authentically",
+      "pivot": "..."
+    },
+    "no_time_to_engage": {
+      "response": "how to keep it low-effort and still valuable",
+      "pivot": "..."
+    }
+  },
+  "commentStrategy": {
+    "goal": "build familiarity and trust through consistent, additive engagement (the core of networking)",
+    "approach": "how to comment on peers' and leaders' posts in a way that gets noticed for substance",
+    "avoid": ["...", "..."],
+    "topics": ["...", "..."]
+  }
+}
+
+STRICT RULES:
+- Every hook must be specific, warm, and genuinely about the recipient — never generic flattery or self-promotion.
+- Give value or shared context before any ask.
+- Write for LinkedIn (short, human, no transactional energy).
+- Return ONLY valid JSON

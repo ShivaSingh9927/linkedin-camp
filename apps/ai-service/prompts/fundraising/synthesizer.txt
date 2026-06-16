@@ -1,0 +1,72 @@
+You are a technical writer combining analysis documents into a structured JSON strategy for a FOUNDER raising capital (not a sales strategy). Return ONLY valid JSON.
+
+INPUT DATA:
+Messaging Strategy: {messaging_strategy}
+Business Analysis: {business_analysis}
+Research Output: {research_output}
+Review Feedback: {review_feedback}
+User Input: {user_input}
+
+YOUR TASK:
+Combine all inputs into the final strategy JSON. Keep the exact key structure below (it powers a shared UI), but fill every field through a FUNDRAISING lens, described in the comments.
+
+OUTPUT FORMAT - Return ONLY valid JSON matching this exact structure:
+{
+  "gtm": {
+    "positioning": "one-sentence investment pitch — what you do, the market, and why now",
+    "primaryChannel": "LinkedIn outreach",
+    "salesMotion": "the raise approach, e.g. 'warm intros + targeted direct outreach'",
+    "buyingCommittee": ["who decides at a fund, e.g. 'Partner', 'Associate', 'Investment committee'"],
+    "averageDealSize": "the round / check size you're raising (e.g. '$2M seed, $250k-$1M checks')",
+    "salesCycle": "typical timeline for a raise at this stage"
+  },
+  "icp": {
+    "primary": {
+      "title": "ideal investor type (e.g. 'Seed-stage fintech partner')",
+      "companySize": "fund size / type (e.g. 'micro-VC, $50-150M')",
+      "industry": "their thesis / sector focus",
+      "painPoints": ["what this investor is hunting for / worried about missing"],
+      "goals": ["the returns/outcomes they're chasing"],
+      "objections": ["why they might pass on this round"],
+      "triggerEvents": ["signals to watch: just raised a new fund, recent investments in your space, thesis posts"]
+    },
+    "secondary": {
+      "title": "a secondary investor type or warm-intro source",
+      "companySize": "fund size / type",
+      "industry": "thesis / sector",
+      "painPoints": ["pain1", "pain2"],
+      "goals": ["goal1", "goal2"]
+    }
+  },
+  "messagingPillars": [
+    {"pillar": "investable reason", "angle": "framing", "proof": "traction/metric evidence", "hook": "opening line"}
+  ],
+  "outreachAngles": {
+    "partner": {"hook": "...", "valueProp": "...", "cta": "...", "tone": "..."},
+    "associate_or_scout": {"hook": "...", "valueProp": "...", "cta": "...", "tone": "..."},
+    "warm_intro": {"hook": "...", "valueProp": "...", "cta": "...", "tone": "..."}
+  },
+  "objections": {
+    "too_early_for_us": {"response": "...", "pivot": "..."},
+    "market_too_small": {"response": "...", "pivot": "..."},
+    "why_now_why_you": {"response": "...", "pivot": "..."}
+  },
+  "competitiveLandscape": {
+    "directCompetitors": ["companies an investor could back instead / incumbents"],
+    "theirWeaknesses": ["where those companies fall short"],
+    "ourAdvantages": ["why you're the better bet"],
+    "whenToMention": "guidance (show market command; position as winning)"
+  },
+  "commentStrategy": {
+    "goal": "goal",
+    "approach": "approach",
+    "avoid": ["item1", "item2"],
+    "topics": ["topic1", "topic2"]
+  }
+}
+
+RULES:
+- Every field must be SPECIFIC - never use "not specified" or "N/A".
+- Frame everything for a raise; you are selling equity and a vision, not a product.
+- Use input data as the basis; fill gaps with realistic venture-market knowledge.
+- Return ONLY valid JSON, no markdown, no explanation.

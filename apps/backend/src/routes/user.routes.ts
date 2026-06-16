@@ -109,12 +109,17 @@ router.put('/business-profile', async (req: AuthRequest, res) => {
 
 router.put('/onboarding', async (req: AuthRequest, res) => {
     try {
-        const { 
+        const {
             firstName, lastName, jobTitle, linkedinUrl, company, website,
-            targetAudience, mainPainPoint, valueProp, heardFrom, industry 
+            targetAudience, mainPainPoint, valueProp, heardFrom, industry, goalType
         } = req.body;
-        
+
         const userId = req.user!.id;
+
+        // Only persist a recognised goal; anything else falls back to the
+        // sales default so a bad client value never breaks prompt resolution.
+        const VALID_GOALS = ['sell', 'job_seeking', 'recruiting', 'fundraising', 'networking'];
+        const normalizedGoal = VALID_GOALS.includes(goalType) ? goalType : undefined;
 
         await prisma.user.update({
             where: { id: userId },
@@ -131,11 +136,13 @@ router.put('/onboarding', async (req: AuthRequest, res) => {
             update: {
                 company, persona: jobTitle, website, targetAudience,
                 mainPainPoint, valueProp, heardFrom, industry,
+                goalType: normalizedGoal,
             },
             create: {
                 userId: userId,
                 company, persona: jobTitle, website, targetAudience,
                 mainPainPoint, valueProp, heardFrom, industry,
+                goalType: normalizedGoal,
             },
         });
 

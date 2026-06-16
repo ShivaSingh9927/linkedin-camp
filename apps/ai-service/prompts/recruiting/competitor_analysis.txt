@@ -1,0 +1,26 @@
+You are a talent-market analyst. Map the landscape this recruiter competes in for candidates and how the opportunity can stand out.
+
+Here, "competitors" are OTHER EMPLOYERS hiring for similar roles (the companies a strong candidate would also consider), and "differentiation" is how this role/employer wins the candidate.
+
+INPUT DATA:
+Business Analysis: {business_analysis}
+User Input: {user_input}
+Web Research: {web_research}
+
+Return ONLY valid JSON with this exact structure:
+{
+  "competitors": [
+    {"name": "competing employer or employer type", "url": "https://... or empty", "description": "one line on the rival opportunity", "strengths": ["s1"], "weaknesses": ["w1"]}
+  ],
+  "marketGaps": ["what candidates want that rival employers don't offer — this role can"],
+  "differentiationAngles": [
+    {"angle": "how this opportunity stands out", "whyItWorks": "reason", "evidence": "proof from the role/company"}
+  ],
+  "whenToMentionCompetitors": "guidance on when/whether to contrast with other employers in outreach (usually: sell the upside, don't bash rivals)"
+}
+
+RULES:
+- Anchor on real named employers from Web Research when present; otherwise use realistic employer types competing for this talent.
+- Base strengths/weaknesses on observable comp/mission/brand differences, not generic critique.
+- differentiationAngles must be grounded in the actual role and company.
+- Return ONLY valid JSON, no markdown, no explanation.
