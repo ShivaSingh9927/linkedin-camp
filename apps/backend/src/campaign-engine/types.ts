@@ -1,4 +1,4 @@
-import type { Page, BrowserContext } from 'patchright';
+import type { Page, BrowserContext, APIRequestContext } from 'patchright';
 
 // ---- Campaign Config ----
 
@@ -199,6 +199,11 @@ export interface NodeContext {
     };
     userId: string;
     campaignId: string;
+    // Browser-free Voyager client (no Chromium). Present for read/check nodes
+    // when the engine has deferred the browser launch (lazy launch). Nodes that
+    // can run without a page (e.g. check-connection-voyager) should use this
+    // when `page` is null. Built once per lead from the saved session.
+    apiRequest?: APIRequestContext;
     storedOutputs: Record<string, Record<string, any>>;
     connectionStatus?: 'not_connected' | 'pending' | 'connected';
     campaign?: {

@@ -23,7 +23,7 @@ type LinkStep = 'CREDENTIALS' | 'PROGRESS' | '2FA' | 'SUCCESS';
 const apiBase = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/v1\/?$/, '');
 
 export default function LinkedInConnectivity() {
-    const [status, setStatus] = useState<{ connected?: boolean } | null>(null);
+    const [status, setStatus] = useState<{ connected?: boolean; expired?: boolean } | null>(null);
     const [step, setStep] = useState<LinkStep>('CREDENTIALS');
     const [showModal, setShowModal] = useState(false);
     const [mounted, setMounted] = useState(false);
@@ -42,6 +42,22 @@ export default function LinkedInConnectivity() {
     useEffect(() => {
         setMounted(true);
         fetchStatus();
+        // Poll so the pill flips to red the moment the worker/liveCheck marks
+        // the session expired — without needing a page reload.
+        const t = setInterval(fetchStatus, 30_000);
+        return () => clearInterval(t);
+    }, []);
+
+    // Flip to expired immediately on the live SESSION_EXPIRED broadcast (the
+    // worker emits this to user_<id> when it detects a dead session), instead
+    // of waiting for the next poll.
+    useEffect(() => {
+        const token = localStorage.getItem('token');
+        if (!token) return;
+        const s = socketIO(apiBase, { transports: ['websocket', 'polling'] });
+        s.on('connect', () => s.emit('join_room', { token }));
+        s.on('SESSION_EXPIRED', () => setStatus(prev => ({ ...(prev || {}), connected: false, expired: true })));
+        return () => { s.disconnect(); };
     }, []);
 
     // Subscribe to live SESSION_LOGIN_STATUS while the modal is open.
@@ -365,12 +381,19 @@ export default function LinkedInConnectivity() {
                     setError(null);
                 }}
                 className={
-                    status?.connected
-                        ? 'flex items-center space-x-2 px-4 py-2 bg-emerald-50 text-emerald-600 rounded-full border border-emerald-100'
-                        : 'flex items-center space-x-2 px-6 py-3 bg-slate-900 text-white rounded-full animate-pulse'
+                    status?.expired
+                        ? 'flex items-center space-x-2 px-4 py-2 bg-red-50 text-red-600 rounded-full border border-red-200 animate-pulse'
+                        : status?.connected
+                            ? 'flex items-center space-x-2 px-4 py-2 bg-emerald-50 text-emerald-600 rounded-full border border-emerald-100'
+                            : 'flex items-center space-x-2 px-6 py-3 bg-slate-900 text-white rounded-full animate-pulse'
                 }
             >
-                {status?.connected ? (
+                {status?.expired ? (
+                    <>
+                        <AlertCircle className="w-4 h-4 text-red-500" />
+                        <span className="text-[10px] font-black uppercase">Session Expired — Reconnect</span>
+                    </>
+                ) : status?.connected ? (
                     <>
                         <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                         <span className="text-[10px] font-black uppercase">Signal Active</span>

@@ -71,9 +71,17 @@ const processCampaignJob = async (data: CampaignJobData, job: Job) => {
     }
 
     // PRE-FLIGHT SESSION VALIDATION
-    const { sessionValidator } = await import('../services/session-validator.service');
-    const quickCheck = await sessionValidator.quickCheck(userId);
-    
+    // Load-test mode: synthetic users carry fake cookies, so the real
+    // browser-based session check would always fail and pause the campaign
+    // before the engine ever runs. Skip it — the engine's own MOCK_LINKEDIN
+    // path handles the rest.
+    const { isMockLinkedIn } = await import('../campaign-engine/mock-linkedin');
+    // Browser-free /me liveness check (no Chromium) — authoritative, unlike the
+    // old flag-only quickCheck that reported dead sessions as healthy.
+    const quickCheck = isMockLinkedIn()
+        ? { connected: true, sessionInvalid: false }
+        : await (await import('../services/session-validator.service')).sessionValidator.liveCheck(userId);
+
     if (!quickCheck.connected || quickCheck.sessionInvalid) {
         console.error(`[CAMPAIGN-WORKER] Session invalid for user ${userId}. Pausing campaign.`);
         await prisma.campaign.update({

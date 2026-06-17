@@ -195,12 +195,19 @@ export const getLinkedinStatus = async (req: any, res: Response) => {
 
         // CRITICAL: DO NOT use LinkedInService.isSessionValid here.
         // It's a polling endpoint; checking LinkedIn validity on every poll is session suicide.
-        const connected = !!user.linkedinCookie || !!user.persistentSessionPath;
+        // We rely on the flags the worker/liveCheck already wrote: sessionInvalid
+        // + accountHealth. A session whose cookie exists but is flagged dead is
+        // "expired", not "connected" — so the top-bar indicator can go red.
+        const hasSession = !!user.linkedinCookie || !!user.persistentSessionPath;
+        const expired = hasSession && (user.sessionInvalid || user.accountHealth !== 'HEALTHY');
+        const connected = hasSession && !expired;
 
         res.json({
             userId: user.id,
             connected: connected,
-            isValid: true, // Optimistically valid if connected; real check is in worker
+            expired: expired,
+            accountHealth: user.accountHealth,
+            isValid: !expired,
             cookieLength: user.linkedinCookie ? user.linkedinCookie.length : 0,
             persistentPath: user.persistentSessionPath,
             profile: {

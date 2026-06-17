@@ -249,13 +249,63 @@ class SessionValidatorService {
         };
     }
 
+    /**
+     * Authoritative liveness check — confirms the session via a browser-FREE
+     * Voyager /me read (no Chromium), then self-heals the DB flags. Unlike
+     * quickCheck (which only trusts sessionInvalid + sessionValidatedAt and so
+     * reports dead sessions as healthy), this actually asks LinkedIn.
+     *
+     * Returns the same shape as quickCheck so it's a drop-in. On a confirmed
+     * 401 it marks the session invalid (fixing the false-positive problem); on
+     * success it refreshes sessionValidatedAt.
+     */
+    async liveCheck(userId: string): Promise<{ connected: boolean; sessionInvalid: boolean; sessionValidatedAt?: Date }> {
+        // Cheap DB gate first — no cookie / already-flagged-invalid short-circuits
+        // without an API round-trip.
+        const pre = await this.quickCheck(userId);
+        if (!pre.connected) return pre;
+
+        const { validateSessionBrowserless } = await import('./voyager-api.service');
+        const res = await validateSessionBrowserless(userId);
+
+        if (res.valid) {
+            const sessionValidatedAt = new Date();
+            await prisma.user.update({
+                where: { id: userId },
+                data: { sessionInvalid: false, sessionValidatedAt },
+            }).catch(() => {});
+            return { connected: true, sessionInvalid: false, sessionValidatedAt };
+        }
+
+        // A 401/gated /me means the saved session is dead — mark invalid so the
+        // DB stops reporting it healthy and the user gets prompted to re-login.
+        if (res.status === 401 || res.reason === 'no-identity-in-/me') {
+            await this.markInvalid(userId);
+            return { connected: false, sessionInvalid: true };
+        }
+
+        // Transient (proxy/network/build) failure — don't nuke the session over
+        // a blip; report connected so the caller proceeds (the DOM path will
+        // surface a real checkpoint if the session is genuinely gone).
+        console.warn(`[SESSION-VALIDATOR] liveCheck inconclusive for ${userId}: ${res.reason}`);
+        return { connected: true, sessionInvalid: false, sessionValidatedAt: pre.sessionValidatedAt };
+    }
+
     async markInvalid(userId: string): Promise<void> {
         try {
             await prisma.user.update({
                 where: { id: userId },
                 data: {
                     sessionInvalid: true,
-                    sessionValidatedAt: new Date()
+                    sessionValidatedAt: new Date(),
+                    // Flip account health too so the polled UI surfaces it: the
+                    // top-bar LinkedIn pill turns red and the AccountHealthBanner
+                    // appears (both read accountHealth). markInvalid is the
+                    // authoritative "session is dead" signal, so SESSION_EXPIRED
+                    // is the correct terminal state here.
+                    accountHealth: 'SESSION_EXPIRED',
+                    accountHealthReason: 'session_invalid',
+                    accountHealthAt: new Date(),
                 }
             });
             console.log(`[SESSION-VALIDATOR] Marked session as invalid for user ${userId}`);

@@ -44,8 +44,9 @@ import { checkQuota, nextDayRetryAt, DAILY_CAPS, GovernedAction, isWithinWorking
 import { transitionLead, recomputeCampaignStatus } from './safety/lifecycle';
 import { classifyPage, handleCheckpoint, isCheckpoint, pauseCampaignForSessionExpiry } from './safety/checkpoint';
 import { uploadScreenshotToS3 } from '../services/s3-upload.service';
-import { isFirstDegree, getAllConnections } from '../services/voyager-api.service';
+import { isFirstDegree, getAllConnections, getBrowserlessVoyagerContext } from '../services/voyager-api.service';
 import { stageRequiresConnection, nextStageRequiresConnection } from './linkedin-permissions';
+import { isMockLinkedIn, mockNode, MOCK_PASSTHROUGH } from './mock-linkedin';
 
 // Extract the LinkedIn vanity/public-id from a profile URL (…/in/<vanity>/…).
 const vanityFromUrl = (url: string): string =>
@@ -92,12 +93,32 @@ export async function executeNode(ctx: NodeContext, config: CampaignFlowNode): P
     const nodeCtx: NodeContext = {
         page, context, lead, userId, campaignId, storedOutputs, campaign, connectionStatus
     };
-    
+
+    // Load-test mode: stub LinkedIn actions reached via if-else branches too.
+    if (isMockLinkedIn() && !MOCK_PASSTHROUGH.has(nodeType)) {
+        return await mockNode(nodeCtx, config);
+    }
+
     return await handler(nodeCtx, config);
 }
 
 // Nodes that are fatal if they fail (skip to next lead)
 const FATAL_NODES: Set<string> = new Set(['profile-visit']);
+
+// Whether a node requires a live Chromium page (lazy-launch gate). Browser-FREE:
+// delay + if-else (DB-only), email/email-finder (SMTP / backend service), and
+// check-connection-voyager in 'fast' mode (pure Voyager read via apiRequest).
+// Everything else — writes (connect/send-message/like/comment/follow),
+// profile-visit (DOM enrichment: fsd resolve + contact-info + posts), DOM
+// check-connection, and messenger inbox-sync (needs a live page-instance) —
+// needs the browser. Unknown types default to needing it (safe).
+const BROWSER_FREE_NODES: Set<string> = new Set(['delay', 'if-else', 'email', 'email-finder']);
+function nodeNeedsBrowser(nodeConfig: CampaignFlowNode): boolean {
+    const t = String(nodeConfig.node);
+    if (BROWSER_FREE_NODES.has(t)) return false;
+    if (t === 'check-connection-voyager' && (nodeConfig as any).mode !== 'precise') return false;
+    return true;
+}
 
 // Reply-pause invariant: once a lead has replied to ANY message in this
 // campaign, we stop running automation against them. The inbox-sync worker
@@ -231,6 +252,12 @@ async function runLead(
     let browser: any;
     let context: any;
     let page: any;
+    // Browser-free Voyager client + its disposer (lazy launch). Built from the
+    // saved session; lets read/check nodes run without Chromium.
+    let apiRequest: import('patchright').APIRequestContext | undefined;
+    let disposeApiRequest: (() => Promise<void>) | undefined;
+    let needsWarmup = true; // first DOM node warms the session before acting
+    let profileVisitRan = false;
     // Tracks the node currently being executed so the outer catch can attribute
     // unexpected errors accurately instead of mis-labelling every failure as a
     // profile-visit failure (the old behavior). null = pre-flow or between
@@ -266,19 +293,33 @@ async function runLead(
             return execResult;
         }
 
-        // Launch the authenticated browser via the shared launcher — the single
-        // source of truth for the sticky-proxy invariant (also used by the
-        // self-profile enrichment job). Aborts if no pinned proxy snapshot.
-        const launch = await launchAuthenticatedContext(userId, sessionContext);
-        if (!launch.ok) {
-            execResult.status = 'failed';
-            execResult.failedAt = launch.failedAt;
-            execResult.error = launch.error;
-            return execResult;
+        // LAZY BROWSER LAUNCH.
+        // Chromium is needed only for DOM nodes (writes + profile-visit DOM
+        // enrichment + DOM check-connection + messenger inbox). Reads/checks
+        // (e.g. check-connection-voyager 'fast') run browser-FREE through a
+        // standalone Voyager request client built from the saved session. So we
+        // DON'T launch upfront: a tick that only checks "are they connected yet?"
+        // and defers never opens Chromium. The browser is launched (and warmed)
+        // on demand the first time a node actually needs a page — see
+        // ensureBrowser() below. Honours the sticky-proxy invariant via the same
+        // shared launcher. Load-test mode never launches (every node is mocked).
+        if (!isMockLinkedIn()) {
+            const bl = await getBrowserlessVoyagerContext(userId);
+            apiRequest = bl?.ctx;
+            disposeApiRequest = bl?.dispose;
         }
-        browser = launch.browser;
-        context = launch.context;
-        page = launch.page;
+
+        const ensureBrowser = async (): Promise<{ ok: true } | { ok: false; failedAt?: string; error?: string }> => {
+            if (page || isMockLinkedIn()) return { ok: true };
+            const launch = await launchAuthenticatedContext(userId, sessionContext);
+            if (!launch.ok) return { ok: false, failedAt: launch.failedAt, error: launch.error };
+            browser = launch.browser;
+            context = launch.context;
+            page = launch.page;
+            needsWarmup = true; // warm the fresh session before the first DOM action
+            console.log(`[ENGINE] Lazy-launched browser for ${lead.firstName} (first DOM node reached).`);
+            return { ok: true };
+        };
 
         // ---- Load previously stored outputs ----
         const storedOutputs = await readNodeOutputs(campaignId, lead.id);
@@ -287,9 +328,6 @@ async function runLead(
         console.log(`[ENGINE] Flow received: ${JSON.stringify(flow)}`);
         console.log(`[ENGINE] Flow length: ${flow?.length}`);
         
-        let needsWarmup = true; // First executed node always needs warmup
-        let profileVisitRan = false;
-
         const resumeFrom = Math.min(Math.max(0, startIndex), flow.length);
         if (resumeFrom > 0) {
             console.log(`[ENGINE] Lead ${lead.firstName}: resuming flow at node ${resumeFrom}/${flow.length}.`);
@@ -304,8 +342,8 @@ async function runLead(
             // (challenge spawned mid-flow). Catch it before we waste the next
             // node trying to interact with a non-existent UI. Cheap — URL
             // check + a single $('input[name="pin"]') probe.
-            const checkpointInfo = await classifyPage(page);
-            if (isCheckpoint(checkpointInfo)) {
+            const checkpointInfo = page ? await classifyPage(page) : null;
+            if (checkpointInfo && isCheckpoint(checkpointInfo)) {
                 console.warn(`[ENGINE] Checkpoint mid-flow for lead ${lead.firstName}: kind=${checkpointInfo.kind} url=${checkpointInfo.url}`);
                 const shotPath = `/app/sessions/engine_checkpoint_${userId}_${Date.now()}.png`;
                 await page.screenshot({ path: shotPath, fullPage: false }).catch(() => {});
@@ -350,8 +388,24 @@ async function runLead(
                 return execResult;
             }
 
-            // Auto warmup rules
-            if (needsWarmup && nodeType !== 'delay') {
+            // Lazy browser launch — open Chromium only when THIS node needs a
+            // live page (writes, profile-visit DOM enrichment, DOM
+            // check-connection, messenger inbox). Browser-free reads/checks
+            // skip this and run via apiRequest, so an acceptance-polling tick
+            // never launches a browser.
+            if (nodeNeedsBrowser(nodeConfig)) {
+                const b = await ensureBrowser();
+                if (!b.ok) {
+                    execResult.status = 'failed';
+                    execResult.failedAt = b.failedAt || 'launch';
+                    execResult.error = b.error;
+                    return execResult;
+                }
+            }
+
+            // Auto warmup rules — only once a browser exists (browser-free nodes
+            // need no warmup).
+            if (page && needsWarmup && nodeType !== 'delay') {
                 const warmupExec: NodeExecution = {
                     node: 'warmup' as NodeType,
                     status: 'success',
@@ -362,7 +416,9 @@ async function runLead(
                     page, context, lead, userId, campaignId, storedOutputs,
                 };
 
-                const warmupResult = await warmup(warmupCtx, { node: 'warmup' });
+                const warmupResult = isMockLinkedIn()
+                    ? { success: true, output: { warmed: true } }
+                    : await warmup(warmupCtx, { node: 'warmup' });
 
                 // Emit socket event for warmup
                 const socketIO = await getSocketIO();
@@ -446,6 +502,7 @@ async function runLead(
 
             const nodeCtx: NodeContext = {
                 page, context, lead, userId, campaignId, storedOutputs,
+                apiRequest,
                 campaign: campaignData,
                 aiContext,
             };
@@ -499,7 +556,13 @@ async function runLead(
             }
 
             currentNodeName = nodeType;
-            const result: NodeResult = await handler(nodeCtx, nodeConfig);
+            // Load-test mode: stub LinkedIn action nodes (no browser, no
+            // network) while letting DB-only nodes (delay, if-else) run real so
+            // parking + branching behave exactly as in prod. The engine's
+            // post-node DB writes below are unchanged either way.
+            const result: NodeResult = (isMockLinkedIn() && !MOCK_PASSTHROUGH.has(nodeType))
+                ? await mockNode(nodeCtx, nodeConfig)
+                : await handler(nodeCtx, nodeConfig);
             currentNodeName = null;
 
             // Emit socket event for real-time activity
@@ -628,7 +691,11 @@ async function runLead(
                 // (Voyager, cache-backed), skip the wait and roll straight on.
                 if (nextStageRequiresConnection(flow, i)) {
                     const vanity = vanityFromUrl(lead.linkedinUrl);
-                    const already = vanity ? await isFirstDegree(userId, vanity, page).catch(() => false) : false;
+                    // Browser-free when no page is open (lazy launch) — uses the
+                    // saved-session apiRequest. Skipped entirely in mock mode.
+                    const already = (vanity && !isMockLinkedIn())
+                        ? await isFirstDegree(userId, vanity, page || undefined, apiRequest).catch(() => false)
+                        : false;
                     if (already) {
                         console.log(`[ENGINE] Lead ${lead.firstName}: already 1st-degree — skipping ${hours}h acceptance wait.`);
                         needsWarmup = true;
@@ -694,6 +761,7 @@ async function runLead(
     } finally {
         if (context) await context.close().catch(() => {});
         if (browser) await browser.close().catch(() => {});
+        if (disposeApiRequest) await disposeApiRequest().catch(() => {});
     }
 }
 
@@ -772,6 +840,12 @@ export async function runCampaign(
     const seedConnections = async (): Promise<boolean> => {
         if (connectionsSeeded) return seedOk;
         connectionsSeeded = true;
+        // Load-test mode: no Voyager prefetch, no browser. Report seeded so the
+        // acceptance gate resolves without launching anything.
+        if (isMockLinkedIn()) {
+            seedOk = true;
+            return seedOk;
+        }
         try {
             const launch = await launchAuthenticatedContext(userId, config.sessionContext);
             if (launch.ok) {
@@ -804,7 +878,7 @@ export async function runCampaign(
         // totals are tiny. Reschedule the lead to the next window open + jitter
         // and move on; the cron scheduler re-picks it up when nextRetryAt
         // matures.
-        if (!isWithinWorkingHours()) {
+        if (!isMockLinkedIn() && !isWithinWorkingHours()) {
             const retryAt = nextWorkingHourAt();
             console.log(`[CAMPAIGN] Outside working hours — rescheduling lead ${cl.leadId} to ${retryAt.toISOString()}.`);
             await transitionLead(campaignId, cl.leadId, 'DEFERRED', {

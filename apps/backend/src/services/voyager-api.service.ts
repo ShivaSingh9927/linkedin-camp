@@ -42,7 +42,8 @@
  * a Page when available (preserves fingerprinting) but can fall back to a
  * bare context if the caller has no Page yet.
  */
-import type { Page, BrowserContext } from 'patchright';
+import type { Page, BrowserContext, APIRequestContext } from 'patchright';
+import { request } from 'patchright';
 import { prisma } from '@repo/db';
 import { randomRange } from './stealth.service';
 import Redis from 'ioredis';
@@ -169,6 +170,12 @@ interface FetchOptions {
     // get away with the context's request client.
     page?: Page;
     context?: BrowserContext;
+    // Browser-FREE request client (Playwright standalone APIRequestContext, no
+    // Chromium process). Built by getBrowserlessVoyagerContext from saved
+    // cookies + pinned proxy. Used for warmup/validation/non-messenger reads
+    // so a read-only flow never launches a browser. Messenger endpoints still
+    // require a live `page`. Proven 2026-06-17: /me returns 200 this way.
+    apiRequest?: APIRequestContext;
     // Skip rate limiting (used by the post-warmup burst that fires immediately
     // after a page navigation completes).
     skipRateLimit?: boolean;
@@ -196,7 +203,7 @@ export async function voyagerFetch<T = any>(
 ): Promise<VoyagerResult<T>> {
     if (!opts.skipRateLimit) await checkRateLimit(userId);
 
-    const req = opts.page?.context()?.request || opts.context?.request;
+    const req = opts.page?.context()?.request || opts.context?.request || opts.apiRequest;
     if (!req) {
         return { ok: false, error: 'No Playwright context available — cannot call Voyager (raw fetch is gated)' };
     }
@@ -487,7 +494,7 @@ export interface ConnectionsPage {
 const connectionsCache = new Map<string, { data: ConnectionMini[]; fetchedAt: number }>();
 const CONNECTIONS_TTL_MS = 10 * 60 * 1000; // 10 min
 
-export async function getAllConnections(userId: string, page?: Page): Promise<VoyagerResult<ConnectionMini[]>> {
+export async function getAllConnections(userId: string, page?: Page, apiRequest?: APIRequestContext): Promise<VoyagerResult<ConnectionMini[]>> {
     const cached = connectionsCache.get(userId);
     if (cached && Date.now() - cached.fetchedAt < CONNECTIONS_TTL_MS) {
         return { ok: true, status: 200, data: cached.data };
@@ -500,7 +507,7 @@ export async function getAllConnections(userId: string, page?: Page): Promise<Vo
 
     for (let p = 0; p < maxPages; p++) {
         const url = `https://www.linkedin.com/voyager/api/relationships/connections?count=${pageSize}&start=${start}`;
-        const r = await voyagerFetch<any>(userId, url, { page, skipRateLimit: p === 0 });
+        const r = await voyagerFetch<any>(userId, url, { page, apiRequest, skipRateLimit: p === 0 });
         if (!r.ok) return r;
 
         const body = r.data as any;
@@ -544,8 +551,8 @@ export async function getAllConnections(userId: string, page?: Page): Promise<Vo
  * doing a per-lead profile navigation. Backed by the in-memory cache populated
  * by getAllConnections(); triggers a one-time fetch on first call.
  */
-export async function isFirstDegree(userId: string, vanityOrFsd: string, page?: Page): Promise<boolean> {
-    const r = await getAllConnections(userId, page);
+export async function isFirstDegree(userId: string, vanityOrFsd: string, page?: Page, apiRequest?: APIRequestContext): Promise<boolean> {
+    const r = await getAllConnections(userId, page, apiRequest);
     if (!r.ok) return false;
     const target = vanityOrFsd.toLowerCase();
     return r.data.some((c) => {
@@ -769,4 +776,123 @@ export async function warmSelfCache(userId: string, page: Page): Promise<Voyager
         }
     }
     return r;
+}
+
+// ---- Browser-FREE Voyager context ----
+
+const CHROME_UA_FALLBACK =
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36';
+
+type SameSite = 'Strict' | 'Lax' | 'None';
+function normSameSite(v: any): SameSite {
+    const s = String(v || '').toLowerCase();
+    if (s === 'strict') return 'Strict';
+    if (s === 'none' || s === 'no_restriction') return 'None';
+    return 'Lax';
+}
+
+export interface BrowserlessVoyager {
+    ctx: APIRequestContext;
+    dispose: () => Promise<void>;
+}
+
+/**
+ * Build a browser-FREE Voyager request client from a user's saved session —
+ * no Chromium process. Loads cookies + the pinned login proxy + UA from the
+ * DB, derives csrf-token from JSESSIONID (and caches it so voyagerFetch finds
+ * it), and returns a standalone Playwright APIRequestContext.
+ *
+ * Egress is pinned to linkedinProxySnapshot to honour the sticky-proxy
+ * invariant — refuses to build a client if no snapshot is present (would mean
+ * egressing from a different IP than the cookies were captured under).
+ *
+ * Suitable for /me, profile reads, connections, first-degree checks. NOT for
+ * messenger GraphQL (those need a live page-instance from a real page).
+ * Caller MUST call dispose().
+ */
+export async function getBrowserlessVoyagerContext(userId: string): Promise<BrowserlessVoyager | null> {
+    const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { linkedinCookie: true, linkedinProxySnapshot: true, linkedinFingerprint: true },
+    });
+    if (!user?.linkedinCookie) {
+        console.warn(`[VOYAGER] browserless: no session cookie for user ${userId}`);
+        return null;
+    }
+
+    let rawCookies: any[] = [];
+    try {
+        const parsed = JSON.parse(user.linkedinCookie);
+        rawCookies = Array.isArray(parsed) ? parsed : [];
+    } catch {
+        console.warn(`[VOYAGER] browserless: linkedinCookie not a JSON array for user ${userId}`);
+        return null;
+    }
+    const cookies = rawCookies.map((c: any) => ({
+        name: c.name,
+        value: c.value,
+        domain: c.domain || '.linkedin.com',
+        path: c.path || '/',
+        expires: c.expires != null ? Math.round(Number(c.expires)) : Math.round(Date.now() / 1000) + 86400 * 30,
+        httpOnly: !!c.httpOnly,
+        secure: c.secure !== false,
+        sameSite: normSameSite(c.sameSite),
+    }));
+
+    // csrf-token IS the JSESSIONID value (quotes stripped). Cache it so
+    // voyagerFetch's getCachedCsrf picks it up — there's no live page to sniff.
+    const jsession = cookies.find((c: any) => c.name === 'JSESSIONID');
+    if (jsession?.value) rememberCsrf(userId, String(jsession.value).replace(/"/g, ''));
+
+    // Sticky-proxy invariant — never egress through a different IP.
+    const snap: any = user.linkedinProxySnapshot;
+    if (!snap?.server) {
+        console.warn(`[VOYAGER] browserless: no proxy snapshot for user ${userId} — refusing to build (sticky-proxy).`);
+        return null;
+    }
+
+    let ua = CHROME_UA_FALLBACK;
+    try {
+        const fp = user.linkedinFingerprint
+            ? (typeof user.linkedinFingerprint === 'string' ? JSON.parse(user.linkedinFingerprint) : user.linkedinFingerprint)
+            : null;
+        if (fp?.userAgent) ua = fp.userAgent;
+    } catch {}
+
+    const ctx = await request.newContext({
+        baseURL: 'https://www.linkedin.com',
+        userAgent: ua,
+        proxy: { server: snap.server, username: snap.username || undefined, password: snap.password || undefined },
+        storageState: { cookies, origins: [] },
+    });
+
+    return { ctx, dispose: async () => { await ctx.dispose().catch(() => {}); } };
+}
+
+/**
+ * Confirm a saved session is still alive WITHOUT launching a browser, via a
+ * single Voyager /me read. Returns valid + plainId when LinkedIn answers 200
+ * with an identity; valid=false on 401/gated (session dead) or build failure.
+ *
+ * This is the reliable replacement for the DB-flag-only quickCheck (which
+ * trusted sessionValidatedAt and so reported dead sessions as healthy).
+ */
+export async function validateSessionBrowserless(
+    userId: string,
+): Promise<{ valid: boolean; status?: number; plainId?: number; reason?: string }> {
+    const bl = await getBrowserlessVoyagerContext(userId);
+    if (!bl) return { valid: false, reason: 'no-session-or-proxy' };
+    try {
+        const r = await voyagerFetch<any>(userId, 'https://www.linkedin.com/voyager/api/me', {
+            apiRequest: bl.ctx,
+            skipRateLimit: true,
+        });
+        if (!r.ok) return { valid: false, status: (r as any).status, reason: r.error };
+        const body: any = r.data;
+        const plainId = body?.data?.plainId ?? body?.plainId;
+        if (plainId && body?.data?.status !== 401) return { valid: true, status: r.status, plainId };
+        return { valid: false, status: r.status, reason: 'no-identity-in-/me' };
+    } finally {
+        await bl.dispose();
+    }
 }

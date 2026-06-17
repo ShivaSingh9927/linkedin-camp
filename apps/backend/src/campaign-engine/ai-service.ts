@@ -2,6 +2,14 @@ import axios from 'axios';
 
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8001';
 
+// Load-test mode: return canned output after a realistic delay instead of
+// calling the AI service, so queue-throughput tests don't incur DeepSeek spend.
+// Independent of MOCK_LINKEDIN — set MOCK_AI=false in the AI-concurrency test to
+// measure the real LLM ceiling. See docs/load-testing-step0-design.md.
+const isMockAI = (): boolean => process.env.MOCK_AI === 'true';
+const MOCK_AI_MS = parseInt(process.env.MOCK_AI_MS || '1500', 10);
+const mockAiWait = () => new Promise(res => setTimeout(res, MOCK_AI_MS));
+
 export interface ThreadMessage {
     sender: string;
     text: string;
@@ -90,6 +98,10 @@ export interface AIGenerateResult {
 }
 
 export async function generateAIComment(options: AIGenerateOptions): Promise<string> {
+    if (isMockAI()) {
+        await mockAiWait();
+        return `[MOCK] Great point, ${options.profileName || 'there'} — thanks for sharing this.`;
+    }
     try {
         const response = await axios.post(`${AI_SERVICE_URL}/ai/comment`, {
             // Profile data
@@ -159,6 +171,13 @@ function cleanAIOutput(text: string, name: string): string {
 }
 
 export async function generateAIMessage(options: AIGenerateOptions): Promise<AIGenerateResult> {
+    if (isMockAI()) {
+        await mockAiWait();
+        return {
+            message: `[MOCK] Hi ${options.profileName || 'there'}, this is a load-test message.`,
+            subject: options.channel === 'email' ? '[MOCK] Quick question' : undefined,
+        };
+    }
     try {
         const response = await axios.post(`${AI_SERVICE_URL}/ai/message`, {
             // Profile data
@@ -263,6 +282,10 @@ export async function generateSelfProfileSummary(
 }
 
 export async function generateAIEnhance(options: AIGenerateOptions): Promise<string> {
+    if (isMockAI()) {
+        await mockAiWait();
+        return options.draftReply || '[MOCK] enhanced reply';
+    }
     try {
         const response = await axios.post(`${AI_SERVICE_URL}/ai/enhance`, {
             thread_history: options.threadHistory,

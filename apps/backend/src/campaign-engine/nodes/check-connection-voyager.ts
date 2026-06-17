@@ -24,7 +24,7 @@ import { isFirstDegree, getAllConnections } from '../../services/voyager-api.ser
 import { checkConnection } from './check-connection';
 
 export const checkConnectionVoyager: NodeHandler = async (ctx, config): Promise<NodeResult> => {
-    const { page, lead, userId, campaignId } = ctx;
+    const { page, apiRequest, lead, userId, campaignId } = ctx;
     const mode = (config as any)?.mode || 'fast';
     const output: CheckConnectionOutput = {
         connectionStatus: 'not_connected',
@@ -35,8 +35,14 @@ export const checkConnectionVoyager: NodeHandler = async (ctx, config): Promise<
         if (!lead.linkedinUrl) {
             return { success: false, error: 'Lead has no linkedinUrl' };
         }
-        if (!page) {
-            return { success: false, error: 'check-connection-voyager requires a live Page' };
+        // 'precise' mode drives the DOM and genuinely needs a live page. 'fast'
+        // mode is a pure Voyager read and runs browser-free via apiRequest when
+        // the engine hasn't launched a browser (lazy launch).
+        if (mode === 'precise' && !page) {
+            return { success: false, error: 'check-connection-voyager (precise) requires a live Page' };
+        }
+        if (mode !== 'precise' && !page && !apiRequest) {
+            return { success: false, error: 'check-connection-voyager requires a Page or apiRequest' };
         }
 
         // Extract vanity from linkedinUrl
@@ -50,8 +56,8 @@ export const checkConnectionVoyager: NodeHandler = async (ctx, config): Promise<
             return await checkConnection(ctx, config);
         }
 
-        // mode === 'fast': Voyager-only
-        const is1st = await isFirstDegree(userId, vanity, page);
+        // mode === 'fast': Voyager-only (page when available, else browser-free)
+        const is1st = await isFirstDegree(userId, vanity, page, apiRequest);
         output.connected = is1st;
         output.connectionStatus = is1st ? 'connected' : 'not_connected';
         // Surface degree=1 on a confirmed 1st-degree so callers that read
