@@ -41,19 +41,21 @@ export const checkProxyHealth = async (proxyId: string) => {
             console.warn(`[PROXY-HEALTH] LinkedIn reachability test failed: ${le.message}`);
         }
 
-        // Success: Reset failure count and ensure healthy status
+        // Success: reset failure count and clear any legacy ban flags. We never
+        // ban proxies — linkedinBlocked is logged for visibility only, not used
+        // to exclude the proxy (sessions/proxies are reusable after expiry).
         await prisma.proxy.update({
             where: { id: proxyId },
             data: {
                 banned: false,
                 failureCount: 0,
-                linkedinBanned: linkedinBlocked,
+                linkedinBanned: false,
                 updatedAt: new Date()
             }
         });
 
         if (linkedinBlocked) {
-            console.warn(`[PROXY-HEALTH] Proxy ${proxy.proxyIp} is ONLINE but LinkedIn-BANNED (HTTP 999/403).`);
+            console.warn(`[PROXY-HEALTH] Proxy ${proxy.proxyIp} is ONLINE but LinkedIn returned 999/403 (logged, not banned).`);
         } else {
             console.log(`[PROXY-HEALTH] Proxy ${proxy.proxyIp} is healthy. Reported IP: ${reportedIp}`);
         }
@@ -61,22 +63,15 @@ export const checkProxyHealth = async (proxyId: string) => {
         return !linkedinBlocked;
     } catch (error: any) {
         const newFailureCount = (proxy.failureCount || 0) + 1;
-        console.log(`[PROXY-HEALTH] Proxy ${proxy.proxyIp} FAILED (Attempt ${newFailureCount}/3): ${error.message}`);
+        console.log(`[PROXY-HEALTH] Proxy ${proxy.proxyIp} FAILED (Attempt ${newFailureCount}): ${error.message}`);
 
-        const shouldBan = newFailureCount >= 3;
-
+        // Track the failure count for health ordering only — never ban. A proxy
+        // that fails health checks stays in rotation and recovers automatically
+        // on its next successful check.
         await prisma.proxy.update({
             where: { id: proxyId },
-            data: {
-                failureCount: newFailureCount,
-                banned: shouldBan,
-                bannedAt: shouldBan ? new Date() : proxy.bannedAt
-            }
+            data: { failureCount: newFailureCount }
         });
-
-        if (shouldBan) {
-            console.warn(`[PROXY-HEALTH] Proxy ${proxy.proxyIp} has been BANNED after 3 consecutive failures.`);
-        }
 
         return false;
     }
@@ -87,15 +82,9 @@ export const checkProxyHealth = async (proxyId: string) => {
  */
 export const checkAllProxies = async () => {
     console.log('[PROXY-HEALTH] Starting global proxy health check...');
-    // We check proxies that are either not banned, or recently failed but not yet reached 3 tries
-    const proxiesToCheck = await prisma.proxy.findMany({
-        where: {
-            OR: [
-                { banned: false },
-                { failureCount: { gt: 0, lt: 3 } }
-            ]
-        }
-    });
+    // Check ALL proxies — we never permanently ban, so every proxy stays
+    // monitored and can recover (a previously-failing proxy must come back).
+    const proxiesToCheck = await prisma.proxy.findMany();
 
     console.log(`[PROXY-HEALTH] Checking ${proxiesToCheck.length} proxies...`);
 

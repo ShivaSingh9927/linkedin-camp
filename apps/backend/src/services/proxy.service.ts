@@ -11,8 +11,6 @@ export const getOrAssignProxy = async (userId: string, detectedCountry?: string)
     const proxy = await prisma.proxy.findFirst({
         where: {
             proxyCountry: country,
-            banned: false,
-            linkedinBanned: false,
             isAssigned: true,
             OR: [
                 { lockedUntil: null },
@@ -33,8 +31,6 @@ export const getOrAssignProxy = async (userId: string, detectedCountry?: string)
     }
     const availableProxy = await prisma.proxy.findFirst({
         where: {
-            banned: false,
-            linkedinBanned: false,
             isAssigned: true,
             OR: [
                 { lockedUntil: null },
@@ -66,7 +62,7 @@ export const assignProxyToUser = async (userId: string, proxyId: string) => {
     if (!user) throw new Error('User not found');
     const proxy = await prisma.proxy.findUnique({ where: { id: proxyId } });
     if (!proxy) throw new Error('Proxy not found');
-    if (proxy.banned || proxy.linkedinBanned) throw new Error('Proxy is banned');
+    // No ban gate — proxies are never permanently banned; always reusable.
     const activeUsers = await prisma.user.count({ where: { proxyId } });
     if (activeUsers >= proxy.maxUsers) throw new Error('Proxy capacity reached');
     await Promise.all([
@@ -129,8 +125,9 @@ export const updateProxy = async (proxyId: string, data: {
 };
 
 export const bulkCheckProxyHealth = async () => {
+    // Check ALL proxies — we never permanently ban, so none are excluded from
+    // monitoring (a previously-failing proxy must be able to come back).
     const proxies = await prisma.proxy.findMany({
-        where: { banned: false, linkedinBanned: false },
         select: { id: true, proxyHost: true, proxyPort: true, proxyUsername: true, proxyPassword: true, linkedinBanned: true }
     });
     const results = [];
@@ -149,9 +146,13 @@ export const bulkCheckProxyHealth = async () => {
             const ping = Date.now() - start;
             results.push({ id: proxy.id, ping, status: 'healthy' });
         } catch (err: any) {
+            // Track the failure for health ordering only — NEVER ban. A
+            // transient ping blip must not permanently lock out a proxy; we want
+            // it reusable (incl. reusing the same proxy after a session expired
+            // on it). Verified safe to reuse.
             await prisma.proxy.update({
                 where: { id: proxy.id },
-                data: { failureCount: { increment: 1 }, linkedinBanned: true, banned: true, bannedAt: new Date() }
+                data: { failureCount: { increment: 1 } }
             });
             results.push({ id: proxy.id, status: 'failed', error: err.message });
         }
