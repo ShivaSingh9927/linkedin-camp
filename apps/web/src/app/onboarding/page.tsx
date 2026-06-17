@@ -100,16 +100,16 @@ export default function OnboardingPage() {
 
     return (
         <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4 sm:p-6 lg:p-8">
-            <div className="w-full max-w-xl">
+            <div className="w-full max-w-4xl">
                 {/* Header */}
-                <div className="text-center mb-10">
-                    <div className="flex justify-center mb-6">
-                        <img src="/qampi_wbg.png" alt="Logo" className="w-14 h-14 object-contain animate-in zoom-in duration-1000" />
+                <div className="text-center mb-7">
+                    <div className="flex justify-center mb-4">
+                        <img src="/qampi_wbg.png" alt="Logo" className="w-12 h-12 object-contain animate-in zoom-in duration-1000" />
                     </div>
                     <h1 className="text-3xl font-black text-foreground tracking-tight sm:text-4xl">
                         Welcome{firstName} — let&apos;s get to know you
                     </h1>
-                    <p className="text-muted-foreground font-medium mt-3 max-w-md mx-auto">
+                    <p className="text-muted-foreground font-medium mt-3 max-w-xl mx-auto">
                         {isJobSeeking
                             ? 'From a couple of details, the AI figures out your strengths, your target roles and how to stand out — so you don’t have to fill out a long form.'
                             : 'Just a few things. From these, the AI builds your tailored outreach strategy — who to reach, what to say and how to stand out — so you don’t have to fill out a long form.'}
@@ -120,11 +120,11 @@ export default function OnboardingPage() {
                 <motion.div
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="bg-white rounded-[2.5rem] border border-slate-200 shadow-2xl shadow-slate-200/50 p-8 sm:p-12 relative overflow-hidden"
+                    className="bg-white rounded-[2.5rem] border border-slate-200 shadow-2xl shadow-slate-200/50 p-7 sm:p-9 relative overflow-hidden"
                 >
                     <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-primary/40 via-primary to-primary/40" />
 
-                    <div className="space-y-7">
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-7 lg:gap-9 lg:items-start">
                         {/* Goal picker — drives the entire AI strategy (prompts + labels) */}
                         <div className="space-y-3">
                             <label className="text-xs font-black text-muted-foreground uppercase tracking-widest ml-1 flex items-center gap-2">
@@ -140,7 +140,7 @@ export default function OnboardingPage() {
                                             disabled={!g.live}
                                             onClick={() => g.live && setGoalType(g.key)}
                                             className={cn(
-                                                'relative text-left rounded-2xl border p-4 transition-all',
+                                                'relative text-left rounded-2xl border p-3.5 transition-all',
                                                 !g.live && 'opacity-50 cursor-not-allowed border-slate-200',
                                                 g.live && !selected && 'border-slate-200 hover:border-primary/50 hover:shadow-sm',
                                                 selected && 'border-primary ring-4 ring-primary/10 bg-primary/[0.03]',
@@ -161,6 +161,9 @@ export default function OnboardingPage() {
                             </div>
                         </div>
 
+                        {/* Right column: the few inputs + submit, side-by-side with the
+                            goal picker so the whole form fits without scrolling. */}
+                        <div className="space-y-5">
                         <div className="space-y-2">
                             <label className="text-xs font-black text-muted-foreground uppercase tracking-widest ml-1 flex items-center gap-2">
                                 Your LinkedIn Profile URL <span className="text-red-500">*</span>
@@ -233,10 +236,11 @@ export default function OnboardingPage() {
                                 </>
                             )}
                         </button>
+                        </div>
                     </div>
                 </motion.div>
 
-                <p className="text-center mt-10 text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] opacity-50">
+                <p className="text-center mt-6 text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] opacity-50">
                     Qampi AI &copy; 2026 • Powered by Cloud Simulations
                 </p>
             </div>
