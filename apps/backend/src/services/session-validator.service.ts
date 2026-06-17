@@ -310,7 +310,12 @@ class SessionValidatorService {
             });
             console.log(`[SESSION-VALIDATOR] Marked session as invalid for user ${userId}`);
 
-            io.to(`user_${userId}`).emit('SESSION_EXPIRED', {
+            // The worker process has no Socket.IO server (io lives in the API
+            // process), so `io` is undefined there — guard it. The UI still
+            // turns red via the /linkedin-status + /session/health polls that
+            // read the accountHealth we just wrote; the socket emit is just the
+            // instant-flip fast path when this runs in the API process.
+            io?.to(`user_${userId}`)?.emit('SESSION_EXPIRED', {
                 userId,
                 message: 'Your LinkedIn session has expired. Please re-login.',
                 timestamp: new Date().toISOString()
