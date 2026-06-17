@@ -375,11 +375,16 @@ export const initCampaignWorker = () => {
         }
     }, {
         connection: redisConnection as any,
-        // Worker box: 4 cores, 7.6 GB RAM. 6 gives ~9-11 Chromium headroom
-        // and stays under the CPU ceiling (4 cores × 2). Per-account Redis
-        // lock still serializes jobs for the SAME user — concurrency only
-        // unlocks parallelism across different users.
-        concurrency: parseInt(process.env.WORKER_CONCURRENCY || '6', 10),
+        // Worker box: 4 cores, 7.6 GB RAM. Concurrency governs how many campaign
+        // JOBS run at once — most of a job's time is now browser-free (reads via
+        // Voyager API, leads parked at delays), so we run many in parallel. The
+        // scarce resource (live Chromium) is capped separately by the browser
+        // semaphore in session-launch.ts (BROWSER_LAUNCH_LIMIT, default 16), so
+        // raising this can't oversubscribe the CPU/RAM ceiling. Per-account Redis
+        // lock still serializes jobs for the SAME user. Default 24 (was 6 — the
+        // old "9-11 Chromium" guess was ~4x too conservative per the 2026-06-17
+        // saturation benchmark). Tune via WORKER_CONCURRENCY.
+        concurrency: parseInt(process.env.WORKER_CONCURRENCY || '24', 10),
     });
 
     worker.on('failed', (job, err) => {

@@ -4,6 +4,36 @@ import { prisma } from '@repo/db';
 import type { SessionContext } from './types';
 
 /**
+ * Global browser-launch semaphore. Chromium (RAM/CPU) is the scarce resource on
+ * the worker box; reads run browser-free (Voyager API), so we let many campaign
+ * jobs run concurrently (WORKER_CONCURRENCY) but cap the number of LIVE browsers
+ * here. Benchmark (2026-06-17) put the safe ceiling at ~15-25 actively-working
+ * windows on the 4-core/7.6GB box; default 16 leaves headroom. Tune via
+ * BROWSER_LAUNCH_LIMIT. Read-only jobs never acquire a permit, so they aren't
+ * throttled by this. A permit is released automatically when browser.close()
+ * runs (we wrap close below), so callers need no extra bookkeeping.
+ */
+const BROWSER_LAUNCH_LIMIT = parseInt(process.env.BROWSER_LAUNCH_LIMIT || '16', 10);
+
+class Semaphore {
+    private permits: number;
+    private waiters: Array<() => void> = [];
+    constructor(n: number) { this.permits = n; }
+    async acquire(): Promise<void> {
+        if (this.permits > 0) { this.permits--; return; }
+        await new Promise<void>(resolve => this.waiters.push(resolve));
+    }
+    release(): void {
+        const next = this.waiters.shift();
+        if (next) next();       // hand the permit straight to the next waiter
+        else this.permits++;
+    }
+    get inUse(): number { return BROWSER_LAUNCH_LIMIT - this.permits + this.waiters.length; }
+}
+
+const browserSemaphore = new Semaphore(BROWSER_LAUNCH_LIMIT);
+
+/**
  * Shared, authenticated Playwright launcher for a user's LinkedIn session.
  *
  * This is the SINGLE source of truth for the sticky-proxy invariant: LinkedIn
@@ -125,7 +155,31 @@ export async function launchAuthenticatedContext(
         proxy: proxyConfig,
     };
 
-    const browser = await chromium.launch(launchOptions);
+    // Acquire a browser permit (cap global concurrent Chromium). The proxy-
+    // snapshot abort above returns before this, so a refused launch never holds
+    // a permit. Released automatically when browser.close() runs (wrapped below).
+    await browserSemaphore.acquire();
+    console.log(`[LAUNCH] Browser permit acquired (${browserSemaphore.inUse}/${BROWSER_LAUNCH_LIMIT} in use) for ${userId}.`);
+
+    let browser: any;
+    try {
+        browser = await chromium.launch(launchOptions);
+    } catch (e) {
+        browserSemaphore.release(); // launch itself failed → never opened, release now
+        throw e;
+    }
+    // Wrap close() so the permit is released exactly once when the caller closes
+    // the browser — no matter which code path (success, error, finally) does it.
+    const origClose = browser.close.bind(browser);
+    let permitReleased = false;
+    browser.close = async (...args: any[]) => {
+        try { return await origClose(...args); }
+        finally { if (!permitReleased) { permitReleased = true; browserSemaphore.release(); } }
+    };
+
+    // Everything after the permit is acquired runs inside a guard: any failure
+    // closes the browser, which releases the permit via the wrapped close().
+    try {
     const context = await browser.newContext(contextOptions);
 
     if (activeCookies && activeCookies.length > 0) {
@@ -167,4 +221,8 @@ export async function launchAuthenticatedContext(
     });
 
     return { ok: true, browser, context, page, proxyServer: proxyConfig.server };
+    } catch (e) {
+        await browser.close().catch(() => {}); // releases the permit via the wrap
+        throw e;
+    }
 }
