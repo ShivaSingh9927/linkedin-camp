@@ -42,6 +42,9 @@ class SynthesizerAgent(BaseAgent):
             "generatedAt": datetime.utcnow().isoformat(),
             "model": self.config["model"],
             "version": 1,
+            # Stamp the goal this strategy was generated for so the UI can flag
+            # a strategy as stale when the user later switches goals.
+            "goalType": state.user_input.get("goalType") or "sell",
         }
         
         return result

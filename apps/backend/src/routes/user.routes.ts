@@ -73,12 +73,17 @@ router.put('/profile', async (req: AuthRequest, res) => {
 
 router.put('/business-profile', async (req: AuthRequest, res) => {
     try {
-        const { 
+        const {
             name, company, persona, valueProp, style, keywords, targetAudience, industry,
             companyDescription, products, differentiators, caseStudies, communicationStyle,
-            writingSamples, tonePreferences, website
+            writingSamples, tonePreferences, website, goalType
         } = req.body;
-        
+
+        // Only persist a recognised goal; undefined leaves the existing value
+        // untouched so a normal profile save never clobbers the goal.
+        const VALID_GOALS = ['sell', 'job_seeking', 'recruiting', 'fundraising', 'networking'];
+        const normalizedGoal = VALID_GOALS.includes(goalType) ? goalType : undefined;
+
         const businessProfile = await prisma.businessProfile.upsert({
             where: { userId: req.user!.id },
             update: {
@@ -88,6 +93,7 @@ router.put('/business-profile', async (req: AuthRequest, res) => {
                 companyDescription, products, differentiators, caseStudies,
                 communicationStyle, writingSamples,
                 tonePreferences: tonePreferences || [],
+                goalType: normalizedGoal,
             },
             create: {
                 userId: req.user!.id,
@@ -97,6 +103,7 @@ router.put('/business-profile', async (req: AuthRequest, res) => {
                 companyDescription, products, differentiators, caseStudies,
                 communicationStyle, writingSamples,
                 tonePreferences: tonePreferences || [],
+                goalType: normalizedGoal || 'sell',
             },
         });
 

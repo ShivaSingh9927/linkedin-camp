@@ -29,10 +29,14 @@ const SECTION_META = [
   { key: 'commentStrategy', icon: MessageSquare, color: 'text-blue-500', bg: 'bg-blue-500/10' },
 ] as const;
 
-export function StrategyWorkspace({ embedded = false }: { embedded?: boolean }) {
+export function StrategyWorkspace({ embedded = false, goalType: goalTypeProp }: { embedded?: boolean; goalType?: string }) {
   const [strategy, setStrategy] = useState<any>(null);
   // What the user is on Qampi to do — drives all visible strategy labels.
-  const [goalType, setGoalType] = useState<string>('sell');
+  // When a parent owns the goal (the AI Profile page), its prop wins so the
+  // labels + stale check update the instant the user switches goal; otherwise
+  // we fall back to the goal fetched alongside the strategy.
+  const [fetchedGoalType, setFetchedGoalType] = useState<string>('sell');
+  const goalType = goalTypeProp ?? fetchedGoalType;
   // Master-detail: which section the right panel shows. 'summary' is the
   // read-only at-a-glance overview; the rest map to editable strategy keys.
   const [activeSection, setActiveSection] = useState<string>('summary');
@@ -105,7 +109,7 @@ export function StrategyWorkspace({ embedded = false }: { embedded?: boolean }) 
         const fresh = data?.strategy && data.generatedAt && data.generatedAt !== regenBaselineRef.current;
         if (fresh) {
           setStrategy(data.strategy);
-          if (data.goalType) setGoalType(data.goalType);
+          if (data.goalType) setFetchedGoalType(data.goalType);
           setGeneratedAt(data.generatedAt);
           setIsFallback(data.strategy?._metadata?.isFallback || false);
           setIsCached(false);
@@ -156,7 +160,7 @@ export function StrategyWorkspace({ embedded = false }: { embedded?: boolean }) 
     setLoading(true);
     try {
       const { data } = await api.get('/strategy');
-      if (data.goalType) setGoalType(data.goalType);
+      if (data.goalType) setFetchedGoalType(data.goalType);
       if (data.strategy) {
         setStrategy(data.strategy);
         setGeneratedAt(data.generatedAt);
@@ -306,6 +310,16 @@ export function StrategyWorkspace({ embedded = false }: { embedded?: boolean }) 
   const labels = getStrategyLabels(goalType);
   const SECTIONS = SECTION_META.map((s) => ({ ...s, label: labels.sections[s.key] || s.key }));
 
+  // Stale check: the strategy stamps the goal it was generated for. If the user
+  // has since switched goals, the current strategy no longer fits — flag it and
+  // prompt a regenerate (we never auto-wipe their inputs or strategy).
+  const GOAL_LABELS: Record<string, string> = {
+    sell: 'Generate leads', recruiting: 'Hire talent', job_seeking: 'Find a job',
+    fundraising: 'Raise funding', networking: 'Grow my network',
+  };
+  const strategyGoal = strategy?._metadata?.goalType || 'sell';
+  const isStaleGoal = !!strategy && !isFallback && !regenerating && strategyGoal !== goalType;
+
   const confirmedCount = SECTIONS.filter((s) => confirmedSections[s.key]).length;
   const allConfirmed = !!confirmedAt || confirmedCount === SECTIONS.length;
 
@@ -361,6 +375,17 @@ export function StrategyWorkspace({ embedded = false }: { embedded?: boolean }) 
         )}
         {rateLimitError && (
           <div className="mb-5 flex items-center gap-2 text-sm font-semibold text-amber-600 bg-amber-50 px-4 py-3 rounded-xl"><Clock className="w-4 h-4" /> {rateLimitError}</div>
+        )}
+        {isStaleGoal && (
+          <div className="mb-5 flex flex-col sm:flex-row sm:items-center gap-3 bg-amber-50 border border-amber-200 px-4 py-3 rounded-xl">
+            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+            <p className="text-sm font-semibold text-amber-800 flex-1">
+              This strategy was built for <span className="font-black">{GOAL_LABELS[strategyGoal] || strategyGoal}</span>. You’ve switched to <span className="font-black">{GOAL_LABELS[goalType] || goalType}</span> — review your inputs and regenerate to refresh it.
+            </p>
+            <button onClick={() => handleRegenerate(false)} className="shrink-0 inline-flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-bold hover:bg-amber-700 transition-colors">
+              <RotateCcw className="w-4 h-4" /> Regenerate
+            </button>
+          </div>
         )}
 
         {/* Master-detail: left rail + single-section panel (no scroll) */}

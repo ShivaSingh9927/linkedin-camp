@@ -3,9 +3,19 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { Building2, Target, PenTool, Globe, Sparkles, Check, Loader2, ArrowRight, Clock, Users, Lightbulb } from 'lucide-react';
+import { toast } from 'sonner';
 import api from '@/lib/api';
 import { StrategyWorkspace } from '@/components/StrategyWorkspace';
 import { getStrategyLabels } from '@/lib/strategyLabels';
+
+// Goal options shown in the selector — labels mirror the onboarding picker.
+const GOAL_OPTIONS = [
+  { key: 'sell', label: 'Generate leads' },
+  { key: 'recruiting', label: 'Hire talent' },
+  { key: 'job_seeking', label: 'Find a job' },
+  { key: 'fundraising', label: 'Raise funding' },
+  { key: 'networking', label: 'Grow my network' },
+] as const;
 
 const industries = [
   'SaaS/Software', 'Marketing Agency', 'Sales/Recruitment', 'Consulting',
@@ -173,6 +183,25 @@ export default function AIProfilePage() {
     }
   };
 
+  // Change the user's goal. Keeps all existing inputs (we send the current
+  // form alongside so the upsert never clobbers them) — the form just relabels
+  // and the existing strategy shows as "built for your previous goal" until the
+  // user regenerates. Optimistic: flip the label immediately, revert on failure.
+  const handleGoalChange = async (newGoal: string) => {
+    if (newGoal === goalType) return;
+    const prev = goalType;
+    setGoalType(newGoal);
+    try {
+      await api.put('/users/business-profile', { ...form, goalType: newGoal });
+      const label = GOAL_OPTIONS.find(g => g.key === newGoal)?.label || newGoal;
+      toast.success(`Goal updated to “${label}”. Review your inputs and regenerate your strategy.`);
+    } catch (e) {
+      console.error('Failed to change goal', e);
+      setGoalType(prev);
+      toast.error('Could not update your goal. Please try again.');
+    }
+  };
+
   const reflectUnderstanding = async () => {
     // Reads the canonical profile from the DB server-side (empty body), so it
     // doesn't depend on `form` state — safe to call right after load. The
@@ -289,6 +318,25 @@ export default function AIProfilePage() {
               ? 'Here’s what Aigeon knows about your business. Tweak anything below — it re-reads as you edit.'
               : 'Help Aigeon understand your business so it can write messages that sound like you.'}
           </p>
+        </div>
+
+        {/* Goal selector — drives the whole strategy + every label on this page.
+            Changing it keeps all inputs; the strategy is flagged as built for the
+            previous goal until regenerated. */}
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 mb-6 bg-white rounded-xl border border-slate-200 px-4 py-3 max-w-2xl">
+          <div className="flex items-center gap-2 shrink-0">
+            <Target className="w-4 h-4 text-primary" />
+            <span className="text-sm font-bold text-slate-700">I&apos;m using Qampi to</span>
+          </div>
+          <select
+            value={goalType}
+            onChange={e => handleGoalChange(e.target.value)}
+            className="flex-1 sm:max-w-xs px-3 py-2 border border-slate-200 rounded-lg text-sm font-semibold bg-white outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+          >
+            {GOAL_OPTIONS.map(g => (
+              <option key={g.key} value={g.key}>{g.label}</option>
+            ))}
+          </select>
         </div>
 
         {/* Top-level tabs: Overview · Strategy · Inputs */}
@@ -411,7 +459,7 @@ export default function AIProfilePage() {
         )}
 
         {/* STRATEGY: the generated sections, rendered inline as a tab. */}
-        {view === 'strategy' && <StrategyWorkspace embedded />}
+        {view === 'strategy' && <StrategyWorkspace embedded goalType={goalType} />}
 
         {/* INPUTS: the editable business-profile form. */}
         {view === 'inputs' && (
