@@ -1,10 +1,37 @@
 import { Request, Response } from 'express';
 import { prisma } from '@repo/db';
+import Redis from 'ioredis';
+
+// Per-user dashboard-stats cache. getStats fires ~15 queries; the dashboard is
+// polled frequently, so a short TTL collapses repeat polls to a single Redis
+// read. 60s staleness is fine for analytics. Fail-open: any Redis issue just
+// falls through to a live compute. Tune via STATS_CACHE_TTL_SECONDS (0 disables).
+const STATS_CACHE_TTL = parseInt(process.env.STATS_CACHE_TTL_SECONDS || '60', 10);
+const STATS_KEY = (userId: string) => `stats:${userId}`;
+const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
+let redisClient: Redis | null = null;
+function getRedis(): Redis | null {
+    if (STATS_CACHE_TTL <= 0) return null;
+    if (!redisClient && REDIS_URL) {
+        redisClient = new Redis(REDIS_URL, { maxRetriesPerRequest: 1, lazyConnect: true });
+        redisClient.connect().catch((err) => console.warn(`[stats-cache] redis connect failed: ${err.message}`));
+    }
+    return redisClient;
+}
 
 export const getStats = async (req: any, res: Response) => {
     const userId = req.user.id;
 
     try {
+        // Cache hit → return immediately (skips ~15 queries).
+        const redis = getRedis();
+        if (redis) {
+            try {
+                const cached = await redis.get(STATS_KEY(userId));
+                if (cached) return res.json(JSON.parse(cached));
+            } catch { /* fail-open to live compute */ }
+        }
+
         const startOfToday = new Date();
         startOfToday.setHours(0, 0, 0, 0);
 
@@ -101,7 +128,7 @@ export const getStats = async (req: any, res: Response) => {
         const totalReplies = await prisma.lead.count({ where: { userId, status: 'REPLIED' } });
         const totalSent = globalInvites + globalMessages;
 
-        res.json({
+        const payload = {
             global: {
                 totalLeads,
                 activeCampaigns: activeCampaignsCount,
@@ -118,7 +145,15 @@ export const getStats = async (req: any, res: Response) => {
             campaignPerformance,
             recentLogs,
             chartData
-        });
+        };
+
+        // Cache for next poll (fail-open — never block the response on Redis).
+        if (redis) {
+            redis.set(STATS_KEY(userId), JSON.stringify(payload), 'EX', STATS_CACHE_TTL)
+                .catch(() => { /* ignore cache write failures */ });
+        }
+
+        res.json(payload);
     } catch (error) {
         console.error('Stats Error:', error);
         res.status(500).json({ error: 'Failed to fetch dashboard stats' });

@@ -11,6 +11,30 @@ export type { FindEmailInput, FindEmailResult } from './email-finder.types';
 const EMAIL_FINDER_URL = process.env.EMAIL_FINDER_URL || 'http://localhost:8002';
 const EMAIL_FINDER_TOKEN = process.env.EMAIL_FINDER_TOKEN || '';
 
+// Concurrency cap for the slow /guess call. Each lookup can block up to 90s
+// (SMTP verification) while holding one of the worker's 24 campaign slots, so
+// without a cap an email-heavy burst would starve fast LinkedIn actions AND
+// fan out too many concurrent SMTP probes from one IP (greylisting risk). We
+// keep it small so LinkedIn actions always have >=~20 of the 24 slots; tune via
+// EMAIL_FINDER_CONCURRENCY once the box's real /guess capacity is known.
+const EMAIL_FINDER_CONCURRENCY = parseInt(process.env.EMAIL_FINDER_CONCURRENCY || '4', 10);
+
+class Semaphore {
+    private permits: number;
+    private waiters: Array<() => void> = [];
+    constructor(n: number) { this.permits = n; }
+    async acquire(): Promise<void> {
+        if (this.permits > 0) { this.permits--; return; }
+        await new Promise<void>(resolve => this.waiters.push(resolve));
+    }
+    release(): void {
+        const next = this.waiters.shift();
+        if (next) next();
+        else this.permits++;
+    }
+}
+const emailFinderSemaphore = new Semaphore(EMAIL_FINDER_CONCURRENCY);
+
 /**
  * Ask the email-finder to find an address for a person. Returns null on any
  * transport/config error (caller treats "no email" as a soft skip, never a
@@ -48,6 +72,8 @@ export async function findEmail(input: FindEmailInput): Promise<FindEmailResult 
         }
     }
 
+    // Cap concurrent /guess calls so email-finder never monopolises worker slots.
+    await emailFinderSemaphore.acquire();
     try {
         const { data } = await axios.post(
             `${EMAIL_FINDER_URL}/email-finder/guess`,
@@ -93,5 +119,7 @@ export async function findEmail(input: FindEmailInput): Promise<FindEmailResult 
         console.error(`[email-finder] lookup failed: ${err?.message}`);
         markEmailFinderDown(err?.message || 'unknown');
         return null;
+    } finally {
+        emailFinderSemaphore.release();
     }
 }
