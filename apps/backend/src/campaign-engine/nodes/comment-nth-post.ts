@@ -145,6 +145,8 @@ export const commentNthPost: NodeHandler = async (ctx, config): Promise<NodeResu
                     valueProposition: campaignContext.valueProp || aiContext?.userContext?.valueProp || undefined,
                     aiStrategy: aiContext?.aiStrategy,
                     userContext: aiContext?.userContext,
+                    // Per-step instructions from the builder's Step Settings.
+                    aiPrompt: (config as any).aiPrompt,
                 });
                 console.log('[COMMENT-NTH-POST] AI comment generated:', commentText.substring(0, 50) + '...');
             } catch (aiError: any) {

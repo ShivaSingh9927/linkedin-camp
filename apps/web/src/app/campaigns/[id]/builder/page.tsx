@@ -2,11 +2,12 @@
 
 import React, { useState, useEffect, use } from 'react';
 import { CampaignBuilder } from "@/components/CampaignBuilder";
-import { ArrowLeft, Save, Play, Loader2, CheckCircle, AlertCircle, ChevronUp, ChevronDown } from 'lucide-react';
+import { ArrowLeft, Save, Play, Loader2, CheckCircle, AlertCircle, ChevronUp, ChevronDown, Sparkles } from 'lucide-react';
 import Link from 'next/link';
 import { useNodesState, useEdgesState, Node, Edge } from '@xyflow/react';
 import api from '@/lib/api';
 import { useRouter } from 'next/navigation';
+import { autoLayout } from '@/lib/workflow-layout';
 
 export default function CampaignBuilderPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = use(params);
@@ -30,6 +31,9 @@ export default function CampaignBuilderPage({ params }: { params: Promise<{ id: 
         toneOverride: 'professional'
     });
     const [showDetailsPanel, setShowDetailsPanel] = useState(false);
+    // Locked = template-derived / quick-launch campaign (content-only builder).
+    // Persisted inside workflowJson.locked. Custom-builder campaigns stay false.
+    const [locked, setLocked] = useState(false);
 
     // Lead Selection Modal state
     const [isLaunchModalOpen, setIsLaunchModalOpen] = useState(false);
@@ -72,8 +76,15 @@ export default function CampaignBuilderPage({ params }: { params: Promise<{ id: 
             }
 
             if (campaign.workflowJson && campaign.workflowJson.nodes && campaign.workflowJson.nodes.length > 0) {
-                setNodes(campaign.workflowJson.nodes);
+                // Product decision (for now): the builder is content-only for
+                // ALL campaigns — users start from templates and tailor each
+                // step, but never edit the structure. To re-enable structural
+                // editing for custom campaigns later, switch this back to
+                // `campaign.workflowJson.locked !== false`.
+                setLocked(true);
+                // Re-layout on load so stored/overlapping positions always render clean.
                 setEdges(campaign.workflowJson.edges || []);
+                setNodes(autoLayout(campaign.workflowJson.nodes, campaign.workflowJson.edges || []));
             } else {
                 setNodes([defaultNode]);
             }
@@ -87,6 +98,7 @@ export default function CampaignBuilderPage({ params }: { params: Promise<{ id: 
 
     const getWorkflowJson = () => {
         return {
+            locked,
             nodes: nodes.map(n => ({
                 id: n.id,
                 type: n.data?.type || n.type || 'TRIGGER',
@@ -103,7 +115,7 @@ export default function CampaignBuilderPage({ params }: { params: Promise<{ id: 
         };
     };
 
-    const handleSave = async (shouldStart = false, leadIds?: string[]) => {
+    const handleSave = async (shouldStart = false, leadIds?: string[], silent = false) => {
         setSaving(true);
         const workflowJson = getWorkflowJson();
 
@@ -117,7 +129,7 @@ export default function CampaignBuilderPage({ params }: { params: Promise<{ id: 
                     cta: campaignDetails.cta,
                     toneOverride: campaignDetails.toneOverride
                 });
-                alert('Campaign Created Successfully!');
+                if (!silent) alert('Campaign Created Successfully!');
                 router.push(`/campaigns/${response.data.id}/builder`);
             } else {
                 await api.put(`/campaigns/${id}`, {
@@ -140,14 +152,16 @@ export default function CampaignBuilderPage({ params }: { params: Promise<{ id: 
                     }
                     alert(message);
                     setIsLaunchModalOpen(false);
-                } else {
+                } else if (!silent) {
                     alert('Campaign Saved Successfully!');
                 }
             }
         } catch (error) {
             console.error('Failed to save campaign:', error);
-            alert('Error saving campaign.');
+            if (!silent) alert('Error saving campaign.');
+            throw error; // let the panel's Save button surface the failure too
         } finally {
+            setSaving(false);
             setLoading(false);
         }
     };
@@ -314,6 +328,16 @@ export default function CampaignBuilderPage({ params }: { params: Promise<{ id: 
                 )}
             </div>
 
+            {/* How-to banner: makes the "click a step to tailor it" feature obvious */}
+            <div className="flex items-start gap-3 bg-gradient-to-r from-brand-50 to-white border border-brand-100 rounded-xl px-4 py-3">
+                <div className="p-1.5 bg-brand-100 text-brand rounded-lg mt-0.5 shrink-0">
+                    <Sparkles className="w-4 h-4" />
+                </div>
+                <div className="text-[12px] leading-relaxed text-ink-600">
+                    <span className="font-bold text-foreground">Tailor any step to your liking.</span> Click a node to open its settings — write your own message with personalization tags like <span className="font-mono text-[11px] bg-surface px-1 py-0.5 rounded">{'{firstName}'}</span>, or keep <span className="font-semibold">AI Generate</span> on and steer it with a tone, CTA, and per-step instructions. Hit <span className="font-semibold">Save</span> when you're done. The flow's structure is fixed so it always runs correctly — you control the content.
+                </div>
+            </div>
+
             <div className="flex-1 relative rounded-2xl overflow-hidden border">
                 <CampaignBuilder
                     nodes={nodes}
@@ -322,6 +346,8 @@ export default function CampaignBuilderPage({ params }: { params: Promise<{ id: 
                     onEdgesChange={onEdgesChange}
                     setNodes={setNodes}
                     setEdges={setEdges}
+                    locked={locked}
+                    onSaveCampaign={() => handleSave(false, undefined, true)}
                 />
             </div>
 

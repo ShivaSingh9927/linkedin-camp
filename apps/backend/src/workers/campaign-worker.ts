@@ -124,8 +124,11 @@ const processCampaignJob = async (data: CampaignJobData, job: Job) => {
     }
 
     // Also handle plain array format: [{"type": "PROFILE_VISIT"}, {"type": "MESSAGE"}]
-    if (!config.flow && Array.isArray(config)) {
-        config.flow = config.map((node: any) => {
+    // `config` narrows to any[] inside this guard, so alias it as any to attach
+    // the synthesized `.flow` (runtime behaviour unchanged — arrays are objects).
+    if (Array.isArray(config) && !(config as any).flow) {
+        const cfgArr = config as any;
+        cfgArr.flow = config.map((node: any) => {
             const rawSubType = (node.type || node.subType || '').toUpperCase();
             let mappedNodeType = rawSubType;
             
@@ -158,7 +161,7 @@ const processCampaignJob = async (data: CampaignJobData, job: Job) => {
             
             return { ...node, node: mappedNodeType };
         });
-        console.log(`[CAMPAIGN-WORKER] Converted plain array to flow:`, JSON.stringify(config.flow));
+        console.log(`[CAMPAIGN-WORKER] Converted plain array to flow:`, JSON.stringify(cfgArr.flow));
     }
 
     // Inject AI Context & Session Security

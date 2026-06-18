@@ -1,5 +1,16 @@
 @import "tailwindcss";
 
+/*
+ * Force-generate the per-template gradient utilities. Each campaign template
+ * carries a `color` like "from-orange-500 to-red-600" that is applied
+ * dynamically (`bg-gradient-to-br ${tpl.color}`) in the template gallery, so
+ * the class strings never appear literally in scanned source and would
+ * otherwise be purged. This keeps every template's accent rendering without a
+ * brittle per-color allowlist — covers the full palette/shade range the
+ * backend templates draw from (see apps/backend/src/campaign-templates).
+ */
+@source inline("bg-gradient-to-br bg-gradient-to-r {from,to}-{red,rose,orange,amber,yellow,lime,green,emerald,teal,cyan,sky,blue,indigo,violet,purple,fuchsia,pink,slate,zinc,stone}-{400,500,600,700}");
+
 @theme {
   --color-card: #ffffff;
   --color-ring: #8b5cf6;

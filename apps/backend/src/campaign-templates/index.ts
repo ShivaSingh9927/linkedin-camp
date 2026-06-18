@@ -43,6 +43,9 @@ import { agencyReferralMiningTemplate } from './agency-referral-mining';
 import { salesHighVelocitySdrTemplate } from './sales-high-velocity-sdr';
 import { creatorLapsedSubscriberWinbackTemplate } from './creator-lapsed-subscriber-winback';
 import { salesFastEnrichmentTemplate, inboxSyncVoyagerTemplate } from './fast-enrichment-voyager';
+import { salesCompetitorConquestTemplate } from './sales-competitor-conquest';
+import { salesFundingTriggerTemplate } from './sales-funding-trigger';
+import { saasTrialActivationTemplate } from './saas-trial-activation';
 
 export const TEMPLATES: TemplateDefinition[] = [
     founderDesignPartnerHuntTemplate,
@@ -83,6 +86,9 @@ export const TEMPLATES: TemplateDefinition[] = [
     creatorLapsedSubscriberWinbackTemplate,
     salesFastEnrichmentTemplate,
     inboxSyncVoyagerTemplate,
+    salesCompetitorConquestTemplate,
+    salesFundingTriggerTemplate,
+    saasTrialActivationTemplate,
 ];
 
 export const getTemplates = (): TemplateDefinition[] => TEMPLATES;

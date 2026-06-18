@@ -762,6 +762,7 @@ Write a personalized outreach {channel_label} that:
 - Shows you've done homework on their profile
 - References something specific from their background
 - Feels natural and human, not automated
+- Reads in a {req.tone} tone
 - Ends with: {cta_text}
 
 Remember: The key is making them feel you genuinely read their profile and have a real reason to connect."""

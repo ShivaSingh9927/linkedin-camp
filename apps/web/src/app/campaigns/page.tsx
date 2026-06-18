@@ -43,9 +43,26 @@ import { Layers, ChevronRight, Clock as ClockIcon } from 'lucide-react';
 // Humanize a stepSequence subtype into a short chip label.
 const SUBTYPE_LABEL: Record<string, string> = {
   PROFILE_VISIT: 'Visit', VISIT: 'Visit', INVITE: 'Invite', CONNECT: 'Connect',
-  MESSAGE: 'Message', EMAIL: 'Email', WAIT: 'Wait', DELAY: 'Wait', LIKE: 'Like', COMMENT: 'Comment',
+  MESSAGE: 'Message', EMAIL: 'Email', EMAIL_FINDER: 'Find email', WAIT: 'Wait',
+  DELAY: 'Wait', LIKE: 'Like', COMMENT: 'Comment', FOLLOW: 'Follow',
 };
 const stepLabel = (s: string) => SUBTYPE_LABEL[s] || s.replace(/_/g, ' ');
+
+// Control-flow / plumbing nodes carry no meaning on a card — they just made the
+// old chip row read "Visit › Wait › CHECK CONNECTION › IF ELSE". Drop them so
+// the mini-flow shows only the actions a user actually cares about.
+const STEP_CHIP_HIDDEN = new Set(['START', 'END', 'CHECK_CONNECTION', 'IF_ELSE', 'CONDITION']);
+
+// Color a flow chip by the channel/action it represents, so the sequence reads
+// as a flow at a glance: connect = brand, message = blue, email = green,
+// waits recede, everything else stays neutral.
+const stepChipTone = (s: string): string => {
+  if (s === 'CONNECT' || s === 'INVITE') return 'bg-brand-50 text-brand';
+  if (s === 'MESSAGE') return 'bg-blue-50 text-blue-600';
+  if (s === 'EMAIL' || s === 'EMAIL_FINDER') return 'bg-emerald-50 text-emerald-600';
+  if (s === 'WAIT' || s === 'DELAY') return 'bg-surface text-ink-400';
+  return 'bg-surface text-ink-500';
+};
 
 const CATEGORY_META: Record<string, { label: string; icon: any; tone: 'info' | 'brand' | 'success' }> = {
   linkedin: { label: 'LinkedIn', icon: Linkedin, tone: 'info' },
@@ -368,19 +385,29 @@ const removeLeadFromCampaign = async (campaignId: string, leadId: string) => {
 
         if (type === 'linkedin') {
             defaultName = 'LinkedIn Campaign';
+            // Gate-first: visit → check degree → IF_ELSE. Already connected → DM
+            // straight away (no point sending an invite); not connected → send
+            // the invite instead. One decision, no waiting — the lead takes
+            // whichever single path fits their current connection state.
             workflowJson = {
                 nodes: [
-                    { id: 'trigger', type: 'TRIGGER', subType: 'START', data: { label: 'Trigger: Lead Added' }, position: { x: 250, y: 0 } },
-                    { id: 'n1', type: 'ACTION', subType: 'PROFILE_VISIT', data: { label: 'Visit Profile' }, position: { x: 250, y: 100 } },
-                    { id: 'n2', type: 'ACTION', subType: 'CONNECT', data: { label: 'Send Invite', message: '' }, position: { x: 250, y: 200 } },
-                    { id: 'n3', type: 'DELAY', subType: 'WAIT', data: { label: 'Wait 2 days', delayDays: 2 }, position: { x: 250, y: 300 } },
-                    { id: 'n4', type: 'ACTION', subType: 'MESSAGE', data: { label: 'Send Message', message: '' }, position: { x: 250, y: 400 } },
+                    { id: 'trigger', type: 'TRIGGER', subType: 'START', data: { label: 'Trigger: Lead Added', type: 'TRIGGER', subType: 'START' }, position: { x: 250, y: 0 } },
+                    { id: 'n1', type: 'ACTION', subType: 'PROFILE_VISIT', data: { label: 'Visit Profile', type: 'ACTION', subType: 'PROFILE_VISIT', enrichCompany: true, enrichAbout: true }, position: { x: 250, y: 100 } },
+                    { id: 'n2', type: 'ACTION', subType: 'CHECK_CONNECTION', data: { label: 'Check Connection', type: 'ACTION', subType: 'CHECK_CONNECTION' }, position: { x: 250, y: 200 } },
+                    { id: 'n3', type: 'CONDITION', subType: 'IF_ELSE', data: { label: 'Connected?', type: 'CONDITION', subType: 'IF_ELSE', condition: { source: 'connectionState', field: 'connected', operator: 'is_true', probeOnNull: true } }, position: { x: 250, y: 300 } },
+                    { id: 'n4', type: 'ACTION', subType: 'MESSAGE', data: { label: 'Send Message (AI)', type: 'ACTION', subType: 'MESSAGE', aiEnabled: true, message: '' }, position: { x: 80, y: 400 } },
+                    { id: 'n5', type: 'ACTION', subType: 'CONNECT', data: { label: 'Send Invite (AI note)', type: 'ACTION', subType: 'CONNECT', aiEnabled: true, message: '' }, position: { x: 420, y: 400 } },
+                    { id: 'end_msg', type: 'ACTION', subType: 'END', data: { label: 'End', type: 'ACTION', subType: 'END' }, position: { x: 80, y: 500 } },
+                    { id: 'end_inv', type: 'ACTION', subType: 'END', data: { label: 'Invite Sent', type: 'ACTION', subType: 'END' }, position: { x: 420, y: 500 } },
                 ],
                 edges: [
                     { id: 'e1', source: 'trigger', target: 'n1' },
                     { id: 'e2', source: 'n1', target: 'n2' },
                     { id: 'e3', source: 'n2', target: 'n3' },
-                    { id: 'e4', source: 'n3', target: 'n4' },
+                    { id: 'e4', source: 'n3', target: 'n4', sourceHandle: 'true' },
+                    { id: 'e5', source: 'n3', target: 'n5', sourceHandle: 'false' },
+                    { id: 'e6', source: 'n4', target: 'end_msg' },
+                    { id: 'e7', source: 'n5', target: 'end_inv' },
                 ],
             };
         } else if (type === 'enrichment') {
@@ -408,17 +435,25 @@ const removeLeadFromCampaign = async (campaignId: string, leadId: string) => {
             };
         } else if (type === 'email') {
             defaultName = 'Email Campaign';
+            // Visit → find the email → IF_ELSE(email found?). Got one → send the
+            // AI email; none found → end (don't fire blind with no address).
             workflowJson = {
                 nodes: [
-                    { id: 'trigger', type: 'TRIGGER', subType: 'START', data: { label: 'Trigger: Lead Added' }, position: { x: 250, y: 0 } },
-                    { id: 'n1', type: 'ACTION', subType: 'EMAIL', data: { label: 'Send Email', message: '' }, position: { x: 250, y: 100 } },
-                    { id: 'n2', type: 'DELAY', subType: 'WAIT', data: { label: 'Wait 3 days', delayDays: 3 }, position: { x: 250, y: 200 } },
-                    { id: 'n3', type: 'ACTION', subType: 'EMAIL', data: { label: 'Follow-up Email', message: '' }, position: { x: 250, y: 300 } },
+                    { id: 'trigger', type: 'TRIGGER', subType: 'START', data: { label: 'Trigger: Lead Added', type: 'TRIGGER', subType: 'START' }, position: { x: 250, y: 0 } },
+                    { id: 'n1', type: 'ACTION', subType: 'PROFILE_VISIT', data: { label: 'Visit Profile', type: 'ACTION', subType: 'PROFILE_VISIT', enrichCompany: true, enrichAbout: true, enrichContact: true }, position: { x: 250, y: 100 } },
+                    { id: 'n2', type: 'ACTION', subType: 'EMAIL_FINDER', data: { label: 'Find Email', type: 'ACTION', subType: 'EMAIL_FINDER' }, position: { x: 250, y: 200 } },
+                    { id: 'n3', type: 'CONDITION', subType: 'IF_ELSE', data: { label: 'Email Found?', type: 'CONDITION', subType: 'IF_ELSE', condition: { source: 'storedOutputs', field: 'email-finder.email', operator: 'is_not_null' } }, position: { x: 250, y: 300 } },
+                    { id: 'n4', type: 'ACTION', subType: 'EMAIL', data: { label: 'Send Email (AI)', type: 'ACTION', subType: 'EMAIL', aiEnabled: true }, position: { x: 80, y: 400 } },
+                    { id: 'end_ok', type: 'ACTION', subType: 'END', data: { label: 'End', type: 'ACTION', subType: 'END' }, position: { x: 80, y: 500 } },
+                    { id: 'end_no', type: 'ACTION', subType: 'END', data: { label: 'No email', type: 'ACTION', subType: 'END' }, position: { x: 420, y: 400 } },
                 ],
                 edges: [
                     { id: 'e1', source: 'trigger', target: 'n1' },
                     { id: 'e2', source: 'n1', target: 'n2' },
                     { id: 'e3', source: 'n2', target: 'n3' },
+                    { id: 'e4', source: 'n3', target: 'n4', sourceHandle: 'true' },
+                    { id: 'e5', source: 'n3', target: 'end_no', sourceHandle: 'false' },
+                    { id: 'e6', source: 'n4', target: 'end_ok' },
                 ],
             };
         } else {
@@ -430,9 +465,11 @@ const removeLeadFromCampaign = async (campaignId: string, leadId: string) => {
             };
         }
 
-        setPendingCreate({ 
-            defaultName, 
-            workflowJson
+        setPendingCreate({
+            defaultName,
+            // Everything except the Custom builder is structurally locked — users
+            // tweak content & AI per step, but can't rewire a prebuilt flow.
+            workflowJson: { ...workflowJson, locked: type !== 'custom' },
         });
     };
 
@@ -455,7 +492,8 @@ const removeLeadFromCampaign = async (campaignId: string, leadId: string) => {
             if (!tpl) throw new Error('Template not found');
             const res = await api.post('/campaigns', {
                 name,
-                workflowJson: tpl.workflow,
+                // Template-derived campaigns are content-only (locked structure).
+                workflowJson: { ...tpl.workflow, locked: true },
                 objective: tpl.aiStrategyHint?.objective,
                 description: tpl.aiStrategyHint?.description,
                 cta: tpl.aiStrategyHint?.cta,
@@ -539,7 +577,8 @@ const removeLeadFromCampaign = async (campaignId: string, leadId: string) => {
                             { type: 'linkedin' as const, icon: Linkedin, label: 'LinkedIn', sub: 'Connect & message', tone: 'bg-blue-50 text-blue-600' },
                             { type: 'email' as const, icon: Mail, label: 'Cold email', sub: 'Direct inbox', tone: 'bg-emerald-50 text-emerald-600' },
                             { type: 'enrichment' as const, icon: Wrench, label: 'Lead enrichment', sub: 'Scrape & save', tone: 'bg-amber-50 text-amber-600' },
-                            { type: 'custom' as const, icon: Wrench, label: 'Custom builder', sub: 'Full control', tone: 'bg-surface text-ink-500' },
+                            // Custom builder is disabled for now — users start from
+                            // prebuilt/quick flows and tailor each step's content.
                         ].map((o) => (
                             <button key={o.type} onClick={() => startCreateCampaign(o.type)} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-control hover:bg-surface transition-colors text-left">
                                 <div className={cn('w-9 h-9 rounded-control grid place-items-center', o.tone)}><o.icon className="w-[18px] h-[18px]" /></div>
@@ -569,10 +608,12 @@ const removeLeadFromCampaign = async (campaignId: string, leadId: string) => {
             <div className="flex items-center justify-between gap-4 flex-wrap">
                 <div className="bg-card border border-line rounded-control p-1 inline-flex gap-1 shadow-soft">
                     <button onClick={() => setView('mine')} className={cn('px-4 py-2 rounded-chip text-[13px] font-semibold flex items-center gap-2 transition-colors', view === 'mine' ? 'bg-brand text-white' : 'text-ink-500 hover:text-foreground')}>
-                        <Target className="w-4 h-4" /> My Campaigns <span className="text-[11px] opacity-70">{campaigns.length}</span>
+                        <Target className="w-4 h-4" /> My Campaigns
+                        <span className={cn('text-[11px] font-bold rounded-full px-1.5 py-0.5 min-w-[18px] text-center', view === 'mine' ? 'bg-white/20 text-white' : 'bg-surface text-ink-400')}>{campaigns.length}</span>
                     </button>
                     <button onClick={() => setView('templates')} className={cn('px-4 py-2 rounded-chip text-[13px] font-semibold flex items-center gap-2 transition-colors', view === 'templates' ? 'bg-brand text-white' : 'text-ink-500 hover:text-foreground')}>
-                        <LayoutTemplate className="w-4 h-4" /> Templates <span className="text-[11px] opacity-70">{templates.length}</span>
+                        <LayoutTemplate className="w-4 h-4" /> Templates
+                        <span className={cn('text-[11px] font-bold rounded-full px-1.5 py-0.5 min-w-[18px] text-center', view === 'templates' ? 'bg-white/20 text-white' : 'bg-surface text-ink-400')}>{templates.length}</span>
                     </button>
                 </div>
                 {view === 'mine' && <SafetyQuotaBadge />}
@@ -585,45 +626,56 @@ const removeLeadFromCampaign = async (campaignId: string, leadId: string) => {
                 <div className="space-y-5">
                     <div className="flex flex-wrap items-center gap-2">
                         {GROUP_TABS.map((g) => (
-                            <button key={g.key} onClick={() => setTplGroup(g.key)} className={cn('px-3.5 py-2 rounded-chip text-[12px] font-semibold transition-colors flex items-center gap-1.5', tplGroup === g.key ? 'bg-ink-900 text-white' : 'bg-card border border-line text-ink-500 hover:bg-surface')}>
-                                {g.label} <span className="opacity-70">{groupCount(g.key)}</span>
+                            <button key={g.key} onClick={() => setTplGroup(g.key)} className={cn('px-3.5 py-2 rounded-chip text-[12px] font-semibold transition-colors flex items-center gap-2', tplGroup === g.key ? 'bg-ink-900 text-white' : 'bg-card border border-line text-ink-500 hover:bg-surface')}>
+                                {g.label}
+                                <span className={cn('text-[11px] font-bold rounded-full px-1.5 py-0.5 min-w-[18px] text-center', tplGroup === g.key ? 'bg-white/20 text-white' : 'bg-surface text-ink-400')}>{groupCount(g.key)}</span>
                             </button>
                         ))}
                     </div>
                     {templatesLoading ? (
-                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                            {[0, 1, 2, 3, 4, 5].map((i) => <Skeleton key={i} className="h-52 rounded-card" />)}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                            {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => <Skeleton key={i} className="h-60 rounded-card" />)}
                         </div>
                     ) : filteredTemplates.length === 0 ? (
                         <EmptyState icon={LayoutTemplate} title="No templates here" description="Try a different group — your templates are organized by intent." />
                     ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                             {filteredTemplates.map((tpl) => {
                                 const meta = CATEGORY_META[tpl.category] || CATEGORY_META.linkedin;
-                                const steps: string[] = tpl.stepSequence || [];
+                                const steps: string[] = (tpl.stepSequence || []).filter((s: string) => !STEP_CHIP_HIDDEN.has(s));
+                                const gradient = tpl.color || 'from-brand-500 to-indigo-600';
                                 return (
                                     <Card key={tpl.id} interactive onClick={() => router.push(`/campaigns/templates/${tpl.id}`)} className="p-5 flex flex-col cursor-pointer">
-                                        <div className="flex items-center justify-between">
+                                        <div className="flex items-start justify-between">
                                             <Badge tone={meta.tone}><meta.icon className="w-3 h-3" />{meta.label}</Badge>
-                                            <span className="text-xl leading-none">{tpl.icon}</span>
+                                            {/* Gradient identity tile carries the template's accent color + its
+                                                channel icon (no emoji). */}
+                                            <div className={cn('w-11 h-11 rounded-control grid place-items-center text-white shadow-lift bg-gradient-to-br', gradient)}>
+                                                <meta.icon className="w-[22px] h-[22px]" />
+                                            </div>
                                         </div>
-                                        <h3 className="font-semibold text-[15px] mt-3 text-foreground">{tpl.name}</h3>
-                                        <p className="text-[12px] text-ink-500 font-medium mt-1 leading-relaxed flex-1 line-clamp-2">{tpl.description}</p>
+                                        <h3 className="font-semibold text-[15px] mt-3.5 text-foreground tracking-[-0.01em]">{tpl.name}</h3>
+                                        <p className="text-[12.5px] text-ink-500 font-medium mt-1.5 leading-relaxed flex-1 line-clamp-2">{tpl.description}</p>
                                         {steps.length > 0 && (
-                                            <div className="flex items-center gap-1 flex-wrap mt-3">
+                                            <div className="flex items-center gap-1 flex-wrap mt-4">
                                                 {steps.slice(0, 6).map((s, i) => (
                                                     <span key={i} className="inline-flex items-center gap-1">
-                                                        <span className="text-[10px] font-semibold text-ink-500 bg-surface rounded-chip px-2 py-1">{stepLabel(s)}</span>
-                                                        {i < Math.min(steps.length, 6) - 1 && <ChevronRight className="w-3 h-3 text-ink-400" />}
+                                                        <span className={cn('text-[10px] font-bold rounded-chip px-2 py-1', stepChipTone(s))}>{stepLabel(s)}</span>
+                                                        {i < Math.min(steps.length, 6) - 1 && <ChevronRight className="w-3 h-3 text-ink-400/60" />}
                                                     </span>
                                                 ))}
                                             </div>
                                         )}
-                                        <div className="flex items-center gap-3 mt-3 text-[11px] font-medium text-ink-400">
-                                            {tpl.durationDays ? <span className="flex items-center gap-1"><ClockIcon className="w-3 h-3" />{tpl.durationDays}d</span> : null}
+                                        <div className="flex items-center gap-2 mt-3.5 text-[11.5px] font-semibold text-ink-400">
+                                            {tpl.durationDays ? <span className="flex items-center gap-1"><ClockIcon className="w-3 h-3" />{tpl.durationDays} days</span> : null}
+                                            {tpl.durationDays && tpl.stepCount ? <span className="w-[3px] h-[3px] rounded-full bg-ink-400/50" /> : null}
                                             {tpl.stepCount ? <span>{tpl.stepCount} steps</span> : null}
-                                            {tpl.bestFor ? <span className="truncate">· {tpl.bestFor}</span> : null}
                                         </div>
+                                        {tpl.bestFor ? (
+                                            <p className="text-[11.5px] text-ink-400 leading-relaxed mt-3 line-clamp-2">
+                                                <span className="font-bold text-ink-500">Best for</span> {tpl.bestFor.replace(/^Best for:\s*/i, '')}
+                                            </p>
+                                        ) : null}
                                         <div className="mt-4">
                                             <Button className="w-full" onClick={(e) => { e.stopPropagation(); setPendingTemplate(tpl); }}>Use template</Button>
                                         </div>

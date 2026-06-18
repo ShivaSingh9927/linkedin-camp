@@ -87,8 +87,10 @@ export const sendMessage: NodeHandler = async (ctx, config): Promise<NodeResult>
                     postContent: latestPost,
                     connectionContext: campaignContext.objective || undefined,
                     campaignDescription: campaignContext.description || undefined,
-                    tone: campaignContext.tone,
-                    cta: campaignContext.cta,
+                    // Per-step overrides (set in the builder's Step Settings) win
+                    // over the campaign-level defaults.
+                    tone: (config as any).tone || campaignContext.tone,
+                    cta: (config as any).cta || campaignContext.cta,
                     persona: campaignContext.persona || aiContext?.userContext?.persona || undefined,
                     valueProposition: campaignContext.valueProp || aiContext?.userContext?.valueProp || undefined,
                     aiStrategy: aiContext?.aiStrategy,

@@ -18,8 +18,8 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
-import { TriggerNode, ActionNode, ConditionNode, DelayNode } from './WorkflowNodes';
-import { Plus, MousePointer2, Mail, UserPlus, Clock, Zap, GitBranch, X, Edit3, Heart, MessageCircle, Info, Database, AtSign, FileText, Sparkles, UserCheck, Eye } from 'lucide-react';
+import { TriggerNode, ActionNode, ConditionNode, DelayNode, BuilderLockContext } from './WorkflowNodes';
+import { Plus, MousePointer2, Mail, UserPlus, Clock, Zap, GitBranch, X, Edit3, Heart, MessageCircle, Info, Database, AtSign, FileText, Sparkles, UserCheck, Eye, Lock, Save } from 'lucide-react';
 import { toast } from 'sonner';
 
 const nodeTypes = {
@@ -36,6 +36,11 @@ interface CampaignBuilderProps {
   onEdgesChange: OnEdgesChange<Edge>;
   setNodes: React.Dispatch<React.SetStateAction<Node[]>>;
   setEdges: React.Dispatch<React.SetStateAction<Edge[]>>;
+  // Locked = template-derived / quick-launch campaign: content-only, no
+  // structural editing. Custom-builder campaigns pass locked={false}.
+  locked?: boolean;
+  // Persists the whole campaign (used by the Step Settings "Save" button).
+  onSaveCampaign?: () => void | Promise<void>;
 }
 
 export function CampaignBuilder(props: CampaignBuilderProps) {
@@ -52,14 +57,41 @@ function CampaignBuilderInner({
   onNodesChange,
   onEdgesChange,
   setNodes,
-  setEdges
+  setEdges,
+  locked = false,
+  onSaveCampaign,
 }: CampaignBuilderProps) {
   const [selectedNodeId, setSelectedNodeId] = React.useState<string | null>(null);
+  const messageRef = React.useRef<HTMLTextAreaElement>(null);
 
   const selectedNode = useMemo(
     () => nodes.find((n) => n.id === selectedNodeId),
     [nodes, selectedNodeId]
   );
+
+  // Insert a personalization tag at the caret in the message textarea. Writing
+  // a tag is part of authoring your own copy, so it also switches AI off.
+  const insertTag = (tag: string) => {
+    if (!selectedNode) return;
+    const ta = messageRef.current;
+    const cur = String((selectedNode.data as any).message || '');
+    let next = cur + tag;
+    if (ta && typeof ta.selectionStart === 'number') {
+      const s = ta.selectionStart, e = ta.selectionEnd;
+      next = cur.slice(0, s) + tag + cur.slice(e);
+      requestAnimationFrame(() => { ta.focus(); const p = s + tag.length; ta.setSelectionRange(p, p); });
+    }
+    updateNodeData(selectedNode.id, { message: next, aiEnabled: false });
+  };
+
+  // Tags the engine actually resolves (camelCase single-brace → {{...}}).
+  const MESSAGE_TAGS = [
+    { label: 'First name', tag: '{firstName}' },
+    { label: 'Last name', tag: '{lastName}' },
+    { label: 'Full name', tag: '{name}' },
+    { label: 'Company', tag: '{company}' },
+    { label: 'Job title', tag: '{jobTitle}' },
+  ];
 
   // B.4 — connection-gate warning. Returns true when the selected node is
   // one that requires a 1st-degree connection (MESSAGE / EMAIL_FINDER) AND
@@ -110,8 +142,11 @@ function CampaignBuilderInner({
   }, [selectedNode, nodes, edges]);
 
   const onConnect = useCallback(
-    (params: Connection) => setEdges((eds) => addEdge({ ...params, animated: true, style: { stroke: '#6366f1', strokeWidth: 2 } }, eds)),
-    [setEdges],
+    (params: Connection) => {
+      if (locked) return; // locked campaigns can't be rewired
+      setEdges((eds) => addEdge({ ...params, animated: true, style: { stroke: '#6366f1', strokeWidth: 2 } }, eds));
+    },
+    [setEdges, locked],
   );
 
   // B.5 — One-click "Add Connection Gate". Inserts CONNECT → DELAY 1d →
@@ -215,7 +250,9 @@ function CampaignBuilderInner({
         enrichContact: subType === 'VISIT' ? false : false,
         enrichAbout: subType === 'VISIT' ? true : false,
         enrichPosts: subType === 'VISIT' ? false : false,
-        aiEnabled: false,
+        // AI is on by default for any step that writes copy — the user can
+        // uncheck it (or just start typing, which auto-disables it).
+        aiEnabled: ['MESSAGE', 'EMAIL', 'COMMENT_POST'].includes(subType),
         tone: 'professional',
         cta: 'connect',
         // IF_ELSE / CONDITION default — branch on connection state with
@@ -231,6 +268,8 @@ function CampaignBuilderInner({
     toast.success(`Added ${label} step!`);
   };
 
+  // Live-applies edits to canvas state (no toast — that fired on every
+  // keystroke). Persisting to the backend is the explicit "Save" button.
   const updateNodeData = (id: string, newData: any) => {
     setNodes((nds) =>
       nds.map((node) => {
@@ -240,13 +279,39 @@ function CampaignBuilderInner({
         return node;
       })
     );
-    toast.success('Step updated');
   };
 
+  const [savingStep, setSavingStep] = React.useState(false);
+  const handleSaveStep = useCallback(async () => {
+    if (!onSaveCampaign) { setSelectedNodeId(null); return; }
+    try {
+      setSavingStep(true);
+      await onSaveCampaign();
+      toast.success('Step saved');
+      setSelectedNodeId(null);
+    } catch {
+      toast.error('Could not save step');
+    } finally {
+      setSavingStep(false);
+    }
+  }, [onSaveCampaign]);
+
   return (
+    <BuilderLockContext.Provider value={locked}>
     <div className="w-full h-full bg-slate-50 relative group flex flex-row overflow-hidden">
       <div className="flex-1 relative">
-        {/* Floating Menu */}
+        {/* Locked badge replaces the build menu for template/quick-launch campaigns */}
+        {locked && (
+          <div className="absolute top-4 left-4 z-50 flex items-center gap-2.5 px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl shadow-lg max-w-[240px]">
+            <div className="p-1.5 bg-slate-100 rounded-lg text-slate-500"><Lock className="w-3.5 h-3.5" /></div>
+            <div>
+              <p className="text-[11px] font-bold text-slate-700">Structure locked</p>
+              <p className="text-[10px] text-slate-400 leading-tight">Click any step to edit its content &amp; AI settings.</p>
+            </div>
+          </div>
+        )}
+        {/* Floating Menu (hidden when locked) */}
+        {!locked && (
         <div className="absolute top-4 left-4 z-50 flex flex-col gap-2 p-4 bg-white border border-slate-200 rounded-2xl shadow-xl max-w-[200px]">
           <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-2">
             <Plus className="w-3 h-3" />
@@ -341,6 +406,7 @@ function CampaignBuilderInner({
             </button>
           </div>
         </div>
+        )}
 
         <div className="w-full h-[700px] border-t bg-slate-50">
           <ReactFlow
@@ -352,6 +418,10 @@ function CampaignBuilderInner({
             onNodeClick={(_, node) => setSelectedNodeId(node.id)}
             onPaneClick={() => setSelectedNodeId(null)}
             nodeTypes={nodeTypes}
+            nodesDraggable={!locked}
+            nodesConnectable={!locked}
+            edgesReconnectable={!locked}
+            deleteKeyCode={locked ? null : ['Backspace', 'Delete']}
             fitView
             snapToGrid
             snapGrid={[15, 15]}
@@ -443,13 +513,36 @@ function CampaignBuilderInner({
                       (selectedNode.data as any).subType === 'EMAIL' ? 'Email Body' : 'Message Content')}
                   </label>
                   <textarea
+                    ref={messageRef}
                     value={(selectedNode.data as any).message || ''}
-                    onChange={(e) => updateNodeData(selectedNode.id, { message: e.target.value })}
+                    onChange={(e) => {
+                      // Writing your own copy turns AI off automatically — you're
+                      // either AI-generating or writing it yourself, not both.
+                      const patch: any = { message: e.target.value };
+                      if (e.target.value && (selectedNode.data as any).aiEnabled) patch.aiEnabled = false;
+                      updateNodeData(selectedNode.id, patch);
+                    }}
                     className="w-full h-40 p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all resize-none"
-                    placeholder="Type your content here..."
+                    placeholder={(selectedNode.data as any).aiEnabled ? 'AI is writing this step. Start typing to write it yourself instead…' : 'e.g. Hi {firstName}, saw your work at {company}…'}
                   />
-                  <div className="p-2 bg-indigo-50 rounded-lg border border-indigo-100 text-[10px] text-indigo-600 font-medium leading-relaxed">
-                    💡 Tip: You can use <span className="font-bold underline">{'{firstName}'}</span> to personalize your content.
+                  <div className="space-y-1.5">
+                    <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Insert Tag</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {MESSAGE_TAGS.map((t) => (
+                        <button
+                          key={t.tag}
+                          type="button"
+                          onClick={() => insertTag(t.tag)}
+                          title={`Insert ${t.tag}`}
+                          className="px-2 py-1 rounded-lg bg-indigo-50 border border-indigo-100 text-[10px] font-bold text-indigo-600 hover:bg-indigo-100 hover:border-indigo-200 transition-colors"
+                        >
+                          + {t.label}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-[9px] text-slate-400 leading-relaxed">
+                      Click a tag to drop it at your cursor — it fills in from each lead automatically.
+                    </p>
                   </div>
                 </div>
               )}
@@ -744,16 +837,25 @@ function CampaignBuilderInner({
               )}
           </div>
 
-          <div className="p-6 border-t bg-slate-50 mt-auto">
+          <div className="p-6 border-t bg-slate-50 mt-auto flex items-center gap-2">
             <button
               onClick={() => setSelectedNodeId(null)}
-              className="w-full py-3 bg-slate-800 text-white rounded-xl font-bold text-xs hover:bg-slate-900 transition-all shadow-lg shadow-slate-200"
+              className="px-4 py-3 bg-white border border-slate-200 text-slate-600 rounded-xl font-bold text-xs hover:bg-slate-100 transition-all"
             >
-              Close Settings
+              Close
+            </button>
+            <button
+              onClick={handleSaveStep}
+              disabled={savingStep}
+              className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-bold text-xs hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 flex items-center justify-center gap-2 disabled:opacity-60"
+            >
+              <Save className="w-3.5 h-3.5" />
+              {savingStep ? 'Saving…' : 'Save'}
             </button>
           </div>
         </div>
       )}
     </div>
+    </BuilderLockContext.Provider>
   );
 }
