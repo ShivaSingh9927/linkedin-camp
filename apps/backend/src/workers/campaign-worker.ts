@@ -98,8 +98,12 @@ const processCampaignJob = async (data: CampaignJobData, job: Job) => {
             }
         });
         
+        // `io` is undefined in the worker process (only the API process inits
+        // the socket server), so guard it — otherwise this crashes the job with
+        // "Cannot read properties of undefined (reading 'to')" AFTER the pause
+        // already succeeded. Same class as the markInvalid io-guard fix.
         const { io } = await import('../socket');
-        io.to(`user_${userId}`).emit('SESSION_EXPIRED', {
+        io?.to(`user_${userId}`).emit('SESSION_EXPIRED', {
             userId,
             campaignId,
             message: 'LinkedIn session expired. Please re-login.',

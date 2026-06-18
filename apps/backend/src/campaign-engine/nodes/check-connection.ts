@@ -52,14 +52,26 @@ export const checkConnection: NodeHandler = async (ctx): Promise<NodeResult> => 
 
         if (campaignId) {
             try {
-                await prisma.campaignLeadProgress.update({
+                // Upsert (not update): quick-launch/template campaigns may not
+                // have a CampaignLeadProgress row yet, so a bare update threw
+                // "Record to update not found" (non-fatal but noisy). Matches
+                // the check-connection-voyager behaviour.
+                await prisma.campaignLeadProgress.upsert({
                     where: {
                         campaignId_leadId: {
                             campaignId,
                             leadId: lead.id
                         }
                     },
-                    data: {
+                    create: {
+                        campaignId,
+                        leadId: lead.id,
+                        connectionStatus: output.connectionStatus,
+                        lastConnectionCheck: new Date(),
+                        needsRetry: !output.connected,
+                        currentNodeIndex: 0,
+                    },
+                    update: {
                         connectionStatus: output.connectionStatus,
                         lastConnectionCheck: new Date(),
                         needsRetry: !output.connected,
