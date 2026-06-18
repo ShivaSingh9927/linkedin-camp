@@ -86,8 +86,13 @@ const isUserActive = redisPresence === 'ACTIVE' || (now - lastActivity < twoMins
         });
         
         const campaignIds = userCampaigns.map(c => c.id);
-        
+
         if (campaignIds.length === 0) continue;
+
+        // Index the campaigns we already fetched so the per-task loop below can
+        // resolve workflow/userId in memory instead of a findUnique per task
+        // (that N+1 was ~55% of the scheduler loop time at 1000+ users).
+        const campaignById = new Map(userCampaigns.map(c => [c.id, c]));
 
         const userPendingTasks = await prisma.campaignLead.findMany({
           where: {
@@ -101,12 +106,9 @@ const isUserActive = redisPresence === 'ACTIVE' || (now - lastActivity < twoMins
         console.log(`[Scheduler] User ${user.id}: Found ${userPendingTasks.length} pending tasks.`);
 
         for (const task of userPendingTasks) {
-          // Fetch campaign separately
-          const campaign = await prisma.campaign.findUnique({
-            where: { id: task.campaignId },
-            select: { userId: true, workflowJson: true }
-          });
-          
+          // Resolve from the already-fetched campaigns (no per-task DB round-trip)
+          const campaign = campaignById.get(task.campaignId);
+
           if (!campaign) continue;
           
           let jobPriority = 5;
