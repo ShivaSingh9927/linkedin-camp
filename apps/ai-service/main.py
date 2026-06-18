@@ -411,7 +411,7 @@ async def generate_strategy_endpoint(req: StrategyRequest):
 
 
 @app.post("/ai/validate-strategy")
-async def validate_strategy_endpoint(strategy: Dict[str, Any]):
+def validate_strategy_endpoint(strategy: Dict[str, Any]):
     from validators import validate_strategy
     is_valid, errors = validate_strategy(strategy)
     return {"valid": is_valid, "errors": errors}
@@ -420,7 +420,7 @@ async def validate_strategy_endpoint(strategy: Dict[str, Any]):
 # ─── Pillar Editor ─────────────────────────────────────────────────────────────
 
 @app.post("/ai/edit-pillar")
-async def edit_pillar(req: EditPillarRequest):
+def edit_pillar(req: EditPillarRequest):
     try:
         cacheable_preamble = f"""You are a messaging strategist. The user wants to edit one of their messaging pillars — the core themes used in LinkedIn/email outreach. You rewrite the pillar based on their instruction while keeping it concise and on-brand.
 
@@ -464,7 +464,7 @@ Rewrite the pillar. Return ONLY a JSON object with two fields:
 
 
 @app.post("/ai/edit-comment-style")
-async def edit_comment_style(req: EditCommentStyleRequest):
+def edit_comment_style(req: EditCommentStyleRequest):
     try:
         cacheable_preamble = f"""You are a comment style editor. The user wants to set or update their commenting style — the instruction that guides how the AI writes LinkedIn comments on their behalf. You rewrite the instruction based on their request while keeping it concise and actionable.
 
@@ -500,7 +500,7 @@ Rewrite the comment style instruction. Return ONLY a JSON object with one field:
 # ─── Existing Endpoints (Updated with AI Strategy Context) ────────────────────
 
 @app.post("/ai/comment")
-async def generate_comment(req: CommentRequest):
+def generate_comment(req: CommentRequest):
     brand = get_brand_context(req.persona, req.value_proposition, req.user_context)
     strategy_ctx = get_strategy_context(req.ai_strategy)
     
@@ -606,7 +606,7 @@ USER INSTRUCTIONS:
 
 
 @app.post("/ai/message")
-async def generate_message(req: MessageRequest):
+def generate_message(req: MessageRequest):
     name = req.recipient_name
     brand = get_brand_context(req.persona, req.value_proposition, req.user_context)
     strategy_ctx = get_strategy_context(req.ai_strategy)
@@ -844,7 +844,7 @@ PAST MESSAGES (for follow-up check):
 
 
 @app.post("/ai/enhance")
-async def enhance_reply(req: EnhanceRequest):
+def enhance_reply(req: EnhanceRequest):
     brand = get_brand_context(req.persona, req.value_proposition)
     strategy_ctx = get_strategy_context(req.ai_strategy)
     
@@ -881,7 +881,7 @@ INSTRUCTIONS:
 # ─── Self-Profile Summary ─────────────────────────────────────────────────────
 
 @app.post("/ai/profile-summary")
-async def profile_summary(req: SelfProfileRequest):
+def profile_summary(req: SelfProfileRequest):
     """
     Turn the user's scraped OWN profile + recent posts into (1) a confident,
     structured summary of who they are, and (2) an inferred communication style
@@ -981,7 +981,7 @@ class UnderstandBusinessRequest(BaseModel):
 
 
 @app.post("/ai/understand-business")
-async def understand_business(req: UnderstandBusinessRequest):
+def understand_business(req: UnderstandBusinessRequest):
     """Fast, single-call reflection of what the user just told us about their
     business. Surfaced inline on the AI Profile page the instant they save, so
     the form feels like a conversation — "here's the picture I've built of you"
