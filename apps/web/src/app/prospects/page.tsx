@@ -22,9 +22,14 @@ import {
     Database,
     Mail,
     Briefcase,
-    SlidersHorizontal,
     ListPlus,
     Circle,
+    Clock,
+    Eye,
+    Send,
+    CornerDownLeft,
+    MessageSquare,
+    ThumbsUp,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { degreeLabel, timeAgo } from '@/components/LeadEnrichmentDrawer';
@@ -103,6 +108,29 @@ interface SmartList {
     filters: Record<string, string>;
 }
 
+// Maps a timeline event "kind" (from GET /leads/:id/timeline) to its icon and
+// accent colour so the activity feed reads at a glance.
+const TIMELINE_KIND: Record<string, { icon: any; tone: string }> = {
+    added: { icon: UserPlus, tone: 'text-slate-400 bg-slate-100' },
+    visit: { icon: Eye, tone: 'text-violet-600 bg-violet-50' },
+    invite: { icon: Send, tone: 'text-blue-600 bg-blue-50' },
+    message_out: { icon: Send, tone: 'text-indigo-600 bg-indigo-50' },
+    message_in: { icon: CornerDownLeft, tone: 'text-emerald-600 bg-emerald-50' },
+    like: { icon: ThumbsUp, tone: 'text-rose-600 bg-rose-50' },
+    comment: { icon: MessageSquare, tone: 'text-amber-600 bg-amber-50' },
+    follow: { icon: UserPlus, tone: 'text-blue-600 bg-blue-50' },
+    status: { icon: Circle, tone: 'text-slate-500 bg-slate-100' },
+    other: { icon: Circle, tone: 'text-slate-500 bg-slate-100' },
+};
+
+// Education lands as a [{ school }] array (PROFILE_VISIT enrichment + import
+// wrapping) or, defensively, a bare string. Pull the first school for the table.
+function eduSchool(education: any): string {
+    if (Array.isArray(education)) return education[0]?.school || education[0]?.degree || '';
+    if (typeof education === 'string') return education;
+    return '';
+}
+
 export default function LeadsPage() {
     const [leads, setLeads] = useState<Lead[]>([]);
     const [campaigns, setCampaigns] = useState<Campaign[]>([]);
@@ -124,6 +152,8 @@ export default function LeadsPage() {
     const [showBulkTagModal, setShowBulkTagModal] = useState(false);
     const [bulkTagInput, setBulkTagInput] = useState('');
     const [selectedLead, setSelectedLead] = useState<any>(null);
+    const [timeline, setTimeline] = useState<any[]>([]);
+    const [timelineLoading, setTimelineLoading] = useState(false);
     const [smartLists, setSmartLists] = useState<SmartList[]>([]);
     const [showSaveSmartListModal, setShowSaveSmartListModal] = useState(false);
     const [smartListName, setSmartListName] = useState('');
@@ -137,7 +167,6 @@ export default function LeadsPage() {
     // Filters
     const [activeFilter, setActiveFilter] = useState<string | null>(null);
     const [filters, setFilters] = useState<Record<string, string>>({});
-    const [showMoreFilters, setShowMoreFilters] = useState(false);
 
     useEffect(() => {
         fetchLeads();
@@ -148,6 +177,18 @@ export default function LeadsPage() {
             setSearchQuery(initialCompany);
         }
     }, [initialCompany]);
+
+    // Load the activity timeline whenever a lead drawer opens.
+    useEffect(() => {
+        if (!selectedLead?.id) { setTimeline([]); return; }
+        let cancelled = false;
+        setTimelineLoading(true);
+        api.get(`/leads/${selectedLead.id}/timeline`)
+            .then((res) => { if (!cancelled) setTimeline(res.data.events || []); })
+            .catch(() => { if (!cancelled) setTimeline([]); })
+            .finally(() => { if (!cancelled) setTimelineLoading(false); });
+        return () => { cancelled = true; };
+    }, [selectedLead?.id]);
 
     // Close filter dropdown when clicking outside
     useEffect(() => {
@@ -727,20 +768,6 @@ export default function LeadsPage() {
                                 />
                             </div>
                             {PRIMARY_PILLS.map(renderPill)}
-                            <div className="relative filter-dropdown-container flex-shrink-0">
-                                <button
-                                    onClick={() => setShowMoreFilters(v => !v)}
-                                    className={cn(
-                                        "px-3 py-2.5 rounded-control border text-[13px] font-semibold transition-all flex items-center gap-1.5",
-                                        showMoreFilters || MORE_PILLS.some(p => filters[p.key])
-                                            ? "bg-white text-ink-700 border-brand-200"
-                                            : "bg-white text-ink-400 border-line hover:border-brand-200"
-                                    )}
-                                >
-                                    <SlidersHorizontal className="w-3.5 h-3.5" />
-                                    More
-                                </button>
-                            </div>
                             {Object.keys(filters).length > 0 && (
                                 <button
                                     onClick={clearFilters}
@@ -752,12 +779,10 @@ export default function LeadsPage() {
                             )}
                         </div>
 
-                        {/* Secondary (More) filter pills */}
-                        {showMoreFilters && (
-                            <div className="flex items-center gap-2 flex-wrap">
-                                {MORE_PILLS.map(renderPill)}
-                            </div>
-                        )}
+                        {/* Secondary filter pills — always visible for quick filtering */}
+                        <div className="flex items-center gap-2 flex-wrap">
+                            {MORE_PILLS.map(renderPill)}
+                        </div>
 
                         {/* Bulk action bar */}
                         {selectedLeads.size > 0 && (
@@ -793,10 +818,12 @@ export default function LeadsPage() {
                             />
                         ) : (
                             <Card className="overflow-hidden">
-                                <div className="overflow-x-auto">
-                                    <table className="w-full text-[13px] min-w-[680px]">
-                                        <thead>
-                                            <tr className="border-b border-line">
+                                {/* Only this container scrolls — the page header + filters stay put.
+                                    overflow-auto = vertical (capped to viewport) + horizontal (extra columns). */}
+                                <div className="overflow-auto max-h-[calc(100vh-300px)]">
+                                    <table className="w-full text-[13px] min-w-[1000px]">
+                                        <thead className="sticky top-0 z-10 bg-white shadow-[0_1px_0_0_var(--color-line)]">
+                                            <tr>
                                                 <th className="w-10 pl-4">
                                                     <input
                                                         type="checkbox"
@@ -807,6 +834,8 @@ export default function LeadsPage() {
                                                 </th>
                                                 <th className="text-left label px-4 py-3">Name</th>
                                                 <th className="text-left label px-4 py-3">Title &amp; company</th>
+                                                <th className="text-left label px-4 py-3">Location</th>
+                                                <th className="text-left label px-4 py-3">Education</th>
                                                 <th className="text-left label px-4 py-3">Status</th>
                                                 <th className="text-left label px-4 py-3">Lists</th>
                                                 <th className="px-4 py-3" />
@@ -852,7 +881,13 @@ export default function LeadsPage() {
                                                     </td>
                                                     <td className="px-4 py-3.5">
                                                         <div className="font-medium text-ink-700 truncate max-w-[260px]">{lead.jobTitle || lead.headline || '—'}</div>
-                                                        <div className="text-[12px] text-ink-400 truncate max-w-[260px]">{lead.company || lead.location || lead.country || '—'}</div>
+                                                        <div className="text-[12px] text-ink-400 truncate max-w-[260px]">{lead.company || '—'}</div>
+                                                    </td>
+                                                    <td className="px-4 py-3.5">
+                                                        <div className="text-ink-600 truncate max-w-[200px]">{lead.location || lead.country || '—'}</div>
+                                                    </td>
+                                                    <td className="px-4 py-3.5">
+                                                        <div className="text-ink-600 truncate max-w-[200px]">{eduSchool((lead as any).education) || '—'}</div>
                                                     </td>
                                                     <td className="px-4 py-3.5">
                                                         <Badge tone={statusTone(lead.status)}>{lead.status.replace('_', ' ').toLowerCase().replace(/^\w/, c => c.toUpperCase())}</Badge>
@@ -1169,6 +1204,51 @@ export default function LeadsPage() {
                                     </section>
                                 );
                             })()}
+
+                            {/* Activity timeline — every Qampi touch on this lead */}
+                            <section className="space-y-3">
+                                <h3 className="label flex items-center gap-2"><Clock className="w-3.5 h-3.5" />Activity timeline</h3>
+                                <Card className="p-6">
+                                    {timelineLoading ? (
+                                        <div className="py-6 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-ink-300" /></div>
+                                    ) : timeline.length === 0 ? (
+                                        <p className="py-2 text-[13px] font-medium text-ink-400 text-center">No activity recorded yet.</p>
+                                    ) : (
+                                        <ol className="space-y-0">
+                                            {timeline.map((ev, i) => {
+                                                const meta = TIMELINE_KIND[ev.kind] || TIMELINE_KIND.other;
+                                                const Icon = meta.icon;
+                                                const last = i === timeline.length - 1;
+                                                return (
+                                                    <li key={ev.id} className="flex gap-3">
+                                                        <div className="flex flex-col items-center">
+                                                            <span className={cn('w-7 h-7 rounded-full grid place-items-center flex-shrink-0', meta.tone)}>
+                                                                <Icon className="w-3.5 h-3.5" />
+                                                            </span>
+                                                            {!last && <span className="w-px flex-1 bg-line my-1" />}
+                                                        </div>
+                                                        <div className={cn('min-w-0 flex-1', last ? 'pb-0' : 'pb-5')}>
+                                                            <div className="flex items-baseline justify-between gap-2">
+                                                                <p className="text-[13px] font-semibold text-foreground">
+                                                                    {ev.label}
+                                                                    {ev.status === 'FAILED' && <span className="ml-2 text-[11px] font-bold text-rose-500">FAILED</span>}
+                                                                </p>
+                                                                <span className="text-[11px] font-medium text-ink-400 flex-shrink-0">{timeAgo(ev.timestamp)}</span>
+                                                            </div>
+                                                            {ev.detail && (
+                                                                <p className="text-[12px] font-medium text-ink-500 mt-1 line-clamp-2 leading-relaxed">{ev.detail}</p>
+                                                            )}
+                                                            {ev.campaignName && (
+                                                                <p className="text-[11px] font-medium text-ink-400 mt-1">via {ev.campaignName}</p>
+                                                            )}
+                                                        </div>
+                                                    </li>
+                                                );
+                                            })}
+                                        </ol>
+                                    )}
+                                </Card>
+                            </section>
 
                             {/* Activity */}
                             <section className="space-y-3">

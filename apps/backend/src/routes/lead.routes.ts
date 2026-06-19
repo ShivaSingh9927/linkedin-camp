@@ -9,7 +9,9 @@ import {
     updateLeadTags,
     bulkUpdateLeadsTags,
     getCompanies,
-    enrichLead
+    enrichLead,
+    getLeadTimeline,
+    getFollowUpLeads
 } from '../controllers/lead.controller';
 import { authMiddleware } from '../middleware/auth.middleware';
 import multer from 'multer';
@@ -28,6 +30,8 @@ router.post('/manual', createManualLead);
 router.patch('/:id/tags', updateLeadTags);
 router.post('/bulk-tags', bulkUpdateLeadsTags);
 router.get('/companies', getCompanies);
+router.get('/follow-ups', getFollowUpLeads);
 router.post('/:id/enrich', enrichLead);
+router.get('/:id/timeline', getLeadTimeline);
 
 export default router;

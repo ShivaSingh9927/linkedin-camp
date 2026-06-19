@@ -52,7 +52,9 @@ const bulkImportLeads = async (userId: string, incomingLeads: any[], teamUserIds
         // The extension's `title`/`jobTitle` for search cards is often the
         // degree subtitle ("3rd+ degree connection") or the person's name —
         // drop those rather than storing them as a real role.
-        const jobTitle = cleanPersonField(lead.jobTitle || lead.title, `${firstName} ${lastName}`);
+        // `jobProfile` is what the smart-extension's structured extractor emits;
+        // older payloads send `jobTitle`/`title`. Accept all three.
+        const jobTitle = cleanPersonField(lead.jobProfile || lead.jobTitle || lead.title, `${firstName} ${lastName}`);
 
         // Anti-duplication check across team
         if (teamUserIds.length > 1 && existingTeamLeadUrls.has(lead.linkedinUrl) && !userExistingLeadsMap.has(lead.linkedinUrl)) {
@@ -75,6 +77,20 @@ const bulkImportLeads = async (userId: string, incomingLeads: any[], teamUserIds
             ? lead.info.trim().substring(0, 2000)
             : null;
 
+        // Education from the extension's extractor is a plain school string —
+        // wrap it into the same {school} array shape PROFILE_VISIT enrichment
+        // uses, so the prospects drawer renders it. An already-array value
+        // (richer enrichment payload) passes through untouched.
+        const education = Array.isArray(lead.education)
+            ? lead.education
+            : (typeof lead.education === 'string' && lead.education.trim()
+                ? [{ school: lead.education.trim() }]
+                : null);
+
+        const location: string | null = typeof lead.location === 'string' && lead.location.trim()
+            ? lead.location.trim()
+            : null;
+
         if (userExistingLeadsMap.has(lead.linkedinUrl)) {
             const existingId = userExistingLeadsMap.get(lead.linkedinUrl)!.id;
             leadsToUpdate.push(prisma.lead.update({
@@ -95,6 +111,7 @@ const bulkImportLeads = async (userId: string, incomingLeads: any[], teamUserIds
                     // wipe a previously-known degree.
                     ...(connectionDegree != null ? { connectionDegree } : {}),
                     ...(info != null ? { info } : {}),
+                    ...(location != null ? { location } : {}),
                 }
             }));
         } else {
@@ -111,6 +128,10 @@ const bulkImportLeads = async (userId: string, incomingLeads: any[], teamUserIds
                 tags: lead.tags || [],
                 connectionDegree,
                 info,
+                location,
+                // Set on create only — a later PROFILE_VISIT enrichment owns the
+                // richer version and shouldn't be downgraded by a re-import.
+                ...(education ? { education } : {}),
             });
         }
     }
@@ -241,11 +262,13 @@ export const uploadCsvLeads = async (req: any, res: Response) => {
         firstName: ['firstname', 'first', 'givenname', 'fname'],
         lastName: ['lastname', 'last', 'surname', 'familyname', 'lname'],
         fullName: ['name', 'fullname', 'displayname'],
-        jobTitle: ['jobtitle', 'title', 'position', 'role', 'headline', 'currenttitle'],
+        jobTitle: ['jobtitle', 'jobprofile', 'title', 'position', 'role', 'headline', 'currenttitle'],
         company: ['company', 'companyname', 'organization', 'organisation', 'employer', 'currentcompany'],
         email: ['email', 'emailaddress', 'workemail', 'mail'],
-        country: ['country', 'location', 'region', 'geo'],
+        country: ['country', 'region', 'geo'],
+        location: ['location', 'city', 'area'],
         gender: ['gender', 'sex'],
+        education: ['education', 'school', 'college', 'university'],
         tags: ['tags', 'segments', 'segment'],
     };
     const normKey = (s: string) => s.toLowerCase().replace(/[\s_\-.]+/g, '');
@@ -290,7 +313,9 @@ export const uploadCsvLeads = async (req: any, res: Response) => {
                 company: resolved.company,
                 email: resolved.email,
                 country: resolved.country,
+                location: resolved.location,
                 gender: resolved.gender,
+                education: resolved.education,
                 tags,
             };
 
@@ -572,16 +597,31 @@ export const getCompanies = async (req: any, res: Response) => {
             }
         });
 
+        // Normalize so "Google", "Google Inc." and "google" collapse into one
+        // account instead of three. The key is lowercased, de-punctuated and
+        // stripped of common legal suffixes; the display name is the most
+        // frequent original spelling we saw for that key.
+        const normalizeCompanyKey = (raw: string) =>
+            raw
+                .toLowerCase()
+                .replace(/[.,]/g, '')
+                .replace(/\s+/g, ' ')
+                .replace(/\b(inc|incorporated|llc|llp|ltd|limited|corp|corporation|co|company|gmbh|pvt|private|plc|sa|ag|bv)\b/g, '')
+                .replace(/\s+/g, ' ')
+                .trim();
+
         const companyGroups: Record<string, any> = {};
 
         leads.forEach(lead => {
-            const name = lead.company?.trim();
-            if (!name) return;
+            const original = lead.company?.trim();
+            if (!original) return;
 
-            if (!companyGroups[name]) {
-                companyGroups[name] = {
-                    name,
-                    id: name, // We use name as ID for simplicity since it's our grouping key
+            const key = normalizeCompanyKey(original) || original.toLowerCase();
+
+            if (!companyGroups[key]) {
+                companyGroups[key] = {
+                    name: original,
+                    id: key, // normalized grouping key (stable across spelling variants)
                     totalLeads: 0,
                     statusCounts: {
                         IMPORTED: 0,
@@ -590,21 +630,31 @@ export const getCompanies = async (req: any, res: Response) => {
                         REPLIED: 0,
                         BOUNCED: 0
                     },
-                    sampleEmployees: []
+                    sampleEmployees: [],
+                    _nameVariants: {} as Record<string, number>
                 };
             }
 
-            const group = companyGroups[name];
+            const group = companyGroups[key];
             group.totalLeads++;
             group.statusCounts[lead.status] = (group.statusCounts[lead.status] || 0) + 1;
-            
+            group._nameVariants[original] = (group._nameVariants[original] || 0) + 1;
+
             if (group.sampleEmployees.length < 3) {
                 group.sampleEmployees.push(`${lead.firstName} ${lead.lastName}`);
             }
         });
 
-        // Convert to array and sort by volume
-        const result = Object.values(companyGroups).sort((a: any, b: any) => b.totalLeads - a.totalLeads);
+        // Pick the most common original spelling as the display name, then drop
+        // the internal tally before returning.
+        const result = Object.values(companyGroups)
+            .map((g: any) => {
+                const variants = g._nameVariants as Record<string, number>;
+                g.name = Object.keys(variants).sort((a, b) => variants[b] - variants[a])[0] || g.name;
+                delete g._nameVariants;
+                return g;
+            })
+            .sort((a: any, b: any) => b.totalLeads - a.totalLeads);
         
         res.json(result);
     } catch (error) {
@@ -669,5 +719,218 @@ export const enrichLead = async (req: any, res: Response) => {
     } catch (error) {
         console.error('Error queuing enrichment:', error);
         res.status(500).json({ error: 'Failed to queue enrichment task' });
+    }
+};
+
+// ── Per-contact activity timeline ───────────────────────────────────────────
+// A unified, newest-first feed of everything that has happened to one lead.
+// Pure read: it merges rows that already exist (ActionLog campaign actions +
+// Message DMs/emails + the lead's creation) — nothing new is logged anywhere.
+// Message rows own all "sent/received" events; ActionLog's own MESSAGE/EMAIL
+// rows are dropped here to avoid double-counting the same send.
+const TIMELINE_ACTION_LABELS: Record<string, { label: string; kind: string }> = {
+    VISIT: { label: 'Profile visited', kind: 'visit' },
+    PROFILE_VISIT: { label: 'Profile visited', kind: 'visit' },
+    INVITE: { label: 'Invite sent', kind: 'invite' },
+    CONNECT: { label: 'Invite sent', kind: 'invite' },
+    CHECK_CONNECTION: { label: 'Connection checked', kind: 'status' },
+    LIKE: { label: 'Liked a post', kind: 'like' },
+    COMMENT: { label: 'Commented on a post', kind: 'comment' },
+    FOLLOW: { label: 'Followed', kind: 'follow' },
+    EMAIL_FINDER: { label: 'Email lookup', kind: 'status' },
+};
+
+export const getLeadTimeline = async (req: any, res: Response) => {
+    const userId = req.user.id;
+    const { id } = req.params;
+
+    try {
+        const teamIds = await getTeamUserIds(userId);
+        const allowedIds = teamIds.length ? teamIds : [userId];
+
+        const lead = await prisma.lead.findFirst({
+            where: { id, userId: { in: allowedIds } },
+            select: { id: true, createdAt: true, status: true, firstName: true, lastName: true },
+        });
+        if (!lead) return res.status(404).json({ error: 'Lead not found' });
+
+        const [actions, messages] = await Promise.all([
+            prisma.actionLog.findMany({
+                where: { leadId: id },
+                select: { id: true, actionType: true, status: true, executedAt: true, campaignId: true, errorMessage: true },
+            }),
+            prisma.message.findMany({
+                where: { leadId: id },
+                select: { id: true, direction: true, channel: true, content: true, sentAt: true, campaignId: true, source: true },
+            }),
+        ]);
+
+        // Resolve campaign names in one shot for context labels.
+        const campaignIds = [
+            ...new Set([...actions, ...messages].map((r: any) => r.campaignId).filter(Boolean)),
+        ] as string[];
+        const campaigns = campaignIds.length
+            ? await prisma.campaign.findMany({ where: { id: { in: campaignIds } }, select: { id: true, name: true } })
+            : [];
+        const campaignName: Record<string, string> = {};
+        campaigns.forEach((c: any) => (campaignName[c.id] = c.name));
+
+        const events: any[] = [];
+
+        // Lead created
+        events.push({
+            id: `created-${lead.id}`,
+            kind: 'added',
+            label: 'Added to Qampi',
+            detail: null,
+            channel: null,
+            campaignName: null,
+            status: 'SUCCESS',
+            timestamp: lead.createdAt,
+        });
+
+        // Campaign actions (skip MESSAGE/EMAIL — Message rows own those)
+        actions.forEach((a: any) => {
+            const type = (a.actionType || '').toUpperCase();
+            if (type === 'MESSAGE' || type === 'EMAIL') return;
+            const map = TIMELINE_ACTION_LABELS[type] || {
+                label: type ? type.replace(/_/g, ' ').toLowerCase().replace(/^\w/, (c: string) => c.toUpperCase()) : 'Action',
+                kind: 'other',
+            };
+            events.push({
+                id: `action-${a.id}`,
+                kind: map.kind,
+                label: map.label,
+                detail: a.status === 'FAILED' ? (a.errorMessage || 'Failed') : null,
+                channel: null,
+                campaignName: a.campaignId ? campaignName[a.campaignId] || null : null,
+                status: a.status,
+                timestamp: a.executedAt,
+            });
+        });
+
+        // Messages (sends + replies, LinkedIn + email)
+        messages.forEach((m: any) => {
+            const isIn = m.direction === 'RECEIVED';
+            const isEmail = m.channel === 'email';
+            events.push({
+                id: `msg-${m.id}`,
+                kind: isIn ? 'message_in' : 'message_out',
+                label: isIn
+                    ? (isEmail ? 'Email reply received' : 'Reply received')
+                    : (isEmail ? 'Email sent' : 'Message sent'),
+                detail: m.content || null,
+                channel: m.channel,
+                campaignName: m.campaignId ? campaignName[m.campaignId] || null : null,
+                status: 'SUCCESS',
+                timestamp: m.sentAt,
+            });
+        });
+
+        events.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+        res.json({ leadId: lead.id, events });
+    } catch (error) {
+        console.error('Error building lead timeline:', error);
+        res.status(500).json({ error: 'Failed to load activity timeline' });
+    }
+};
+
+// ── Ready for follow-up ──────────────────────────────────────────────────────
+// Surfaces leads that earned a follow-up, in two segments computed from the
+// Message log (no new table). The user enrolls them into a follow-up campaign
+// from the Follow-ups page — Qampi never asks them to follow up by hand.
+//   • replied   = they answered once, you have NOT replied since, and it's been
+//                 quiet for > repliedDays.
+//   • no_reply  = you messaged them, they NEVER answered, last touch > noReplyDays.
+// Leads mid-flight in a campaign (PENDING/IN_PROGRESS/DEFERRED) are excluded so
+// we never suggest re-touching someone an active sequence is already handling.
+export const getFollowUpLeads = async (req: any, res: Response) => {
+    const userId = req.user.id;
+    const repliedDays = Math.max(0, parseInt(req.query.repliedDays as string) || 3);
+    const noReplyDays = Math.max(0, parseInt(req.query.noReplyDays as string) || 5);
+
+    try {
+        const teamIds = await getTeamUserIds(userId);
+        const allowedIds = teamIds.length ? teamIds : [userId];
+        const now = Date.now();
+
+        const [messages, activeProgress] = await Promise.all([
+            prisma.message.findMany({
+                where: { userId: { in: allowedIds } },
+                select: { leadId: true, direction: true, sentAt: true },
+                orderBy: { sentAt: 'asc' },
+            }),
+            prisma.campaignLeadProgress.findMany({
+                where: { status: { in: ['PENDING', 'IN_PROGRESS', 'DEFERRED'] } },
+                select: { leadId: true },
+            }),
+        ]);
+
+        const busy = new Set(activeProgress.map((p: any) => p.leadId));
+
+        // Reduce the message log to per-lead inbound/outbound signals.
+        type Sig = { lastInbound: number | null; lastOutbound: number | null; hasInbound: boolean; hasOutbound: boolean };
+        const sig: Record<string, Sig> = {};
+        messages.forEach((m: any) => {
+            const s = (sig[m.leadId] ||= { lastInbound: null, lastOutbound: null, hasInbound: false, hasOutbound: false });
+            const t = new Date(m.sentAt).getTime();
+            if (m.direction === 'RECEIVED') { s.hasInbound = true; s.lastInbound = Math.max(s.lastInbound ?? 0, t); }
+            else { s.hasOutbound = true; s.lastOutbound = Math.max(s.lastOutbound ?? 0, t); }
+        });
+
+        const repliedIds: string[] = [];
+        const noReplyIds: string[] = [];
+        const dayMs = 24 * 60 * 60 * 1000;
+
+        for (const [leadId, s] of Object.entries(sig)) {
+            if (busy.has(leadId)) continue;
+            if (s.hasInbound) {
+                // Replied — only if we haven't already answered since their last reply.
+                const answeredSince = s.lastOutbound != null && s.lastInbound != null && s.lastOutbound > s.lastInbound;
+                if (!answeredSince && s.lastInbound != null && now - s.lastInbound > repliedDays * dayMs) {
+                    repliedIds.push(leadId);
+                }
+            } else if (s.hasOutbound && s.lastOutbound != null && now - s.lastOutbound > noReplyDays * dayMs) {
+                noReplyIds.push(leadId);
+            }
+        }
+
+        const allIds = [...repliedIds, ...noReplyIds];
+        const leads = allIds.length
+            ? await prisma.lead.findMany({
+                where: { id: { in: allIds }, userId: { in: allowedIds } },
+                select: {
+                    id: true, firstName: true, lastName: true, jobTitle: true, company: true,
+                    linkedinUrl: true, status: true, connectionDegree: true,
+                },
+            })
+            : [];
+        const leadById: Record<string, any> = {};
+        leads.forEach((l: any) => (leadById[l.id] = l));
+
+        const decorate = (ids: string[], segment: 'replied' | 'no_reply') =>
+            ids
+                .map((id) => {
+                    const l = leadById[id];
+                    if (!l) return null;
+                    const last = segment === 'replied' ? sig[id].lastInbound : sig[id].lastOutbound;
+                    return { ...l, segment, lastActivityAt: last ? new Date(last).toISOString() : null };
+                })
+                .filter(Boolean)
+                .sort((a: any, b: any) => (a.lastActivityAt || '').localeCompare(b.lastActivityAt || ''));
+
+        const replied = decorate(repliedIds, 'replied');
+        const noReply = decorate(noReplyIds, 'no_reply');
+
+        res.json({
+            replied,
+            noReply,
+            counts: { replied: replied.length, noReply: noReply.length, total: replied.length + noReply.length },
+            thresholds: { repliedDays, noReplyDays },
+        });
+    } catch (error) {
+        console.error('Error building follow-up list:', error);
+        res.status(500).json({ error: 'Failed to load follow-up leads' });
     }
 };

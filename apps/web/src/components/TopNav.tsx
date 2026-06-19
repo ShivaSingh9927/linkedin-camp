@@ -11,6 +11,7 @@ import {
     Users,
     Inbox as InboxIcon,
     Layers,
+    BellRing,
     Sparkles,
     Settings,
     LogOut,
@@ -51,6 +52,7 @@ const menuItems = [
     { label: 'Prospects', icon: Users, href: '/prospects' },
     { label: 'Companies', icon: Building2, href: '/companies' },
     { label: 'Inbox', icon: InboxIcon, href: '/inbox' },
+    { label: 'Follow-ups', icon: BellRing, href: '/campaigns/queue' },
     { label: 'Crew', icon: Users, href: '/team' },
     { label: 'Pricing', icon: Sparkles, href: '/pricing' },
 ];

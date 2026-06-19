@@ -46,6 +46,8 @@ import { salesFastEnrichmentTemplate, inboxSyncVoyagerTemplate } from './fast-en
 import { salesCompetitorConquestTemplate } from './sales-competitor-conquest';
 import { salesFundingTriggerTemplate } from './sales-funding-trigger';
 import { saasTrialActivationTemplate } from './saas-trial-activation';
+import { followupRepliedTemplate } from './followup-replied-warm';
+import { followupNoReplyTemplate } from './followup-no-reply-nudge';
 
 export const TEMPLATES: TemplateDefinition[] = [
     founderDesignPartnerHuntTemplate,
@@ -89,6 +91,8 @@ export const TEMPLATES: TemplateDefinition[] = [
     salesCompetitorConquestTemplate,
     salesFundingTriggerTemplate,
     saasTrialActivationTemplate,
+    followupRepliedTemplate,
+    followupNoReplyTemplate,
 ];
 
 export const getTemplates = (): TemplateDefinition[] => TEMPLATES;

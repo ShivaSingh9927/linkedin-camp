@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Search, Bell, CheckCircle2, AlertCircle, Loader2, Menu } from 'lucide-react';
+import { Bell, CheckCircle2, AlertCircle, Loader2, Menu } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { io, Socket } from 'socket.io-client';
 import { cn } from '@/lib/utils';
@@ -40,13 +40,6 @@ export function AppHeader({ onMenuClick }: { onMenuClick?: () => void }) {
         >
           <Menu className="w-5 h-5" />
         </button>
-        <div className="relative w-full sm:w-80 sm:max-w-[40vw]">
-          <Search className="w-4 h-4 text-ink-400 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input
-            placeholder="Search…"
-            className="w-full bg-surface rounded-control pl-9 pr-3 py-2 text-[13px] font-medium outline-none focus:ring-2 focus:ring-brand/30"
-          />
-        </div>
       </div>
 
       <div className="flex items-center gap-2 shrink-0">

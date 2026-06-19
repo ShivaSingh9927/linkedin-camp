@@ -5,7 +5,6 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import {
   Users,
-  Layers,
   Inbox,
   LayoutDashboard,
   Target,
@@ -14,9 +13,11 @@ import {
   Building2,
   Sparkles,
   UsersRound,
+  BellRing,
   LogOut,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import api from '@/lib/api';
 
 const menuItems = [
   { label: 'Dashboard', icon: LayoutDashboard, href: '/' },
@@ -25,8 +26,8 @@ const menuItems = [
   { label: 'Prospects', icon: Users, href: '/prospects' },
   { label: 'Companies', icon: Building2, href: '/companies' },
   { label: 'Inbox', icon: Inbox, href: '/inbox' },
+  { label: 'Follow-ups', icon: BellRing, href: '/campaigns/queue', badgeKey: 'followups' },
   { label: 'Crew', icon: UsersRound, href: '/team' },
-  { label: 'Queue', icon: Layers, href: '/campaigns/queue' },
   { label: 'Pricing', icon: Sparkles, href: '/pricing' },
 ];
 
@@ -34,6 +35,7 @@ export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const [user, setUser] = useState<{ name?: string; email?: string } | null>(null);
+  const [followUpCount, setFollowUpCount] = useState(0);
 
   useEffect(() => {
     try {
@@ -42,6 +44,10 @@ export function Sidebar() {
     } catch {
       /* ignore */
     }
+    // Light poll for the follow-up badge (leads waiting on another touch).
+    api.get('/leads/follow-ups')
+      .then((res) => setFollowUpCount(res.data?.counts?.total || 0))
+      .catch(() => { /* badge is best-effort */ });
   }, []);
 
   const handleLogout = () => {
@@ -95,6 +101,14 @@ export function Sidebar() {
             >
               <item.icon className={cn('w-[18px] h-[18px]', active ? 'text-white' : 'text-ink-400')} />
               <span>{item.label}</span>
+              {item.badgeKey === 'followups' && followUpCount > 0 && (
+                <span className={cn(
+                  'ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center',
+                  active ? 'bg-white/20 text-white' : 'bg-brand/10 text-brand',
+                )}>
+                  {followUpCount}
+                </span>
+              )}
             </Link>
           );
         })}

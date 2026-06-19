@@ -40,10 +40,43 @@ export default function CampaignBuilderPage({ params }: { params: Promise<{ id: 
     const [availableLeads, setAvailableLeads] = useState<any[]>([]);
     const [selectedLeadIds, setSelectedLeadIds] = useState<string[]>([]);
     const [loadingLeads, setLoadingLeads] = useState(false);
+    // When launched from a company card (?company=Acme) or a bulk action like
+    // Follow-ups (?leadIds=a,b,c), the launch modal opens auto-pre-selected.
+    const [targetCompany, setTargetCompany] = useState<string | null>(null);
+    const [targetLeadIds, setTargetLeadIds] = useState<string[]>([]);
 
     useEffect(() => {
         fetchCampaign();
     }, [id]);
+
+    // Read what we were launched for (a company, or an explicit lead set).
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const company = params.get('company');
+        const leadIds = params.get('leadIds');
+        if (company) setTargetCompany(company);
+        if (leadIds) setTargetLeadIds(leadIds.split(',').filter(Boolean));
+    }, []);
+
+    // Once the campaign has loaded and we know the target, open the launch
+    // modal automatically — the user came here to enroll a specific set.
+    useEffect(() => {
+        if (!loading && (targetCompany || targetLeadIds.length) && !isLaunchModalOpen) {
+            openLaunchModal();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [loading, targetCompany, targetLeadIds]);
+
+    // Mirror the backend's company normalization so spelling variants
+    // ("Google", "Google Inc.") still match the selected account.
+    const normalizeCompany = (raw?: string | null) =>
+        (raw || '')
+            .toLowerCase()
+            .replace(/[.,]/g, '')
+            .replace(/\s+/g, ' ')
+            .replace(/\b(inc|incorporated|llc|llp|ltd|limited|corp|corporation|co|company|gmbh|pvt|private|plc|sa|ag|bv)\b/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
 
     const fetchCampaign = async () => {
         const defaultNode: Node = {
@@ -172,9 +205,20 @@ export default function CampaignBuilderPage({ params }: { params: Promise<{ id: 
         try {
             const res = await api.get('/leads');
             const leads = res.data.leads || res.data; // Handle pagination if any
-            setAvailableLeads(Array.isArray(leads) ? leads : []);
-            // reset selection
-            setSelectedLeadIds([]);
+            const list = Array.isArray(leads) ? leads : [];
+            setAvailableLeads(list);
+            // Pre-select based on how we were launched: an explicit lead set
+            // (Follow-ups bulk enroll) wins; otherwise every lead at the target
+            // company (matched via normalized name so spelling variants stick).
+            if (targetLeadIds.length) {
+                const wanted = new Set(targetLeadIds);
+                setSelectedLeadIds(list.filter((l: any) => wanted.has(l.id)).map((l: any) => l.id));
+            } else if (targetCompany) {
+                const key = normalizeCompany(targetCompany);
+                setSelectedLeadIds(list.filter((l: any) => normalizeCompany(l.company) === key).map((l: any) => l.id));
+            } else {
+                setSelectedLeadIds([]);
+            }
         } catch (error) {
             console.error('Failed to fetch leads:', error);
             alert('Failed to load leads');
@@ -358,7 +402,13 @@ export default function CampaignBuilderPage({ params }: { params: Promise<{ id: 
                         <div className="p-6 border-b flex justify-between items-center bg-slate-50">
                             <div>
                                 <h2 className="text-xl font-black text-slate-800 tracking-tight">Select Leads</h2>
-                                <p className="text-sm font-medium text-slate-500">Choose the leads you want to enroll in this campaign.</p>
+                                <p className="text-sm font-medium text-slate-500">
+                                    {targetLeadIds.length
+                                        ? `Pre-selected ${selectedLeadIds.length} lead(s) for follow-up. Adjust if needed, then launch.`
+                                        : targetCompany
+                                            ? `Pre-selected ${selectedLeadIds.length} lead(s) at ${targetCompany}. Adjust if needed, then launch.`
+                                            : 'Choose the leads you want to enroll in this campaign.'}
+                                </p>
                             </div>
                             <button onClick={() => setIsLaunchModalOpen(false)} className="text-slate-400 hover:text-slate-600 p-2 rounded-full hover:bg-slate-200 transition-colors">
                                 <ArrowLeft className="w-5 h-5 rotate-180" />

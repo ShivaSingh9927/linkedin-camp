@@ -3,12 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CSV Batch Processor - Smart Auto Connect</title>
+    <title>CSV Batch Processor — Qampi</title>
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
         :root {
-            --bg: #0f1117; --bg-card: #1a1d27; --bg-input: #161822;
-            --border: #2a2e3d; --text: #e2e8f0; --text-dim: #8891a5; --text-muted: #5c6478;
-            --accent: #6366f1; --accent-gradient: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+            --bg: #f7f7fb; --bg-card: #ffffff; --bg-input: #ffffff;
+            --border: #ececf2; --text: #0f1117; --text-dim: #5b6172; --text-muted: #878da0;
+            --accent: #8b5cf6; --accent-gradient: linear-gradient(135deg, #7c4ff0 0%, #8b5cf6 100%);
             --green: #10b981; --red: #ef4444; --amber: #f59e0b;
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -28,7 +29,7 @@
             border: 2px dashed var(--border); border-radius: 8px; padding: 40px 20px;
             text-align: center; cursor: pointer; transition: all 0.2s; position: relative;
         }
-        .drop-zone:hover, .drop-zone.dragover { border-color: var(--accent); background: rgba(99,102,241,0.05); }
+        .drop-zone:hover, .drop-zone.dragover { border-color: var(--accent); background: rgba(139,92,246,0.05); }
         .drop-zone .icon { font-size: 32px; margin-bottom: 8px; }
         .drop-zone p { font-size: 13px; color: var(--text-dim); }
         .drop-zone .hint { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
@@ -48,7 +49,7 @@
             display: flex; align-items: center; justify-content: center; gap: 8px;
             transition: all 0.2s;
         }
-        .btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(99,102,241,0.3); }
+        .btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(139,92,246,0.3); }
         .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
         .btn-secondary { background: var(--bg-card); border: 1px solid var(--border); color: var(--text); }
         .btn-secondary:hover { border-color: var(--accent); }
@@ -61,7 +62,7 @@
             padding: 10px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; display: none;
             align-items: center; gap: 8px; margin-bottom: 16px;
         }
-        .status-bar.running { display: flex; background: rgba(99,102,241,0.1); color: var(--accent); border: 1px solid rgba(99,102,241,0.2); }
+        .status-bar.running { display: flex; background: rgba(139,92,246,0.1); color: var(--accent); border: 1px solid rgba(139,92,246,0.2); }
         .status-bar.complete { display: flex; background: rgba(16,185,129,0.1); color: var(--green); border: 1px solid rgba(16,185,129,0.25); }
         .status-bar.error { display: flex; background: rgba(239,68,68,0.1); color: var(--red); border: 1px solid rgba(239,68,68,0.25); }
         .progress-bar-bg {
@@ -72,7 +73,7 @@
         .preview-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 12px; }
         .preview-table th { text-align: left; color: var(--text-dim); padding: 6px 8px; border-bottom: 1px solid var(--border); font-size: 10px; text-transform: uppercase; }
         .preview-table td { padding: 6px 8px; border-bottom: 1px solid var(--border); color: var(--text); max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700; background: rgba(99,102,241,0.15); color: var(--accent); }
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700; background: rgba(139,92,246,0.15); color: var(--accent); }
         .actions { display: flex; gap: 8px; margin-top: 16px; }
         .actions .btn { flex: 1; }
         .footer { text-align: center; padding: 20px 0; font-size: 12px; color: var(--text-muted); }
@@ -80,7 +81,7 @@
         /* ─── Load Overlay ─── */
         #load-overlay {
             position: fixed; inset: 0; z-index: 1000;
-            background: rgba(15,17,23,0.96); backdrop-filter: blur(8px);
+            background: rgba(255,255,255,0.92); backdrop-filter: blur(8px);
             display: flex; align-items: center; justify-content: center;
             flex-direction: column; padding: 24px;
         }
@@ -163,7 +164,7 @@
         </div>
     </div>
 
-    <div class="footer">Smart Auto Connect v1.2.0 — Uses regex extraction (instant, no model needed)</div>
+    <div class="footer">Qampi — Uses regex extraction (instant, no model needed)</div>
 
     <script src="llm-bundle.js"></script>
     <script>
@@ -347,7 +348,6 @@
                         row.company = extracted.company || row.company || '';
                         row.education = extracted.education || '';
                         row.job_profile = extracted.job_profile || '';
-                        row.field = extracted.field || '';
                         row.location = extracted.location || '';
                     } catch (e) {
                         console.warn('Row', i + 1, 'extraction failed:', e);
@@ -378,7 +378,7 @@
         if (!enrichedRows.length) return;
         const cols = ['firstName', 'lastName', 'connectionDegree', 'jobTitle', 'company',
             'location', 'country', 'gender', 'linkedinUrl', 'info',
-            'education', 'job_profile', 'field'];
+            'education', 'job_profile'];
         const availableCols = cols.filter(c => enrichedRows[0].hasOwnProperty(c));
         Object.keys(enrichedRows[0]).forEach(k => {
             if (!availableCols.includes(k)) availableCols.push(k);

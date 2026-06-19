@@ -17,8 +17,10 @@ import {
 } from 'lucide-react';
 import api from '@/lib/api';
 import { cn } from '@/lib/utils';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { Rocket } from 'lucide-react';
 
 interface Company {
   id: string;
@@ -38,6 +40,14 @@ export default function CompaniesPage() {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const router = useRouter();
+
+  // Launch a campaign targeting everyone at this company. Hands off to the
+  // campaign-create flow (carrying the company name) so the user picks a
+  // type/template, then the builder pre-selects this company's leads.
+  const launchCampaignForCompany = (name: string) => {
+    router.push(`/campaigns?company=${encodeURIComponent(name)}&create=1`);
+  };
 
   useEffect(() => {
     fetchCompanies();
@@ -88,11 +98,11 @@ export default function CompaniesPage() {
             <div className="p-2 sm:p-3 bg-primary/10 rounded-xl sm:rounded-2xl">
               <Building2 className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
-            <span className="text-[9px] sm:text-xs font-black uppercase tracking-[0.2em] sm:tracking-[0.3em]">Account Intelligence</span>
+            <span className="text-[9px] sm:text-xs font-black uppercase tracking-[0.2em] sm:tracking-[0.3em]">By Company</span>
           </div>
-          <h1 className="text-3xl sm:text-5xl font-black text-slate-900 tracking-tight leading-none uppercase italic">Market Hub</h1>
+          <h1 className="text-3xl sm:text-5xl font-black text-slate-900 tracking-tight leading-none uppercase italic">Companies</h1>
           <p className="text-slate-500 font-bold max-w-lg text-[10px] sm:text-sm uppercase tracking-widest leading-relaxed opacity-60">
-            Strategic grouping of {companies.length} target organizations.
+            Your leads grouped by company · {companies.length} {companies.length === 1 ? 'company' : 'companies'}.
           </p>
         </div>
 
@@ -100,7 +110,7 @@ export default function CompaniesPage() {
           <Search className="absolute left-6 top-1/2 -translate-y-1/2 w-4 h-4 sm:w-5 sm:h-5 text-slate-400 group-focus-within:text-primary transition-colors" />
           <input 
             type="text" 
-            placeholder="Search Accounts..." 
+            placeholder="Search companies..."
             className="w-full pl-14 sm:pl-16 pr-6 py-4 sm:py-5 bg-white border border-slate-100 rounded-2xl sm:rounded-[2.5rem] shadow-premium focus:ring-4 focus:ring-primary/5 focus:border-primary transition-all font-bold text-xs sm:text-sm"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -113,8 +123,8 @@ export default function CompaniesPage() {
           <div className="w-24 h-24 bg-slate-50 rounded-[3rem] flex items-center justify-center mx-auto mb-8 border-4 border-dashed border-slate-200">
             <Search className="w-10 h-10 text-slate-300" />
           </div>
-          <h3 className="text-2xl font-black text-slate-900 uppercase">No Organizations Detected</h3>
-          <p className="text-slate-500 font-bold mt-2 uppercase tracking-widest text-xs">Import prospects with company data to populate this hub.</p>
+          <h3 className="text-2xl font-black text-slate-900 uppercase">No companies yet</h3>
+          <p className="text-slate-500 font-bold mt-2 uppercase tracking-widest text-xs">Import leads with a company to see them grouped here.</p>
         </div>
       ) : (
         <motion.div 
@@ -159,15 +169,15 @@ export default function CompaniesPage() {
                     </h3>
                     <div className="flex items-center space-x-2 mt-2 opacity-50">
                       <Globe className="w-3 h-3" />
-                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{company.totalLeads} Identified Units</span>
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{company.totalLeads} {company.totalLeads === 1 ? 'lead' : 'leads'}</span>
                     </div>
                   </div>
 
                   {/* Status Bar */}
                   <div className="space-y-3">
                     <div className="flex justify-between items-end">
-                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">Market Penetration</span>
-                      <span className="text-xs font-black text-primary truncate leading-none">{connectedRatio}% REACHED</span>
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">Reached</span>
+                      <span className="text-xs font-black text-primary truncate leading-none">{connectedRatio}%</span>
                     </div>
                     <div className="h-4 bg-slate-100 rounded-full overflow-hidden p-1 border border-slate-50">
                       <motion.div 
@@ -181,18 +191,20 @@ export default function CompaniesPage() {
                     </div>
                   </div>
 
+                  {/* Disjoint funnel stages — a replied lead is counted only
+                      under Replied, never double-counted under Connected. */}
                   <div className="grid grid-cols-2 gap-4">
                     <div className="p-4 bg-emerald-50/50 border border-emerald-100/50 rounded-2xl space-y-1">
                       <div className="flex items-center space-x-2 text-emerald-600">
                         <CheckCircle2 className="w-3 h-3" />
-                        <span className="text-[9px] font-black uppercase tracking-widest">Connections</span>
+                        <span className="text-[9px] font-black uppercase tracking-widest">Connected</span>
                       </div>
-                      <p className="text-xl font-black text-emerald-700">{company.statusCounts.CONNECTED + company.statusCounts.REPLIED}</p>
+                      <p className="text-xl font-black text-emerald-700">{company.statusCounts.CONNECTED}</p>
                     </div>
                     <div className="p-4 bg-blue-50/50 border border-blue-100/50 rounded-2xl space-y-1">
                       <div className="flex items-center space-x-2 text-blue-600">
                         <MessageCircle className="w-3 h-3" />
-                        <span className="text-[9px] font-black uppercase tracking-widest">Responses</span>
+                        <span className="text-[9px] font-black uppercase tracking-widest">Replied</span>
                       </div>
                       <p className="text-xl font-black text-blue-700">{company.statusCounts.REPLIED}</p>
                     </div>
@@ -213,6 +225,15 @@ export default function CompaniesPage() {
                       )}
                     </div>
                   </div>
+
+                  {/* Account action — launch a campaign at everyone here */}
+                  <button
+                    onClick={() => launchCampaignForCompany(company.name)}
+                    className="w-full flex items-center justify-center space-x-2 py-3.5 rounded-2xl bg-slate-900 text-white text-[11px] font-black uppercase tracking-widest hover:bg-primary transition-all active:scale-[0.98] shadow-soft"
+                  >
+                    <Rocket className="w-4 h-4" />
+                    <span>Launch campaign</span>
+                  </button>
                 </div>
               </motion.div>
             );

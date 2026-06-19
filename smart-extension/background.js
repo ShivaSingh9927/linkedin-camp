@@ -10,6 +10,12 @@ chrome.sidePanel.setOptions({
     enabled: true
 }).catch(() => {});
 
+// Apollo/Waalaxy-style behaviour: clicking the toolbar logo badge opens the
+// persistent side panel directly — no intermediate popup window.
+chrome.sidePanel
+    .setPanelBehavior({ openPanelOnActionClick: true })
+    .catch(() => {});
+
 // Production backend. localhost stays in the list for dev iteration. The
 // path "/api/v1/..." is appended at call sites, so the base must NOT
 // include /api/v1 itself.
@@ -66,7 +72,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     }
                     lastErr = resp ? (resp.error || `Error ${resp.status}`) : 'Backend unreachable';
                 } catch (e) {
-                    lastErr = e.message;
+                    lastErr = `${base}: ${e.message}`;
                 }
             }
             sendResponse({ success: false, error: lastErr });
@@ -75,7 +81,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     if (message.type === 'OPEN_SIDE_PANEL') {
-        chrome.sidePanel.open({ windowId: message.windowId }).catch(e => console.warn(e));
+        // Triggered by the floating in-page launcher. Open in the sender's
+        // tab/window (content scripts don't know their own windowId).
+        const tab = sender && sender.tab;
+        if (tab) {
+            chrome.sidePanel.open({ tabId: tab.id }).catch(() => {
+                chrome.sidePanel.open({ windowId: tab.windowId }).catch(e => console.warn(e));
+            });
+        }
     }
 
     if (message.type === 'DETECTED_REPLY') {

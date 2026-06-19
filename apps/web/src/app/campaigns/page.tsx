@@ -134,6 +134,22 @@ export default function CampaignsPage() {
         toneOverride: string;
     } | null>(null);
     const router = useRouter();
+    // Set when the user arrived from a company card ("Launch campaign"). Carried
+    // through create → builder so the builder pre-selects that company's leads.
+    const [targetCompany, setTargetCompany] = useState<string | null>(null);
+
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const company = params.get('company');
+        if (company) {
+            setTargetCompany(company);
+            if (params.get('create') === '1') setShowCreateMenu(true);
+        }
+    }, []);
+
+    // Append the target company so the builder can pre-filter the launch modal.
+    const builderHref = (campaignId: string) =>
+        `/campaigns/${campaignId}/builder${targetCompany ? `?company=${encodeURIComponent(targetCompany)}` : ''}`;
 
     useEffect(() => {
         fetchCampaigns();
@@ -499,7 +515,7 @@ const removeLeadFromCampaign = async (campaignId: string, leadId: string) => {
                 cta: tpl.aiStrategyHint?.cta,
                 toneOverride: tpl.aiStrategyHint?.toneOverride,
             });
-            router.push(`/campaigns/${res.data.id}/builder`);
+            router.push(builderHref(res.data.id));
         } catch (err) {
             console.error(err);
             toast.error('Error creating campaign from template.');
@@ -524,7 +540,7 @@ const removeLeadFromCampaign = async (campaignId: string, leadId: string) => {
                 cta: finalCta,
                 toneOverride: finalToneOverride
             });
-            router.push(`/campaigns/${res.data.id}/builder`);
+            router.push(builderHref(res.data.id));
         } catch (err) {
             alert('Error creating campaign. Make sure the backend is running.');
         }

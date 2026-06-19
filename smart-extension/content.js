@@ -711,6 +711,49 @@ if (document.body) {
     bodyObs.observe(document.documentElement, { childList: true });
 }
 
+// --- Floating Qampi launcher (Apollo/Waalaxy-style) ──────────────────────────
+// A round logo badge pinned to the page. Clicking it opens the persistent
+// side panel via the background service worker (content scripts can't call
+// chrome.sidePanel.open directly). LinkedIn is an SPA that churns the DOM, so
+// we re-mount the badge if it ever gets removed.
+function mountQampiLauncher() {
+    if (!document.body || document.getElementById('qampi-launcher')) return;
+    const btn = document.createElement('button');
+    btn.id = 'qampi-launcher';
+    btn.type = 'button';
+    btn.title = 'Open Qampi';
+    btn.setAttribute('aria-label', 'Open Qampi');
+    Object.assign(btn.style, {
+        position: 'fixed', right: '16px', bottom: '150px', zIndex: '2147483647',
+        width: '48px', height: '48px', borderRadius: '50%', border: 'none',
+        padding: '8px', cursor: 'pointer', background: '#ffffff',
+        boxShadow: '0 4px 16px rgba(139,92,246,0.35), 0 0 0 1px rgba(139,92,246,0.25)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+    });
+    const img = document.createElement('img');
+    img.src = chrome.runtime.getURL('assets/logo.png');
+    img.alt = 'Qampi';
+    Object.assign(img.style, { width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none' });
+    btn.appendChild(img);
+    btn.addEventListener('mouseenter', () => { btn.style.transform = 'scale(1.08)'; });
+    btn.addEventListener('mouseleave', () => { btn.style.transform = 'scale(1)'; });
+    btn.addEventListener('click', () => {
+        try { chrome.runtime.sendMessage({ type: 'OPEN_SIDE_PANEL' }); } catch (e) { /* sw asleep */ }
+    });
+    document.body.appendChild(btn);
+}
+
+if (document.body) {
+    mountQampiLauncher();
+} else {
+    const launcherObs = new MutationObserver((_, o) => {
+        if (document.body) { o.disconnect(); mountQampiLauncher(); }
+    });
+    launcherObs.observe(document.documentElement, { childList: true });
+}
+setInterval(mountQampiLauncher, 3000);
+
 // --- Build next page URL ---
 function getNextPageUrl() {
     const url = new URL(window.location.href);

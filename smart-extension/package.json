@@ -3,14 +3,13 @@
   "version": "1.0.0",
   "main": "background.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "esbuild llm-module.js --bundle --outfile=llm-bundle.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": "",
-  "dependencies": {
-    "@mlc-ai/web-llm": "^0.2.84",
+  "description": "Qampi lead-extraction extension. llm-bundle.js is the esbuild output of llm-module.js (deterministic regex extractor — no LLM/GPU). Rebuild with `npm run build`.",
+  "devDependencies": {
     "esbuild": "^0.28.0"
   }
 }

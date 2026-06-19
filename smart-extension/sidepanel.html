@@ -6,28 +6,30 @@
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
+        /* Qampi design system — light theme, violet brand (#8b5cf6), Inter,
+           soft surfaces + hairline borders. Mirrors apps/web globals.css. */
         :root {
-            --bg: #0f1117;
-            --bg-card: #1a1d27;
-            --bg-card-hover: #22263a;
-            --bg-input: #161822;
-            --border: #2a2e3d;
-            --border-focus: #6366f1;
-            --text: #e2e8f0;
-            --text-dim: #8891a5;
-            --text-muted: #5c6478;
-            --accent: #6366f1;
-            --accent-glow: rgba(99, 102, 241, 0.15);
-            --accent-gradient: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
-            --green: #10b981;
-            --green-bg: rgba(16, 185, 129, 0.1);
-            --green-border: rgba(16, 185, 129, 0.25);
-            --red: #ef4444;
-            --red-bg: rgba(239, 68, 68, 0.1);
-            --red-border: rgba(239, 68, 68, 0.25);
-            --amber: #f59e0b;
-            --amber-bg: rgba(245, 158, 11, 0.1);
-            --amber-border: rgba(245, 158, 11, 0.25);
+            --bg: #f7f7fb;            /* surface */
+            --bg-card: #ffffff;
+            --bg-card-hover: #f4f1ff; /* brand-50 */
+            --bg-input: #ffffff;
+            --border: #ececf2;        /* line */
+            --border-focus: #8b5cf6;  /* brand */
+            --text: #0f1117;          /* ink-900 */
+            --text-dim: #5b6172;      /* ink-500 */
+            --text-muted: #878da0;    /* ink-400 */
+            --accent: #8b5cf6;        /* brand */
+            --accent-glow: rgba(139, 92, 246, 0.15);
+            --accent-gradient: linear-gradient(135deg, #8b5cf6 0%, #7c4ff0 100%);
+            --green: #059669;
+            --green-bg: #ecfdf5;
+            --green-border: #d1fae5;
+            --red: #dc2626;
+            --red-bg: #fef2f2;
+            --red-border: #fecaca;
+            --amber: #b45309;
+            --amber-bg: #fffbeb;
+            --amber-border: #fde68a;
         }
 
         * {
@@ -84,15 +86,10 @@
         .logo {
             width: 30px;
             height: 30px;
-            background: var(--accent-gradient);
             border-radius: 8px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
-            font-weight: 800;
-            font-size: 14px;
-            box-shadow: 0 2px 8px rgba(99, 102, 241, 0.25);
+            object-fit: contain;
+            display: block;
+            flex-shrink: 0;
         }
 
         .brand {
@@ -221,7 +218,7 @@
 
         .btn-start:hover:not(:disabled) {
             transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+            box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
         }
 
         .btn-pause {
@@ -356,9 +353,9 @@
         }
 
         .status-banner.running {
-            background: rgba(99, 102, 241, 0.1);
+            background: rgba(139, 92, 246, 0.1);
             color: var(--accent);
-            border-bottom: 1px solid rgba(99, 102, 241, 0.2);
+            border-bottom: 1px solid rgba(139, 92, 246, 0.2);
         }
 
         .status-banner.paused {
@@ -483,7 +480,7 @@
         }
 
         .lead-avatar.member {
-            background: linear-gradient(135deg, #374151, #4b5563);
+            background: linear-gradient(135deg, #2b2f3a, #5b6172);
         }
 
         .lead-info {
@@ -612,7 +609,7 @@
         /* ─── LLM Load Overlay ─── */
     #llm-load-overlay {
         position: fixed; inset: 0; z-index: 9999;
-        background: rgba(15,17,23,0.97); backdrop-filter: blur(6px);
+        background: rgba(255,255,255,0.92); backdrop-filter: blur(6px);
         display: flex; align-items: center; justify-content: center;
         flex-direction: column; padding: 20px;
     }
@@ -771,8 +768,8 @@
     <!-- Header -->
     <div class="header">
         <div class="header-left">
-            <div class="logo">S</div>
-            <div class="brand">Smart Auto Connect<span>.</span></div>
+            <img class="logo" src="assets/logo.png" alt="Qampi" />
+            <div class="brand">Qampi<span>.</span></div>
         </div>
         <span id="auth-badge" class="auth-badge disconnected" title="Click to grab your Qampi token from an open dashboard tab">Disconnected</span>
     </div>

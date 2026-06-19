@@ -43,7 +43,7 @@ linkedin_session/
 !apps/web/public/**/*.png
 !apps/web/public/**/*.webp
 !apps/web/public/**/*.jpeg
-!apps/extension/public/**/*.png
+!smart-extension/assets/*.png
 sync_error_*.png
 doc_attachment_verify.png
 
@@ -60,7 +60,6 @@ apps/backend/src/scripts/check-campaigns.ts
 apps/backend/src/scripts/gen-token.ts
 apps/backend/src/scripts/test-message-campaign.ts
 apps/backend/src/workers/campaign-worker_old.ts
-apps/extension/background_old.js
 
 good_images_pred.zip
 **/proxy_fix_session/

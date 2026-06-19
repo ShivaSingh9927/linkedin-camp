@@ -263,7 +263,7 @@ function updateControlButtons() {
             exportBtn.className = 'btn btn-export';
             exportBtn.innerHTML = `
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-                Export to CRM (${s.leads.length})
+                Export to Qampi (${s.leads.length})
             `;
             exportBtn.addEventListener('click', exportToBackend);
             els.controls.appendChild(exportBtn);
@@ -273,7 +273,7 @@ function updateControlButtons() {
             const csvBtn = document.createElement('button');
             csvBtn.className = 'btn btn-csv';
             csvBtn.style.cssText = 'background:#0f172a;color:#fff;';
-            csvBtn.title = 'Download as CSV (works even if CRM export fails)';
+            csvBtn.title = 'Download as CSV (works even if Qampi export fails)';
             csvBtn.innerHTML = `
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                 CSV
@@ -733,11 +733,10 @@ async function downloadCSV() {
                 l.company = structuredData.company || l.company;
                 l.education = structuredData.education || '';
                 l.jobProfile = structuredData.job_profile || l.jobTitle || '';
-                l.field = structuredData.field || '';
                 l.location = structuredData.location || l.location;
             }
         }
-        
+
         els.statusBanner.className = 'status-banner complete';
         els.statusBanner.innerHTML = `<span>✓ CSV generated with AI enrichment</span>`;
     } catch (e) {
@@ -748,13 +747,12 @@ async function downloadCSV() {
 
     const cols = [
         'firstName', 'lastName', 'connectionDegree', 'jobProfile', 'company',
-        'education', 'field', 'location', 'country', 'gender', 'linkedinUrl', 'info',
+        'education', 'location', 'country', 'gender', 'linkedinUrl', 'info',
     ];
     // Map jobTitle to jobProfile for rows that didn't go through AI or fallback
     s.leads.forEach(l => {
         if (!l.jobProfile) l.jobProfile = l.jobTitle;
         if (!l.education) l.education = '';
-        if (!l.field) l.field = '';
     });
 
     const header = cols.join(',');
@@ -807,7 +805,6 @@ async function exportToBackend() {
                     l.company = structuredData.company || l.company;
                     l.education = structuredData.education || '';
                     l.jobProfile = structuredData.job_profile || l.jobTitle || '';
-                    l.field = structuredData.field || '';
                     l.location = structuredData.location || l.location;
                 }
             }
@@ -827,7 +824,7 @@ async function exportToBackend() {
     const prevStatus = s.status;
     s.status = 'running';
     els.statusBanner.className = 'status-banner running';
-    els.statusBanner.innerHTML = '<div class="spinner-small"></div><span>Exporting ' + taggedLeads.length + ' leads to CRM...</span>';
+    els.statusBanner.innerHTML = '<div class="spinner-small"></div><span>Exporting ' + taggedLeads.length + ' leads to Qampi...</span>';
 
     return new Promise(resolve => {
         chrome.runtime.sendMessage({ type: 'IMPORT_LEADS', leads: taggedLeads }, (response) => {
