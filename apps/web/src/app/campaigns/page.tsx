@@ -137,19 +137,33 @@ export default function CampaignsPage() {
     // Set when the user arrived from a company card ("Launch campaign"). Carried
     // through create → builder so the builder pre-selects that company's leads.
     const [targetCompany, setTargetCompany] = useState<string | null>(null);
+    // Set when arriving from the Prospects "Start a new campaign" chooser with a
+    // selected lead set. Carried through template-create → builder so those exact
+    // leads are pre-selected for launch.
+    const [targetLeadIds, setTargetLeadIds] = useState<string[]>([]);
 
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
         const company = params.get('company');
+        const leadIds = params.get('leadIds');
         if (company) {
             setTargetCompany(company);
             if (params.get('create') === '1') setShowCreateMenu(true);
         }
+        if (leadIds) setTargetLeadIds(leadIds.split(',').filter(Boolean));
+        if (params.get('view') === 'templates') setView('templates');
     }, []);
 
-    // Append the target company so the builder can pre-filter the launch modal.
-    const builderHref = (campaignId: string) =>
-        `/campaigns/${campaignId}/builder${targetCompany ? `?company=${encodeURIComponent(targetCompany)}` : ''}`;
+    // Append the carried selection so the builder pre-selects the right leads.
+    // An explicit lead set (Prospects chooser) wins over a company.
+    const builderHref = (campaignId: string) => {
+        const qs = targetLeadIds.length
+            ? `?leadIds=${targetLeadIds.map(encodeURIComponent).join(',')}`
+            : targetCompany
+                ? `?company=${encodeURIComponent(targetCompany)}`
+                : '';
+        return `/campaigns/${campaignId}/builder${qs}`;
+    };
 
     useEffect(() => {
         fetchCampaigns();

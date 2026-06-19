@@ -57,8 +57,17 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         aria-busy={loading || undefined}
         {...props}
       >
-        {loading && <Loader2 className="w-4 h-4 animate-spin" aria-hidden />}
-        {children}
+        {/* Slot (asChild) runs React.Children.only — it must receive exactly one
+            child, so never emit the `loading && ...` sibling (which renders as a
+            stray `false`) in that branch. asChild already forces loading off. */}
+        {Comp === Slot ? (
+          children
+        ) : (
+          <>
+            {loading && <Loader2 className="w-4 h-4 animate-spin" aria-hidden />}
+            {children}
+          </>
+        )}
       </Comp>
     )
   }

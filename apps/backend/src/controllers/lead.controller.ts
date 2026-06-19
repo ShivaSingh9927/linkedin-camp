@@ -14,12 +14,24 @@ const getTeamUserIds = async (userId: string) => {
     return member ? member.Team.TeamMember.map((m: { userId: string }) => m.userId) : [];
 };
 
+// Collapse trailing-slash / query-string variants of the same profile URL so
+// ".../in/jane-doe/" and ".../in/jane-doe?foo=1" dedup to one lead. Without this
+// the (userId, linkedinUrl) unique constraint treats them as distinct → the same
+// person imports twice (the bug seen with extension CSVs).
+const normalizeLinkedinUrl = (raw?: string): string => {
+    if (!raw) return raw || '';
+    let u = raw.trim().split('?')[0].split('#')[0];
+    u = u.replace(/\/+$/, ''); // drop trailing slash(es)
+    return u;
+};
+
 const bulkImportLeads = async (userId: string, incomingLeads: any[], teamUserIds: string[]) => {
-    // 1. Array Deduplication
+    // 1. Array Deduplication (on the normalized URL)
     const uniqueLeadsMap = new Map();
     for (const lead of incomingLeads) {
         if (lead.linkedinUrl) {
-            uniqueLeadsMap.set(lead.linkedinUrl, lead);
+            const norm = normalizeLinkedinUrl(lead.linkedinUrl);
+            uniqueLeadsMap.set(norm, { ...lead, linkedinUrl: norm });
         }
     }
     const uniqueLeads = Array.from(uniqueLeadsMap.values());

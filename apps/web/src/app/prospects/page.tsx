@@ -33,7 +33,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { degreeLabel, timeAgo } from '@/components/LeadEnrichmentDrawer';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import api from '@/lib/api';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -159,6 +159,7 @@ export default function LeadsPage() {
     const [smartListName, setSmartListName] = useState('');
     const fileInputRef = useRef<HTMLInputElement>(null);
     const searchParams = useSearchParams();
+    const router = useRouter();
     const initialCompany = searchParams.get('company');
 
     // Sidebar: list-based navigation
@@ -403,6 +404,29 @@ export default function LeadsPage() {
         } catch (error) {
             console.error('Failed to assign leads:', error);
             alert('Error assigning leads.');
+        }
+    };
+
+    // "Start new campaign" from the chooser → templates gallery, carrying the
+    // selected leads so the builder pre-selects them after a template is picked.
+    const startNewCampaign = () => {
+        const ids = Array.from(selectedLeads);
+        if (!ids.length) return;
+        setShowAssignModal(false);
+        router.push(`/campaigns?leadIds=${ids.join(',')}&view=templates`);
+    };
+
+    // "Add to existing": a not-yet-started DRAFT opens pre-loaded in the builder
+    // (the user reviews + launches there); an ACTIVE/QUEUED campaign just gets the
+    // leads enrolled directly (top up a running campaign).
+    const addToExistingCampaign = (campaign: any) => {
+        const ids = Array.from(selectedLeads);
+        if (!ids.length) return;
+        if (campaign.status === 'DRAFT') {
+            setShowAssignModal(false);
+            router.push(`/campaigns/${campaign.id}/builder?leadIds=${ids.join(',')}`);
+        } else {
+            assignToCampaign(campaign.id);
         }
     };
 
@@ -789,7 +813,7 @@ export default function LeadsPage() {
                             <div className="bg-ink-900 text-white rounded-control px-4 py-2.5 flex items-center gap-3 animate-in fade-in slide-in-from-top-2 duration-200">
                                 <span className="text-[13px] font-semibold">{selectedLeads.size} selected</span>
                                 <div className="w-px h-5 bg-white/20" />
-                                <button onClick={() => setShowAssignModal(true)} className="text-[13px] font-semibold flex items-center gap-1.5 hover:text-brand-200 transition-colors">
+                                <button onClick={() => setShowAssignModal(true)} className="text-[13px] font-bold flex items-center gap-1.5 bg-brand text-white px-3.5 py-1.5 rounded-control hover:bg-brand-600 transition-colors shadow-lift">
                                     <Rocket className="w-4 h-4" />Add to campaign
                                 </button>
                                 <button onClick={() => setShowBulkTagModal(true)} className="text-[13px] font-semibold flex items-center gap-1.5 hover:text-brand-200 transition-colors">
@@ -997,23 +1021,52 @@ export default function LeadsPage() {
                         <h3 className="text-xl font-bold tracking-tight text-foreground">Add to campaign</h3>
                         <p className="text-[13px] font-medium text-ink-500 mt-1 mb-6">{selectedLeads.size} prospect{selectedLeads.size === 1 ? '' : 's'} selected.</p>
 
-                        <div className="space-y-2 mb-6 max-h-[320px] overflow-y-auto">
-                            {campaigns.length === 0 ? (
-                                <p className="text-[13px] font-medium text-ink-400 py-6 text-center">No active campaigns.</p>
-                            ) : campaigns.map(campaign => (
-                                <button
-                                    key={campaign.id}
-                                    onClick={() => assignToCampaign(campaign.id)}
-                                    className="w-full flex items-center justify-between p-4 bg-surface border border-transparent hover:border-brand-200 hover:bg-white rounded-control transition-all group text-left"
-                                >
-                                    <div>
-                                        <p className="font-semibold text-foreground group-hover:text-brand transition-colors">{campaign.name}</p>
-                                        <Badge tone="neutral" className="mt-1.5">{campaign.status}</Badge>
+                        {/* Start a new campaign — picks a template, then opens the
+                            builder with these leads pre-selected. */}
+                        <button
+                            onClick={startNewCampaign}
+                            className="w-full flex items-center justify-between p-4 bg-brand text-white rounded-control transition-all hover:bg-brand-600 active:scale-[0.99] text-left mb-5"
+                        >
+                            <div className="flex items-center gap-3">
+                                <div className="w-9 h-9 rounded-control bg-white/15 grid place-items-center"><Plus className="w-5 h-5" /></div>
+                                <div>
+                                    <p className="font-semibold">Start a new campaign</p>
+                                    <p className="text-[12px] font-medium text-white/70">Pick a template, then launch with these leads</p>
+                                </div>
+                            </div>
+                            <ChevronRight className="w-5 h-5 text-white/80" />
+                        </button>
+
+                        {(() => {
+                            const eligible = campaigns.filter(c => ['DRAFT', 'ACTIVE', 'QUEUED'].includes(c.status));
+                            return (
+                                <>
+                                    <div className="label mb-2">Or add to an existing campaign</div>
+                                    <div className="space-y-2 mb-6 max-h-[280px] overflow-y-auto">
+                                        {eligible.length === 0 ? (
+                                            <p className="text-[13px] font-medium text-ink-400 py-6 text-center">No campaigns yet — start a new one above.</p>
+                                        ) : eligible.map(campaign => (
+                                            <button
+                                                key={campaign.id}
+                                                onClick={() => addToExistingCampaign(campaign)}
+                                                className="w-full flex items-center justify-between p-4 bg-surface border border-transparent hover:border-brand-200 hover:bg-white rounded-control transition-all group text-left"
+                                            >
+                                                <div>
+                                                    <p className="font-semibold text-foreground group-hover:text-brand transition-colors">{campaign.name}</p>
+                                                    <div className="flex items-center gap-2 mt-1.5">
+                                                        <Badge tone={campaign.status === 'ACTIVE' ? 'success' : campaign.status === 'QUEUED' ? 'info' : 'neutral'}>{campaign.status}</Badge>
+                                                        <span className="text-[11px] font-medium text-ink-400">
+                                                            {campaign.status === 'DRAFT' ? 'Opens in builder to review + launch' : 'Enrolls these leads now'}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                <ChevronRight className="w-5 h-5 text-ink-400 group-hover:text-brand group-hover:translate-x-1 transition-all" />
+                                            </button>
+                                        ))}
                                     </div>
-                                    <ChevronRight className="w-5 h-5 text-ink-400 group-hover:text-brand group-hover:translate-x-1 transition-all" />
-                                </button>
-                            ))}
-                        </div>
+                                </>
+                            );
+                        })()}
 
                         <Button variant="outline" className="w-full" onClick={() => setShowAssignModal(false)}>Cancel</Button>
                     </Card>

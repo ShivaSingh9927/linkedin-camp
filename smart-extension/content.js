@@ -6,15 +6,23 @@ console.log('AutoConnect: content.js loaded on', window.location.href);
 // --- Lead Storage (Map for dedup by URL) ---
 const collectedLeads = new Map();
 
+// Canonical profile URL so the Voyager path and the DOM path key the same person
+// identically — strips query/hash and trailing slash. Without this the same lead
+// arrives under two keys (".../slug" vs ".../slug/") and exports twice.
+const normUrl = (u) => (u || '').split('?')[0].split('#')[0].replace(/\/+$/, '');
+
 // --- Receive data from inject.js (MAIN world) ---
 window.addEventListener('message', (event) => {
     if (event.source !== window || !event.data || event.data.type !== 'AUTOCONNECT_VOYAGER_DATA') return;
     const incoming = event.data.leads || [];
     let added = 0;
     incoming.forEach(lead => {
-        if (lead.linkedinUrl && !collectedLeads.has(lead.linkedinUrl)) {
-            collectedLeads.set(lead.linkedinUrl, lead);
-            added++;
+        if (lead.linkedinUrl) {
+            const key = normUrl(lead.linkedinUrl);
+            if (!collectedLeads.has(key)) {
+                collectedLeads.set(key, { ...lead, linkedinUrl: key });
+                added++;
+            }
         }
     });
     if (added > 0) {
@@ -346,7 +354,8 @@ function scanDOM() {
     if (primaryCards.length > 0) {
         console.log(`[AutoConnect] Primary strategy: ${primaryCards.length} cards`);
         for (const c of primaryCards) {
-            if (!c.url || collectedLeads.has(c.url)) continue;
+            const cUrl = normUrl(c.url);
+            if (!cUrl || collectedLeads.has(cUrl)) continue;
 
             const nameParts = (c.name || '').split(' ');
             const firstName = nameParts[0] || '';
@@ -384,10 +393,10 @@ function scanDOM() {
             // payload.
             const info = (c.cardEl.innerText || '').replace(/\s+\n/g, '\n').trim().substring(0, 1000);
 
-            collectedLeads.set(c.url, {
+            collectedLeads.set(cUrl, {
                 firstName, lastName, jobTitle,
                 company, location, country, gender,
-                linkedinUrl: c.url,
+                linkedinUrl: cUrl,
                 connectionDegree: c.degree,
                 info,
             });
