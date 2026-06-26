@@ -4,6 +4,7 @@ import { prisma } from '@repo/db';
 import path from 'path';
 import fs from 'fs';
 import { io } from '../socket';
+import { captureEvent } from './analytics.service';
 import { uploadScreenshotToS3 } from './s3-upload.service';
 
 const SESSION_STORAGE_PATH = process.env.SESSION_STORAGE_PATH || path.join(process.cwd(), 'sessions');
@@ -356,6 +357,7 @@ class SessionManagerService {
             });
 
             console.log(`[SESSION-MANAGER] Session files saved to ${sessionPath}${proxySnapshot ? ` (proxy pinned: ${proxySnapshot.server})` : ' (NO PROXY — session will likely die on first automation step)'}`);
+            captureEvent(userId, 'linkedin_connected', { method: 'login' });
             this.emitStatus(userId, 'SUCCESS', { sessionPath });
 
             return {};

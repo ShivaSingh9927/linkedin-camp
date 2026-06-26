@@ -31,6 +31,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import api from '@/lib/api';
+import { track } from '@/lib/analytics';
 import { SafetyQuotaBadge } from '@/components/SafetyQuotaBadge';
 import { CampaignEta } from '@/components/CampaignEta';
 import { CampaignNameModal } from '@/components/CampaignNameModal';
@@ -292,6 +293,7 @@ export default function CampaignsPage() {
                 await api.post(`/campaigns/${id}/unqueue`);
             } else {
                 await api.post(`/campaigns/${id}/start`);
+                track('campaign_launched', { campaignId: id, source: 'campaigns_list' });
             }
             fetchCampaigns();
         } catch (error: any) {

@@ -4,13 +4,16 @@ import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { LoadingScreen } from '@/components/ui';
 import api from '@/lib/api';
+import { identifyUser } from '@/lib/analytics';
 
 export function AuthWrapper({ children }: { children: React.ReactNode }) {
     const router = useRouter();
     const pathname = usePathname();
     const [loading, setLoading] = useState(true);
 
-    const authRoutes = ['/login', '/register'];
+    // /auth/callback lands here mid-OAuth with no token yet — it stores the
+    // token itself, so it must not be bounced to /login.
+    const authRoutes = ['/login', '/register', '/auth/callback'];
     const onboardingRoute = '/onboarding';
 
     useEffect(() => {
@@ -41,6 +44,9 @@ export function AuthWrapper({ children }: { children: React.ReactNode }) {
                 const { data } = await api.get('/users/me');
                 if (cancelled) return;
                 registrationStep = data?.registrationStep;
+                // Tie analytics + replays to the real account (no PII beyond
+                // what we already control; email/tier power funnel breakdowns).
+                if (data?.id) identifyUser(data.id, { email: data.email, tier: data.tier });
                 try {
                     const prev = JSON.parse(localStorage.getItem('user') || '{}');
                     localStorage.setItem('user', JSON.stringify({ ...prev, ...data }));

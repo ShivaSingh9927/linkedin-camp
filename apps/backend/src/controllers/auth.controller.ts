@@ -1,5 +1,4 @@
 import { Request, Response } from 'express';
-import bcrypt from 'bcryptjs';
 import { OAuth2Client } from 'google-auth-library';
 import jwt from 'jsonwebtoken';
 import { prisma } from '@repo/db';
@@ -45,6 +44,7 @@ export const googleLogin = async (req: Request, res: Response) => {
         console.log(`[AUTH/GOOGLE] Processing user: ${email} (Google ID: ${googleId})`);
 
         let user = await prisma.user.findUnique({ where: { googleId } });
+        let isNewUser = false;
 
         if (!user) {
             console.log(`[AUTH/GOOGLE] User not found by Google ID. Looking up by email: ${email}`);
@@ -59,6 +59,7 @@ export const googleLogin = async (req: Request, res: Response) => {
                 });
             } else {
                 console.log(`[AUTH/GOOGLE] No existing user. Creating new user account...`);
+                isNewUser = true;
                 // Create new user
                 user = await prisma.user.create({
                     data: {
@@ -93,9 +94,10 @@ export const googleLogin = async (req: Request, res: Response) => {
                 lastName: user.lastName, 
                 avatarUrl: user.avatarUrl,
                 registrationStep: user.registrationStep,
-                tier: user.tier 
-            }, 
-            token 
+                tier: user.tier
+            },
+            token,
+            isNewUser
         });
     } catch (error: any) {
         console.error('[AUTH/GOOGLE] ❌ FATAL ERROR during token verification or processing:', error.message);
@@ -107,62 +109,6 @@ export const googleLogin = async (req: Request, res: Response) => {
     }
 };
 
-
-export const register = async (req: Request, res: Response) => {
-    const { email, password, firstName, lastName } = req.body;
-
-    try {
-        const existingUser = await prisma.user.findUnique({ where: { email } });
-        if (existingUser) {
-            return res.status(400).json({ error: 'User already exists' });
-        }
-
-        const passwordHash = await bcrypt.hash(password, 10);
-        const user = await prisma.user.create({
-            data: {
-                email,
-                passwordHash,
-                firstName,
-                lastName,
-                updatedAt: new Date(),
-            },
-        });
-
-        // Fire-and-forget: never block/fail signup on a stalled SMTP send.
-        void mailService.sendWelcomeEmail(user.email, user.firstName || 'User').catch((emailErr: any) => {
-            console.error('[AUTH/REGISTER] Non-fatal: Failed to send welcome email:', emailErr?.message);
-        });
-
-        const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
-
-        res.status(201).json({ user: { id: user.id, email: user.email }, token });
-    } catch (error: any) {
-        console.error('Registration error:', error);
-        res.status(500).json({ error: error.message || 'Internal server error' });
-    }
-};
-
-export const login = async (req: Request, res: Response) => {
-    const { email, password } = req.body;
-
-    try {
-        const user = await prisma.user.findUnique({ where: { email } });
-        if (!user || !user.passwordHash) {
-            return res.status(400).json({ error: 'Invalid credentials' });
-        }
-
-        const isMatch = await bcrypt.compare(password, user.passwordHash);
-        if (!isMatch) {
-            return res.status(400).json({ error: 'Invalid credentials' });
-        }
-
-        const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
-
-        res.json({ user: { id: user.id, email: user.email, tier: user.tier }, token });
-    } catch (error) {
-        res.status(500).json({ error: 'Internal server error' });
-    }
-};
 
 export const getCloudStatus = async (req: any, res: Response) => {
     const userId = req.user.id;

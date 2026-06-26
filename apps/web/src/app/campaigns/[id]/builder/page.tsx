@@ -6,6 +6,7 @@ import { ArrowLeft, Save, Play, Loader2, CheckCircle, AlertCircle, ChevronUp, Ch
 import Link from 'next/link';
 import { useNodesState, useEdgesState, Node, Edge } from '@xyflow/react';
 import api from '@/lib/api';
+import { track } from '@/lib/analytics';
 import { useRouter } from 'next/navigation';
 import { autoLayout } from '@/lib/workflow-layout';
 
@@ -176,6 +177,7 @@ export default function CampaignBuilderPage({ params }: { params: Promise<{ id: 
 
                 if (shouldStart) {
                     const res = await api.post(`/campaigns/${id}/start`, { leadIds });
+                    track('campaign_launched', { campaignId: id, leadCount: leadIds?.length, source: 'builder' });
                     setStatus('ACTIVE');
 
                     const meta = res.data?.meta;

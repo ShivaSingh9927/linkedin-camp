@@ -4,6 +4,7 @@ import { prisma } from '@repo/db';
 import path from 'path';
 import fs from 'fs';
 import { classifyPage, markAccountHealthy, handleCheckpoint, type CheckpointInfo } from '../campaign-engine/safety/checkpoint';
+import { captureEvent } from './analytics.service';
 import { uploadScreenshotToS3 } from './s3-upload.service';
 import { tryCapsolver } from './captcha-solver.service';
 import { captureChallengeScenario } from './challenge-capture.service';
@@ -297,6 +298,7 @@ export async function loginWithOtp(input: LoginInput): Promise<LoginOutcome> {
         });
 
         await markAccountHealthy(userId);
+        captureEvent(userId, 'linkedin_connected', { method: 'otp' });
 
         outcome = { kind: 'success', finalUrl: info.url, cookieCount: cookies.length };
         console.log(`[login-otp] user=${userId} SUCCESS, ${cookies.length} cookies`);

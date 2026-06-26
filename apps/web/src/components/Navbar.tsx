@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
+import { resetAnalytics } from '@/lib/analytics';
 import { 
   BarChart3, 
   Users, 
@@ -49,6 +50,7 @@ export function Navbar() {
   }, []);
 
   const handleLogout = () => {
+    resetAnalytics();
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     router.push('/login');

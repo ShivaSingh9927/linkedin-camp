@@ -21,6 +21,7 @@
  */
 import { NodeHandler, NodeResult } from '../types';
 import { prisma } from '@repo/db';
+import { captureFirstReply } from '../../services/analytics.service';
 import {
     syncInbox,
     getMessagesInConversation,
@@ -231,6 +232,7 @@ export const inboxSyncVoyager: NodeHandler = async (ctx, config): Promise<NodeRe
         // picks it up on the next tick).
         if (newReplies > 0) {
             console.log(`[INBOX-SYNC-VOYAGER] ${newReplies} new reply messages persisted`);
+            void captureFirstReply(userId, newReplies);
         }
 
         return {

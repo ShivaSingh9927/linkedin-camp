@@ -31,6 +31,7 @@
         "patchright": "^1.60.2",
         "playwright": "latest",
         "playwright-extra": "latest",
+        "posthog-node": "^5.21.2",
         "puppeteer-extra-plugin-stealth": "latest",
         "socket.io": "^4.8.3",
         "zod": "latest"

@@ -19,6 +19,7 @@ import {
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import api from '@/lib/api';
+import { track } from '@/lib/analytics';
 
 // The goal drives the whole AI strategy (prompts + labels). sell + job_seeking
 // are live; the rest are on the roadmap and shown disabled so the picker
@@ -81,6 +82,8 @@ export default function OnboardingPage() {
                 linkedinUrl: linkedinUrl.trim(),
                 website: website.trim() || undefined,
             });
+
+            track('onboarding_completed', { goalType });
 
             const updatedUser = { ...user, registrationStep: 'COMPLETED' };
             localStorage.setItem('user', JSON.stringify(updatedUser));

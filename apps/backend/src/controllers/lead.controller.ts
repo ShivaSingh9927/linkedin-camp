@@ -4,6 +4,7 @@ import { parse } from 'csv-parse';
 import fs from 'fs';
 import { getActionQueue } from '../services/queue.service';
 import { cleanPersonField } from '../campaign-engine/scrape/sanitize';
+import { captureEvent } from '../services/analytics.service';
 
 // Helper to get team user ids
 const getTeamUserIds = async (userId: string) => {
@@ -182,6 +183,7 @@ export const importLeads = async (req: any, res: Response) => {
     try {
         const teamUserIds = await getTeamUserIds(userId);
         const { successful, duplicatesSkipped: duplicates } = await bulkImportLeads(userId, leads, teamUserIds);
+        if (successful.length > 0) captureEvent(userId, 'leads_imported', { count: successful.length, source: 'extension_or_api' });
 
         let injectedCount = 0;
         let activeSkippedCount = 0;
@@ -346,6 +348,7 @@ export const uploadCsvLeads = async (req: any, res: Response) => {
 
         const teamUserIds = await getTeamUserIds(userId);
         const { successful, duplicatesSkipped: duplicates } = await bulkImportLeads(userId, leads, teamUserIds);
+        if (successful.length > 0) captureEvent(userId, 'leads_imported', { count: successful.length, source: 'csv' });
 
         let injectedCount = 0;
         let activeSkippedCount = 0;

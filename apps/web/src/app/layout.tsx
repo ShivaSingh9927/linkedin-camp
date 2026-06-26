@@ -5,6 +5,7 @@ import { SidebarWrapper } from "@/components/SidebarWrapper";
 import { AuthWrapper } from "@/components/AuthWrapper";
 import { Toaster } from 'sonner';
 import { GoogleOAuthProvider } from '@react-oauth/google';
+import { PostHogProvider } from "@/components/PostHogProvider";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -31,13 +32,15 @@ export default function RootLayout({
   return (
     <html lang="en" className="h-full">
       <body className={`${inter.className} antialiased h-full`}>
-        <GoogleOAuthProvider clientId={googleClientId}>
-          <AuthWrapper>
-            <SidebarWrapper>
-              {children}
-            </SidebarWrapper>
-          </AuthWrapper>
-        </GoogleOAuthProvider>
+        <PostHogProvider>
+          <GoogleOAuthProvider clientId={googleClientId}>
+            <AuthWrapper>
+              <SidebarWrapper>
+                {children}
+              </SidebarWrapper>
+            </AuthWrapper>
+          </GoogleOAuthProvider>
+        </PostHogProvider>
         <Toaster position="bottom-right" richColors />
       </body>
     </html>

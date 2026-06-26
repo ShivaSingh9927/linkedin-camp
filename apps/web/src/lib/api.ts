@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { resetAnalytics } from '@/lib/analytics';
 
 const baseUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001').replace(/\/api\/v1\/?$/, '').replace(/\/$/, '');
 const api = axios.create({
@@ -24,6 +25,7 @@ api.interceptors.response.use(
     (response) => response,
     (error) => {
         if (error.response?.status === 401 && typeof window !== 'undefined') {
+            resetAnalytics();
             localStorage.removeItem('token');
             localStorage.removeItem('user');
             // Only redirect if not already on login/register

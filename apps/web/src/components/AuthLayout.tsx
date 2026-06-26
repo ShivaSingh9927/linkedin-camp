@@ -1,25 +1,13 @@
 'use client';
 
-import React, { useState } from 'react';
-import { Eye, EyeOff, Loader2 } from 'lucide-react';
+import React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { GoogleLogin } from '@react-oauth/google';
 import { toast } from 'sonner';
 import api from '@/lib/api';
+import { track } from '@/lib/analytics';
 import { cn } from '@/lib/utils';
-
-const COUNTRIES = [
-    { code: 'IN', name: 'India' },
-    { code: 'US', name: 'United States' },
-    { code: 'UK', name: 'United Kingdom' },
-    { code: 'AU', name: 'Australia' },
-    { code: 'CA', name: 'Canada' },
-    { code: 'DE', name: 'Germany' },
-    { code: 'FR', name: 'France' },
-    { code: 'JP', name: 'Japan' },
-    { code: 'BR', name: 'Brazil' },
-];
 
 export interface Testimonial {
     avatarSrc: string;
@@ -32,19 +20,11 @@ interface AuthLayoutProps {
     type: 'login' | 'register';
     title: string;
     description: string;
-    onSubmit: (e: React.FormEvent<HTMLFormElement>) => void;
-    loading?: boolean;
-    email: string;
-    setEmail: (val: string) => void;
-    password?: string;
-    setPassword?: (val: string) => void;
-    firstName?: string;
-    setFirstName?: (val: string) => void;
-    lastName?: string;
-    setLastName?: (val: string) => void;
-    country?: string;
-    setCountry?: (val: string) => void;
 }
+
+// Where the browser-redirect providers (Microsoft, LinkedIn) start. The backend
+// handles the whole OAuth dance and bounces back to /auth/callback with a token.
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api/v1';
 
 const testimonials: Testimonial[] = [
     {
@@ -61,58 +41,57 @@ const testimonials: Testimonial[] = [
     }
 ];
 
-export function AuthLayout({
-    type,
-    title,
-    description,
-    onSubmit,
-    loading,
-    email,
-    setEmail,
-    password,
-    setPassword,
-    firstName,
-    setFirstName,
-    lastName,
-    setLastName,
-    country,
-    setCountry
-}: AuthLayoutProps) {
-    const [showPassword, setShowPassword] = useState(false);
+function MicrosoftIcon() {
+    return (
+        <svg viewBox="0 0 23 23" className="w-5 h-5" aria-hidden>
+            <rect x="1" y="1" width="10" height="10" fill="#F25022" />
+            <rect x="12" y="1" width="10" height="10" fill="#7FBA00" />
+            <rect x="1" y="12" width="10" height="10" fill="#00A4EF" />
+            <rect x="12" y="12" width="10" height="10" fill="#FFB900" />
+        </svg>
+    );
+}
+
+function LinkedInIcon() {
+    return (
+        <svg viewBox="0 0 24 24" className="w-5 h-5" fill="#0A66C2" aria-hidden>
+            <path d="M20.45 20.45h-3.56v-5.57c0-1.33-.02-3.04-1.85-3.04-1.85 0-2.13 1.45-2.13 2.94v5.67H9.35V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28zM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13zM7.12 20.45H3.56V9h3.56v11.45zM22.22 0H1.77C.79 0 0 .77 0 1.72v20.56C0 23.23.79 24 1.77 24h20.45c.98 0 1.78-.77 1.78-1.72V1.72C24 .77 23.2 0 22.22 0z" />
+        </svg>
+    );
+}
+
+export function AuthLayout({ type, title, description }: AuthLayoutProps) {
     const router = useRouter();
 
     const handleGoogleSuccess = async (response: any) => {
         try {
-            const { data } = await api.post('/auth/google', {
-                credential: response.credential
-            });
-
+            const { data } = await api.post('/auth/google', { credential: response.credential });
             localStorage.setItem('token', data.token);
             localStorage.setItem('user', JSON.stringify(data.user));
-
-            toast.success('Successfully logged in with Google');
-
-            if (data.user.registrationStep === 'STARTED') {
-                router.push('/onboarding');
-            } else {
-                router.push('/');
-            }
+            if (data.isNewUser) track('signup_completed', { provider: 'google' });
+            toast.success('Signed in with Google');
+            router.push(data.user.registrationStep === 'STARTED' ? '/onboarding' : '/');
         } catch (error: any) {
             console.error('Google login error:', error);
-            toast.error(error.response?.data?.error || 'Failed to login with Google');
+            toast.error(error.response?.data?.error || 'Failed to sign in with Google');
         }
+    };
+
+    // Microsoft + LinkedIn are full-page redirects handled server-side.
+    const goToProvider = (provider: 'microsoft' | 'linkedin') => {
+        window.location.href = `${API_BASE}/auth/oauth/${provider}/start`;
     };
 
     return (
         <div className="min-h-screen flex flex-col md:flex-row w-full bg-background overflow-hidden">
-            {/* Left column: form */}
+            {/* Left column: provider buttons */}
             <section className="flex-1 flex items-center justify-center p-8 lg:p-16">
                 <div className="w-full max-w-md">
                     <div className="flex flex-col gap-6">
-                        <div className="flex items-center gap-4 mb-8 animate-element animate-delay-100">
-                            <img 
-                                src="/qampi_wbg.png" 
-                                alt="Qampi Logo" 
+                        <div className="flex items-center gap-4 mb-4 animate-element animate-delay-100">
+                            <img
+                                src="/qampi_wbg.png"
+                                alt="Qampi Logo"
                                 className="w-12 h-12 object-contain opacity-95 drop-shadow-lg"
                             />
                             <div>
@@ -124,141 +103,42 @@ export function AuthLayout({
                         <h1 className="animate-element animate-delay-100 text-4xl md:text-5xl font-semibold leading-tight tracking-tight text-foreground">{title}</h1>
                         <p className="animate-element animate-delay-200 text-muted-foreground font-medium">{description}</p>
 
-                        <form className="space-y-5" onSubmit={onSubmit}>
-                            {type === 'register' && setFirstName && setLastName && (
-                                <div className="grid grid-cols-2 gap-4 animate-element animate-delay-100">
-                                    <div className="space-y-2">
-                                        <label className="text-sm font-bold text-muted-foreground ml-1">First Name</label>
-                                        <div className="mt-1 rounded-2xl border border-border bg-muted/30 backdrop-blur-sm transition-all focus-within:border-primary/50 focus-within:bg-background focus-within:ring-4 focus-within:ring-primary/5">
-                                            <input
-                                                name="firstName"
-                                                type="text"
-                                                value={firstName}
-                                                onChange={(e) => setFirstName(e.target.value)}
-                                                required
-                                                placeholder="John"
-                                                className="w-full bg-transparent text-sm p-4 rounded-2xl focus:outline-none font-medium"
-                                            />
-                                        </div>
-                                    </div>
-                                    <div className="space-y-2">
-                                        <label className="text-sm font-bold text-muted-foreground ml-1">Last Name</label>
-                                        <div className="mt-1 rounded-2xl border border-border bg-muted/30 backdrop-blur-sm transition-all focus-within:border-primary/50 focus-within:bg-background focus-within:ring-4 focus-within:ring-primary/5">
-                                            <input
-                                                name="lastName"
-                                                type="text"
-                                                value={lastName}
-                                                onChange={(e) => setLastName(e.target.value)}
-                                                required
-                                                placeholder="Doe"
-                                                className="w-full bg-transparent text-sm p-4 rounded-2xl focus:outline-none font-medium"
-                                            />
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-
-                            <div className="animate-element animate-delay-300">
-                                <label className="text-sm font-bold text-muted-foreground ml-1">Email Address</label>
-                                <div className="mt-1 rounded-2xl border border-border bg-muted/30 backdrop-blur-sm transition-all focus-within:border-primary/50 focus-within:bg-background focus-within:ring-4 focus-within:ring-primary/5">
-                                    <input
-                                        name="email"
-                                        type="email"
-                                        value={email}
-                                        onChange={(e) => setEmail(e.target.value)}
-                                        required
-                                        placeholder="name@company.com"
-                                        className="w-full bg-transparent text-sm p-4 rounded-2xl focus:outline-none font-medium"
-                                    />
-                                </div>
+                        <div className="flex flex-col gap-3 mt-2">
+                            {/* Google one-tap */}
+                            <div className="animate-element animate-delay-300 flex justify-center [&>div]:w-full [&_iframe]:!w-full">
+                                <GoogleLogin
+                                    onSuccess={handleGoogleSuccess}
+                                    onError={() => toast.error('Google Sign-In failed')}
+                                    shape="pill"
+                                    theme="filled_blue"
+                                    size="large"
+                                    width="380"
+                                    text={type === 'login' ? 'signin_with' : 'signup_with'}
+                                />
                             </div>
 
-                            {setPassword && (
-                                <div className="animate-element animate-delay-400">
-                                    <div className="flex justify-between items-center ml-1">
-                                        <label className="text-sm font-bold text-muted-foreground">Password</label>
-                                        {type === 'login' && (
-                                            <Link href="#" className="text-xs font-bold text-primary hover:underline">Forgot password?</Link>
-                                        )}
-                                    </div>
-                                    <div className="mt-1 rounded-2xl border border-border bg-muted/30 backdrop-blur-sm transition-all focus-within:border-primary/50 focus-within:bg-background focus-within:ring-4 focus-within:ring-primary/5">
-                                        <div className="relative">
-                                            <input
-                                                name="password"
-                                                type={showPassword ? 'text' : 'password'}
-                                                value={password}
-                                                onChange={(e) => setPassword(e.target.value)}
-                                                required
-                                                placeholder="••••••••"
-                                                className="w-full bg-transparent text-sm p-4 pr-12 rounded-2xl focus:outline-none font-medium"
-                                            />
-                                            <button
-                                                type="button"
-                                                onClick={() => setShowPassword(!showPassword)}
-                                                className="absolute inset-y-0 right-3 flex items-center p-2 text-muted-foreground hover:text-foreground transition-colors"
-                                            >
-                                                {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* Country Dropdown for Registration */}
-                            {type === 'register' && setCountry && (
-                                <div className="animate-element animate-delay-250">
-                                    <label className="text-sm font-bold text-muted-foreground ml-1">Country (for proxy assignment)</label>
-                                    <div className="mt-1 rounded-2xl border border-border bg-muted/30 backdrop-blur-sm transition-all focus-within:border-primary/50 focus-within:bg-background focus-within:ring-4 focus-within:ring-primary/5">
-                                        <select
-                                            name="country"
-                                            value={country || 'IN'}
-                                            onChange={(e) => setCountry(e.target.value)}
-                                            required
-                                            className="w-full bg-transparent text-sm p-4 rounded-2xl focus:outline-none font-medium appearance-none cursor-pointer"
-                                        >
-                                            {COUNTRIES.map((c) => (
-                                                <option key={c.code} value={c.code} className="bg-background">
-                                                    {c.name}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                </div>
-                            )}
-
-                            {type === 'login' && (
-                                <div className="animate-element animate-delay-500 flex items-center gap-3 ml-1">
-                                    <input type="checkbox" id="remember" className="w-4 h-4 rounded border-border text-primary focus:ring-primary" />
-                                    <label htmlFor="remember" className="text-sm font-bold text-muted-foreground cursor-pointer">Keep me signed in</label>
-                                </div>
-                            )}
+                            <button
+                                type="button"
+                                onClick={() => goToProvider('microsoft')}
+                                className="animate-element animate-delay-400 w-full rounded-full border border-border bg-background py-3.5 px-4 font-bold text-foreground hover:bg-muted/50 transition-all active:scale-[0.98] flex items-center justify-center gap-3 shadow-sm"
+                            >
+                                <MicrosoftIcon />
+                                {type === 'login' ? 'Sign in with Microsoft' : 'Sign up with Microsoft'}
+                            </button>
 
                             <button
-                                type="submit"
-                                disabled={loading}
-                                className="animate-element animate-delay-600 w-full rounded-2xl bg-primary py-4 font-black text-primary-foreground hover:bg-primary/90 transition-all active:scale-[0.98] shadow-xl shadow-primary/20 flex items-center justify-center gap-2"
+                                type="button"
+                                onClick={() => goToProvider('linkedin')}
+                                className="animate-element animate-delay-500 w-full rounded-full border border-border bg-background py-3.5 px-4 font-bold text-foreground hover:bg-muted/50 transition-all active:scale-[0.98] flex items-center justify-center gap-3 shadow-sm"
                             >
-                                {loading && <Loader2 className="w-5 h-5 animate-spin" />}
-                                {type === 'login' ? 'Sign In to Dashboard' : 'Create My Account'}
+                                <LinkedInIcon />
+                                {type === 'login' ? 'Sign in with LinkedIn' : 'Sign up with LinkedIn'}
                             </button>
-                        </form>
-
-                        <div className="animate-element animate-delay-700 relative flex items-center justify-center py-2">
-                            <span className="w-full border-t border-border"></span>
-                            <span className="px-4 text-xs font-bold text-muted-foreground bg-background absolute uppercase tracking-widest">Or continue with</span>
                         </div>
 
-                        <div className="animate-element animate-delay-800 flex justify-center">
-                            <GoogleLogin
-                                onSuccess={handleGoogleSuccess}
-                                onError={() => toast.error('Google Sign-In failed')}
-                                shape="pill"
-                                theme="filled_blue"
-                                size="large"
-                                width="380"
-                                text={type === 'login' ? 'signin_with' : 'signup_with'}
-                            />
-                        </div>
+                        <p className="animate-element animate-delay-700 text-center text-xs font-medium text-muted-foreground leading-relaxed mt-2">
+                            By continuing you agree to Qampi&apos;s Terms of Service and Privacy Policy.
+                        </p>
 
                         <p className="animate-element animate-delay-900 text-center text-sm font-bold text-muted-foreground">
                             {type === 'login' ? (
@@ -296,7 +176,7 @@ export function AuthLayout({
                                             <p className="text-white/60 text-xs font-medium">{t.handle}</p>
                                         </div>
                                     </div>
-                                    <p className="text-white/90 text-sm leading-relaxed font-medium">"{t.text}"</p>
+                                    <p className="text-white/90 text-sm leading-relaxed font-medium">&quot;{t.text}&quot;</p>
                                 </div>
                             ))}
                         </div>

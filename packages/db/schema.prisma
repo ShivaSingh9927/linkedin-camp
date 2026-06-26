@@ -407,6 +407,8 @@ model User {
   passwordHash            String?
   googleId                String?           @unique
   githubId                String?           @unique
+  microsoftId             String?           @unique
+  linkedinId              String?           @unique
   avatarUrl               String?
   registrationStep        String            @default("STARTED")
   tier                    SubscriptionTier  @default(FREE)

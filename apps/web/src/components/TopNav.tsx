@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
+import { resetAnalytics } from '@/lib/analytics';
 import {
     Menu,
     X,
@@ -97,6 +98,7 @@ export function TopNav() {
     }, []);
 
     const handleLogout = () => {
+        resetAnalytics();
         localStorage.removeItem('token');
         localStorage.removeItem('user');
         router.push('/login');
