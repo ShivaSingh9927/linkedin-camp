@@ -289,3 +289,42 @@
 .animate-bounce-slow {
   animation: bounce-slow 2s ease-in-out infinite;
 }
+
+/* ===== Auth sky (AuthSky.tsx): flapping + drifting pigeons ===== */
+.asky-wing {
+  transform-box: fill-box;
+  transform-origin: 94% 94%;
+  animation: askyFlap 0.55s ease-in-out infinite;
+}
+
+@keyframes askyFlap {
+  0%, 100% { transform: rotate(10deg); }   /* wing down */
+  50%      { transform: rotate(-32deg); }  /* wing up */
+}
+
+.asky-drift {
+  animation: askyFly var(--dur, 16s) linear infinite;
+  animation-delay: var(--delay, 0s);
+}
+
+@keyframes askyFly {
+  0%   { transform: translate(-180px, 0); }
+  25%  { transform: translate(210px, -14px); }
+  50%  { transform: translate(600px, 0); }
+  75%  { transform: translate(990px, -14px); }
+  100% { transform: translate(1400px, 0); }
+}
+
+.asky-cloud-float {
+  transform-box: fill-box;
+  animation: askyCloud var(--cdur, 40s) ease-in-out infinite alternate;
+}
+
+@keyframes askyCloud {
+  from { transform: translateX(0); }
+  to   { transform: translateX(var(--cdx, 30px)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .asky-wing, .asky-drift, .asky-cloud-float { animation: none; }
+}
