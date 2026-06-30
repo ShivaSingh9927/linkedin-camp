@@ -199,23 +199,6 @@ export function TestimonialsSection() {
 
       <div className="relative max-w-[90rem] mx-auto px-4 sm:px-6 lg:px-8">
         
-        {/* Cool Bird Mascot Sticker */}
-        <motion.div
-          className="absolute right-[5%] top-4 md:right-[15%] lg:right-[20%] w-14 md:w-16 z-20 pointer-events-none mix-blend-darken opacity-90 hidden md:block"
-          initial={{ opacity: 0, x: 20 }}
-          whileInView={{ opacity: 1, x: 0 }}
-          viewport={{ once: true, margin: "-100px" }}
-          transition={{ duration: 1, ease: "easeOut", delay: 0.2 }}
-        >
-          <motion.img
-            src="/stickers/bird_cool.png"
-            alt="Cool Bird Mascot"
-            className="w-full h-full object-contain"
-            animate={{ y: [0, -3, 0] }}
-            transition={{ repeat: Infinity, duration: 5, ease: "easeInOut" }}
-          />
-        </motion.div>
-
         <motion.div
           initial={{ opacity: 0, y: 30 }}
           whileInView={{ opacity: 1, y: 0 }}

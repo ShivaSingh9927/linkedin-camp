@@ -132,23 +132,6 @@ export function LinkedInAutomation() {
           {/* Right Visual Stats Column */}
           <div className="w-full lg:w-1/2 relative">
             
-            {/* ── Mascot Sticker: Flying Bird ── */}
-            <motion.div
-              className="absolute -top-12 -left-8 md:-left-12 w-16 h-16 z-30 pointer-events-none mix-blend-plus-lighter opacity-90 hidden md:block"
-              initial={{ opacity: 0, y: 15 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.8, ease: "easeOut", delay: 0.2 }}
-            >
-              <motion.img
-                src="/stickers/bird_flying.png"
-                alt="Flying Bird Mascot"
-                className="w-full h-full object-contain"
-                animate={{ y: [0, -3, 0] }}
-                transition={{ repeat: Infinity, duration: 4.5, ease: "easeInOut" }}
-              />
-            </motion.div>
-
             {/* Glowing background aura */}
             <div className="absolute -inset-4 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-[3rem] blur-3xl opacity-10 pointer-events-none" />
 

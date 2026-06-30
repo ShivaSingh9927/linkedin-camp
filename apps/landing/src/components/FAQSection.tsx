@@ -70,23 +70,6 @@ export function FAQSection() {
         
         {/* Header */}
         <div className="relative z-10 flex flex-col items-center justify-center text-center mb-16">
-          {/* Floating radar bird mascot near header */}
-          <motion.div
-            className="absolute -top-12 left-10 md:left-[20%] w-14 md:w-16 z-20 pointer-events-none mix-blend-darken hidden md:block opacity-85"
-            initial={{ opacity: 0, y: 15 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.8, ease: "easeOut" }}
-          >
-            <motion.img
-              src="/stickers/bird_radar.png"
-              alt="Radar Bird Mascot"
-              className="w-full h-full object-contain"
-              animate={{ y: [0, -3, 0] }}
-              transition={{ repeat: Infinity, duration: 4.5, ease: "easeInOut" }}
-            />
-          </motion.div>
-
           <motion.span
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}

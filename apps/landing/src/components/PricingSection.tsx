@@ -111,23 +111,6 @@ export function PricingSection() {
       <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
         <div className="text-center mb-16 relative">
-          {/* Floating mascot near header */}
-          <motion.div
-            className="absolute -top-12 right-10 md:right-[20%] w-14 md:w-16 z-20 pointer-events-none mix-blend-darken hidden md:block opacity-80"
-            initial={{ opacity: 0, y: 15 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.8, ease: "easeOut" }}
-          >
-            <motion.img
-              src="/stickers/bird_deal.png"
-              alt="Deal Bird Mascot"
-              className="w-full h-full object-contain"
-              animate={{ y: [0, -4, 0] }}
-              transition={{ repeat: Infinity, duration: 4, ease: "easeInOut" }}
-            />
-          </motion.div>
-
           <motion.span
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}

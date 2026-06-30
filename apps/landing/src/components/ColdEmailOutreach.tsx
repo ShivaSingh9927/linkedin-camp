@@ -192,9 +192,6 @@ export function ColdEmailOutreach() {
                     <Check className="w-4 h-4 text-blue-600 group-hover:text-white" strokeWidth={3} />
                   </div>
                   <span className="text-slate-700 font-semibold text-[15px] group-hover:text-slate-900 transition-colors">{item.text}</span>
-                  {item.soon && (
-                    <span className="ml-auto shrink-0 text-[10px] font-bold uppercase tracking-wider text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-full px-2 py-0.5">Soon</span>
-                  )}
                 </motion.div>
               ))}
             </div>
