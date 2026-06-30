@@ -137,19 +137,24 @@ const httpServer = app.listen(serverPort, '0.0.0.0', () => {
             const { downgradeExpiredTrials } = await import('./services/trial.service');
             const { default: rateLimit } = await import('express-rate-limit');
 
-            // Throttle auth endpoints to slow credential-stuffing / brute-force.
-            // 10 requests per IP per 15-minute window — generous for real users,
-            // tight for bots. Counts both successful and failed responses.
+            // Throttle the LOGIN endpoints to slow credential-stuffing / brute-force.
+            // Only failed attempts count (skipSuccessfulRequests), so a normal
+            // sign-in or OAuth redirect never burns the budget. IMPORTANT: this is
+            // scoped to the unauthenticated login routes only — NOT the whole
+            // /auth router, which also holds authed endpoints like /linkedin-status
+            // that the dashboard polls every 30s and would otherwise trip the cap.
             const authLimiter = rateLimit({
                 windowMs: 15 * 60 * 1000,
-                // Tight in production to slow credential-stuffing; generous in
-                // dev so local testing (repeated signups/logins) doesn't lock you out.
-                limit: process.env.NODE_ENV === 'production' ? 10 : 1000,
+                limit: process.env.NODE_ENV === 'production' ? 20 : 1000,
+                skipSuccessfulRequests: true,
                 standardHeaders: 'draft-7',
                 legacyHeaders: false,
                 message: { error: 'Too many requests. Try again in 15 minutes.' },
             });
-            app.use('/api/v1/auth', authLimiter, authRoutes);
+            // /google (email), /oauth/:provider/start, /oauth/:provider/callback
+            app.use('/api/v1/auth/google', authLimiter);
+            app.use('/api/v1/auth/oauth', authLimiter);
+            app.use('/api/v1/auth', authRoutes);
             app.use('/api/v1/leads', leadRoutes);
             app.use('/api/v1/campaigns', campaignRoutes);
             app.use('/api/v1/stats', statsRoutes);
