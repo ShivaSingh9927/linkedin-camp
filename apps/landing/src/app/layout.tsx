@@ -16,6 +16,10 @@ export const metadata: Metadata = {
     ],
     apple: '/apple-touch-icon.png',
   },
+  // Google domain-ownership verification (Chrome Web Store publisher).
+  verification: {
+    google: "G7OoNVB6ELxmmd4MEdaEYSmhWjcRwEgLuSPZWCbcpB0",
+  },
 };
 
 export default function RootLayout({
