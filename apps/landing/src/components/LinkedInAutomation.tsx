@@ -66,7 +66,7 @@ export function LinkedInAutomation() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ duration: 0.6, delay: 0.1 }}
-              className="text-4xl md:text-5xl lg:text-6xl font-black text-slate-900 mb-6 tracking-tight leading-[1.05]"
+              className="font-display text-5xl sm:text-6xl lg:text-7xl font-semibold text-slate-900 mb-6 leading-[1.05]"
             >
               Scale your presence <br />
               <span className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 bg-clip-text text-transparent">
@@ -120,7 +120,7 @@ export function LinkedInAutomation() {
                       <Icon className="w-5 h-5" />
                     </div>
                     <div>
-                      <h4 className="text-lg font-bold mb-1 text-slate-800 transition-colors duration-300 group-hover:text-indigo-600">{feature.title}</h4>
+                      <h4 className="text-lg font-medium mb-1 text-slate-800 transition-colors duration-300 group-hover:text-indigo-600">{feature.title}</h4>
                       <p className="text-slate-500 text-sm leading-relaxed font-medium">{feature.desc}</p>
                     </div>
                   </motion.div>
@@ -180,7 +180,7 @@ export function LinkedInAutomation() {
                   <div className="bg-white/[0.03] hover:bg-white/[0.06] rounded-2xl p-5 border border-white/5 transition-all duration-300 group shadow-lg">
                     <p className="text-white/60 text-xs mb-1 font-bold uppercase tracking-wider">Connection Requests Sent</p>
                     <div className="flex items-baseline justify-between">
-                      <h3 className="text-3xl text-white font-black tracking-tight">
+                      <h3 className="font-display text-5xl text-white font-semibold">
                         <Counter value={842} />
                       </h3>
                       <span className="text-emerald-400 text-xs font-bold">94% Accepted</span>
@@ -191,7 +191,7 @@ export function LinkedInAutomation() {
                   <div className="bg-white/[0.03] hover:bg-white/[0.06] rounded-2xl p-5 border border-white/5 transition-all duration-300 group shadow-lg">
                     <p className="text-white/60 text-xs mb-1 font-bold uppercase tracking-wider">Profile Visits</p>
                     <div className="flex items-baseline justify-between">
-                      <h3 className="text-3xl text-white font-black tracking-tight">
+                      <h3 className="font-display text-5xl text-white font-semibold">
                         <Counter value={1420} />
                       </h3>
                       <span className="text-blue-400 text-xs font-bold">120+ / Day</span>
@@ -202,7 +202,7 @@ export function LinkedInAutomation() {
                   <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl p-5 shadow-xl shadow-blue-500/10 hover:brightness-110 transition-all duration-300 group">
                     <p className="text-white/80 text-xs mb-1 font-bold uppercase tracking-wider">Active Auto-Messages</p>
                     <div className="flex items-baseline justify-between">
-                      <h3 className="text-3xl text-white font-black tracking-tight">
+                      <h3 className="font-display text-5xl text-white font-semibold">
                         <Counter value={458} />
                       </h3>
                       <span className="text-white bg-white/20 px-2 py-0.5 rounded text-[10px] font-black uppercase">Run mode</span>

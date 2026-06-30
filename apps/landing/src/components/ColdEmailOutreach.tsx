@@ -66,7 +66,7 @@ export function ColdEmailOutreach() {
                   <div className="absolute bottom-0 right-0 w-4 h-4 bg-emerald-500 rounded-full border-2 border-white shadow-sm" />
                 </div>
                 <div>
-                  <h4 className="font-extrabold text-slate-900 text-lg">Lauren Anderson</h4>
+                  <h4 className="font-medium text-slate-900 text-lg">Lauren Anderson</h4>
                   <p className="text-slate-500 text-sm font-medium">HR Director @ TechCorp</p>
                 </div>
                 <div className="ml-auto">
@@ -155,7 +155,7 @@ export function ColdEmailOutreach() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ duration: 0.6, delay: 0.1 }}
-              className="text-4xl md:text-5xl lg:text-6xl font-black text-slate-900 mb-6 tracking-tight leading-[1.1]"
+              className="font-display text-5xl sm:text-6xl lg:text-7xl font-semibold text-slate-900 mb-6 leading-[1.1]"
             >
               The Ultimate Email{" "}
               <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600">
@@ -170,15 +170,15 @@ export function ColdEmailOutreach() {
               transition={{ duration: 0.6, delay: 0.2 }}
               className="text-lg md:text-xl text-slate-500 mb-10 leading-relaxed font-medium max-w-xl"
             >
-              Qampi brings the best of both worlds. Find verified professional emails with a single click and launch high-converting cold email sequences automatically.
+              Find verified professional emails in one click, then launch high-converting cold email sequences automatically — running LinkedIn and email from one place.
             </motion.p>
-            
+
             <div className="space-y-4">
               {[
-                "Integrated email discovery tool for fast lookup",
-                "Multi-step email sequences for cold outreach",
-                "Connect directly to your existing email provider",
-                "Real-time open, click, and reply rate tracking"
+                { text: "Integrated email finder — verified addresses in one click" },
+                { text: "Connect your existing email provider" },
+                { text: "Multi-step email sequences for cold outreach" },
+                { text: "Open, click & reply rate tracking" },
               ].map((item, idx) => (
                 <motion.div
                   key={idx}
@@ -191,7 +191,10 @@ export function ColdEmailOutreach() {
                   <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-100/50 border border-blue-200/50 flex items-center justify-center group-hover:bg-blue-600 group-hover:border-blue-600 transition-all duration-300 shadow-sm">
                     <Check className="w-4 h-4 text-blue-600 group-hover:text-white" strokeWidth={3} />
                   </div>
-                  <span className="text-slate-700 font-semibold text-[15px] group-hover:text-slate-900 transition-colors">{item}</span>
+                  <span className="text-slate-700 font-semibold text-[15px] group-hover:text-slate-900 transition-colors">{item.text}</span>
+                  {item.soon && (
+                    <span className="ml-auto shrink-0 text-[10px] font-bold uppercase tracking-wider text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-full px-2 py-0.5">Soon</span>
+                  )}
                 </motion.div>
               ))}
             </div>

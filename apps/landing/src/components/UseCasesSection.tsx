@@ -95,7 +95,7 @@ const UseCaseCard = ({ useCase }: { useCase: typeof useCases[0] }) => {
 
       {/* Content */}
       <div className="p-8 flex flex-col flex-grow bg-white z-10 relative">
-        <h3 className="text-2xl font-black text-slate-800 mb-4 group-hover:text-transparent group-hover:bg-clip-text group-hover:bg-gradient-to-r group-hover:from-blue-600 group-hover:to-purple-600 transition-all duration-300">
+        <h3 className="text-2xl font-semibold text-slate-800 mb-4 group-hover:text-transparent group-hover:bg-clip-text group-hover:bg-gradient-to-r group-hover:from-blue-600 group-hover:to-purple-600 transition-all duration-300">
           {useCase.title}
         </h3>
         <p className="text-slate-600 leading-relaxed font-medium">

@@ -71,14 +71,14 @@ export function SequencesSection() {
             className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-blue-50 text-blue-600 text-xs font-bold uppercase tracking-widest mb-6 border border-blue-100/80 shadow-sm"
           >
             <Settings className="w-3.5 h-3.5" />
-            <span>Workflow Builder</span>
+            <span>LinkedIn + Email Workflow Builder</span>
           </motion.div>
           <motion.h2
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ duration: 0.6, delay: 0.1 }}
-            className="text-4xl sm:text-5xl lg:text-6xl font-black mb-6 tracking-tight leading-[1.1]"
+            className="font-display text-5xl sm:text-6xl lg:text-7xl font-semibold mb-6 leading-[1.1]"
           >
             Build Smarter{" "}
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600">
@@ -92,7 +92,7 @@ export function SequencesSection() {
             transition={{ duration: 0.6, delay: 0.2 }}
             className="text-lg md:text-xl text-slate-500 max-w-2xl mx-auto font-medium leading-relaxed"
           >
-            Combine the power of LinkedIn automation and high-deliverability Cold Email in one unified, intelligent sequence.
+            Combine the power of LinkedIn automation and high-deliverability cold email in one unified, intelligent sequence.
           </motion.p>
         </div>
 
@@ -153,7 +153,7 @@ export function SequencesSection() {
                             Step {step.id}
                           </span>
                         </div>
-                        <h3 className="text-xl font-bold text-slate-900 mb-2 tracking-tight">{step.title}</h3>
+                        <h3 className="text-xl font-medium text-slate-900 mb-2 tracking-tight">{step.title}</h3>
                         <p className="text-slate-500 text-sm leading-relaxed font-medium">{step.desc}</p>
                       </div>
                     </div>
@@ -197,9 +197,9 @@ export function SequencesSection() {
                           The Result
                         </span>
                       </div>
-                      <h3 className="text-2xl font-bold text-white mb-2 tracking-tight">Success Probability</h3>
+                      <h3 className="text-2xl font-medium text-white mb-2 tracking-tight">Success Probability</h3>
                       <p className="text-blue-100 text-sm leading-relaxed font-medium mb-6">
-                        Track exactly which combinations of messages yield the highest meeting booking rates.
+                        Track which steps drive the most replies, so you double down on what books meetings.
                       </p>
                       
                       <div className="flex items-center gap-2 text-blue-700 text-sm font-bold bg-white hover:bg-slate-50 shadow-md hover:shadow-lg transition-all w-max px-5 py-2.5 rounded-full cursor-pointer hover:-translate-y-0.5">

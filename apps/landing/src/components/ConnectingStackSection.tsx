@@ -159,10 +159,10 @@ export function ConnectingStackSection() {
                       progress > 0.45 ? "opacity-100 translate-y-0 scale-100" : "opacity-0 translate-y-4 scale-95"
                     }`}
                   >
-                    <h3 className="text-xl md:text-3xl font-extrabold text-slate-800 dark:text-white text-center tracking-tight mb-1">
+                    <h3 className="font-display text-xl md:text-5xl font-medium text-slate-800 dark:text-white text-center mb-1">
                       Prospecting
                     </h3>
-                    <h3 className="text-xl md:text-3xl font-extrabold text-primary text-center tracking-tight mb-3">
+                    <h3 className="font-display text-xl md:text-5xl font-medium text-primary text-center mb-3">
                       Automated
                     </h3>
                     <p className="text-slate-500 dark:text-slate-400 text-center text-xs md:text-sm max-w-[140px] md:max-w-xs leading-relaxed">

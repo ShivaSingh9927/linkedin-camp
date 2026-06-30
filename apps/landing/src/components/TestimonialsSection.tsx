@@ -225,7 +225,7 @@ export function TestimonialsSection() {
           <span className="inline-block bg-white border border-slate-200 shadow-sm text-slate-700 px-4 py-1.5 rounded-full text-sm font-bold mb-4">
             Wall of Love
           </span>
-          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-black text-slate-900 tracking-tight">
+          <h2 className="font-display text-5xl sm:text-6xl lg:text-7xl font-semibold text-slate-900">
             This is why users{" "}
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-indigo-600">love Qampi</span>
           </h2>

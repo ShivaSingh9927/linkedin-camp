@@ -61,10 +61,10 @@ const features = [
     description:
       "Track reply rates, connection acceptances, and campaign performance in real-time. Know exactly what's working and optimize your outreach on the fly with our gorgeous visual dashboards.",
     bullets: [
-      "Real-time sentiment analysis on replies",
-      "A/B testing for message variants",
-      "Detailed conversion funnel metrics",
-      "Exportable reports for team meetings"
+      "Real-time reply & acceptance-rate tracking",
+      "Conversion funnel: sent → connected → replied",
+      "Per-campaign performance breakdown",
+      "A/B testing for message variants (coming soon)"
     ],
     color: "#fffbeb", // amber-50
     accent: "#d97706", // amber-600
@@ -72,14 +72,14 @@ const features = [
   },
   {
     icon: MessageSquare,
-    title: "Auto Follow-Up",
+    title: "Reply-Aware Sending",
     description:
-      "Never lose a warm lead again. Set up intelligent, automated follow-up sequences that nurture your prospects with perfectly timed touchpoints until they reply, convert, or opt-out.",
+      "Qampi watches every conversation and pauses the moment a prospect replies — so you never fire an awkward automated message at someone who's already engaged. Take over a warm conversation instead.",
     bullets: [
-      "Multi-step, condition-based drip campaigns",
-      "Instantly auto-stops when prospect replies",
-      "Smart timezone scheduling per prospect",
-      "Sentiment-aware follow-up delays"
+      "Instantly auto-stops when a prospect replies",
+      "Human-like delays between every action",
+      "Working-hours-only sending",
+      "Multi-step drip sequences across LinkedIn & email"
     ],
     color: "#f0f9ff", // sky-50
     accent: "#0284c7", // sky-600
@@ -89,12 +89,12 @@ const features = [
     icon: Zap,
     title: "Omnichannel Campaigns",
     description:
-      "Build complex, multi-step workflows with our intuitive drag-and-drop builder. Seamlessly combine profile visits, likes, connection requests, LinkedIn messages, and automated email follow-ups.",
+      "Build multi-step workflows with an intuitive drag-and-drop builder. Chain LinkedIn actions — profile visits, likes, comments, connection requests, messages — with cold email steps and smart if/else branching.",
     bullets: [
       "Visual drag-and-drop workflow builder",
-      "Omnichannel reach (LinkedIn + Email)",
+      "LinkedIn + Email in one sequence",
       "Smart branching logic (If/Else)",
-      "Webhook integrations (Zapier/Make)"
+      "Auto-stops the moment a prospect replies"
     ],
     color: "#fdf4ff", // fuchsia-50
     accent: "#c026d3", // fuchsia-600
@@ -104,7 +104,7 @@ const features = [
     icon: Users,
     title: "Team Collaboration",
     description:
-      "Built for ambitious sales teams. Share lead lists, coordinate outreach, and avoid duplicate messaging across your entire organization with unified workspaces and global collision detection.",
+      "Coming soon. Built for ambitious sales teams — share lead lists, coordinate outreach, and avoid duplicate messaging across your organization with unified workspaces and global collision detection.",
     bullets: [
       "Unified team inbox and CRM sync",
       "Global collision detection built-in",
@@ -176,7 +176,7 @@ const SafeHumanVisual = () => (
           <div className="absolute inset-0 rounded-full border-2 border-emerald-200 border-t-emerald-500 animate-[spin_3s_linear_infinite]" />
           <Shield className="w-6 h-6 text-emerald-500" />
         </div>
-        <h3 className="text-sm font-bold text-slate-800 mb-1">Account Protected</h3>
+        <h3 className="text-sm font-medium text-slate-800 mb-1">Account Protected</h3>
         <p className="text-[11px] text-slate-500 mb-4">Activities running within safe human limits</p>
         
         <div className="w-full space-y-2 bg-slate-50 p-3 rounded-xl border border-slate-100">
@@ -440,7 +440,7 @@ export const Card = ({
           <div className="w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm shrink-0" style={{ backgroundColor: `${feature.accent}15`, color: feature.accent }}>
             <feature.icon className="w-7 h-7" />
           </div>
-          <h2 className='text-3xl md:text-5xl text-center md:text-left font-black tracking-tight pt-1' style={{ color: feature.accent }}>{feature.title}</h2>
+          <h2 className='font-display text-5xl md:text-7xl text-center md:text-left font-semibold pt-1' style={{ color: feature.accent }}>{feature.title}</h2>
         </div>
         
         <div className={`flex flex-col lg:flex-row h-full gap-10 lg:gap-16 relative z-10`}>
@@ -512,7 +512,7 @@ export const FeaturesSection = forwardRef<HTMLElement>((_, ref) => {
             <Sparkles className="w-3.5 h-3.5" />
             Features
           </motion.span>
-          <h1 className='text-4xl md:text-5xl lg:text-6xl font-black text-center tracking-tight leading-[1.1] max-w-4xl mx-auto'>
+ <h1 className='font-display text-5xl sm:text-6xl lg:text-7xl font-semibold text-center leading-[1.1] max-w-6xl mx-auto'>
             Everything you need to <br />
             <span className="bg-gradient-to-r from-primary to-violet-600 bg-clip-text text-transparent">scale outreach</span>
           </h1>

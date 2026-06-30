@@ -164,7 +164,7 @@ export function HowQampiWorks() {
             <Sparkles className="w-4 h-4" />
             How Qampi Works
           </span>
-          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-black text-slate-900 tracking-tight">
+          <h2 className="font-display text-5xl sm:text-6xl lg:text-7xl font-semibold text-slate-900">
             3 steps from stranger to{" "}
             <span className="text-primary">conversation</span>
           </h2>
@@ -200,7 +200,7 @@ export function HowQampiWorks() {
                 <div className="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center flex-shrink-0">
                   <step.icon className="w-5 h-5 text-primary" />
                 </div>
-                <h3 className="text-xl font-black text-slate-900">{step.title}</h3>
+                <h3 className="text-xl font-semibold text-slate-900">{step.title}</h3>
               </div>
 
               <p className="text-slate-600 leading-relaxed">

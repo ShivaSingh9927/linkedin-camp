@@ -59,7 +59,7 @@ export function Footer() {
           <div className="lg:col-span-4 grid grid-cols-2 sm:grid-cols-3 gap-8">
             {/* Automation Column */}
             <div>
-              <h4 className="font-bold text-slate-900 text-sm mb-6 uppercase tracking-wider">Product</h4>
+              <h4 className="font-medium text-slate-900 text-sm mb-6 uppercase tracking-wider">Product</h4>
               <ul className="space-y-4 text-sm text-slate-500 font-medium">
                 {['LinkedIn Auto', 'Cold Email', 'Sequences', 'CRM Sync'].map((item, i) => (
                   <li key={i}>
@@ -74,7 +74,7 @@ export function Footer() {
             
             {/* Resources Column */}
             <div>
-              <h4 className="font-bold text-slate-900 text-sm mb-6 uppercase tracking-wider">Resources</h4>
+              <h4 className="font-medium text-slate-900 text-sm mb-6 uppercase tracking-wider">Resources</h4>
               <ul className="space-y-4 text-sm text-slate-500 font-medium">
                 {['Blog', 'Sales Guides', 'Help Center', 'API Docs'].map((item, i) => (
                   <li key={i}>
@@ -89,7 +89,7 @@ export function Footer() {
             
             {/* Legal Column */}
             <div>
-              <h4 className="font-bold text-slate-900 text-sm mb-6 uppercase tracking-wider">Legal</h4>
+              <h4 className="font-medium text-slate-900 text-sm mb-6 uppercase tracking-wider">Legal</h4>
               <ul className="space-y-4 text-sm text-slate-500 font-medium">
                 {['Privacy', 'Terms', 'Security'].map((item, i) => (
                   <li key={i}>
@@ -111,7 +111,7 @@ export function Footer() {
               
               <div className="flex items-center gap-2 mb-4 relative z-10">
                 <Sparkles className="w-4 h-4 text-purple-500" />
-                <h4 className="font-bold text-slate-900">Join the Newsletter</h4>
+                <h4 className="font-medium text-slate-900">Join the Newsletter</h4>
               </div>
               <p className="text-sm text-slate-500 mb-6 relative z-10 font-medium">
                 Get the latest sales strategies, cold email templates, and product updates delivered weekly.

@@ -1,5 +1,16 @@
 import type { Metadata } from "next";
+import localFont from "next/font/local";
 import "./globals.css";
+
+// Mango Grotesque — condensed display grotesque, self-hosted variable font
+// (free for commercial use, designer Rajesh Rajput). Exposed as --font-mango
+// and used as the heading/display face (see globals.css).
+const mangoGrotesque = localFont({
+  src: "../fonts/MangoGrotesque-VF.ttf",
+  variable: "--font-mango",
+  display: "swap",
+  weight: "100 900",
+});
 
 export const metadata: Metadata = {
   title: "Qampi | B2B Lead Gen & Automated Sales Assistant",
@@ -20,7 +31,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="scroll-smooth">
+    <html lang="en" className={`scroll-smooth ${mangoGrotesque.variable}`}>
       <body className="antialiased">
         {children}
       </body>

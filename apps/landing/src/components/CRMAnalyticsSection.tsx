@@ -55,7 +55,7 @@ export function CRMAnalyticsSection() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ duration: 0.6, delay: 0.1 }}
-              className="text-4xl md:text-5xl lg:text-[4rem] font-black mb-6 tracking-tight leading-[1.1] text-slate-900"
+ className="font-display text-5xl sm:text-6xl lg:text-7xl font-semibold mb-6 leading-[1.1] text-slate-900"
             >
               Decisions powered by{" "}
               <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600">
@@ -138,7 +138,7 @@ export function CRMAnalyticsSection() {
                   <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center">
                     <LineChart className="w-5 h-5 text-blue-600" />
                   </div>
-                  <h3 className="text-xl font-extrabold text-slate-900">Active Campaign Stats</h3>
+                  <h3 className="text-xl font-medium text-slate-900">Active Campaign Stats</h3>
                 </div>
                 <div className="flex gap-2">
                   <div className="w-3.5 h-3.5 rounded-full bg-red-400 border border-red-500/20" />

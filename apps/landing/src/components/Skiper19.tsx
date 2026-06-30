@@ -16,7 +16,7 @@ export const Skiper19 = () => {
       className="mx-auto flex h-[350vh] w-full flex-col items-center overflow-hidden bg-[#FAFDEE] px-4 text-[#1F3A4B]"
     >
       <div className="mt-42 relative flex w-fit flex-col items-center justify-center gap-5 text-center pt-24">
-        <h1 className="font-jakarta-sans relative z-10 text-7xl font-medium tracking-[-0.08em] lg:text-9xl mix-blend-difference text-white">
+        <h1 className="font-display font-jakarta-sans relative z-10 text-9xl font-medium tracking-[-0.08em] lg:text-9xl mix-blend-difference text-white">
           The Stroke <br /> That follows the <br />
           Scroll Progress
         </h1>
@@ -31,7 +31,7 @@ export const Skiper19 = () => {
       </div>
 
       <div className="rounded-4xl font-jakarta-sans w-full translate-y-[150vh] bg-[#1F3A4B] pb-10 text-[#FAFDEE] z-10 relative">
-        <h1 className="mt-10 text-center text-[15.5vw] font-bold leading-[0.9] tracking-tighter lg:text-[16.6vw]">
+        <h1 className="mt-10 text-center text-[15.5vw] font-medium leading-[0.9] tracking-tighter lg:text-[16.6vw]">
           skiperui.com
         </h1>
         <div className="mt-20 flex w-full flex-col items-start gap-5 px-4 font-medium lg:mt-0 lg:flex-row lg:justify-between">

@@ -43,7 +43,7 @@ export function HeroSection() {
           initial="hidden"
           animate="visible"
           variants={revealVariants}
-          className="text-5xl md:text-7xl font-extrabold text-slate-900 leading-[1.15] mb-8 tracking-tighter"
+          className="font-display text-6xl md:text-8xl font-semibold text-slate-900 leading-[1.15] mb-8"
         >
           The Powerhouse <br/>
           <span className="inline-flex flex-wrap justify-center items-center gap-x-2">

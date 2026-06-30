@@ -17,7 +17,7 @@ import {
   Zap,
   ShieldCheck,
   Bot,
-  Network
+  ThumbsUp
 } from "lucide-react"
 import { motion, useScroll, useTransform, useInView, useSpring } from "framer-motion"
 import { MagneticButton } from "./MagneticButton"
@@ -66,19 +66,20 @@ export default function AboutUsSection() {
   }
 
   const services = [
+    // ── LEFT column (top of funnel: find → strategize → personalize → connect) ──
     {
       icon: <Mail className="w-6 h-6" />,
       secondaryIcon: <Sparkles className="w-4 h-4 absolute -top-1 -right-1 text-blue-500" />,
       title: "Email Hunting",
-      description: "Instantly find and verify corporate email addresses of your target decision-makers directly from LinkedIn profiles.",
+      description: "Find and verify a prospect's professional email in one click, powered by our dedicated finder.",
       position: "left",
       theme: { text: "text-blue-600", bg: "bg-blue-50", hoverBg: "group-hover:bg-blue-100", border: "border-blue-100/50" }
     },
     {
-      icon: <UserPlus className="w-6 h-6" />,
-      secondaryIcon: <CheckCircle className="w-4 h-4 absolute -top-1 -right-1 text-indigo-500" />,
-      title: "Auto-Connecting",
-      description: "Automate personalized connection requests with smart delays and custom variables to organically grow your network.",
+      icon: <Bot className="w-6 h-6" />,
+      secondaryIcon: <Sparkles className="w-4 h-4 absolute -top-1 -right-1 text-indigo-500" />,
+      title: "AI Built on Your Strategy",
+      description: "Qampi learns your ideal-customer profile, messaging pillars, and best outreach angles — then writes every message on that strategy.",
       position: "left",
       theme: { text: "text-indigo-600", bg: "bg-indigo-50", hoverBg: "group-hover:bg-indigo-100", border: "border-indigo-100/50" }
     },
@@ -86,33 +87,50 @@ export default function AboutUsSection() {
       icon: <Sparkles className="w-6 h-6" />,
       secondaryIcon: <Star className="w-4 h-4 absolute -top-1 -right-1 text-violet-500" />,
       title: "Smart Personalization",
-      description: "Automatically inject first names, company titles, and custom icebreakers to make every touchpoint feel human.",
+      description: "It reads each prospect's profile and recent activity, then writes a message in your voice that's personal enough to earn a reply.",
       position: "left",
       theme: { text: "text-violet-600", bg: "bg-violet-50", hoverBg: "group-hover:bg-violet-100", border: "border-violet-100/50" }
     },
     {
-      icon: <MessageSquare className="w-6 h-6" />,
-      secondaryIcon: <Sparkles className="w-4 h-4 absolute -top-1 -right-1 text-purple-500" />,
-      title: "Message Sequences",
-      description: "Set up multi-channel automated follow-ups that instantly halt as soon as a lead responds, keeping conversations natural.",
-      position: "right",
+      icon: <UserPlus className="w-6 h-6" />,
+      secondaryIcon: <CheckCircle className="w-4 h-4 absolute -top-1 -right-1 text-purple-500" />,
+      title: "Auto-Connecting",
+      description: "Send connection requests on autopilot with human-like timing and daily limits, growing your network without the manual grind.",
+      position: "left",
       theme: { text: "text-purple-600", bg: "bg-purple-50", hoverBg: "group-hover:bg-purple-100", border: "border-purple-100/50" }
     },
+    // ── RIGHT column (engage → track → sync → protect) ──
     {
-      icon: <Database className="w-6 h-6" />,
-      secondaryIcon: <CheckCircle className="w-4 h-4 absolute -top-1 -right-1 text-blue-600" />,
-      title: "CRM Sync",
-      description: "One-click export leads and interaction logs to popular platforms like HubSpot, Pipedrive, Salesforce, and Notion.",
+      icon: <ThumbsUp className="w-6 h-6" />,
+      secondaryIcon: <MessageSquare className="w-4 h-4 absolute -top-1 -right-1 text-violet-500" />,
+      title: "Auto-Engage",
+      description: "Warm up prospects before you reach out — Qampi likes and leaves genuine, AI-written comments on their recent posts.",
       position: "right",
-      theme: { text: "text-blue-700", bg: "bg-blue-50", hoverBg: "group-hover:bg-blue-100", border: "border-blue-200/50" }
+      theme: { text: "text-violet-600", bg: "bg-violet-50", hoverBg: "group-hover:bg-violet-100", border: "border-violet-100/50" }
     },
     {
       icon: <TrendingUp className="w-6 h-6" />,
       secondaryIcon: <Star className="w-4 h-4 absolute -top-1 -right-1 text-indigo-600" />,
       title: "Real-time Analytics",
-      description: "Track pending invites, open rates, click-through rates, and overall campaign metrics in a clean, unified dashboard.",
+      description: "Track replies, acceptance rates, and campaign performance across every account in one clean dashboard.",
       position: "right",
       theme: { text: "text-indigo-700", bg: "bg-indigo-50", hoverBg: "group-hover:bg-indigo-100", border: "border-indigo-200/50" }
+    },
+    {
+      icon: <Database className="w-6 h-6" />,
+      secondaryIcon: <CheckCircle className="w-4 h-4 absolute -top-1 -right-1 text-blue-600" />,
+      title: "CRM Sync",
+      description: "One-click export of leads and conversations to HubSpot, Pipedrive, and Notion — your pipeline always stays in sync.",
+      position: "right",
+      theme: { text: "text-blue-700", bg: "bg-blue-50", hoverBg: "group-hover:bg-blue-100", border: "border-blue-200/50" }
+    },
+    {
+      icon: <ShieldCheck className="w-6 h-6" />,
+      secondaryIcon: <CheckCircle className="w-4 h-4 absolute -top-1 -right-1 text-blue-500" />,
+      title: "LinkedIn-Safe by Design",
+      description: "Dedicated proxies, human-like delays, daily limits, and working-hours sending keep your account protected.",
+      position: "right",
+      theme: { text: "text-blue-600", bg: "bg-blue-50", hoverBg: "group-hover:bg-blue-100", border: "border-blue-100/50" }
     },
   ]
 
@@ -127,7 +145,7 @@ export default function AboutUsSection() {
     <section
       id="about-section"
       ref={sectionRef}
-      className="w-full py-24 px-4 bg-transparent text-slate-800 overflow-hidden relative border-t border-slate-100"
+      className="w-full pt-14 pb-6 px-4 bg-transparent text-slate-800 overflow-hidden relative border-t border-slate-100"
     >
       {/* Decorative background elements */}
       <motion.div
@@ -180,7 +198,7 @@ export default function AboutUsSection() {
             <Zap className="w-4.5 h-4.5 text-primary fill-current" />
             DISCOVER QAMPI
           </motion.span>
-          <h2 className="text-4xl md:text-5xl font-extrabold mb-4 text-center tracking-tight bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 bg-clip-text text-transparent">Outreach Made Effortless</h2>
+ <h2 className="font-display text-5xl sm:text-6xl lg:text-7xl font-medium mb-4 text-center text-slate-900">LinkedIn &amp; Email Outreach, Made <span className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 bg-clip-text text-transparent">Effortless</span></h2>
           <motion.div
             className="w-24 h-1 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full"
             initial={{ width: 0 }}
@@ -190,12 +208,12 @@ export default function AboutUsSection() {
         </motion.div>
 
         <motion.p className="text-center max-w-2xl mx-auto mb-16 text-slate-500 text-lg" variants={itemVariants}>
-          We built Qampi to take the complexity out of B2B prospecting. Our unified browser extension and dashboard automate the tedious parts of LinkedIn networking and cold email outreach, helping sales teams, founders, and recruiters focus on what they do best: closing deals.
+          Most tools just automate the blast. Qampi is different &mdash; it studies each person&apos;s profile and activity, then writes a message that reads like a marketer crafted it by hand. So founders, sales teams, recruiters, and job seekers get replies, not ignored. One browser extension and dashboard for the whole journey: find, personalize, send, and track.
         </motion.p>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-center relative">
           {/* Left Column */}
-          <div className="space-y-12">
+          <div className="space-y-10">
             {services
               .filter((service) => service.position === "left")
               .map((service, index) => (
@@ -220,7 +238,7 @@ export default function AboutUsSection() {
             </motion.div>
           </div>
           {/* Right Column */}
-          <div className="space-y-12">
+          <div className="space-y-10">
             {services
               .filter((service) => service.position === "right")
               .map((service, index) => (
@@ -239,8 +257,9 @@ export default function AboutUsSection() {
           </div>
         </div>
 
-        {/* Stats Section */}
-        <motion.div
+        {/* Stats Section — hidden until we have real numbers to stand behind.
+            Re-enable by uncommenting; the `stats` array + StatCounter are kept. */}
+        {/* <motion.div
           ref={statsRef}
           className="mt-24 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8"
           initial="hidden"
@@ -257,17 +276,17 @@ export default function AboutUsSection() {
               delay={index * 0.1}
             />
           ))}
-        </motion.div>
+        </motion.div> */}
 
         {/* CTA Section */}
         <motion.div
-          className="mt-20 bg-gradient-to-r from-slate-900 to-slate-950 text-white p-10 rounded-[2.5rem] flex flex-col md:flex-row items-center justify-between gap-6 shadow-xl border border-slate-800"
+          className="mt-12 bg-gradient-to-r from-slate-900 to-slate-950 text-white p-10 rounded-[2.5rem] flex flex-col md:flex-row items-center justify-between gap-6 shadow-xl border border-slate-800"
           initial={{ opacity: 0, y: 30 }}
           animate={isStatsInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 30 }}
           transition={{ duration: 0.8, delay: 0.5 }}
         >
           <div className="flex-1">
-            <h3 className="text-2xl font-bold mb-2">Ready to scale your outreach?</h3>
+            <h3 className="text-2xl font-medium mb-2">Ready to scale your outreach?</h3>
             <p className="text-slate-400">Start automating your prospecting and sales funnel today.</p>
           </div>
           <MagneticButton>
@@ -321,7 +340,7 @@ function ServiceItem({ icon, secondaryIcon, title, description, variants, delay,
           {icon}
           {secondaryIcon}
         </motion.div>
-        <h3 className={`text-xl font-bold text-slate-800 transition-colors duration-300 group-hover:${theme.text.split('-')[1]}-600`}>
+        <h3 className={`text-xl font-medium text-slate-800 transition-colors duration-300 group-hover:${theme.text.split('-')[1]}-600`}>
           {title}
         </h3>
       </motion.div>
@@ -406,7 +425,7 @@ function StatCounter({ icon, value, label, suffix, delay }: StatCounterProps) {
 
 const AnimatedCenterFigure = () => {
   return (
-    <div className="relative w-full max-w-[400px] aspect-square flex items-center justify-center">
+    <div className="relative w-full max-w-[460px] aspect-square flex items-center justify-center">
       {/* Outer Pulse */}
       <motion.div
         className="absolute inset-0 rounded-full bg-blue-100/30"
@@ -443,20 +462,23 @@ const AnimatedCenterFigure = () => {
       {/* Orbiting capability nodes */}
       {[
         { Icon: Mail, color: "text-blue-500", border: "border-blue-100", angle: 0 },
-        { Icon: MessageSquare, color: "text-violet-500", border: "border-violet-100", angle: 72 },
-        { Icon: UserPlus, color: "text-indigo-500", border: "border-indigo-100", angle: 144 },
-        { Icon: Database, color: "text-fuchsia-500", border: "border-fuchsia-100", angle: 216 },
-        { Icon: Network, color: "text-purple-500", border: "border-purple-100", angle: 288 },
+        { Icon: Bot, color: "text-indigo-500", border: "border-indigo-100", angle: 45 },
+        { Icon: Sparkles, color: "text-violet-500", border: "border-violet-100", angle: 90 },
+        { Icon: UserPlus, color: "text-purple-500", border: "border-purple-100", angle: 135 },
+        { Icon: ShieldCheck, color: "text-blue-500", border: "border-blue-100", angle: 180 },
+        { Icon: ThumbsUp, color: "text-violet-500", border: "border-violet-100", angle: 225 },
+        { Icon: TrendingUp, color: "text-indigo-500", border: "border-indigo-100", angle: 270 },
+        { Icon: Database, color: "text-blue-600", border: "border-blue-100", angle: 315 },
       ].map((node, i) => {
         return (
           <motion.div
             key={i}
-            className="absolute top-1/2 left-1/2 w-[115%] h-[115%] -mt-[57.5%] -ml-[57.5%]"
+            className="absolute top-1/2 left-1/2 w-[136%] h-[136%] -mt-[68%] -ml-[68%]"
             animate={{ rotate: [node.angle, node.angle + 360] }}
             transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
           >
             <motion.div
-              className={`absolute top-0 left-1/2 -ml-7 flex items-center justify-center w-14 h-14 rounded-2xl bg-white shadow-xl border ${node.border} ${node.color}`}
+              className={`absolute top-0 left-1/2 -ml-6 flex items-center justify-center w-12 h-12 rounded-2xl bg-white shadow-xl border ${node.border} ${node.color}`}
               animate={{ rotate: [-node.angle, -(node.angle + 360)] }}
               transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
             >

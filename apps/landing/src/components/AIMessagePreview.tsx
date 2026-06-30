@@ -159,7 +159,7 @@ export function AIMessagePreview() {
   return (
     <section
       ref={sectionRef}
-      className="relative pt-12 pb-20 lg:pt-16 lg:pb-32 overflow-hidden bg-white"
+      className="relative pt-4 pb-20 lg:pt-6 lg:pb-32 overflow-hidden bg-white"
     >
       {/* ── Background Gradients ── */}
       <div className="absolute inset-0 pointer-events-none">
@@ -172,39 +172,6 @@ export function AIMessagePreview() {
 
       <FloatingParticles />
 
-      {/* ── Floating Sticker: Bird Cool ── */}
-      <motion.div
-        className="absolute top-20 right-[10%] w-20 md:w-24 pointer-events-none hidden lg:block"
-        initial={{ opacity: 0, y: 20, rotate: -10 }}
-        whileInView={{ opacity: 0.9, y: 0, rotate: 0 }}
-        viewport={{ once: true }}
-        transition={{ duration: 1.2, ease: "easeOut", delay: 0.5 }}
-      >
-        <motion.img
-          src="/stickers/bird_cool_transparent.png"
-          alt="Cool Bird"
-          className="w-full h-full object-contain filter drop-shadow-xl"
-          animate={{ y: [0, -8, 0], rotate: [0, 4, 0] }}
-          transition={{ repeat: Infinity, duration: 6, ease: "easeInOut" }}
-        />
-      </motion.div>
-
-      {/* ── Floating Sticker: Bird Flying ── */}
-      <motion.div
-        className="absolute bottom-32 left-[8%] w-16 md:w-20 pointer-events-none hidden lg:block"
-        initial={{ opacity: 0, x: -30 }}
-        whileInView={{ opacity: 0.85, x: 0 }}
-        viewport={{ once: true }}
-        transition={{ duration: 1.2, ease: "easeOut", delay: 0.8 }}
-      >
-        <motion.img
-          src="/stickers/bird_flying_transparent.png"
-          alt="Flying Bird"
-          className="w-full h-full object-contain filter drop-shadow-xl"
-          animate={{ y: [0, -10, 0], x: [0, 6, 0] }}
-          transition={{ repeat: Infinity, duration: 7, ease: "easeInOut" }}
-        />
-      </motion.div>
 
       <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 z-10">
         
@@ -229,7 +196,7 @@ export function AIMessagePreview() {
             Powered by Qampi AI
           </motion.div>
 
-          <h2 className="text-3xl sm:text-4xl lg:text-5xl xl:text-[3.5rem] font-black text-slate-900 tracking-tight leading-[1.15] max-w-5xl mx-auto">
+          <h2 className="font-display text-6xl sm:text-7xl lg:text-8xl font-semibold text-slate-900 leading-[1.1] max-w-7xl mx-auto">
             The difference between{" "}
             <span className="text-slate-300 line-through decoration-red-400/60 decoration-[3px] whitespace-nowrap">&ldquo;Hi [Name]&rdquo;</span>
             <br />
@@ -254,7 +221,7 @@ export function AIMessagePreview() {
         {/* ═══════════════════════════════
             COMPARISON CARDS
             ═══════════════════════════════ */}
-        <div className="relative grid lg:grid-cols-2 gap-8 lg:gap-12 max-w-6xl mx-auto items-stretch">
+        <div className="relative grid lg:grid-cols-2 gap-8 lg:gap-12 max-w-7xl mx-auto items-stretch">
 
           {/* ── Center VS Badge (desktop only) ── */}
           <motion.div
@@ -367,23 +334,6 @@ export function AIMessagePreview() {
             <div className="relative bg-white rounded-3xl border border-blue-200 shadow-2xl overflow-hidden h-full">
               {/* Premium gradient overlay */}
               <div className="absolute inset-0 bg-gradient-to-br from-blue-500/[0.03] via-transparent to-purple-500/[0.03] pointer-events-none" />
-
-              {/* ── Sticker: Bird waving on the AI card ── */}
-              <motion.div
-                className="absolute -top-6 -right-4 w-20 z-20 pointer-events-none hidden md:block"
-                initial={{ opacity: 0, scale: 0, rotate: 20 }}
-                whileInView={{ opacity: 1, scale: 1, rotate: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: 1, type: "spring", stiffness: 200 }}
-              >
-                <motion.img
-                  src="/stickers/bird_waving_transparent.png"
-                  alt="Waving Bird"
-                  className="w-full h-full object-contain filter drop-shadow-xl"
-                  animate={{ rotate: [0, -8, 8, 0] }}
-                  transition={{ repeat: Infinity, duration: 4, ease: "easeInOut" }}
-                />
-              </motion.div>
 
               {/* Card Header */}
               <div className="relative bg-gradient-to-r from-blue-50/80 via-indigo-50/50 to-purple-50/50 px-6 py-5 border-b border-blue-100/60">

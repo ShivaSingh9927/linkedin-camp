@@ -116,7 +116,7 @@ export function CTASection() {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ duration: 0.6, delay: 0.4 }}
-                className="text-5xl sm:text-6xl lg:text-[5rem] font-black mb-8 leading-[1.05] tracking-tight text-white drop-shadow-lg"
+ className="font-display text-5xl sm:text-6xl lg:text-7xl font-semibold mb-8 leading-[1.05] text-white drop-shadow-lg"
               >
                 Turn your browser into a <br className="hidden md:block"/>
                 <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-300 via-white to-fuchsia-300">

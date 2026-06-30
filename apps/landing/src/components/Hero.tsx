@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { MoveRight } from "lucide-react";
+import { MoveRight, Check, Download } from "lucide-react";
 import { MagneticButton } from "./MagneticButton";
 
 interface FloatingMessageProps {
@@ -110,7 +110,7 @@ function FloatingMessages() {
 function Hero() {
   const [titleNumber, setTitleNumber] = useState(0);
   const titles = useMemo(
-    () => ["automated", "personalized", "effortless", "multi-channel", "smart"],
+    () => ["client", "investor", "recruiter", "customer", "hire"],
     []
   );
 
@@ -132,7 +132,7 @@ function Hero() {
       <FloatingMessages />
 
       <div className="relative z-10 container mx-auto px-4 sm:px-6 lg:px-8 py-20 text-center">
-        <div className="flex gap-8 items-center justify-center flex-col max-w-5xl mx-auto">
+        <div className="flex gap-8 items-center justify-center flex-col max-w-7xl mx-auto">
           
           {/* Extension Badge */}
           <motion.div
@@ -143,17 +143,17 @@ function Hero() {
             <span
               className="inline-flex items-center gap-2 bg-blue-50 text-primary px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider border border-blue-100 shadow-sm"
             >
-              Browser Extension + Web Dashboard
+              Not your average outreach tool
             </span>
           </motion.div>
 
           {/* Heading with Letter-by-Letter and Rotating Animations */}
           <div className="flex gap-4 flex-col items-center w-full">
-            <h1 className="text-5xl md:text-7xl font-extrabold text-slate-900 leading-[1.2] mb-4 tracking-tighter w-full">
+            <h1 className="font-display text-7xl md:text-[9rem] font-medium text-slate-900 leading-[0.95] mb-4 tracking-tight w-full">
               
               {/* Rising spring letters for prefix */}
               <span className="block mb-2">
-                {"This is B2B lead gen made".split(" ").map((word, wordIndex) => (
+                {"Like a marketer wrote every message to your next".split(" ").map((word, wordIndex) => (
                   <span key={wordIndex} className="inline-block mr-3 last:mr-0 whitespace-nowrap">
                     {word.split("").map((letter, letterIndex) => (
                       <motion.span
@@ -181,7 +181,7 @@ function Hero() {
                 {titles.map((title, index) => (
                   <motion.span
                     key={index}
-                    className="absolute font-extrabold gradient-text"
+                    className="absolute font-semibold gradient-text"
                     initial={{ opacity: 0, y: -100 }}
                     transition={{ type: "spring", stiffness: 50 }}
                     animate={
@@ -209,7 +209,7 @@ function Hero() {
               transition={{ delay: 0.6, duration: 0.8 }}
               className="text-lg md:text-xl leading-relaxed tracking-tight text-slate-500 max-w-2xl mx-auto mt-6"
             >
-              A powerful Chrome extension and web dashboard designed to automate LinkedIn outreach and cold email at scale. Let Qampi handle the heavy lifting while you focus on closing.
+              It reads every prospect&apos;s profile and posts like a human would, then writes outreach personal enough to actually get a reply &mdash; across LinkedIn and email, sent safely at scale.
             </motion.p>
           </div>
 
@@ -224,7 +224,7 @@ function Hero() {
               href="#"
               className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-white hover:bg-slate-50 text-slate-800 px-8 py-4 rounded-2xl text-lg font-bold border border-slate-200 transition-all duration-200 shadow-sm hover:-translate-y-0.5 active:scale-98"
             >
-              Watch Demo <MoveRight className="w-4.5 h-4.5 text-slate-400" />
+              <Download className="w-4.5 h-4.5 text-slate-400" /> Download Extension
             </a>
 
             {/* Premium Gradient Glow Button Container */}
@@ -237,11 +237,26 @@ function Hero() {
                   href="https://app.qampi.com/register"
                   className="w-full sm:w-auto inline-flex items-center justify-center gap-2 btn-primary px-8 py-4 rounded-2xl text-lg font-bold shadow-lg shadow-blue-200 hover:-translate-y-0.5 active:scale-98 transition-all duration-200"
                 >
-                  Start Generating Leads <MoveRight className="w-4.5 h-4.5" />
+                  Get Started Free <MoveRight className="w-4.5 h-4.5" />
                 </a>
               </div>
             </MagneticButton>
           </motion.div>
+
+          {/* Trust strip — pre-empts the signup friction + the #1 fear (account bans) */}
+          <motion.ul
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 1, duration: 0.8 }}
+            className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 mt-6 text-sm font-medium text-slate-500"
+          >
+            {["No credit card needed", "Human-like, LinkedIn-safe sending", "Cancel anytime"].map((item) => (
+              <li key={item} className="inline-flex items-center gap-2">
+                <Check className="w-4 h-4 text-primary" />
+                {item}
+              </li>
+            ))}
+          </motion.ul>
 
         </div>
       </div>

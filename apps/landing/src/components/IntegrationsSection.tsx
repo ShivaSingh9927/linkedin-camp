@@ -47,7 +47,7 @@ export function IntegrationsSection() {
           <span className="inline-block bg-primary/10 text-primary px-4 py-1.5 rounded-full text-sm font-bold mb-4">
             Integrations
           </span>
-          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-black text-slate-900 tracking-tight">
+          <h2 className="font-display text-5xl sm:text-6xl lg:text-7xl font-semibold text-slate-900">
             Connected to your{" "}
             <span className="text-primary">stack</span>
           </h2>

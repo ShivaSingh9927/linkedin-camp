@@ -77,6 +77,9 @@
 
   --font-sans: 'Satoshi', system-ui, -apple-system, sans-serif;
   --font-cabinet: 'Cabinet Grotesk', sans-serif;
+  /* Mango Grotesque — condensed display face. next/font sets --font-mango on
+     <html> in layout.tsx; --font-display layers in safe fallbacks. */
+  --font-display: var(--font-mango), 'Cabinet Grotesk', sans-serif;
 
   --shadow-soft: 0 4px 20px -2px rgba(0, 0, 0, 0.05), 0 2px 10px -2px rgba(0, 0, 0, 0.03);
 
@@ -124,6 +127,14 @@
     letter-spacing: -0.02em;
   }
 
+  /* Mango Grotesque is a condensed DISPLAY face — only for large headlines.
+     Applied via the `font-display` class; small headings keep Cabinet Grotesk
+     for legibility. Letter-spacing relaxed so the condensed glyphs breathe. */
+  .font-display {
+    font-family: var(--font-display);
+    letter-spacing: 0.01em;
+  }
+
   html {
     scroll-behavior: smooth;
   }
@@ -162,7 +173,10 @@
 }
 
 .glass-nav {
-  background-color: rgba(255, 255, 255, 0.95);
+  /* translucent white base + a faint brand blue→purple wash, kept subtle so
+     the dark nav text stays legible over it */
+  background-color: rgba(255, 255, 255, 0.88);
+  background-image: linear-gradient(90deg, rgba(34, 90, 234, 0.1) 0%, rgba(168, 85, 247, 0.1) 100%);
   backdrop-filter: blur(8px);
 }
 

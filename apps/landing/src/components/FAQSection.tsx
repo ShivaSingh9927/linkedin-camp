@@ -30,7 +30,7 @@ const faqData = {
   safety: [
     {
       question: "Is it safe to use Qampi for LinkedIn outreach?",
-      answer: "Yes, safety is our primary focus. Qampi creates messages that sound natural because they are fine-tuned on your actual writing style. When combined with our human-like sending patterns, randomized delays, and automatic limit monitoring, your account remains completely safe. We have never had a user account restricted.",
+      answer: "Yes, safety is our primary focus. Qampi creates messages that sound natural because they are fine-tuned on your actual writing style. Combined with dedicated proxies, human-like sending patterns, randomized delays, working-hours sending, and automatic limit monitoring, Qampi is built to keep your account safe.",
     },
     {
       question: "How does Qampi stay within LinkedIn limits?",
@@ -48,7 +48,7 @@ const faqData = {
     },
     {
       question: "Can I sync Qampi with my CRM?",
-      answer: "Yes. Qampi integrates natively with major CRM platforms like HubSpot, Salesforce, and Pipedrive. You can also sync leads, statuses, and conversation history with over 2,000 other tools using Zapier or Make.",
+      answer: "Yes. Qampi integrates natively with HubSpot, Pipedrive, and Notion — sync leads, statuses, and conversation history in one click. Support for 2,000+ more tools via Zapier and Make is coming soon.",
     },
   ],
 };
