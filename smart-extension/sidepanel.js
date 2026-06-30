@@ -65,10 +65,6 @@ async function findDashboardTab() {
         for (const dashUrl of DASHBOARD_URLS) {
             if (tab.url.startsWith(dashUrl)) return tab;
         }
-        try {
-            const tabHost = new URL(tab.url).hostname;
-            if (tabHost.includes('linkedin-camp') && tabHost.endsWith('.vercel.app')) return tab;
-        } catch (e) { }
     }
     return null;
 }

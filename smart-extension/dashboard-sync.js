@@ -1,6 +1,5 @@
-// This script runs on our dashboard to capture the JWT token
-// It runs on both localhost:3000 and Vercel deployments
-// Guard: only run on our own app's URLs (not every Vercel site)
+// This script runs on our dashboard to capture the JWT token.
+// Guard: only run on our own app's URLs (app.qampi.com, or localhost in dev).
 const hostname = window.location.hostname;
 if (
     hostname !== 'localhost' &&
@@ -53,13 +52,5 @@ if (
         }
     });
     urlObserver.observe(document.body, { childList: true, subtree: true });
-
-    // Bridge: Listen for "Sync" button click from Dashboard UI
-    window.addEventListener('message', (event) => {
-        if (event.data && event.data.type === 'LINKEDIN_CAMP_FORCE_SYNC') {
-            console.log('[Dashboard Bridge] Detected force sync request. Notifying background script...');
-            chrome.runtime.sendMessage({ type: 'FORCE_LOGIN_SYNC' });
-        }
-    });
 
 } // end else guard
