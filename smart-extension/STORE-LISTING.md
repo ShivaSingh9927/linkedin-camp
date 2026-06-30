@@ -52,19 +52,48 @@ token). Then certify:
 
 ## Privacy policy URL
 
-Host `PRIVACY.md` (rendered) publicly and paste the URL, e.g.
-`https://qampi.com/extension-privacy`.
+**https://qampi.com/extension-privacy** (live page at
+`apps/landing/src/app/extension-privacy/page.tsx` — deploys with the landing site).
 
 ## Listing assets
 
-- [ ] 128×128 icon — already in `icons/icon128.png`
-- [ ] Screenshots (1280×800) — in `store-assets/` (provided at 2× = 2560×1600, accepted):
-      `01-side-panel.png`, `02-batch-processor.png`
-- [ ] Short description (≤132 chars) + detailed description
-- [ ] Category: "Workflow & Planning" or "Productivity"
+- [x] 128×128 icon — `icons/icon128.png`
+- [x] Screenshots (1280×800) — `store-assets/01-side-panel.png`, `store-assets/02-batch-processor.png` (provided at 2× = 2560×1600, accepted)
+- [x] Short + detailed description — below
+- [ ] Category: **Workflow & Planning** (fallback: Productivity)
 
-Suggested short description:
-> Import LinkedIn leads into Qampi and keep replies in sync — straight from a side panel, without leaving the page.
+### Short description (≤132 chars)
+
+> Import LinkedIn leads into Qampi from a side panel — extract clean prospect data and keep replies in sync, without leaving the page.
+
+### Detailed description
+
+> Qampi — Lead Importer turns any LinkedIn search into clean, structured leads
+> inside your Qampi account, without copy-paste or spreadsheets.
+>
+> Open the side panel on a LinkedIn search results page, name your list, and hit
+> Start Extraction. Qampi pulls each prospect's name, title, company, education,
+> and location, paginates through the results, and syncs everything straight to
+> your Qampi dashboard. Already have a spreadsheet? Paste a CSV into the built-in
+> batch processor and Qampi structures it on your device — no uploads, no model
+> downloads.
+>
+> WHAT YOU GET
+> • One-click lead import from any LinkedIn people search
+> • Clean, structured fields (name, title, company, education, location)
+> • Automatic pagination across result pages
+> • On-device CSV batch processing — your data never leaves the browser
+> • Reply tracking that keeps each lead's status in sync with your dashboard
+> • A lightweight side panel that works while you keep browsing
+>
+> HOW IT WORKS
+> 1. Sign in to your Qampi dashboard and connect the extension.
+> 2. Open a LinkedIn search and launch the side panel.
+> 3. Extract leads and review them in Qampi.
+>
+> Qampi — Lead Importer requires a Qampi account. It does not read your LinkedIn
+> password or cookies; it only imports the lead data you choose to extract.
+> Privacy policy: https://qampi.com/extension-privacy
 
 ---
 
