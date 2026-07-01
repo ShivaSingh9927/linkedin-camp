@@ -76,11 +76,16 @@ export function Footer() {
             <div>
               <h4 className="font-medium text-slate-900 text-sm mb-6 uppercase tracking-wider">Resources</h4>
               <ul className="space-y-4 text-sm text-slate-500 font-medium">
-                {['Blog', 'Sales Guides', 'Help Center', 'API Docs'].map((item, i) => (
+                {[
+                  { label: 'Blog', href: '/blog' },
+                  { label: 'Sales Guides', href: '/blog' },
+                  { label: 'Help Center', href: '#' },
+                  { label: 'API Docs', href: '#' },
+                ].map((item, i) => (
                   <li key={i}>
-                    <a href="#" className="group flex items-center text-slate-500 hover:text-purple-600 transition-colors">
+                    <a href={item.href} className="group flex items-center text-slate-500 hover:text-purple-600 transition-colors">
                       <ArrowRight className="w-3 h-3 opacity-0 -ml-4 group-hover:opacity-100 group-hover:ml-0 mr-2 transition-all duration-300 text-purple-500" />
-                      {item}
+                      {item.label}
                     </a>
                   </li>
                 ))}

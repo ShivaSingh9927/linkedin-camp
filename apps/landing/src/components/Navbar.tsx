@@ -21,6 +21,7 @@ export function Navbar() {
     { label: "Email", href: "#email", id: "nav-email" },
     { label: "Sequences", href: "#sequences", id: "nav-sequences" },
     { label: "CRM", href: "#crm", id: "nav-crm" },
+    { label: "Blog", href: "/blog", id: "nav-blog" },
   ];
 
   return (
