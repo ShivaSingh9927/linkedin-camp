@@ -5,9 +5,27 @@ import { PostHogProvider } from "@/components/PostHogProvider";
 
 const inter = Inter({ subsets: ["latin"] });
 
+const SITE_URL = "https://qampi.com";
+const TITLE = "Qampi - Smart LinkedIn & Email Outreach That Gets Replies";
+const DESCRIPTION =
+  "Automate your LinkedIn and cold email outreach with AI-personalized campaigns. Qampi reads every prospect and writes outreach worth replying to. Start free.";
+
 export const metadata: Metadata = {
-  title: "Qampi - Smart LinkedIn Automation That Gets Replies",
-  description: "Automate your LinkedIn outreach with AI-powered campaigns. Reach 800+ prospects monthly, auto follow-up until they reply. No complex setup. Start free today.",
+  metadataBase: new URL(SITE_URL),
+  title: TITLE,
+  description: DESCRIPTION,
+  applicationName: "Qampi",
+  keywords: [
+    "LinkedIn outreach automation",
+    "AI LinkedIn messages",
+    "cold email outreach",
+    "LinkedIn lead generation",
+    "sales prospecting tool",
+    "personalized outreach",
+  ],
+  alternates: {
+    canonical: "/",
+  },
   icons: {
     icon: [
       { url: '/favicon-16x16.png', sizes: '16x16', type: 'image/png' },
@@ -16,10 +34,55 @@ export const metadata: Metadata = {
     ],
     apple: '/apple-touch-icon.png',
   },
+  openGraph: {
+    type: "website",
+    url: SITE_URL,
+    siteName: "Qampi",
+    title: TITLE,
+    description: DESCRIPTION,
+    images: [
+      { url: "/og-image.png", width: 1200, height: 630, alt: "Qampi — Smart LinkedIn & email outreach that gets replies" },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: TITLE,
+    description: DESCRIPTION,
+    images: ["/og-image.png"],
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: { index: true, follow: true, "max-image-preview": "large" },
+  },
   // Google domain-ownership verification (Chrome Web Store publisher).
   verification: {
     google: "G7OoNVB6ELxmmd4MEdaEYSmhWjcRwEgLuSPZWCbcpB0",
   },
+};
+
+// Structured data — helps Google understand the product (rich results eligibility).
+const jsonLd = {
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": `${SITE_URL}/#organization`,
+      name: "Qampi",
+      url: SITE_URL,
+      logo: `${SITE_URL}/android-chrome-512x512.png`,
+    },
+    {
+      "@type": "SoftwareApplication",
+      name: "Qampi",
+      applicationCategory: "BusinessApplication",
+      operatingSystem: "Web, Chrome",
+      url: SITE_URL,
+      description: DESCRIPTION,
+      offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+      publisher: { "@id": `${SITE_URL}/#organization` },
+    },
+  ],
 };
 
 export default function RootLayout({
@@ -30,6 +93,10 @@ export default function RootLayout({
   return (
     <html lang="en" className="scroll-smooth">
       <body className={`${inter.className} antialiased`}>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        />
         <PostHogProvider>
           {children}
         </PostHogProvider>
