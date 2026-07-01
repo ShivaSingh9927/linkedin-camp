@@ -1,9 +1,16 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
-import { PostHogProvider } from "@/components/PostHogProvider";
 
-const inter = Inter({ subsets: ["latin"] });
+// Mango Grotesque — condensed display grotesque, self-hosted variable font
+// (free for commercial use, designer Rajesh Rajput). Exposed as --font-mango
+// and used as the heading/display face (see globals.css).
+const mangoGrotesque = localFont({
+  src: "../fonts/MangoGrotesque-VF.ttf",
+  variable: "--font-mango",
+  display: "swap",
+  weight: "100 900",
+});
 
 const SITE_URL = "https://qampi.com";
 const TITLE = "Qampi - Smart LinkedIn & Email Outreach That Gets Replies";
@@ -91,15 +98,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="scroll-smooth">
-      <body className={`${inter.className} antialiased`}>
+    <html lang="en" className={`scroll-smooth ${mangoGrotesque.variable}`}>
+      <body className="antialiased">
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
         />
-        <PostHogProvider>
-          {children}
-        </PostHogProvider>
+        {children}
       </body>
     </html>
   );

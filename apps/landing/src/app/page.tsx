@@ -1,39 +1,56 @@
 'use client';
 
 import { Navbar } from '@/components/Navbar';
-import { HeroSection } from '@/components/HeroSection';
+import { Hero } from '@/components/Hero';
+import { MarqueeLogoScroller } from '@/components/MarqueeLogoScroller';
+import AboutUsSection from '@/components/AboutUsSection';
 import { AIMessagePreview } from '@/components/AIMessagePreview';
-import { SocialProof } from '@/components/SocialProof';
-import { MetricsBar } from '@/components/MetricsBar';
-import { HowAigeonWorks } from '@/components/HowAigeonWorks';
-import { HowItWorks } from '@/components/HowItWorks';
-import { FeaturesCarousel } from '@/components/FeaturesCarousel';
 import { OldVsNew } from '@/components/OldVsNew';
-import { TestimonialsSection } from '@/components/TestimonialsSection';
+import { HowItWorks } from '@/components/HowItWorks';
+import { QampiShowcase } from '@/components/QampiShowcase';
+// import { LinkedInAutomation } from '@/components/LinkedInAutomation';
+import { ColdEmailOutreach } from '@/components/ColdEmailOutreach';
+import { SequencesSection } from '@/components/SequencesSection';
+// import { CRMAnalyticsSection } from '@/components/CRMAnalyticsSection';
 import { UseCasesSection } from '@/components/UseCasesSection';
-import { IntegrationsSection } from '@/components/IntegrationsSection';
+import { TestimonialsSection } from '@/components/TestimonialsSection';
 import { PricingSection } from '@/components/PricingSection';
 import { FAQSection } from '@/components/FAQSection';
 import { CTASection } from '@/components/CTASection';
 import { Footer } from '@/components/Footer';
-import { ScrollProgress } from '@/components/ScrollProgress';
+import { GlobalEffects } from '@/components/GlobalEffects';
 
 export default function LandingPage() {
   return (
-    <main className="min-h-screen">
-      <ScrollProgress />
+    <main className="min-h-screen bg-purple-50/20">
+      <GlobalEffects />
+      {/* ── Hook ── */}
       <Navbar />
-      <HeroSection />
-      <AIMessagePreview />
-      <SocialProof />
-      <MetricsBar />
-      <HowAigeonWorks />
+      <Hero />
+
+      {/* ── What is it → How it works ── */}
+      <AboutUsSection />
       <HowItWorks />
-      <FeaturesCarousel />
+
+      {/* ── See it & believe it (proof / differentiator) ── */}
+      <AIMessagePreview />
       <OldVsNew />
-      <TestimonialsSection />
+
+      {/* ── The details (feature deep-dives) ── */}
+      {/* <LinkedInAutomation /> */}
+      <ColdEmailOutreach />
+      <SequencesSection />
+      {/* <CRMAnalyticsSection /> */}
+
+      {/* ── Works with your stack ── */}
+      <MarqueeLogoScroller />
+
+      {/* ── Who it's for + the AI engine showcase ── */}
       <UseCasesSection />
-      <IntegrationsSection />
+      <QampiShowcase />
+
+      {/* ── Validation & Action ── */}
+      <TestimonialsSection />
       <PricingSection />
       <FAQSection />
       <CTASection />

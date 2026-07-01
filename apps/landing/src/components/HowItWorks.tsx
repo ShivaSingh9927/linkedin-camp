@@ -1,366 +1,438 @@
-'use client';
+"use client";
 
-import { useState, useEffect, useRef } from "react";
-import { motion } from "framer-motion";
-import { Search, Send, BarChart3, Database, ArrowRight, CheckCircle2 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import React, { useRef } from "react";
+import { motion, useScroll, useTransform } from "framer-motion";
 
-const steps = [
+/* ═══════════════════════════════════════════════════════════
+   MESSY SCRIBBLE — Organic overlapping loops behind the header
+   Like tangled threads representing chaotic cold outreach
+   ═══════════════════════════════════════════════════════════ */
+const MessyScribble = () => {
+  /* Large open petal loops — like the reference green lines.
+     Spread across the right side of the text, big and airy. */
+  const loops = [
+    // Big sweeping petal — upper right, goes off-edge
+    "M500,250 C600,50 900,50 880,300 C860,550 600,500 500,350 C400,200 420,150 500,250",
+    // Tall petal — top, reaching upward
+    "M550,300 C580,80 750,20 780,200 C810,380 650,480 550,380 C450,280 500,180 550,300",
+    // Wide right petal — extends far right
+    "M480,320 C620,200 920,250 880,420 C840,590 580,550 480,420 C380,290 400,250 480,320",
+    // Lower-right petal
+    "M520,380 C620,280 820,320 790,480 C760,640 560,600 520,470 C480,340 490,310 520,380",
+    // Small inner loop — center accent
+    "M560,300 C610,200 730,220 710,330 C690,440 590,450 560,360 C530,270 540,230 560,300",
+    // Upper-left sweep — balances composition
+    "M420,200 C460,60 650,80 640,230 C630,380 470,390 420,280 C370,170 380,120 420,200",
+    // Bottom curl — grounds the cluster
+    "M500,420 C560,340 700,360 680,460 C660,560 530,560 500,480 C470,400 480,370 500,420",
+    // Tail connecting seamlessly to the scroll line
+    "M500,420 C520,470 750,550 750,700",
+  ];
+
+  return (
+    <svg viewBox="0 0 1000 700" className="w-full h-full" fill="none" preserveAspectRatio="none">
+      {loops.map((d, i) => (
+        <React.Fragment key={i}>
+          {/* Soft glow layer */}
+          <path
+            d={d}
+            stroke="#8b5cf6"
+            strokeWidth={36}
+            strokeLinecap="round"
+            fill="none"
+            opacity={0.07}
+          />
+          {/* Main visible stroke */}
+          <path
+            d={d}
+            stroke="#8b5cf6"
+            strokeWidth={12}
+            strokeLinecap="round"
+            fill="none"
+            opacity={0.28}
+          />
+        </React.Fragment>
+      ))}
+    </svg>
+  );
+};
+
+/* ═══════════════════════════════════════════════════════════
+   FLOWING SCROLL LINE — Single line that traces through 4 steps
+   Starts from the scribble cluster, flows down in organic S-curves
+   ═══════════════════════════════════════════════════════════ */
+const FlowingScrollLine = ({ scrollYProgress }: { scrollYProgress: any }) => {
+  const pathLength = useTransform(scrollYProgress, [0.05, 0.92], [0, 1]);
+
+  /* This path starts near the scribble (top-right area) and meanders
+     down in wide organic S-curves, passing through where each step sits */
+  const flowPath =
+    "M750,0 " +
+    "C750,150 650,160 600,280 " +     // smooth continuation from the tail, then curve left
+    "C540,420 700,500 680,650 " +     // curve toward step 1
+    "C660,800 350,850 320,1000 " +    // S-curve to step 2 (left)
+    "C290,1150 600,1200 620,1350 " +  // swing back right to step 3
+    "C640,1500 300,1550 280,1700 " +  // S-curve to step 4 (left)
+    "C260,1850 550,1900 500,2050 " +  // flowing exit
+    "C450,2200 600,2350 550,2500 " +  // gentle fade out
+    "C500,2650 650,2750 600,2900 " +
+    "C550,3050 400,3100 450,3250 " +
+    "C500,3400 600,3500 550,3600";
+
+  return (
+    <svg
+      viewBox="0 0 1000 3600"
+      fill="none"
+      className="w-full h-full"
+      preserveAspectRatio="none"
+    >
+      {/* Soft wide glow behind the line */}
+      <motion.path
+        d={flowPath}
+        stroke="url(#purpleGlow)"
+        strokeWidth="35"
+        strokeLinecap="round"
+        fill="none"
+        opacity="0.1"
+        style={{ pathLength }}
+      />
+      {/* Medium glow */}
+      <motion.path
+        d={flowPath}
+        stroke="url(#purpleGrad)"
+        strokeWidth="12"
+        strokeLinecap="round"
+        fill="none"
+        opacity="0.3"
+        style={{ pathLength }}
+      />
+      {/* Main crisp line */}
+      <motion.path
+        d={flowPath}
+        stroke="url(#purpleGrad)"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        fill="none"
+        opacity="0.0"
+        style={{ pathLength }}
+      />
+      {/* Bright center highlight */}
+      <motion.path
+        d={flowPath}
+        stroke="#c4b5fd"
+        strokeWidth="0.75"
+        strokeLinecap="round"
+        fill="none"
+        opacity="0.3"
+        style={{ pathLength }}
+      />
+      <defs>
+        <linearGradient id="purpleGrad" x1="500" y1="0" x2="500" y2="3600" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#8b5cf6" />
+          <stop offset="30%" stopColor="#a855f7" />
+          <stop offset="60%" stopColor="#7c3aed" />
+          <stop offset="100%" stopColor="#6366f1" />
+        </linearGradient>
+        <linearGradient id="purpleGlow" x1="500" y1="0" x2="500" y2="3600" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#a78bfa" />
+          <stop offset="50%" stopColor="#8b5cf6" />
+          <stop offset="100%" stopColor="#7c3aed" />
+        </linearGradient>
+      </defs>
+    </svg>
+  );
+};
+
+
+/* ═══════════════════════════════════════════════════════════
+   WINDOW CHROME — Reusable browser frame for all mockups
+   ═══════════════════════════════════════════════════════════ */
+const WindowChrome = ({ url, children }: { url: string; children: React.ReactNode }) => (
+  <div className="bg-white rounded-2xl border border-slate-200/60 shadow-[0_8px_40px_-12px_rgba(0,0,0,0.12)] overflow-hidden">
+    <div className="flex items-center gap-2 bg-slate-50/80 px-4 py-2.5 border-b border-slate-200/40">
+      <div className="flex gap-1.5">
+        <span className="w-[9px] h-[9px] rounded-full bg-[#FF5F57]" />
+        <span className="w-[9px] h-[9px] rounded-full bg-[#FEBC2E]" />
+        <span className="w-[9px] h-[9px] rounded-full bg-[#28C840]" />
+      </div>
+      <div className="flex-1 mx-6">
+        <div className="bg-white/80 rounded-md px-3 py-1 text-[11px] text-slate-400 text-center border border-slate-200/40 max-w-[220px] mx-auto font-mono">
+          {url}
+        </div>
+      </div>
+    </div>
+    {children}
+  </div>
+);
+
+/* ═══════════════════════════════════════════════════════════
+   STEP DATA — the real Qampi journey
+   ═══════════════════════════════════════════════════════════ */
+const STEPS = [
   {
-    number: "01",
-    icon: Search,
-    title: "Find buyers on LinkedIn",
-    description: "Build qualified lead lists from real, up-to-date LinkedIn profiles. Use LinkedIn Search, Sales Navigator, or import your own database.",
-    features: ["Target by intent signals", "No external database needed", "Always up-to-date profiles"],
-    gradient: "from-purple-400 via-indigo-500 to-blue-500",
-    pattern: "search",
-    image: "https://images.unsplash.com/photo-1486312338219-ce68d2c6f44d?w=600&h=400&auto=format&fit=crop&q=80",
+    number: 1,
+    color: "#6366f1",
+    step: "STEP 01",
+    title: "Set up in minutes",
+    description: "Connect your LinkedIn and tell Qampi about your business — your company, value prop, and ideal customer. That's what the AI writes from.",
+    bullets: [
+      "Connect your LinkedIn account",
+      "Add company info, value prop & ideal customer",
+      "Sync HubSpot, Pipedrive, or Notion (optional)",
+    ],
+    tags: ["LinkedIn", "Business Profile", "CRM Sync"],
+    mockup: "crm" as const,
+    reverse: false,
   },
   {
-    number: "02",
-    icon: Send,
-    title: "Launch personal outreach",
-    description: "Send connection requests, messages, and follow-ups that spark real conversations with 99+ ready-to-use templates.",
-    features: ["Automated follow-ups", "Human-like timing", "Stay within LinkedIn limits"],
-    gradient: "from-blue-400 via-cyan-500 to-teal-500",
-    pattern: "messages",
-    image: "https://images.unsplash.com/photo-1577563908411-5077b6dc7624?w=600&h=400&auto=format&fit=crop&q=80",
+    number: 2,
+    color: "#8b5cf6",
+    step: "STEP 02",
+    title: "Import your leads",
+    description: "Pull prospects straight from LinkedIn with the Qampi extension, or upload a CSV / Excel. Every lead is enriched with profile data.",
+    bullets: [
+      "Capture profiles from LinkedIn with the extension",
+      "Upload a CSV / Excel, or add leads manually",
+      "Auto-enriched with role, company & profile data",
+    ],
+    tags: ["Extension", "CSV Import", "Auto-Enrich"],
+    mockup: "prospect" as const,
+    reverse: true,
   },
   {
-    number: "03",
-    icon: BarChart3,
-    title: "See what gets replies",
-    description: "Know exactly what works so you can double down. Track reply rates, sentiment, and performance at a glance.",
-    features: ["Reply rate benchmarks", "Visual sentiment analysis", "Clear performance dashboard"],
-    gradient: "from-amber-400 via-orange-500 to-red-500",
-    pattern: "analytics",
-    image: "https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=600&h=400&auto=format&fit=crop&q=80",
+    number: 3,
+    color: "#a855f7",
+    step: "STEP 03",
+    title: "Launch a campaign",
+    description: "Pick the objective, audience, CTA, and tone. Qampi researches each prospect and writes a personal message — then runs it safely, on autopilot.",
+    bullets: [
+      "Set your goal, CTA & tone in a few clicks",
+      "Steps: connect, message, like & comment",
+      "AI writes a unique message for every prospect",
+    ],
+    tags: ["Objective & Scope", "AI-Written", "LinkedIn-Safe"],
+    mockup: "campaign" as const,
+    reverse: false,
   },
   {
-    number: "04",
-    icon: Database,
-    title: "Sync with your CRM",
-    description: "Push qualified conversations straight into your stack. HubSpot, Pipedrive & 2,000+ integrations available.",
-    features: ["Auto-enrich leads", "Full CSV export", "2,000+ integrations"],
-    gradient: "from-emerald-400 via-green-500 to-teal-600",
-    pattern: "sync",
-    image: "https://images.unsplash.com/photo-1558494949-ef010cbdcc31?w=600&h=400&auto=format&fit=crop&q=80",
+    number: 4,
+    color: "#7c3aed",
+    step: "STEP 04",
+    title: "Watch replies roll in",
+    description: "A real-time dashboard tracks every connection, reply, and what's converting — and the moment a lead replies, the automation pauses so you take over.",
+    bullets: [
+      "Live activity feed for every action",
+      "Reply & acceptance rates per campaign",
+      "Auto-pauses on reply · results sync to your CRM",
+    ],
+    tags: ["Live Dashboard", "Reply Rates", "CRM Sync"],
+    mockup: "analytics" as const,
+    reverse: true,
   },
 ];
 
-function StepVisual({ pattern, gradient, image }: { pattern: string; gradient: string; image: string }) {
+/* ═══════════════════════════════════════════════════════════
+   MOCKUP RENDERER — real product screenshots in a browser frame
+   (captured from the live Qampi dashboard, see public/screens/)
+   ═══════════════════════════════════════════════════════════ */
+const SHOTS: Record<string, { src: string; url: string }> = {
+  crm: { src: "/screens/onboarding.png", url: "app.qampi.com/onboarding" },
+  prospect: { src: "/screens/prospects.png", url: "app.qampi.com/prospects" },
+  campaign: { src: "/screens/campaign.png", url: "app.qampi.com/campaigns" },
+  analytics: { src: "/screens/analytics.png", url: "app.qampi.com/dashboard" },
+};
+
+const MockupRenderer = ({ type }: { type: string }) => {
+  const shot = SHOTS[type];
+  if (!shot) return null;
   return (
-    <div className="relative w-full aspect-[4/3] overflow-hidden rounded-3xl">
-      {/* Background image */}
-      <img
-        src={image}
-        alt=""
-        className="absolute inset-0 w-full h-full object-cover"
-      />
-      <div className={`absolute inset-0 bg-gradient-to-br ${gradient} opacity-75`} />
-
-      {/* Grid pattern */}
-      <div className="absolute inset-0 opacity-10" style={{
-        backgroundImage: `radial-gradient(circle at 1px 1px, white 1px, transparent 0)`,
-        backgroundSize: '24px 24px'
-      }} />
-
-      {pattern === "search" && (
-        <div className="absolute top-8 left-8 right-8">
-          <div className="bg-white/20 backdrop-blur-sm rounded-xl p-4 border border-white/20">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-8 h-8 bg-white/30 rounded-lg flex items-center justify-center">
-                <Search size={16} className="text-white" />
-              </div>
-              <div className="h-3 bg-white/30 rounded-full w-32" />
-            </div>
-            <div className="space-y-2">
-              {[1, 2, 3].map((i) => (
-                <div key={i} className="flex items-center gap-3 bg-white/10 rounded-lg p-2">
-                  <div className="w-8 h-8 bg-white/20 rounded-full" />
-                  <div className="flex-1">
-                    <div className="h-2 bg-white/30 rounded-full w-24 mb-1" />
-                    <div className="h-2 bg-white/20 rounded-full w-16" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {pattern === "messages" && (
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48">
-          <div className="space-y-3">
-            <div className="flex justify-end">
-              <div className="bg-white/30 backdrop-blur-sm rounded-2xl rounded-br-md p-3 max-w-[180px]">
-                <div className="h-2 bg-white/50 rounded-full w-full mb-1" />
-                <div className="h-2 bg-white/30 rounded-full w-3/4" />
-              </div>
-            </div>
-            <div className="flex justify-start">
-              <div className="bg-white/20 backdrop-blur-sm rounded-2xl rounded-bl-md p-3 max-w-[180px]">
-                <div className="h-2 bg-white/40 rounded-full w-full mb-1" />
-                <div className="h-2 bg-white/25 rounded-full w-2/3" />
-              </div>
-            </div>
-            <div className="flex justify-end">
-              <div className="bg-white/30 backdrop-blur-sm rounded-2xl rounded-br-md p-3 max-w-[180px]">
-                <div className="h-2 bg-white/50 rounded-full w-5/6" />
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {pattern === "analytics" && (
-        <div className="absolute top-6 left-6 right-6">
-          <div className="bg-white/20 backdrop-blur-sm rounded-xl p-4 border border-white/20">
-            <div className="flex items-center justify-between mb-4">
-              <div className="h-3 bg-white/40 rounded-full w-20" />
-              <div className="h-3 bg-white/30 rounded-full w-12" />
-            </div>
-            <div className="flex items-end gap-2 h-24">
-              {[40, 65, 45, 80, 55, 90, 70].map((h, i) => (
-                <div key={i} className="flex-1 bg-white/30 rounded-t-lg" style={{ height: `${h}%` }} />
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {pattern === "sync" && (
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center gap-6">
-          <div className="w-20 h-20 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center border border-white/20">
-            <Database size={28} className="text-white" />
-          </div>
-          <div className="flex flex-col gap-2">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="w-12 h-1 bg-white/30 rounded-full" />
-            ))}
-          </div>
-          <div className="w-20 h-20 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center border border-white/20">
-            <CheckCircle2 size={28} className="text-white" />
-          </div>
-        </div>
-      )}
-    </div>
+    <WindowChrome url={shot.url}>
+      <img src={shot.src} alt="Qampi app screen" className="w-full h-auto block" />
+    </WindowChrome>
   );
-}
+};
 
+/* ═══════════════════════════════════════════════════════════
+   MAIN COMPONENT
+   ═══════════════════════════════════════════════════════════ */
 export function HowItWorks() {
-  const [activeStep, setActiveStep] = useState(0);
-  const [progress, setProgress] = useState(0);
-  const sectionRef = useRef<HTMLElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const { scrollYProgress } = useScroll({ target: containerRef });
 
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setProgress((prev) => {
-        if (prev >= 100) {
-          setActiveStep((s) => (s + 1) % steps.length);
-          return 0;
-        }
-        return prev + 2;
-      });
-    }, 60);
-    return () => clearInterval(interval);
-  }, []);
+  const ref1 = useRef<HTMLDivElement>(null);
+  const ref2 = useRef<HTMLDivElement>(null);
+  const ref3 = useRef<HTMLDivElement>(null);
+  const ref4 = useRef<HTMLDivElement>(null);
+  const refs = [ref1, ref2, ref3, ref4];
 
-  const currentStep = steps[activeStep];
-  const Icon = currentStep.icon;
+  const s1 = useScroll({ target: ref1, offset: ["start end", "center center"] }).scrollYProgress;
+  const s2 = useScroll({ target: ref2, offset: ["start end", "center center"] }).scrollYProgress;
+  const s3 = useScroll({ target: ref3, offset: ["start end", "center center"] }).scrollYProgress;
+  const s4 = useScroll({ target: ref4, offset: ["start end", "center center"] }).scrollYProgress;
+
+  const o = [
+    useTransform(s1, [0, 0.5], [0, 1]),
+    useTransform(s2, [0, 0.5], [0, 1]),
+    useTransform(s3, [0, 0.5], [0, 1]),
+    useTransform(s4, [0, 0.5], [0, 1]),
+  ];
+  const yt = [
+    useTransform(s1, [0, 0.7], [80, 0]),
+    useTransform(s2, [0, 0.7], [80, 0]),
+    useTransform(s3, [0, 0.7], [80, 0]),
+    useTransform(s4, [0, 0.7], [80, 0]),
+  ];
+  const yi = [
+    useTransform(s1, [0, 0.7], [120, 0]),
+    useTransform(s2, [0, 0.7], [120, 0]),
+    useTransform(s3, [0, 0.7], [120, 0]),
+    useTransform(s4, [0, 0.7], [120, 0]),
+  ];
+  const sc = [
+    useTransform(s1, [0, 0.5], [0.9, 1]),
+    useTransform(s2, [0, 0.5], [0.9, 1]),
+    useTransform(s3, [0, 0.5], [0.9, 1]),
+    useTransform(s4, [0, 0.5], [0.9, 1]),
+  ];
 
   return (
-    <section id="how-it-works" ref={sectionRef} className="py-24 lg:py-32 bg-slate-950 relative overflow-hidden">
-      {/* Background effects */}
-      <div className="absolute inset-0">
-        <div className="absolute top-1/4 left-1/4 w-[500px] h-[500px] bg-primary/10 rounded-full blur-[120px]" />
-        <div className="absolute bottom-1/4 right-1/4 w-[400px] h-[400px] bg-indigo-500/10 rounded-full blur-[100px]" />
+    <section ref={containerRef} className="relative w-full bg-white text-slate-900 overflow-hidden">
+
+      {/* ── Messy scribble loops — behind the header text, perfectly aligned with scroll line ── */}
+      <div className="absolute top-0 left-0 w-full h-[700px] pointer-events-none z-0">
+        <MessyScribble />
       </div>
 
-      {/* Grid pattern overlay */}
-      <div className="absolute inset-0 opacity-[0.03]" style={{
-        backgroundImage: `linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)`,
-        backgroundSize: '60px 60px'
-      }} />
+      {/* ── Flowing line through steps — follows scroll ── */}
+      <div className="absolute top-[700px] bottom-0 left-0 w-full pointer-events-none z-0">
+        <FlowingScrollLine scrollYProgress={scrollYProgress} />
+      </div>
 
-      <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Header */}
-        <div className="text-center mb-16 lg:mb-20">
-          <motion.span
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            className="inline-block bg-primary/20 text-primary px-4 py-1.5 rounded-full text-sm font-bold mb-4"
-          >
-            How It Works
-          </motion.span>
-          <motion.h2
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ delay: 0.1 }}
-            className="text-3xl sm:text-4xl lg:text-5xl font-black text-white tracking-tight"
-          >
-            Start getting replies in{" "}
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-indigo-400">4 simple steps</span>
-          </motion.h2>
-          <motion.p
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ delay: 0.2 }}
-            className="mt-4 text-lg text-slate-400 max-w-2xl mx-auto"
-          >
-            From first lead to first reply, Qampi guides you at every step.
-          </motion.p>
-        </div>
+      {/* ═══════════════════════════════
+          HEADER
+          ═══════════════════════════════ */}
+      <div className="relative z-10 flex flex-col items-start justify-start text-left px-4 sm:px-8 lg:px-16 xl:px-24 max-w-[1360px] mx-auto w-full pt-10 pb-12 md:pt-14 md:pb-16">
+        <span className="inline-flex items-center gap-2 bg-violet-50 text-violet-600 px-5 py-2 rounded-full text-[11px] font-bold uppercase tracking-widest mb-8 border border-violet-200/50">
+          <span className="w-1.5 h-1.5 rounded-full bg-violet-500 animate-pulse" />
+          How It Works
+        </span>
 
-        <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
-          {/* Left - Step Navigation */}
-          <div className="space-y-4">
-            {steps.map((step, index) => {
-              const isActive = index === activeStep;
-              const StepIcon = step.icon;
+        <h2 className="font-display text-6xl sm:text-7xl lg:text-8xl font-semibold text-slate-900 leading-[0.92] max-w-3xl relative z-10">
+          From messy
+          <br />
+          <span className="bg-gradient-to-r from-violet-600 via-purple-500 to-indigo-600 bg-clip-text text-transparent">
+            to streamlined
+          </span>
+        </h2>
+        <p className="mt-7 text-slate-500 text-base md:text-lg max-w-xl leading-relaxed">
+          Qampi turns scattered prospecting into a clean, repeatable pipeline — in 4 steps.
+        </p>
 
-              return (
-                <motion.button
-                  key={step.number}
-                  onClick={() => {
-                    setActiveStep(index);
-                    setProgress(0);
-                  }}
-                  initial={{ opacity: 0, x: -30 }}
-                  whileInView={{ opacity: 1, x: 0 }}
-                  viewport={{ once: true }}
-                  transition={{ delay: index * 0.1 }}
-                  className={cn(
-                    "w-full text-left p-5 md:p-6 rounded-2xl transition-all duration-500 group relative overflow-hidden",
-                    isActive
-                      ? "bg-white/10 backdrop-blur-sm border border-primary/30 shadow-lg shadow-primary/10"
-                      : "bg-white/5 border border-white/5 hover:bg-white/10 hover:border-white/10"
-                  )}
-                >
-                  {/* Active indicator line */}
-                  {isActive && (
-                    <motion.div
-                      className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-primary to-indigo-400"
-                      layoutId="activeIndicator"
-                    />
-                  )}
-
-                  <div className="flex items-start gap-4">
-                    {/* Icon */}
-                    <div className={cn(
-                      "w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 transition-all duration-500",
-                      isActive
-                        ? "bg-primary text-white shadow-lg shadow-primary/30"
-                        : "bg-white/10 text-slate-400 group-hover:text-white"
-                    )}>
-                      <StepIcon size={22} />
-                    </div>
-
-                    {/* Content */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className={cn(
-                          "text-xs font-bold uppercase tracking-wider",
-                          isActive ? "text-primary" : "text-slate-500"
-                        )}>
-                          Step {step.number}
-                        </span>
-                        {isActive && (
-                          <motion.div
-                            initial={{ width: 0 }}
-                            animate={{ width: "100%" }}
-                            transition={{ duration: 3, ease: "linear" }}
-                            className="h-0.5 bg-primary/30 rounded-full overflow-hidden"
-                          >
-                            <motion.div
-                              className="h-full bg-primary"
-                              style={{ width: `${progress}%` }}
-                            />
-                          </motion.div>
-                        )}
-                      </div>
-                      <h3 className={cn(
-                        "text-lg font-bold transition-colors duration-300",
-                        isActive ? "text-white" : "text-slate-400 group-hover:text-slate-200"
-                      )}>
-                        {step.title}
-                      </h3>
-                      <p className={cn(
-                        "text-sm mt-1 transition-colors duration-300",
-                        isActive ? "text-slate-300" : "text-slate-500"
-                      )}>
-                        {step.description}
-                      </p>
-                    </div>
-
-                    {/* Arrow */}
-                    <ArrowRight className={cn(
-                      "w-5 h-5 flex-shrink-0 mt-1 transition-all duration-300",
-                      isActive ? "text-primary translate-x-0" : "text-slate-600 -translate-x-2 opacity-0"
-                    )} />
-                  </div>
-                </motion.button>
-              );
-            })}
-          </div>
-
-          {/* Right - Visual Display */}
-          <div className="relative">
+        {/* Scroll indicator */}
+        <div className="mt-10 md:mt-12 flex flex-col items-center gap-3">
+          <span className="text-[9px] font-bold uppercase tracking-[0.25em] text-slate-400">Scroll</span>
+          <div className="w-[18px] h-8 rounded-full border-[1.5px] border-slate-300 flex items-start justify-center p-[3px]">
             <motion.div
-              key={activeStep}
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              transition={{ duration: 0.5, ease: "easeOut" }}
-              className="relative"
-            >
-              {/* Main visual */}
-              <div className="relative rounded-3xl overflow-hidden border border-white/10 shadow-2xl">
-                <StepVisual pattern={currentStep.pattern} gradient={currentStep.gradient} image={currentStep.image} />
-
-                {/* Overlay content */}
-                <div className="absolute bottom-0 left-0 right-0 p-6 md:p-8 bg-gradient-to-t from-slate-950 via-slate-950/60 to-transparent">
-                  <div className="flex items-center gap-2 mb-3">
-                    <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-                      <Icon size={16} className="text-white" />
-                    </div>
-                    <span className="text-primary text-sm font-bold uppercase tracking-wider">
-                      Step {currentStep.number}
-                    </span>
-                  </div>
-                  <h3 className="text-xl md:text-2xl font-black text-white mb-2">
-                    {currentStep.title}
-                  </h3>
-                  <p className="text-slate-300 text-sm md:text-base">
-                    {currentStep.description}
-                  </p>
-                </div>
-              </div>
-
-              {/* Feature pills */}
-              <div className="absolute -bottom-6 left-6 right-6 flex flex-wrap gap-2">
-                {currentStep.features.map((feature, i) => (
-                  <motion.div
-                    key={feature}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.2 + i * 0.1 }}
-                    className="flex items-center gap-2 bg-white/10 backdrop-blur-sm border border-white/10 rounded-full px-4 py-2"
-                  >
-                    <CheckCircle2 size={14} className="text-primary" />
-                    <span className="text-white text-xs font-medium">{feature}</span>
-                  </motion.div>
-                ))}
-              </div>
-            </motion.div>
-
-            {/* Decorative elements */}
-            <div className="absolute -top-4 -right-4 w-24 h-24 bg-primary/20 rounded-full blur-2xl" />
-            <div className="absolute -bottom-8 -left-8 w-32 h-32 bg-indigo-500/20 rounded-full blur-2xl" />
+              className="w-[5px] h-[5px] rounded-full bg-violet-500"
+              animate={{ y: [0, 12, 0] }}
+              transition={{ repeat: Infinity, duration: 1.5, ease: "easeInOut" }}
+            />
           </div>
         </div>
+      </div>
+
+      {/* ═══════════════════════════════
+          STEPS
+          ═══════════════════════════════ */}
+      <div className="relative z-10 pb-24 md:pb-40">
+        {STEPS.map((step, i) => (
+          <div
+            key={step.number}
+            ref={refs[i]}
+            className="min-h-[60vh] flex items-center px-4 sm:px-8 lg:px-16 xl:px-24 py-10 md:py-14 relative"
+          >
+            {/* Big background number */}
+            <span
+              className="absolute top-1/2 -translate-y-1/2 pointer-events-none select-none hidden xl:block text-[220px] 2xl:text-[280px] font-black leading-none opacity-[0.025]"
+              style={{ [step.reverse ? "right" : "left"]: "-0.5rem" }}
+            >
+              0{step.number}
+            </span>
+
+            <div
+              className={`w-full max-w-[1440px] mx-auto flex flex-col gap-10 lg:gap-12 items-center ${
+                step.reverse ? "lg:flex-row-reverse" : "lg:flex-row"
+              }`}
+            >
+              {/* ── TEXT ── */}
+              <motion.div style={{ y: yt[i], opacity: o[i] }} className="w-full lg:w-[34%]">
+                {/* Badge */}
+                <div className="flex items-center gap-3.5 mb-5">
+                  <div
+                    className="w-10 h-10 rounded-xl flex items-center justify-center text-white text-sm font-black shadow-md"
+                    style={{ background: step.color }}
+                  >
+                    {step.number}
+                  </div>
+                  <span className="text-[11px] font-bold uppercase tracking-widest" style={{ color: step.color }}>
+                    {step.step}
+                  </span>
+                </div>
+
+                {/* Title */}
+                <h3 className="font-display text-3xl sm:text-4xl lg:text-5xl font-semibold text-slate-900 leading-[1.08] mb-4">
+                  {step.title}
+                </h3>
+
+                {/* Description */}
+                <p className="text-base md:text-lg text-slate-500 leading-relaxed mb-6">
+                  {step.description}
+                </p>
+
+                {/* Bullets */}
+                <ul className="space-y-2.5 mb-6">
+                  {step.bullets.map((b, j) => (
+                    <li key={j} className="flex items-start gap-2.5">
+                      <span className="w-1.5 h-1.5 rounded-full mt-[7px] shrink-0" style={{ background: step.color }} />
+                      <span className="text-[15px] text-slate-600 leading-relaxed">{b}</span>
+                    </li>
+                  ))}
+                </ul>
+
+                {/* Tags */}
+                <div className="flex flex-wrap gap-1.5">
+                  {step.tags.map((tag) => (
+                    <span
+                      key={tag}
+                      className="text-xs font-medium px-3 py-1 rounded-full border"
+                      style={{
+                        color: step.color,
+                        backgroundColor: `${step.color}0a`,
+                        borderColor: `${step.color}18`,
+                      }}
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              </motion.div>
+
+              {/* ── MOCKUP ── */}
+              <motion.div
+                style={{ y: yi[i], opacity: o[i], scale: sc[i] }}
+                className="w-full lg:w-[64%] relative"
+              >
+                <div className="relative group">
+                  <div
+                    className="absolute -inset-8 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-700 blur-3xl pointer-events-none"
+                    style={{ background: `${step.color}0c` }}
+                  />
+                  <MockupRenderer type={step.mockup} />
+                </div>
+              </motion.div>
+            </div>
+          </div>
+        ))}
       </div>
     </section>
   );
