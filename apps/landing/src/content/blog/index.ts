@@ -2,6 +2,9 @@ import type { ComponentType } from "react";
 import type { PostMeta } from "./types";
 import * as playbook from "./linkedin-outreach-that-gets-replies";
 import * as connectionMessages from "./linkedin-connection-request-messages";
+import * as coldVsLinkedin from "./cold-email-vs-linkedin-outreach";
+import * as findEmail from "./how-to-find-someones-email-address";
+import * as automationSafe from "./is-linkedin-automation-safe";
 
 export type { PostMeta };
 
@@ -10,8 +13,14 @@ interface PostModule {
   default: ComponentType;
 }
 
-// Register each post module here. Newest first.
-const modules: PostModule[] = [connectionMessages, playbook];
+// Register each post module here. Order doesn't matter — the list is sorted by date.
+const modules: PostModule[] = [
+  automationSafe,
+  findEmail,
+  coldVsLinkedin,
+  connectionMessages,
+  playbook,
+];
 
 export const posts: PostMeta[] = modules
   .map((m) => m.meta)

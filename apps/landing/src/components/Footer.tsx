@@ -12,7 +12,7 @@ const footerLinks = {
     { label: "Changelog", href: "#" },
   ],
   Resources: [
-    { label: "Blog", href: "#" },
+    { label: "Blog", href: "/blog" },
     { label: "Help Center", href: "#" },
     { label: "API Docs", href: "#" },
     { label: "Community", href: "#" },
