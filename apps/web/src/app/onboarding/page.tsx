@@ -15,11 +15,16 @@ import {
     Banknote,
     Users,
     UserPlus,
+    UploadCloud,
+    FileText,
+    CheckCircle2,
+    X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import api from '@/lib/api';
 import { track } from '@/lib/analytics';
+import { extractPdfText, PdfTooManyPagesError } from '@/lib/pdf-extract';
 
 // The goal drives the whole AI strategy (prompts + labels). sell + job_seeking
 // are live; the rest are on the roadmap and shown disabled so the picker
@@ -56,7 +61,70 @@ export default function OnboardingPage() {
     const [linkedinUrl, setLinkedinUrl] = useState('');
     const [website, setWebsite] = useState('');
 
+    // Resume / one-pager upload → AI pre-fill (user reviews before submit).
+    const [parsing, setParsing] = useState(false);
+    const [docFileName, setDocFileName] = useState('');
+    const [docSummary, setDocSummary] = useState('');
+    const [docHighlights, setDocHighlights] = useState<string[]>([]);
+    // Rich fields the AI extracted that aren't visible inputs on this form —
+    // passed straight into the onboarding submit to seed the AI profile.
+    const [docDraft, setDocDraft] = useState<Record<string, string>>({});
+
     const isJobSeeking = goalType === 'job_seeking';
+
+    const handleResumeUpload = async (file: File | undefined | null) => {
+        if (!file) return;
+        if (file.type !== 'application/pdf') {
+            toast.error('Please upload a PDF file.');
+            return;
+        }
+        if (file.size > 5 * 1024 * 1024) {
+            toast.error('That PDF is over 5MB. Please upload a smaller file.');
+            return;
+        }
+        setParsing(true);
+        setDocSummary('');
+        setDocHighlights([]);
+        try {
+            // Extract text in the browser (max 2 pages). Nothing leaves the
+            // device except the plain text — no file upload, no server load.
+            const { text } = await extractPdfText(file, 2);
+            if (text.trim().length < 40) {
+                toast.error("We couldn't read text from that PDF — it may be a scan or image. Try a text-based export.");
+                setParsing(false);
+                return;
+            }
+            const res = await api.post('/users/parse-document', {
+                text,
+                goalType: goalType || undefined,
+                jobTitle: jobTitle.trim() || undefined,
+            });
+            const draft: Record<string, string> = res.data?.draft || {};
+            // Pre-fill the visible fields (fill-if-empty — never clobber typed input).
+            if (draft.jobTitle && !jobTitle.trim()) setJobTitle(draft.jobTitle);
+            setDocDraft(draft);
+            setDocFileName(file.name);
+            setDocSummary(res.data?.summary || '');
+            setDocHighlights(Array.isArray(res.data?.highlights) ? res.data.highlights : []);
+            track('onboarding_document_parsed', { goalType });
+            toast.success('Got it — review the details below and tweak anything.');
+        } catch (err: any) {
+            if (err instanceof PdfTooManyPagesError) {
+                toast.error(`Please upload a 1–2 page PDF (yours has ${err.pages} pages).`);
+            } else {
+                toast.error(err?.response?.data?.error || "Couldn't read that PDF. You can fill the details manually.");
+            }
+        } finally {
+            setParsing(false);
+        }
+    };
+
+    const clearDoc = () => {
+        setDocFileName('');
+        setDocSummary('');
+        setDocHighlights([]);
+        setDocDraft({});
+    };
 
     useEffect(() => {
         const storedUser = localStorage.getItem('user');
@@ -86,6 +154,15 @@ export default function OnboardingPage() {
                 jobTitle: jobTitle.trim() || undefined,
                 linkedinUrl: linkedinUrl.trim(),
                 website: website.trim() || undefined,
+                // Seed the AI/business profile with what the AI extracted from the
+                // uploaded resume/one-pager (the user has reviewed it above).
+                company: docDraft.company || undefined,
+                companyDescription: docDraft.companyDescription || undefined,
+                valueProp: docDraft.valueProp || undefined,
+                targetAudience: docDraft.targetAudience || undefined,
+                differentiators: docDraft.differentiators || undefined,
+                industry: docDraft.industry || undefined,
+                mainPainPoint: docDraft.mainPainPoint || undefined,
             });
 
             track('onboarding_completed', { goalType });
@@ -172,6 +249,62 @@ export default function OnboardingPage() {
                         {/* Right column: the few inputs + submit, side-by-side with the
                             goal picker so the whole form fits without scrolling. */}
                         <div className="space-y-5">
+                        {/* Fast path: upload a resume / one-pager → AI drafts the profile */}
+                        <div className="space-y-2">
+                            <label className="text-xs font-black text-muted-foreground uppercase tracking-widest ml-1 flex items-center gap-2">
+                                {isJobSeeking ? 'Upload your resume' : 'Upload a one-pager, deck or bio'}
+                                <span className="text-slate-400 normal-case font-bold">(optional — saves typing)</span>
+                            </label>
+
+                            {!docFileName ? (
+                                <label className={cn(
+                                    'flex items-center gap-3 w-full bg-primary/[0.03] border-2 border-dashed border-primary/25 rounded-2xl p-4 cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-all',
+                                    parsing && 'opacity-60 pointer-events-none'
+                                )}>
+                                    <div className="w-10 h-10 rounded-xl bg-primary/10 grid place-items-center text-primary shrink-0">
+                                        {parsing ? <Loader2 className="w-5 h-5 animate-spin" /> : <UploadCloud className="w-5 h-5" />}
+                                    </div>
+                                    <div className="min-w-0">
+                                        <p className="text-sm font-black text-foreground leading-tight">
+                                            {parsing ? 'Reading your document…' : 'Drop a PDF or click to upload'}
+                                        </p>
+                                        <p className="text-[10px] text-muted-foreground font-bold mt-0.5">
+                                            PDF, max 2 pages · the AI drafts your profile, then you confirm
+                                        </p>
+                                    </div>
+                                    <input
+                                        type="file"
+                                        accept="application/pdf"
+                                        className="hidden"
+                                        disabled={parsing}
+                                        onChange={(e) => { handleResumeUpload(e.target.files?.[0]); e.currentTarget.value = ''; }}
+                                    />
+                                </label>
+                            ) : (
+                                <div className="w-full bg-emerald-50 border border-emerald-200 rounded-2xl p-4 space-y-2">
+                                    <div className="flex items-center gap-2">
+                                        <FileText className="w-4 h-4 text-emerald-600 shrink-0" />
+                                        <span className="text-xs font-black text-emerald-900 truncate flex-1">{docFileName}</span>
+                                        <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                                        <button type="button" onClick={clearDoc} className="text-emerald-700 hover:text-emerald-900" aria-label="Remove document">
+                                            <X className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                    {docSummary && <p className="text-[11px] text-emerald-800 font-semibold leading-relaxed">{docSummary}</p>}
+                                    {docHighlights.length > 0 && (
+                                        <ul className="space-y-1">
+                                            {docHighlights.map((h, i) => (
+                                                <li key={i} className="text-[11px] text-emerald-800 font-medium flex gap-1.5">
+                                                    <span className="text-emerald-500">•</span><span>{h}</span>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    )}
+                                    <p className="text-[10px] text-emerald-700/80 font-bold">Review the fields below and edit anything before continuing.</p>
+                                </div>
+                            )}
+                        </div>
+
                         <div className="space-y-2">
                             <label className="text-xs font-black text-muted-foreground uppercase tracking-widest ml-1 flex items-center gap-2">
                                 Your LinkedIn Profile URL <span className="text-red-500">*</span>

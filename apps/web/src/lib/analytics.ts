@@ -14,6 +14,7 @@ export const analyticsEnabled = () => !!POSTHOG_KEY && typeof window !== 'undefi
 export type AnalyticsEvent =
   | 'signup_completed'
   | 'onboarding_completed'
+  | 'onboarding_document_parsed'
   | 'linkedin_connected'
   | 'leads_imported'
   | 'campaign_launched'

@@ -7,6 +7,8 @@ import { encrypt, decrypt } from '../utils/crypto';
 const router = Router();
 router.use(authMiddleware);
 
+const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8001';
+
 router.get('/me', async (req: AuthRequest, res) => {
     try {
         const user = await prisma.user.findUnique({
@@ -118,7 +120,8 @@ router.put('/onboarding', async (req: AuthRequest, res) => {
     try {
         const {
             firstName, lastName, jobTitle, linkedinUrl, company, website,
-            targetAudience, mainPainPoint, valueProp, heardFrom, industry, goalType
+            targetAudience, mainPainPoint, valueProp, heardFrom, industry, goalType,
+            companyDescription, differentiators
         } = req.body;
 
         const userId = req.user!.id;
@@ -162,12 +165,14 @@ router.put('/onboarding', async (req: AuthRequest, res) => {
             update: {
                 company, persona: jobTitle, website, targetAudience,
                 mainPainPoint, valueProp, heardFrom, industry,
+                companyDescription, differentiators,
                 goalType: normalizedGoal,
             },
             create: {
                 userId: userId,
                 company, persona: jobTitle, website, targetAudience,
                 mainPainPoint, valueProp, heardFrom, industry,
+                companyDescription, differentiators,
                 goalType: normalizedGoal,
             },
         });
@@ -183,6 +188,40 @@ router.put('/onboarding', async (req: AuthRequest, res) => {
     } catch (error: any) {
         console.error('[USER-ROUTES] Onboarding error:', error.message);
         res.status(500).json({ error: 'Failed to complete onboarding' });
+    }
+});
+
+// Parse the TEXT of a resume / one-pager (extracted client-side in the browser —
+// we never receive the file, so zero parsing load or storage on our side) into a
+// draft profile the onboarding form pre-fills for the user to review + confirm.
+// Just forwards to the ai-service, which does ONE DeepSeek call.
+router.post('/parse-document', async (req: AuthRequest, res) => {
+    try {
+        const { text, goalType, jobTitle } = req.body;
+        const clean = typeof text === 'string' ? text.trim() : '';
+        if (clean.length < 40) {
+            return res.status(400).json({ error: "We couldn't read enough text from that PDF. Try a text-based (not scanned) file." });
+        }
+        // Hard cap the payload — a 2-page doc is small; anything larger is noise.
+        if (clean.length > 20000) {
+            return res.status(413).json({ error: 'That document is too long. A 1–2 page resume works best.' });
+        }
+
+        const aiRes = await fetch(`${AI_SERVICE_URL}/ai/parse-document`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: clean, goalType, jobTitle }),
+        });
+        if (!aiRes.ok) {
+            const detail = await aiRes.text().catch(() => '');
+            console.error('[USER-ROUTES] parse-document ai-service error:', aiRes.status, detail.slice(0, 200));
+            return res.status(502).json({ error: 'Could not analyze the document. Please fill the details manually.' });
+        }
+        const data = await aiRes.json();
+        res.json(data);
+    } catch (error: any) {
+        console.error('[USER-ROUTES] parse-document error:', error.message);
+        res.status(500).json({ error: 'Could not analyze the document. Please fill the details manually.' });
     }
 });
 

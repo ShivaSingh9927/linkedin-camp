@@ -1211,6 +1211,143 @@ Keep every phrase tight. Base everything ONLY on the scraped content above."""
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ─── Parse an uploaded document (resume / one-pager) into a draft profile ─────
+
+class ParseDocumentRequest(BaseModel):
+    # Plain text extracted from the user's PDF IN THE BROWSER (we never receive
+    # the file — keeps server load and storage at zero). Goal drives how we
+    # interpret the document (resume vs company one-pager vs pitch deck).
+    text: str
+    goalType: Optional[str] = None  # "sell" | "job_seeking" | "recruiting" | "fundraising" | "networking"
+    jobTitle: Optional[str] = None  # seed from the onboarding form, if already typed
+
+
+# What the document means per goal — keeps one prompt but frames the extraction
+# correctly. Falls back to the sales framing for any unlisted goal.
+_DOC_FRAMING = {
+    "job_seeking": {
+        "role": "a senior career strategist reading a candidate's RESUME/CV",
+        "doc": "resume/CV",
+        "fields": (
+            "- jobTitle: the candidate's current or target role (short)\n"
+            "- companyDescription: a 2-3 sentence professional summary of the candidate\n"
+            "- valueProp: what makes this candidate valuable to employers, one sentence\n"
+            "- targetAudience: the roles/companies they'd target, one phrase\n"
+            "- differentiators: their standout skills/achievements, one sentence\n"
+            "- industry: their primary industry\n"
+            "- mainPainPoint: the employer need they solve, one sentence"
+        ),
+    },
+    "fundraising": {
+        "role": "a startup fundraising advisor reading a company's PITCH DECK",
+        "doc": "pitch deck / company doc",
+        "fields": (
+            "- company: the company name\n"
+            "- companyDescription: 2-3 sentence description of the company\n"
+            "- valueProp: the core value proposition, one sentence\n"
+            "- targetAudience: the customers/market, one phrase\n"
+            "- differentiators: the edge / traction, one sentence\n"
+            "- industry: best-fit industry label\n"
+            "- mainPainPoint: the problem they solve, one sentence"
+        ),
+    },
+    "recruiting": {
+        "role": "a talent strategist reading a role JD / company blurb",
+        "doc": "role or company document",
+        "fields": (
+            "- company: the hiring company name\n"
+            "- companyDescription: 2-3 sentence description of the company/role\n"
+            "- valueProp: why a candidate should want this, one sentence\n"
+            "- targetAudience: the ideal candidate profile, one phrase\n"
+            "- differentiators: what makes this opportunity stand out, one sentence\n"
+            "- industry: best-fit industry label\n"
+            "- mainPainPoint: the hiring need, one sentence"
+        ),
+    },
+    "_default": {
+        "role": "an AI sales strategist reading a company one-pager / bio",
+        "doc": "document",
+        "fields": (
+            "- company: the company name\n"
+            "- companyDescription: 2-3 sentence description of what the company does\n"
+            "- valueProp: the value proposition, one sentence\n"
+            "- targetAudience: who they sell to (ICP), one phrase\n"
+            "- differentiators: what sets them apart, one sentence\n"
+            "- industry: best-fit industry label\n"
+            "- mainPainPoint: the core customer problem they solve, one sentence"
+        ),
+    },
+}
+
+
+@app.post("/ai/parse-document")
+def parse_document(req: ParseDocumentRequest):
+    """Summarize + extract a draft profile from user-uploaded document TEXT in a
+    SINGLE DeepSeek call. The user may paste a noisy resume/one-pager full of
+    irrelevant detail; the model distills only the profile-relevant fields and
+    ignores the rest. Returns { draft: {...editable fields}, summary, highlights[] }
+    for the onboarding form to pre-fill (user reviews + confirms before saving).
+    """
+    import json as _json
+    import re as _re
+
+    text = (req.text or "").strip()
+    if len(text) < 40:
+        raise HTTPException(status_code=400, detail="Not enough readable text in the document")
+    # Bound the payload — a 2-page doc is small; anything huge is noise/abuse.
+    text = text[:20000]
+
+    framing = _DOC_FRAMING.get(req.goalType or "", _DOC_FRAMING["_default"])
+
+    system = (
+        f"You are {framing['role']}. Extract a concise, structured profile from the "
+        f"{framing['doc']} the user provides. The text is raw and may contain "
+        "irrelevant sections (formatting artifacts, references, hobbies) — IGNORE "
+        "the noise and keep only what sharpens their outreach profile. Ground every "
+        "field STRICTLY in the text; never invent facts. If a field genuinely isn't "
+        "supported, use an empty string. Return STRICT JSON only, no prose, no fences."
+    )
+
+    seed = f"\nThe user already indicated their role is: {req.jobTitle}\n" if req.jobTitle else ""
+    fields_block = "\n".join("    " + line for line in framing["fields"].split("\n"))
+
+    user = f"""Here is the raw text extracted from the user's {framing['doc']}:
+---
+{text}
+---
+{seed}
+Distill it into a JSON object with these keys:
+
+"draft" — an object with these fields (empty string if unsupported):
+{fields_block}
+
+"summary" — 2-3 warm second-person sentences: "here is the picture I built from your document".
+
+"highlights" — an array of 3-5 short bullet strings of the most relevant things you found.
+
+Keep every field tight. Base everything ONLY on the text above. Return STRICT JSON only."""
+
+    try:
+        raw = call_llm(system, user, temperature=0.3, model="deepseek/deepseek-chat")
+        cleaned = _re.sub(r"^```(?:json)?|```$", "", raw.strip(), flags=_re.MULTILINE).strip()
+        match = _re.search(r"\{.*\}", cleaned, _re.DOTALL)
+        data = _json.loads(match.group(0) if match else cleaned)
+        draft_in = data.get("draft") or {}
+        # Whitelist the fields the onboarding/BusinessProfile actually store.
+        allowed = ["jobTitle", "company", "companyDescription", "valueProp",
+                   "targetAudience", "differentiators", "industry", "mainPainPoint"]
+        draft = {k: (str(draft_in.get(k) or "").strip()) for k in allowed if draft_in.get(k)}
+        return {
+            "draft": draft,
+            "summary": (data.get("summary") or "").strip(),
+            "highlights": [str(h).strip() for h in (data.get("highlights") or []) if str(h).strip()][:5],
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to parse document: {e}")
+
+
 # ─── Health Check ─────────────────────────────────────────────────────────────
 
 @app.get("/health")
