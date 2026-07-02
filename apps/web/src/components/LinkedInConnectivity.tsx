@@ -336,7 +336,12 @@ export default function LinkedInConnectivity() {
                                             <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest leading-relaxed">
                                                 {progressMsg}
                                             </p>
-                                            <p className="text-xs text-slate-400">This can take up to 2 minutes if LinkedIn challenges the login.</p>
+                                            <div className="flex items-start gap-2 text-left bg-amber-50 border border-amber-100 rounded-2xl px-4 py-3 mx-auto max-w-xs">
+                                                <Smartphone className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
+                                                <p className="text-xs text-amber-700 font-medium leading-relaxed">
+                                                    If LinkedIn sends a <span className="font-bold">“Is this you?”</span> prompt to your phone, open the app and tap <span className="font-bold">“Yes, it’s me”</span> to continue. This can take up to 2 minutes.
+                                                </p>
+                                            </div>
                                         </div>
                                     </motion.div>
                                 )}
