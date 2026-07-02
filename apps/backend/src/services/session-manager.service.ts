@@ -9,7 +9,7 @@ import { uploadScreenshotToS3 } from './s3-upload.service';
 
 const SESSION_STORAGE_PATH = process.env.SESSION_STORAGE_PATH || path.join(process.cwd(), 'sessions');
 
-export type LoginStatus = 'IDLE' | 'LAUNCHING' | 'NAVIGATING' | 'AWAITING_CREDENTIALS' | 'SUBMITTING' | 'AWAITING_2FA' | 'VERIFYING_2FA' | 'CAPTCHA_REQUIRED' | 'SUCCESS' | 'FAILED';
+export type LoginStatus = 'IDLE' | 'LAUNCHING' | 'NAVIGATING' | 'AWAITING_CREDENTIALS' | 'SUBMITTING' | 'AWAITING_2FA' | 'AWAITING_APPROVAL' | 'VERIFYING_2FA' | 'CAPTCHA_REQUIRED' | 'SUCCESS' | 'FAILED';
 
 export interface ActiveLoginSession {
     userId: string;
@@ -280,11 +280,24 @@ class SessionManagerService {
                     const postSubmitUrl = page.url();
                     console.log(`[SESSION-MANAGER] Post-submit URL: ${postSubmitUrl}`);
 
-                    // LinkedIn checkpoint/challenge (OTP, phone, captcha) after login.
-                    // Emit AWAITING_2FA so the frontend shows the OTP input instead
-                    // of waiting 120s for the feed timeout.
-                    if (postSubmitUrl.includes('/checkpoint/')) {
-                        console.log(`[SESSION-MANAGER] Checkpoint detected — awaiting 2FA code`);
+                    // 1) Wrong email/password — LinkedIn renders an inline error and
+                    //    does NOT navigate. Detect it now so we fail in ~1s rather
+                    //    than spinning the full 120s feed timeout below.
+                    const credError = await this.detectCredentialError(page);
+                    if (credError && !postSubmitUrl.includes('/feed')) {
+                        console.log(`[SESSION-MANAGER] Credential error detected: ${credError}`);
+                        uploadScreenshotToS3(page, userId, 'cred_error').catch(() => {});
+                        this.emitStatus(userId, 'FAILED', { error: credError });
+                        await context.close().catch(() => {});
+                        this.activeSessions.delete(userId);
+                        return {}; // already emitted FAILED — don't let the controller re-emit
+                    }
+
+                    // 2) A challenge/checkpoint. Classify it: OTP-code entry vs a
+                    //    device push-approval vs an unsolvable CAPTCHA. Treating
+                    //    every checkpoint as "enter a code" is what left the
+                    //    device-approval flow stuck — there's no code to type.
+                    if (postSubmitUrl.includes('/checkpoint/') || await this.hasCodeInput(page)) {
                         try {
                             const ssDir = SESSION_STORAGE_PATH;
                             if (!fs.existsSync(ssDir)) fs.mkdirSync(ssDir, { recursive: true });
@@ -293,7 +306,70 @@ class SessionManagerService {
                             console.log(`[SESSION-MANAGER] Checkpoint screenshot saved: ${ssPath}`);
                         } catch {}
                         uploadScreenshotToS3(page, userId, 'checkpoint').catch(() => {});
-                        checkpointDetected = true;
+
+                        if (await this.hasCodeInput(page)) {
+                            console.log(`[SESSION-MANAGER] Checkpoint has a code input — awaiting OTP`);
+                            checkpointDetected = true;
+                        } else {
+                            // No code box. Three possibilities: a solvable visual
+                            // captcha (reCAPTCHA/hCaptcha/Arkose), a device push
+                            // approval ("tap Yes on your phone"), or an unsolvable
+                            // challenge. Try CapSolver first — it self-gates and
+                            // only spends a call when it recognizes a captcha.
+                            const { tryCapsolver } = await import('./captcha-solver.service');
+                            this.emitStatus(userId, 'VERIFYING_2FA', { message: 'Solving LinkedIn security check…' });
+                            const solve = await tryCapsolver(page).catch((e: any): import('./captcha-solver.service').SolveResult => {
+                                console.error(`[SESSION-MANAGER] CapSolver threw: ${e?.message}`);
+                                return { solved: false, reason: 'task_failed' };
+                            });
+
+                            if (solve.solved) {
+                                // Token injected — submit the challenge and let the
+                                // flow fall through to the normal feed-wait below.
+                                console.log(`[SESSION-MANAGER] CapSolver solved ${solve.type} — submitting challenge`);
+                                const submitSelectors = [
+                                    '#email-pin-submit-button',
+                                    'button[type="submit"]',
+                                    'button:has-text("Submit")',
+                                    'button:has-text("Verify")',
+                                    'button:has-text("Next")',
+                                    'button:has-text("Continue")',
+                                ];
+                                let submitted = false;
+                                for (const sel of submitSelectors) {
+                                    const btn = await page.$(sel);
+                                    if (btn && await btn.isVisible().catch(() => false)) {
+                                        await btn.click().catch(() => {});
+                                        submitted = true;
+                                        break;
+                                    }
+                                }
+                                if (!submitted) await page.keyboard.press('Enter').catch(() => {});
+                                // fall through → waitForURL('**/feed/**') below
+                            } else if (solve.reason === 'no_captcha') {
+                                // Not a captcha → device push-approval. Poll in the
+                                // background and auto-succeed when the user taps Yes.
+                                console.log(`[SESSION-MANAGER] No captcha detected — treating as device-approval, polling`);
+                                session.status = 'AWAITING_APPROVAL';
+                                this.emitStatus(userId, 'AWAITING_APPROVAL', {
+                                    message: 'Open your LinkedIn mobile app and tap “Yes, it’s me” to approve this sign-in.'
+                                });
+                                void this.pollForApproval(userId);
+                                return { requires2FA: false };
+                            } else {
+                                // Captcha present but CapSolver couldn't solve it
+                                // (no API key / unsupported / timeout / failure).
+                                console.log(`[SESSION-MANAGER] CapSolver could not solve (${solve.reason})`);
+                                this.emitStatus(userId, 'CAPTCHA_REQUIRED', {
+                                    error: solve.reason === 'no_api_key'
+                                        ? 'A LinkedIn security check appeared and the solver isn\'t configured. Please try again shortly.'
+                                        : 'Couldn\'t clear LinkedIn\'s security check automatically. Wait a few minutes and try connecting again.'
+                                });
+                                await context.close().catch(() => {});
+                                this.activeSessions.delete(userId);
+                                return {}; // already emitted CAPTCHA_REQUIRED — don't let the controller re-emit FAILED
+                            }
+                        }
                     }
                 } else {
                     console.warn(`[SESSION-MANAGER] No password field found after filling email`);
@@ -485,6 +561,82 @@ class SessionManagerService {
         }
 
         return { success: true };
+    }
+
+    // --- Post-submit page classification helpers -------------------------
+
+    // LinkedIn renders a wrong-email / wrong-password error inline on the login
+    // page (no navigation). Detect it so we fail in ~1s instead of waiting the
+    // full 120s feed timeout. Returns the human-readable error text, or null.
+    private async detectCredentialError(page: Page): Promise<string | null> {
+        try {
+            const selectors = ['#error-for-password', '#error-for-username', 'div[error-for]', '.form__label--error'];
+            for (const sel of selectors) {
+                const el = await page.$(sel);
+                if (el && await el.isVisible().catch(() => false)) {
+                    const txt = (await el.innerText().catch(() => '')).trim();
+                    if (txt) return txt;
+                }
+            }
+        } catch {}
+        return null;
+    }
+
+    // A checkpoint page that asks the user to type a PIN/OTP has one of these
+    // inputs. A device-approval ("tap Yes on your phone") checkpoint does NOT —
+    // that's how we tell the two apart.
+    private async hasCodeInput(page: Page): Promise<boolean> {
+        try {
+            const el = await page.$('input#input-code, input[name="pin"], input[name="verification-code"]');
+            return !!(el && await el.isVisible().catch(() => false));
+        } catch { return false; }
+    }
+
+    // Background poll for the device-approval flow: the user taps "Yes, it's me"
+    // on their LinkedIn app and the browser silently advances to the feed. We
+    // watch for that (up to ~110s), and also switch to the OTP form if a code
+    // input appears mid-flow (some challenges fall back to a code).
+    private async pollForApproval(userId: string): Promise<void> {
+        const session = this.activeSessions.get(userId);
+        if (!session) return;
+        const { page } = session;
+        const deadline = Date.now() + 110_000;
+
+        while (Date.now() < deadline) {
+            if (!this.activeSessions.has(userId)) return; // cancelled/closed
+            const url = page.url();
+
+            if (url.includes('/feed') || url.includes('/in/')) {
+                console.log(`[SESSION-MANAGER] Device approval confirmed — capturing session`);
+                await this.handleSuccess(userId).catch((e: any) =>
+                    console.error(`[SESSION-MANAGER] handleSuccess after approval failed: ${e.message}`));
+                return;
+            }
+
+            // A code input appearing means LinkedIn switched to OTP — hand off.
+            if (await this.hasCodeInput(page)) {
+                console.log(`[SESSION-MANAGER] Approval flow surfaced a code input — switching to 2FA`);
+                session.status = 'AWAITING_2FA';
+                this.emitStatus(userId, 'AWAITING_2FA', { message: 'LinkedIn is asking for a verification code. Enter it below.' });
+                return;
+            }
+
+            const err = await this.detectCredentialError(page);
+            if (err) {
+                this.emitStatus(userId, 'FAILED', { error: err });
+                await session.context.close().catch(() => {});
+                this.activeSessions.delete(userId);
+                return;
+            }
+
+            session.lastActivity = Date.now();
+            await page.waitForTimeout(3000);
+        }
+
+        console.log(`[SESSION-MANAGER] Device approval timed out for ${userId}`);
+        this.emitStatus(userId, 'FAILED', { error: 'Approval timed out. Open the LinkedIn app, approve the sign-in, then reconnect.' });
+        await session.context.close().catch(() => {});
+        this.activeSessions.delete(userId);
     }
 
     getActiveSession(userId: string): ActiveLoginSession | undefined {

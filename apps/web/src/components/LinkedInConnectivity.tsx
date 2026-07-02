@@ -18,7 +18,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import { io as socketIO, Socket } from 'socket.io-client';
 
-type LinkStep = 'CREDENTIALS' | 'PROGRESS' | '2FA' | 'SUCCESS';
+type LinkStep = 'CREDENTIALS' | 'PROGRESS' | '2FA' | 'APPROVAL' | 'SUCCESS';
 
 const apiBase = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/v1\/?$/, '');
 
@@ -84,6 +84,21 @@ export default function LinkedInConnectivity() {
                 setStep('2FA');
                 toast.info('Enter the verification code LinkedIn sent you');
                 setLoading(false);
+            } else if (payload?.status === 'AWAITING_APPROVAL') {
+                // Device push-approval: no code to type. We sit on a waiting
+                // screen and the backend auto-advances us to SUCCESS when the
+                // user taps "Yes, it's me" in the LinkedIn app.
+                setStep('APPROVAL');
+                toast.info('Approve the sign-in in your LinkedIn app');
+                setLoading(true);
+            } else if (payload?.status === 'VERIFYING_2FA') {
+                // Keep the spinner up while the code is checked.
+                setStep('PROGRESS');
+                setLoading(true);
+            } else if (payload?.status === 'CAPTCHA_REQUIRED') {
+                setError(payload.error || 'LinkedIn is showing a security puzzle we can\'t solve automatically. Try again in a few minutes.');
+                setStep('CREDENTIALS');
+                setLoading(false);
             } else if (payload?.status === 'FAILED') {
                 setError(payload.error || 'Login failed');
                 setStep('CREDENTIALS');
@@ -96,6 +111,27 @@ export default function LinkedInConnectivity() {
             socketRef.current = null;
         };
     }, [showModal]);
+
+    // Watchdog: no login flow should legitimately outlast this. If the backend
+    // dies or a socket event is missed, force the UI out of the waiting state so
+    // it can never hang on the spinner forever (bugs #1/#2 safety net).
+    useEffect(() => {
+        if (step !== 'PROGRESS' && step !== 'APPROVAL') return;
+        // PROGRESS can include a CapSolver captcha solve (up to ~120s) plus the
+        // feed wait, so give it wide headroom — a real outcome clears this via a
+        // socket event long before it fires; it only catches a dead backend.
+        const ms = step === 'APPROVAL' ? 130_000 : 200_000;
+        const t = setTimeout(() => {
+            setError(
+                step === 'APPROVAL'
+                    ? 'We didn\'t get the approval in time. Open the LinkedIn app, tap “Yes, it\'s me”, then reconnect.'
+                    : 'This is taking longer than expected. Please try connecting again.'
+            );
+            setStep('CREDENTIALS');
+            setLoading(false);
+        }, ms);
+        return () => clearTimeout(t);
+    }, [step]);
 
     const fetchStatus = async () => {
         try {
@@ -302,6 +338,44 @@ export default function LinkedInConnectivity() {
                                             </p>
                                             <p className="text-xs text-slate-400">This can take up to 2 minutes if LinkedIn challenges the login.</p>
                                         </div>
+                                    </motion.div>
+                                )}
+
+                                {step === 'APPROVAL' && (
+                                    <motion.div
+                                        key="approval"
+                                        initial={{ opacity: 0 }}
+                                        animate={{ opacity: 1 }}
+                                        exit={{ opacity: 0 }}
+                                        className="py-10 text-center space-y-6"
+                                    >
+                                        <div className="relative w-20 h-20 mx-auto">
+                                            <motion.div
+                                                animate={{ scale: [1, 1.15, 1] }}
+                                                transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
+                                                className="absolute inset-0 bg-[#0077b5]/10 rounded-3xl"
+                                            />
+                                            <div className="absolute inset-0 flex items-center justify-center">
+                                                <Smartphone className="w-9 h-9 text-[#0077b5]" />
+                                            </div>
+                                        </div>
+                                        <div className="space-y-2">
+                                            <h3 className="text-2xl font-black text-slate-900 italic uppercase">Approve on your phone</h3>
+                                            <p className="text-sm text-slate-500 font-medium">
+                                                {progressMsg || 'Open the LinkedIn app on your phone and tap “Yes, it’s me” to approve this sign-in.'}
+                                            </p>
+                                        </div>
+                                        <div className="flex items-center justify-center gap-2 text-[10px] text-slate-400 font-black uppercase tracking-widest">
+                                            <RefreshCcw className="w-3.5 h-3.5 animate-spin" />
+                                            <span>Waiting for approval…</span>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => { setStep('CREDENTIALS'); setLoading(false); setError(null); }}
+                                            className="text-xs text-slate-400 hover:text-slate-700 font-semibold underline"
+                                        >
+                                            Cancel and try again
+                                        </button>
                                     </motion.div>
                                 )}
 
