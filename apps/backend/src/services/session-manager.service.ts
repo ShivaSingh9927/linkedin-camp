@@ -436,6 +436,21 @@ class SessionManagerService {
             captureEvent(userId, 'linkedin_connected', { method: 'login' });
             this.emitStatus(userId, 'SUCCESS', { sessionPath });
 
+            // Kick off one-time self-profile enrichment so the AI/business profile
+            // auto-fills from the user's own LinkedIn (headline, about, tone, etc.).
+            // This inline success path is the COMMON credential-login outcome and
+            // previously skipped enrichment entirely — only handleSuccess() (the
+            // already-logged-in / 2FA paths) enqueued it. Mirror it here so a plain
+            // email+password connect also gets enriched.
+            try {
+                const { enqueueSelfEnrichment } = await import('../workers/enrichment-worker');
+                void enqueueSelfEnrichment(userId).catch((err: any) =>
+                    console.error('[SESSION-MANAGER] Failed to enqueue self-enrichment:', err?.message)
+                );
+            } catch (err: any) {
+                console.error('[SESSION-MANAGER] Could not load enrichment worker:', err?.message);
+            }
+
             return {};
         } catch (e: any) {
             console.error(`[SESSION-MANAGER] Login failed: ${e.message}`);

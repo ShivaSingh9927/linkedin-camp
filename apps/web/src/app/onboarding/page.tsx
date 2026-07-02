@@ -74,6 +74,11 @@ export default function OnboardingPage() {
             toast.error('Your LinkedIn profile URL is required to run automations.');
             return;
         }
+        // Must be a personal /in/ profile — reject company pages, feed URLs, typos.
+        if (!/^(?:https?:\/\/)?(?:[\w-]+\.)?linkedin\.com\/in\/[^\/?#\s]+/i.test(linkedinUrl.trim())) {
+            toast.error('Enter a valid LinkedIn profile URL, e.g. https://www.linkedin.com/in/your-name');
+            return;
+        }
         setLoading(true);
         try {
             await api.put('/users/onboarding', {

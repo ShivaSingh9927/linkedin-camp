@@ -123,6 +123,25 @@ router.put('/onboarding', async (req: AuthRequest, res) => {
 
         const userId = req.user!.id;
 
+        // Validate + normalize the LinkedIn profile URL. We later read this
+        // person's profile via Voyager (post-connect enrichment), so a garbage
+        // value here silently breaks that. Accept the common shapes
+        // (http/https, www/country subdomain, trailing slash, query string) and
+        // canonicalize to https://www.linkedin.com/in/<vanity>. Reject anything
+        // that isn't a personal /in/ profile (company pages, feed URLs, typos).
+        let normalizedLinkedinUrl: string | undefined;
+        if (linkedinUrl && String(linkedinUrl).trim()) {
+            const raw = String(linkedinUrl).trim();
+            const m = raw.match(/^(?:https?:\/\/)?(?:[\w-]+\.)?linkedin\.com\/in\/([^\/?#\s]+)/i);
+            const vanity = m?.[1] ? decodeURIComponent(m[1]).replace(/\/+$/, '') : null;
+            if (!vanity) {
+                return res.status(400).json({
+                    error: "That doesn't look like a LinkedIn profile URL. It should look like https://www.linkedin.com/in/your-name",
+                });
+            }
+            normalizedLinkedinUrl = `https://www.linkedin.com/in/${vanity}`;
+        }
+
         // Only persist a recognised goal; anything else falls back to the
         // sales default so a bad client value never breaks prompt resolution.
         const VALID_GOALS = ['sell', 'job_seeking', 'recruiting', 'fundraising', 'networking'];
@@ -134,7 +153,7 @@ router.put('/onboarding', async (req: AuthRequest, res) => {
                 firstName: firstName || undefined,
                 lastName: lastName || undefined,
                 registrationStep: 'COMPLETED',
-                linkedinUrl: linkedinUrl || undefined
+                linkedinUrl: normalizedLinkedinUrl
             }
         });
 
