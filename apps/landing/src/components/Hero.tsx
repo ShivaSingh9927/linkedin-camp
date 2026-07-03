@@ -252,7 +252,9 @@ function Hero() {
             className="flex flex-col sm:flex-row gap-4 mt-8 w-full justify-center max-w-md sm:max-w-none"
           >
             <a
-              href="#"
+              href="https://chromewebstore.google.com/detail/qampi-%E2%80%94-lead-importer/gcmepobpaoiokgcekafhpjehmpnckodk"
+              target="_blank"
+              rel="noopener noreferrer"
               className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-white hover:bg-slate-50 text-slate-800 px-8 py-4 rounded-2xl text-lg font-bold border border-slate-200 transition-all duration-200 shadow-sm hover:-translate-y-0.5 active:scale-98"
             >
               <Download className="w-4.5 h-4.5 text-slate-400" /> Download Extension
