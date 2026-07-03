@@ -149,8 +149,15 @@ function Hero() {
 
           {/* Heading with Letter-by-Letter and Rotating Animations */}
           <div className="flex gap-4 flex-col items-center w-full">
-            <h1 className="font-display text-7xl md:text-[9rem] font-medium text-slate-900 leading-[0.95] mb-4 tracking-tight w-full">
-              
+            {/* The visible H1 is animated per-letter (no whitespace text nodes),
+                so its raw text content reads as one run-on string to crawlers
+                and screen readers. aria-label gives a clean, natural, keyword-
+                bearing accessible name without changing the visual. */}
+            <h1
+              aria-label="Like a marketer wrote every message to your next client, investor, recruiter, customer, or hire — smart LinkedIn and email outreach that gets replies"
+              className="font-display text-7xl md:text-[9rem] font-medium text-slate-900 leading-[0.95] mb-4 tracking-tight w-full"
+            >
+
               {/* Rising spring letters for prefix */}
               <span className="block mb-2">
                 {"Like a marketer wrote every message to your next".split(" ").map((word, wordIndex) => (

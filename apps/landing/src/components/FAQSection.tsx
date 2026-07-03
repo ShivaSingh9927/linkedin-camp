@@ -57,11 +57,31 @@ export function FAQSection() {
   const categoryKeys = Object.keys(categories) as Array<keyof typeof categories>;
   const [selectedCategory, setSelectedCategory] = useState<keyof typeof categories>(categoryKeys[0]);
 
+  // FAQPage structured data across ALL categories. The visible answers are
+  // conditionally rendered (collapsed = not in the DOM), so this JSON-LD is the
+  // only machine-readable copy of the Q&A — it powers AI-search citations
+  // (ChatGPT/Perplexity/AI Overviews) and semantic understanding of the page.
+  const faqJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: categoryKeys.flatMap((k) =>
+      faqData[k].map((f) => ({
+        '@type': 'Question',
+        name: f.question,
+        acceptedAnswer: { '@type': 'Answer', text: f.answer },
+      })),
+    ),
+  };
+
   return (
-    <section 
+    <section
       id="faq"
       className="relative overflow-hidden bg-purple-50/30 px-4 py-24 lg:py-32 text-slate-800"
     >
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
+      />
       {/* Background Decor */}
       <div className="absolute top-0 right-1/4 w-[500px] h-[500px] bg-indigo-500/5 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute bottom-0 left-1/4 w-[400px] h-[400px] bg-purple-500/5 rounded-full blur-3xl pointer-events-none" />
