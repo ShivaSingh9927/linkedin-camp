@@ -1,6 +1,7 @@
 import type { MetadataRoute } from "next";
 import { posts } from "@/content/blog";
 import { useCases } from "@/content/use-cases";
+import { competitors } from "@/content/competitors";
 
 const BASE_URL = "https://qampi.com";
 
@@ -22,6 +23,13 @@ export default function sitemap(): MetadataRoute.Sitemap {
     priority: 0.8,
   }));
 
+  const competitorEntries: MetadataRoute.Sitemap = competitors.map((c) => ({
+    url: `${BASE_URL}/vs/${c.slug}`,
+    lastModified,
+    changeFrequency: "monthly",
+    priority: 0.7,
+  }));
+
   return [
     {
       url: `${BASE_URL}/`,
@@ -36,6 +44,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 0.8,
     },
     ...useCaseEntries,
+    ...competitorEntries,
     ...blogEntries,
     {
       url: `${BASE_URL}/extension-privacy`,
