@@ -1,5 +1,6 @@
 import type { MetadataRoute } from "next";
 import { posts } from "@/content/blog";
+import { useCases } from "@/content/use-cases";
 
 const BASE_URL = "https://qampi.com";
 
@@ -12,6 +13,13 @@ export default function sitemap(): MetadataRoute.Sitemap {
     lastModified: new Date(p.date),
     changeFrequency: "monthly",
     priority: 0.7,
+  }));
+
+  const useCaseEntries: MetadataRoute.Sitemap = useCases.map((u) => ({
+    url: `${BASE_URL}/for/${u.slug}`,
+    lastModified,
+    changeFrequency: "monthly",
+    priority: 0.8,
   }));
 
   return [
@@ -27,6 +35,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
       changeFrequency: "weekly",
       priority: 0.8,
     },
+    ...useCaseEntries,
     ...blogEntries,
     {
       url: `${BASE_URL}/extension-privacy`,
