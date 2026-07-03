@@ -22,6 +22,13 @@ from searcher import search_email_format
 from resolver import resolve_domain, is_parked
 import store
 import hunter
+import zerobounce
+
+# Email-finder fallback provider. ZeroBounce (pay-as-you-go) takes precedence
+# when configured; Hunter is the legacy fallback. Both expose the same
+# enabled()/find_email() interface, so the fallback block below is provider-
+# agnostic. The `finder.__name__` is used as the `source`/negative-cache tag.
+finder = zerobounce if zerobounce.enabled() else hunter
 
 _root_env = os.path.join(os.path.dirname(__file__), "..", "..", ".env")
 if os.path.isfile(_root_env):
@@ -261,12 +268,13 @@ async def _guess_pipeline(req: GuessEmailRequest, fn: str, ln: str):
     # circuits the expensive path (also bounds latency). Strictly gated: only
     # when configured and we haven't already spent a credit on this company
     # (negative cache). Its pattern is cached into the DB for free reuse.
-    if hunter.enabled():
+    if finder.enabled():
+        provider = finder.__name__  # "zerobounce" | "hunter"
         neg_key = store.company_key(req.company) or domain
         if not store.hunter_tried(neg_key):
             loop = asyncio.get_event_loop()
             hres = await loop.run_in_executor(
-                None, lambda: hunter.find_email(req.firstName, req.lastName,
+                None, lambda: finder.find_email(req.firstName, req.lastName,
                                                 domain=domain, company=req.company))
             store.mark_hunter_tried(neg_key)
             if hres and hres.get("email"):
@@ -278,16 +286,16 @@ async def _guess_pipeline(req: GuessEmailRequest, fn: str, ln: str):
                 store.record_verified_email(h_domain, req.firstName, req.lastName,
                                             h_email, is_catch_all=h_accept_all)
                 if req.company and h_domain:
-                    store.put_cached_domain(req.company, h_domain, "hunter", "hunter")
+                    store.put_cached_domain(req.company, h_domain, provider, provider)
                 send_safe = (h_status == "valid" and not h_accept_all)
                 return GuessEmailResponse(
-                    success=True, email=h_email, source="hunter",
+                    success=True, email=h_email, source=provider,
                     verified=send_safe,
                     confidence="high" if send_safe else "medium",
                     is_catch_all=h_accept_all,
                     guesses_tried=tried,
                     all_guesses=[EmailGuess(email=h_email, rank=1,
-                        reason=f"hunter.io (score={hres.get('score')}, status={h_status})")],
+                        reason=f"{provider} (score={hres.get('score')}, status={h_status})")],
                     domain=h_domain, domain_confidence=resolved_conf,
                 )
 
