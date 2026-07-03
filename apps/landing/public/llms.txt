@@ -1,0 +1,40 @@
+# Qampi
+
+> Qampi is an AI-powered LinkedIn and cold-email outreach platform for B2B. It reads each prospect's LinkedIn profile and recent posts, then writes personalized outreach that sounds genuinely human — sent safely at scale across LinkedIn and email.
+
+Qampi's core idea: most automation blasts "Hi {FirstName}" templates, so reply rates collapse. Qampi researches every prospect and writes a message specific to them, in your voice, while keeping your LinkedIn account safe with dedicated proxies, human-like sending patterns, and automatic limit monitoring. It works for sales/lead-gen, recruiting, job seekers, fundraising, and networking. Free tier available (Qampi Fast); paid tiers (Qampi Pro) add reasoning models and deep web research.
+
+## Core pages
+- [Home](https://qampi.com/): What Qampi is, how it personalizes outreach, and account-safety approach.
+- [Pricing](https://qampi.com/#pricing): Free, Starter ($49/mo), Growth ($99/mo), Enterprise ($249/mo). See /pricing.md for structured data.
+- [Blog](https://qampi.com/blog): Guides on LinkedIn outreach, cold email, and prospecting.
+
+## Use-case pages
+- [Qampi for recruiters](https://qampi.com/for/recruiters): AI candidate sourcing and outreach that gets replies.
+- [Qampi for founders](https://qampi.com/for/founders): Reach customers and investors without an SDR team.
+- [Qampi for sales teams](https://qampi.com/for/sales-teams): Personalized pipeline at scale, LinkedIn + email, CRM sync.
+- [Qampi for job seekers](https://qampi.com/for/job-seekers): Reach hiring managers directly from your resume.
+
+## Comparisons
+- [Qampi vs Dripify](https://qampi.com/vs/dripify): AI per-prospect personalization vs template sequences.
+- [Qampi vs Expandi](https://qampi.com/vs/expandi): Generative personalization vs dynamic placeholders.
+- [Qampi vs Waalaxy](https://qampi.com/vs/waalaxy): Message quality vs freemium template sequences.
+- [Qampi vs Dux-Soup](https://qampi.com/vs/dux-soup): AI-native cloud sending vs browser-extension automation.
+
+## Guides
+- [Is LinkedIn automation safe?](https://qampi.com/blog/is-linkedin-automation-safe)
+- [LinkedIn outreach that gets replies](https://qampi.com/blog/linkedin-outreach-that-gets-replies)
+- [Cold email vs LinkedIn outreach](https://qampi.com/blog/cold-email-vs-linkedin-outreach)
+- [LinkedIn connection request messages](https://qampi.com/blog/linkedin-connection-request-messages)
+- [How to find someone's email address](https://qampi.com/blog/how-to-find-someones-email-address)
+
+## Key facts
+- Category: LinkedIn automation / sales engagement / AI outreach.
+- Personalization: reads each prospect's profile and recent posts to write an original message (not merge-tag templates).
+- Channels: LinkedIn and cold email in one AI-written, sequence-aware cadence.
+- Account safety: dedicated per-account ISP proxies, randomized human-like delays, working-hours sending windows, automatic weekly-limit monitoring that pauses before LinkedIn's thresholds.
+- Voice: learns and writes in your voice from your own writing samples.
+- CRM: native HubSpot, Pipedrive, and Notion integrations.
+- Models: Qampi Fast (free, optimized) and Qampi Pro (paid, reasoning + deep web research).
+- Works with standard LinkedIn accounts; Sales Navigator optional.
+- Get started: https://app.qampi.com/register (no credit card, cancel anytime).
