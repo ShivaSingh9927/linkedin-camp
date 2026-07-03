@@ -85,17 +85,36 @@ function FloatingMessages() {
   const [items, setItems] = useState<Array<{ id: number; x: number; y: number; size: number; color: string; type: 'message' | 'mail' | 'linkedin' | 'logo' }>>([]);
 
   useEffect(() => {
-    const types: Array<'message' | 'mail' | 'linkedin' | 'logo'> = ['message', 'mail', 'linkedin', 'logo'];
-    // Distribute using percentages (e.g. 5% to 95%) to cover the container correctly
-    const newItems = Array.from({ length: 32 }, (_, i) => ({
-      id: i,
-      x: 5 + Math.random() * 90, // 5% to 95%
-      y: 5 + Math.random() * 90, // 5% to 95%
-      size: Math.random() * 20 + 24, // Size range: 24px to 44px
-      color: `rgba(147, 51, 234, ${0.5 + Math.random() * 0.4})`, // Stronger brand purple
-      type: types[i % 4], // Mixes the logo into the floating items
-    }));
-    setItems(newItems);
+    // These are purely decorative. Each item runs 5 infinite animations, so
+    // mounting them the instant we hydrate floods the main thread during the
+    // LCP window — which is what tanked mobile LCP (fast desktop was fine).
+    // So: (1) skip entirely for reduced-motion, (2) render fewer on mobile,
+    // (3) defer the mount until the browser is idle so the hero paints first.
+    if (typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+      return;
+    }
+
+    const build = () => {
+      const types: Array<'message' | 'mail' | 'linkedin' | 'logo'> = ['message', 'mail', 'linkedin', 'logo'];
+      const count = window.innerWidth < 768 ? 10 : 18; // was a flat 32
+      const newItems = Array.from({ length: count }, (_, i) => ({
+        id: i,
+        x: 5 + Math.random() * 90, // 5% to 95%
+        y: 5 + Math.random() * 90, // 5% to 95%
+        size: Math.random() * 20 + 24, // Size range: 24px to 44px
+        color: `rgba(147, 51, 234, ${0.5 + Math.random() * 0.4})`, // Stronger brand purple
+        type: types[i % 4], // Mixes the logo into the floating items
+      }));
+      setItems(newItems);
+    };
+
+    // Wait until after first paint + idle so LCP fires before the ambient
+    // animations start competing for the main thread.
+    const w = window as unknown as { requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number };
+    const kick = () =>
+      w.requestIdleCallback ? w.requestIdleCallback(build, { timeout: 1500 }) : window.setTimeout(build, 900);
+    const id = window.setTimeout(kick, 400);
+    return () => window.clearTimeout(id);
   }, []);
 
   return (
