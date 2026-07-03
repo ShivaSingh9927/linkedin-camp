@@ -165,8 +165,13 @@ function Hero() {
                     {word.split("").map((letter, letterIndex) => (
                       <motion.span
                         key={`${wordIndex}-${letterIndex}`}
-                        initial={{ y: 80, opacity: 0 }}
-                        animate={{ y: 0, opacity: 1 }}
+                        // Transform-only entrance (NO opacity fade): the H1 is the
+                        // LCP element, and starting it at opacity:0 pushed mobile
+                        // LCP to ~3.7s. Keeping opacity at 1 lets the text paint on
+                        // the first frame (LCP ≈ FCP) while a subtle rise preserves
+                        // the entrance feel.
+                        initial={{ y: 24 }}
+                        animate={{ y: 0 }}
                         transition={{
                           delay: wordIndex * 0.04 + letterIndex * 0.012,
                           type: "spring",
