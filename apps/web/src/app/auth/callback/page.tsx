@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { LoadingScreen } from '@/components/ui';
 import { track } from '@/lib/analytics';
@@ -20,7 +20,6 @@ const ERROR_COPY: Record<string, string> = {
 
 export default function AuthCallbackPage() {
     const router = useRouter();
-    const params = useSearchParams();
     const handled = useRef(false);
     const [message, setMessage] = useState('Finishing sign-in…');
 
@@ -28,6 +27,12 @@ export default function AuthCallbackPage() {
         if (handled.current) return;
         handled.current = true;
 
+        // Read the params straight off the URL rather than via useSearchParams():
+        // this page can be served as prerendered static HTML, in which case
+        // useSearchParams() hydrates empty and the token appears missing — which
+        // used to bounce every LinkedIn/Microsoft sign-in to /login. window is
+        // always defined here (effects only run client-side).
+        const params = new URLSearchParams(window.location.search);
         const token = params.get('token');
         const error = params.get('error');
 
@@ -45,7 +50,7 @@ export default function AuthCallbackPage() {
         toast.success('Signed in');
         setMessage('Signed in — redirecting…');
         router.replace(step === 'STARTED' ? '/onboarding' : '/');
-    }, [params, router]);
+    }, [router]);
 
     return <LoadingScreen fullScreen label={message} />;
 }
