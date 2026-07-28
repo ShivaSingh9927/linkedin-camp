@@ -82,8 +82,11 @@ export function AuthLayout({ type, title, description }: AuthLayoutProps) {
                 </div>
 
                 <div className="flex flex-col gap-5 mt-12 w-full max-w-[380px] mx-auto">
-                    {/* Google one-tap */}
-                    <div className="animate-element animate-delay-300 flex justify-center [&>div]:w-full [&_iframe]:!w-full">
+                    {/* Google one-tap. Google renders its own fixed-width pill in
+                        an iframe — don't stretch the iframe (that leaves dead space
+                        on the right and warps the shape); just center it at its
+                        natural width so it lines up with the LinkedIn button. */}
+                    <div className="animate-element animate-delay-300 flex justify-center">
                         <GoogleLogin
                             onSuccess={handleGoogleSuccess}
                             onError={() => toast.error('Google Sign-In failed')}
@@ -114,6 +117,10 @@ export function AuthLayout({ type, title, description }: AuthLayoutProps) {
                         <LinkedInIcon />
                         {type === 'login' ? 'Sign in with LinkedIn' : 'Sign up with LinkedIn'}
                     </button>
+
+                    <p className="animate-element animate-delay-600 text-center text-xs text-muted-foreground leading-relaxed mt-1">
+                        Switching accounts? Sign out of LinkedIn first (or use a private window) — LinkedIn signs you in with its current account.
+                    </p>
                 </div>
 
                 <p className="animate-element animate-delay-700 text-center text-xs font-medium text-muted-foreground leading-relaxed mt-12">
