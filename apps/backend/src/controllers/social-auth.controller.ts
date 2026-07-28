@@ -34,6 +34,13 @@ interface ProviderConfig {
   idField: 'microsoftId' | 'linkedinId';
   clientId: () => string | undefined;
   clientSecret: () => string | undefined;
+  // OIDC `prompt` value that forces the provider to re-authenticate / show its
+  // account chooser instead of silently returning whatever account the browser
+  // is already signed into. Without this, a user who signs out of Qampi and
+  // tries to add a DIFFERENT account is silently logged back into the previous
+  // one (the provider still has that session). Microsoft honours
+  // `select_account`; LinkedIn only re-prompts on `login`.
+  prompt: string;
 }
 
 const PROVIDERS: Record<string, ProviderConfig> = {
@@ -44,6 +51,7 @@ const PROVIDERS: Record<string, ProviderConfig> = {
     idField: 'microsoftId',
     clientId: () => process.env.MICROSOFT_CLIENT_ID,
     clientSecret: () => process.env.MICROSOFT_CLIENT_SECRET,
+    prompt: 'select_account',
   },
   linkedin: {
     // "Sign In with LinkedIn using OpenID Connect" product.
@@ -53,6 +61,7 @@ const PROVIDERS: Record<string, ProviderConfig> = {
     idField: 'linkedinId',
     clientId: () => process.env.LINKEDIN_CLIENT_ID,
     clientSecret: () => process.env.LINKEDIN_CLIENT_SECRET,
+    prompt: 'login',
   },
 };
 
@@ -91,6 +100,9 @@ export const oauthStart = (req: Request, res: Response) => {
   url.searchParams.set('redirect_uri', redirectUri(provider));
   url.searchParams.set('scope', cfg.scope);
   url.searchParams.set('state', state);
+  // Force the account chooser / re-auth so signing out and adding a different
+  // account works, instead of silently reusing the provider's existing session.
+  if (cfg.prompt) url.searchParams.set('prompt', cfg.prompt);
   res.redirect(url.toString());
 };
 
