@@ -43,12 +43,26 @@ export const checkConnection: NodeHandler = async (ctx): Promise<NodeResult> => 
         // "Connected" here means "we can DM right now" — which covers
         // 1st-degree and Open Profile. The pending case is intentionally
         // NOT marked connected (we can't message yet).
-        output.connected = state.isDmable;
-        output.connectionStatus = state.isDmable ? 'connected'
-            : (state.invitePending ? 'pending' : 'not_connected');
+        //
+        // state.isUnknown means none of the signals rendered — LinkedIn served
+        // us a shell page or blocked the read. That is NOT a negative, and
+        // reporting it as one is how the gate learned to skip real
+        // connections. Say 'unknown' and let the caller decide.
+        if (state.isUnknown) {
+            output.connected = null;
+            output.connectionStatus = 'unknown';
+        } else {
+            output.connected = state.isDmable;
+            output.connectionStatus = state.isDmable ? 'connected'
+                : (state.invitePending ? 'pending' : 'not_connected');
+        }
         if (state.connectionDegree != null) output.connectionDegree = state.connectionDegree;
 
         console.log(`[CHECK-CONNECTION] Connection status: ${output.connectionStatus}, degree: ${output.connectionDegree ?? 'unknown'}`);
+
+        // Keep the in-flight context in step so a downstream IF_ELSE reading
+        // `connectionStatus` sees this probe's answer, not the run's seed.
+        ctx.connectionStatus = output.connectionStatus;
 
         if (campaignId) {
             try {

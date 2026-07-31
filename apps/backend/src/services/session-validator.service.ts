@@ -194,6 +194,8 @@ class SessionValidatorService {
                 }
             });
 
+            await this.healStaleAccountHealth(userId, (user as any).accountHealth);
+
             return {
                 valid: true,
                 profile: {
@@ -274,6 +276,15 @@ class SessionValidatorService {
                 where: { id: userId },
                 data: { sessionInvalid: false, sessionValidatedAt },
             }).catch(() => {});
+
+            // Same stale-flag heal as validateSession. Reading accountHealth is
+            // one indexed lookup and only happens on a confirmed-live session.
+            const h = await prisma.user.findUnique({
+                where: { id: userId },
+                select: { accountHealth: true },
+            }).catch(() => null);
+            await this.healStaleAccountHealth(userId, h?.accountHealth as string | undefined);
+
             return { connected: true, sessionInvalid: false, sessionValidatedAt };
         }
 
@@ -289,6 +300,32 @@ class SessionValidatorService {
         // surface a real checkpoint if the session is genuinely gone).
         console.warn(`[SESSION-VALIDATOR] liveCheck inconclusive for ${userId}: ${res.reason}`);
         return { connected: true, sessionInvalid: false, sessionValidatedAt: pre.sessionValidatedAt };
+    }
+
+    /**
+     * A session that just proved itself alive against LinkedIn disproves a
+     * stale SESSION_EXPIRED / NEEDS_LOGIN flag — so clear it and let the
+     * engine's pre-flight gate stop refusing to launch.
+     *
+     * Deliberately narrow:
+     *  - Only SESSION_EXPIRED and NEEDS_LOGIN are healed. A working session is
+     *    direct evidence against exactly those two.
+     *  - OTP_REQUIRED and RESTRICTED are left ALONE. Those need explicit user
+     *    action or a cooldown, and auto-resuming campaigns on an account
+     *    LinkedIn is actively challenging is how an "OTP please" escalates into
+     *    a real restriction — the precise thing the health gate exists to stop.
+     *  - Already-HEALTHY short-circuits with zero queries, so the hourly
+     *    validation sweep costs nothing extra in the common case.
+     */
+    private async healStaleAccountHealth(userId: string, currentHealth: string | undefined): Promise<void> {
+        if (currentHealth !== 'SESSION_EXPIRED' && currentHealth !== 'NEEDS_LOGIN') return;
+        try {
+            const { markAccountHealthy } = await import('../campaign-engine/safety/checkpoint');
+            await markAccountHealthy(userId);
+            console.log(`[SESSION-VALIDATOR] user=${userId} health was ${currentHealth} but session is live → healed to HEALTHY`);
+        } catch (err: any) {
+            console.error(`[SESSION-VALIDATOR] healStaleAccountHealth failed for ${userId}: ${err?.message}`);
+        }
     }
 
     async markInvalid(userId: string): Promise<void> {

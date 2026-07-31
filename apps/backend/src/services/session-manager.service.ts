@@ -6,6 +6,7 @@ import fs from 'fs';
 import { io } from '../socket';
 import { captureEvent } from './analytics.service';
 import { uploadScreenshotToS3 } from './s3-upload.service';
+import { markAccountHealthy } from '../campaign-engine/safety/checkpoint';
 
 const SESSION_STORAGE_PATH = process.env.SESSION_STORAGE_PATH || path.join(process.cwd(), 'sessions');
 
@@ -433,6 +434,22 @@ class SessionManagerService {
             });
 
             console.log(`[SESSION-MANAGER] Session files saved to ${sessionPath}${proxySnapshot ? ` (proxy pinned: ${proxySnapshot.server})` : ' (NO PROXY — session will likely die on first automation step)'}`);
+
+            // Flip accountHealth back to HEALTHY. Without this a cold re-login
+            // left the user at NEEDS_LOGIN / SESSION_EXPIRED, so the engine's
+            // pre-flight gate kept refusing to launch and the auto-paused
+            // campaign stayed paused — the user had logged back in and nothing
+            // resumed. markAccountHealthy also un-parks the leads that were
+            // deferred 365 days by handleCheckpoint and resumes the campaigns
+            // WE paused (pausedReason='session_expired'); campaigns the user
+            // paused by hand are left alone.
+            //
+            // Ordering matters: this runs AFTER the session blobs are written
+            // above, because resuming a campaign can have a worker pick it up
+            // immediately — it must not read a half-written session.
+            await markAccountHealthy(userId).catch((err: any) =>
+                console.error(`[SESSION-MANAGER] markAccountHealthy failed for ${userId}: ${err?.message}`));
+
             captureEvent(userId, 'linkedin_connected', { method: 'login' });
             this.emitStatus(userId, 'SUCCESS', { sessionPath });
 
@@ -556,6 +573,12 @@ class SessionManagerService {
                 linkedinProxySnapshot: proxySnapshotForReval as any,
             }
         });
+
+        // Same recovery as the inline credential-login path above — this is the
+        // already-logged-in / 2FA-completed / app-approval route, and it needs
+        // the health flip just as much. See the comment there for ordering.
+        await markAccountHealthy(userId).catch((err: any) =>
+            console.error(`[SESSION-MANAGER] markAccountHealthy failed for ${userId}: ${err?.message}`));
 
         session.status = 'SUCCESS';
         this.emitStatus(userId, 'SUCCESS', { message: 'Successfully connected!', profile: profileData });

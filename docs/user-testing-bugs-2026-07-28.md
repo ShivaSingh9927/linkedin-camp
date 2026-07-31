@@ -1,0 +1,264 @@
+# Qampi — Bugs found during user testing (2026-07-28)
+
+Testers: shivasingh9927, snehlatasingh9012, shuttleraman011 (Akash),
+pranavtiwari (Pranav), salonisingh70177 (Saloni), rajaji98971.
+4 of 5 ran campaigns successfully; the issues below surfaced along the way.
+
+Legend: ✅ fixed · 🔧 open · 🧩 infra/design gap · 🔎 needs verification
+
+**Status 2026-07-30:** #1, #4, #5 fixed (code complete, awaiting deploy — one
+build ships all three). #3 root-caused precisely, deferred by request. #11, #12
+found while fixing #1. Everything else is untouched since the testing session.
+
+---
+
+## P0 — breaks core functionality
+
+### 1. ✅ "Connected?" gate silently drops messages to real 1st-degree connections
+**FIXED 2026-07-29 — code complete, NOT yet deployed.**
+
+The follow-up flow (`Visit → Wait → Check Connection → Connected? → Message`)
+skipped the message even when the lead IS connected.
+Evidence (Akash's run):
+```
+[CHECK-CONNECTION] Connection status: connected, degree: 1   ← connected
+[IF-ELSE] No nodes to execute for branch: false              ← took FALSE branch → message skipped
+```
+
+**Actual root cause** (not a propagation race — a hard wiring bug plus a
+swallowed error):
+1. `if-else.ts` read `storedOutputs['profile-visit']?.connected || false` and
+   **nothing else**. `check-connection`'s output was never consulted, despite
+   running seconds earlier. Every template gate uses
+   `{source:'connectionState', field:'connected', operator:'is_true'}`, so this
+   was the path every campaign took.
+2. In the `warmDM` shape there is a `WAIT 1d` between PROFILE_VISIT and
+   CHECK_CONNECTION, so the gate decided on a value rehydrated from
+   `CampaignLead.personalization.nodeOutputs` — up to a day stale.
+3. `isFirstDegree()` returned `false` on `!r.ok`, and
+   `profile-visit-voyager` wrapped it in `.catch(() => false)`. Any transient
+   Voyager failure became a confident "not connected". This is the
+   intermittency: rajaji's run got a clean read, Akash's didn't.
+4. `probeOnNull` was dead code — it fires only when the value is `null`, but
+   the value was always `false`.
+5. `ctx.connectionStatus` was declared on NodeContext but never populated, so
+   any condition on `connectionStatus` silently read `'not_connected'`.
+
+**Fix:** freshest-source-first resolution in `if-else.ts`
+(`check-connection` → Lead row → `profile-visit`), `null` preserved end-to-end
+as "unknown" (new `checkFirstDegree()` returning `boolean | null`),
+`ctx.connectionStatus` seeded + propagated, and a declined gate now records
+`connection_not_confirmed` vs `connection_unknown` on the lead's terminal
+reason + CSV export. **No retries added** — per product decision an unknown
+state skips terminally, it just does so visibly.
+
+Verify: `cd apps/backend && npx ts-node --transpile-only src/scripts/verify-connection-gate.ts`
+(9 cases, runs old vs new logic side by side; 4 cases the old gate silently
+skipped now send, none flip the other way).
+
+Also fixed in the same pass: `check-connection` was hardwired to the DOM
+handler, bypassing the API-first dispatcher that `profile-visit`/`inbox-sync`
+use — so every DM template did a full Chromium profile navigation for a read
+Voyager answers in ~300ms. Now dispatches to Voyager by default and is
+browser-free; `CONNECTION_CHECK_BACKEND=dom` reverts. Note prod logs now print
+`[CHECK-CONNECTION-VOYAGER]` instead of `[CHECK-CONNECTION]`.
+
+### 2. 🔧 App-notification 2FA ("Check your LinkedIn app") not handled
+Login automation only handles the email/SMS **code** checkpoint. When LinkedIn
+shows the "Check your LinkedIn app — tap Yes" screen, the flow classifies it as
+`kind=unknown` → `login_error` and bails. Users with app-based 2FA (a common
+default) can't connect. (Pranav eventually got in only by tapping Yes fast.)
+Fix: detect that screen and auto-click "I don't have access to this device" to
+fall back to the code path Qampi already supports (or poll while user approves).
+
+### 3. 🔧 Team page returns 500 (Prisma relation names)
+```
+prisma:error  Error fetching team: PrismaClientValidationError
+```
+Recurring live 500 — opening the Team page errors every time.
+**Confirmed 2026-07-29:** not subtle casing drift — the relations named in the
+controller **do not exist**. Schema has `Team.TeamMember` / `Team.TeamInvite`,
+`TeamMember.User`, `User.TeamMember`; the controller asks for `members`,
+`invites`, `user`, `team`, `teamMembers` at `team.controller.ts` lines
+16, 18, 113, 121, 123, 159, 162, 170, 175, 212, 220, 239, 270.
+These are 15 of the 29 standing `tsc --noEmit` errors, so tsc finds them all.
+Fix: rename to the real accessors, keeping the JSON response shape the frontend
+expects. `admin.controller.ts` has 3 more of the same class.
+
+---
+
+## P1 — session / re-login lifecycle
+
+### 4. ✅ No auto-resume after successful re-login
+**FIXED 2026-07-30 — code complete, NOT yet deployed.**
+
+A campaign that auto-paused with `session_expired` stayed PAUSED after the user
+logged back in. User had to manually Resume. (Saloni.)
+
+**Root cause:** `markAccountHealthy` was always correct — it un-parks the
+365-day-deferred leads AND auto-resumes campaigns tagged
+`pausedReason='session_expired'`. It just had exactly **one** caller
+(`login-with-otp.service.ts:300`), so only the `/session/refresh` route
+recovered. The **cold login** path and `session-validator`'s success paths set
+`sessionInvalid: false` but left `accountHealth` at `NEEDS_LOGIN`, so the
+engine's pre-flight gate kept refusing to launch.
+
+**Fix:**
+- `markAccountHealthy` now called on **both** session-manager success routes —
+  the inline credential login and `handleSuccess()` (already-logged-in / 2FA /
+  app-approval). Placed *after* the session blobs are written, since resuming a
+  campaign can have a worker pick it up immediately.
+- `session-validator` heals a **stale** flag when a session proves itself live,
+  via `healStaleAccountHealth()`. Deliberately narrow: only `SESSION_EXPIRED`
+  and `NEEDS_LOGIN` (states a working session directly disproves).
+  `OTP_REQUIRED` / `RESTRICTED` are left alone — auto-resuming a challenged
+  account is how "OTP please" escalates into a real restriction. Returns before
+  any query when already HEALTHY, so the hourly sweep costs nothing.
+
+**Also fixed (found while doing the above):** `markAccountHealthy`'s auto-resume
+did a blanket `updateMany` PAUSED→ACTIVE, which could leave a user with **two
+ACTIVE campaigns** — the user can start a new campaign while the old one sits
+paused, and the queue model allows only one active. Now the first campaign
+claims the ACTIVE slot only if it's free; the rest go to the tail of the QUEUED
+list and get promoted normally. The resume notification and `CAMPAIGN_RESUMED`
+socket event now distinguish resumed from queued instead of claiming a queued
+campaign "has resumed". This flaw predated the fix but was only reachable
+through the one OTP caller — wiring up two more callers would have widened it.
+
+Verify: `cd apps/backend && npx ts-node --transpile-only src/scripts/verify-account-recovery.ts`
+(14 static assertions: call sites, the narrow heal rule, write-before-resume
+ordering, the queue invariant, and that the de-park is still present).
+
+### 5. ✅ Leads reported Failed on NEEDS_LOGIN + campaign re-run loop
+**FIXED 2026-07-30 — code complete, NOT yet deployed.**
+```
+[ENGINE] accountHealth=NEEDS_LOGIN — refusing to launch
+Stats -> Succeeded: 0, Failed: 2   (repeats every cycle)
+```
+
+Two separate problems, neither what the original report assumed.
+
+**(a) The log lied.** The engine always deferred correctly (`engine.ts` →
+`transitionLead(..., 'DEFERRED')`, +365d park) — the DB state was right. But the
+`paused` branch in `runCampaign` did `summary.failed++`, so parked leads were
+counted as failures. Fixed: `CampaignSummary` gains a `parked` counter, parked
+leads print `⏸` with their `pausedReason` instead of `❌`, and the worker's stats
+line now reads `Succeeded: X, Failed: Y, Parked: Z`. `failed` now means only
+genuine failures.
+
+**(b) The re-run loop was a symptom of #4.** The 1-minute heartbeat filters on
+`sessionInvalid` but never checked `accountHealth`. Those two can disagree — and
+bug #4 was precisely what made them disagree: a re-login cleared
+`sessionInvalid` but left `accountHealth` at `NEEDS_LOGIN`, so the scheduler kept
+queuing work the engine kept refusing, 1440x/day. Fixing #4 closed that case.
+
+The residual gap: `OTP_REQUIRED` / `RESTRICTED` are deliberately never
+auto-healed (see #4), so they can still diverge. Fixed at the right layer — the
+scheduler now skips non-HEALTHY owners **before** a job is enqueued, a lock
+taken, or a session loaded. Applied to *both* paths: the 1-minute campaign
+heartbeat and the 5-minute delayed-leads resume sweep. The engine's pre-flight
+gate is now a backstop rather than the only defence.
+
+Verify: `cd apps/backend && npx ts-node --transpile-only src/scripts/verify-account-recovery.ts`
+(21 assertions, covering #4 and #5).
+
+### 6. 🔧 OTP submit fails in mobile in-app browsers + attempt confusion
+- "Submit code" shows **Network Error** in in-app browsers (WhatsApp/LinkedIn
+  webview); the code never reaches the relay (`no otp-relay enqueued`).
+- No retry-on-network-failure, and no "open in a real browser" hint.
+- Users restart the login repeatedly → multiple concurrent attempts, each with
+  its own LinkedIn code → codes get crossed/expired → `OTP unresolved`.
+- Repeated fresh logins in quick succession also degrade the account
+  (Saloni went valid → back to NEEDS_LOGIN from the retry storm).
+Fix: retry on network error, guard against rapid repeat attempts (one active
+attempt per user), surface an "open in browser" hint, invalidate old requestIds.
+
+### 7. 🔧 Possible: corrupted credentials typed into LinkedIn login
+Pranav's early attempts submitted a mangled email
+(`pranavtiwari.06@g26mail.prancavotmiwari.2606@gmail.com`) → "Wrong email or
+password". Likely the email/password field isn't cleared before "human-like
+typing," so it interleaves with a pre-filled/autofilled value. (Could also be
+user typo — needs confirming.) Fix: clear fields before typing.
+
+---
+
+## P2 — non-fatal / cosmetic
+
+### 8. 🔧 Welcome & success emails failing (SMTP not configured)
+```
+[MAIL] Error sending welcome/success email: Missing credentials for "LOGIN"
+```
+Non-fatal (fire-and-forget) but new users get no welcome email and LinkedIn
+connects send no confirmation. Fix: configure SMTP creds on the box.
+
+### 9. 🔧 Single-step enrichment leaves CampaignLead.status = PENDING
+`isCompleted` flips true (campaign completes correctly), but the `status` enum
+stays `PENDING` because `LeadStatus` has no terminal value and the enrichment
+path never advances it. Cosmetic for the scheduler (it gates on `isCompleted`),
+but wrong for funnel/analytics. Also the `isCompleted` write is a swallowed
+fire-and-forget (`.catch(()=>{})`) — a latent re-visit-loop risk if it's ever
+lost. Fix: add a terminal `LeadStatus`, set it, and make the write authoritative.
+
+---
+
+## Infra / design (not code bugs, but caused most of the test pain)
+
+### 10. 🧩 All users share one proxy IP → LinkedIn challenge storm
+Every fresh LinkedIn login routed through the single `DEFAULT_PROXY`
+(82.41.252.111). Multiple different accounts logging in from one IP in a short
+window made LinkedIn challenge/OTP/error nearly everyone (Saloni, Pranav).
+Fix: per-user dedicated ISP proxy assignment (already the stated architecture
+rule — just not wired for these accounts). Highest-leverage scaling fix.
+
+---
+
+## Found later (not from user testing)
+
+### 11. 🔎 CONNECT may invite the wrong person — UNVERIFIED, high impact if real
+Found 2026-07-29 while fixing #1. `connect.ts` is the **only** write node that
+never calls `page.goto` — it runs `detectConnectionState(page, lead.linkedinUrl)`
+against whatever page is already open. In `coldInvite` the flow is
+`PROFILE_VISIT → WAIT 1d → CONNECT`, so CONNECT resumes in a fresh run where
+`warmup` has just navigated to `/feed/` (and PROFILE_VISIT is now the Voyager
+backend, so it leaves no profile page open even within one run).
+On `/feed/` the slug-bound signals are absent → `isUnknown` → the code falls
+through to `page.locator('[aria-label*="to connect"]').first()`, which is **not**
+bound to the lead's slug, while the feed's "People you may know" sidebar is full
+of Connect buttons.
+Needs prod evidence (ActionLog `actionType='connect'` vs the accounts' actual
+sent-invite lists) before changing anything. Fix if confirmed: navigate to
+`lead.linkedinUrl` first (like every other write node) and slug-bind the
+selector the way `connection-state.ts` already does.
+
+### 12. 🧩 profile-visit boots Chromium for what is now an API read
+`profile-visit-voyager` gets its data from Voyager but passes `page` into
+`getProfileByFsd`, and never uses the browser-free `apiRequest` context the
+engine already builds. So it always launches Chromium. After #1's dispatcher
+change, `check-connection` is the only genuinely browser-free LinkedIn read.
+Fix: accept `apiRequest` (as `check-connection-voyager` does) and mark it
+browser-free when `enrichContact`/`enrichPosts` are off — those two genuinely
+need the DOM. Pure throughput/cost win, not a correctness bug.
+
+---
+
+## Not a bug (noted so it isn't chased)
+
+- **Proxy health-check false-negative** — `[PROXY-HEALTH] … FAILED` on the
+  ipify curl probe even while real LinkedIn traffic succeeds through the same
+  proxy. Known false-negative for forward proxies; ignore unless real traffic fails.
+
+---
+
+## Fixed & deployed during this session
+
+- ✅ **LinkedIn/Microsoft app sign-in bounced back to /login** — `/auth/callback`
+  read the token via `useSearchParams()` on a prerendered page (hydrated empty).
+  Now reads `window.location.search`. (commit on `main`)
+- ✅ **A stray 401 wiped the fresh session** — the api interceptor logged out on
+  *any* 401, including from pollers that fired before the token was stored. Now
+  only logs out when the failed request actually carried a token.
+- ✅ **Sign-out → sign-in reused the previous account** — added `prompt`
+  (`select_account` for Microsoft, `login` for LinkedIn) to force the account
+  chooser. (Note: LinkedIn largely ignores `prompt`; real switch still needs a
+  LinkedIn logout — see the switch-account note added to the auth screen.)
+- ✅ **Google button shape** on the auth screen + switch-account helper note.

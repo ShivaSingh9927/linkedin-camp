@@ -994,6 +994,10 @@ export const exportCampaign = async (req: any, res: Response) => {
             // Get connect output
             const conn = nodeOutputs['connect'] || {};
 
+            // Gate outcome — why a lead got no message despite the sequence
+            // "completing". Empty for leads that passed the gate.
+            const gate = nodeOutputs['if-else'] || {};
+
             return {
                 // Lead Info
                 firstName: cl.Lead.firstName,
@@ -1018,6 +1022,13 @@ export const exportCampaign = async (req: any, res: Response) => {
                 messageText: msg.messageText || '',
                 likedPost: nodeOutputs['like-nth-post']?.liked || false,
                 commentedPost: nodeOutputs['comment-nth-post']?.commented || false,
+
+                // 'connection_not_confirmed' — we verified they aren't connected.
+                // 'connection_unknown'       — we could not verify either way.
+                // Without this column a skipped lead is indistinguishable from a
+                // completed one in the export.
+                skipReason: gate.skipReason || '',
+                skipDecidedFrom: gate.skipReason ? (gate.resolvedFrom || '') : '',
                 
                 // Execution Log Summary
                 totalSteps: execLog.length,

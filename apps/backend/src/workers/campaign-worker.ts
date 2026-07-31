@@ -305,7 +305,7 @@ const processCampaignJob = async (data: CampaignJobData, job: Job) => {
         const summary = await runCampaign(userId, campaignId, config);
 
         console.log(`[CAMPAIGN-WORKER] ✅ Campaign ${campaignId} finished.`);
-        console.log(`   Stats -> Succeeded: ${summary.succeeded}, Failed: ${summary.failed}`);
+        console.log(`   Stats -> Succeeded: ${summary.succeeded}, Failed: ${summary.failed}, Parked: ${summary.parked}`);
 
         // After a campaign run, pull the inbox so replies to what we just sent
         // surface in Qampi. Debounced (Redis) to at most once / 3h per user so a

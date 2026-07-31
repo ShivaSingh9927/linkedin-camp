@@ -547,19 +547,43 @@ export async function getAllConnections(userId: string, page?: Page, apiRequest?
 }
 
 /**
- * Fast "is X my 1st-degree connection?" check. Returns true/false without
- * doing a per-lead profile navigation. Backed by the in-memory cache populated
- * by getAllConnections(); triggers a one-time fetch on first call.
+ * Fast "is X my 1st-degree connection?" check, with an honest third answer.
+ *
+ * Returns:
+ *   true  — confirmed in the connections list
+ *   false — confirmed NOT in the connections list
+ *   null  — we could not determine it (the connections fetch failed: csrf,
+ *           rate-limit, expired session, network)
+ *
+ * The null case matters. Collapsing "couldn't tell" into `false` is what made
+ * the IF_ELSE connection gate silently skip messages to genuine 1st-degree
+ * leads — a transient Voyager failure read as a confident "not connected".
+ * Callers that gate a user-visible action MUST distinguish the two; use
+ * `isFirstDegree` only where a binary is genuinely correct.
+ *
+ * Backed by the in-memory cache populated by getAllConnections(); triggers a
+ * one-time fetch on first call.
  */
-export async function isFirstDegree(userId: string, vanityOrFsd: string, page?: Page, apiRequest?: APIRequestContext): Promise<boolean> {
+export async function checkFirstDegree(userId: string, vanityOrFsd: string, page?: Page, apiRequest?: APIRequestContext): Promise<boolean | null> {
     const r = await getAllConnections(userId, page, apiRequest);
-    if (!r.ok) return false;
+    if (!r.ok) return null;
     const target = vanityOrFsd.toLowerCase();
     return r.data.some((c) => {
         if (c.publicIdentifier?.toLowerCase() === target) return true;
         if (c.fsdUrn?.endsWith(target)) return true;
         return false;
     });
+}
+
+/**
+ * Binary wrapper over `checkFirstDegree` — "unknown" collapses to false.
+ *
+ * Only correct where a false negative is harmless (e.g. deciding whether to
+ * SKIP an acceptance wait: guessing false just means we wait, which is safe).
+ * For anything that gates sending, use `checkFirstDegree` and handle null.
+ */
+export async function isFirstDegree(userId: string, vanityOrFsd: string, page?: Page, apiRequest?: APIRequestContext): Promise<boolean> {
+    return (await checkFirstDegree(userId, vanityOrFsd, page, apiRequest)) === true;
 }
 
 // ---- Invitations ----

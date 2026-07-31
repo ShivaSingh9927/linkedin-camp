@@ -99,7 +99,10 @@ export interface ProfileVisitOutput {
     about: string | null;
     email: string | null;
     phone: string | null;
-    connected: boolean;
+    // null = the 1st-degree check could not be completed (Voyager fetch failed,
+    // DOM never rendered). NOT the same as false. This output can be read by a
+    // downstream IF_ELSE gate days later, so an unknown must stay unknown.
+    connected: boolean | null;
     // 1 | 2 | 3 | null — from the visible degree badge on the profile.
     // Also persisted to Lead.connectionDegree as a side effect so future
     // campaign runs can branch via IF_ELSE without re-probing.
@@ -164,11 +167,27 @@ export interface DelayOutput {
 export interface IfElseOutput {
     branch: 'true' | 'false';
     executed: boolean;
+    // ---- Gate diagnostics (connectionState conditions) ----
+    // Which source actually supplied the value the branch was decided on:
+    // 'check-connection' (freshest — ran moments ago), 'lead-row' (last known
+    // DB state), 'profile-visit' (possibly days old, across a delay node), or
+    // 'none' (nothing knew). Recorded so a skipped lead is explainable after
+    // the fact instead of just vanishing.
+    resolvedFrom?: 'check-connection' | 'lead-row' | 'profile-visit' | 'stored-outputs' | 'none';
+    // Set when a connection gate took the false branch because the state was
+    // UNKNOWN (a probe failed) rather than confirmed-not-connected. Terminal —
+    // we do NOT retry — but recorded so the funnel shows "skipped, couldn't
+    // confirm" instead of a silent success.
+    skipReason?: 'connection_unknown' | 'connection_not_confirmed';
 }
 
 export interface CheckConnectionOutput {
-    connectionStatus: 'not_connected' | 'pending' | 'connected';
-    connected: boolean;
+    // 'unknown' = the probe ran but could not determine the state (Voyager
+    // fetch failed / DOM never rendered). Distinct from 'not_connected', which
+    // is a confident negative.
+    connectionStatus: 'not_connected' | 'pending' | 'connected' | 'unknown';
+    // null = unknown. Never collapse this to false — see checkFirstDegree().
+    connected: boolean | null;
     connectionDegree?: number | null;
 }
 
@@ -205,7 +224,11 @@ export interface NodeContext {
     // when `page` is null. Built once per lead from the saved session.
     apiRequest?: APIRequestContext;
     storedOutputs: Record<string, Record<string, any>>;
-    connectionStatus?: 'not_connected' | 'pending' | 'connected';
+    // Last known connection state for this lead, seeded by the engine from
+    // CampaignLeadProgress at the start of the run and refreshed in-place by
+    // CHECK_CONNECTION. Was previously declared but never populated, so any
+    // condition reading `connectionStatus` silently saw 'not_connected'.
+    connectionStatus?: 'not_connected' | 'pending' | 'connected' | 'unknown';
     campaign?: {
         objective?: string;
         campaignDescription?: string;
@@ -276,13 +299,29 @@ export interface LeadExecutionResult {
     //                    was never accepted; sequence gives up (soft terminal,
     //                    recorded as COMPLETED+reason, not FAILED).
     pausedReason?: 'lead_replied' | 'daily_cap' | 'off_hours' | 'stalled' | 'delay' | 'not_accepted';
+    // Set when the sequence ended early because a gate declined to proceed
+    // (e.g. connection could not be confirmed). The lead still finishes as
+    // COMPLETED — it is a soft terminal, not a failure, and is never retried —
+    // but runCampaign records THIS as the terminal reason instead of the
+    // generic 'sequence_finished' so the funnel can tell the two apart.
+    skipReason?: string;
 }
 
 export interface CampaignSummary {
     campaignId: string;
     totalLeads: number;
     succeeded: number;
+    /** Genuine failures only — a node errored or the engine couldn't run. */
     failed: number;
+    /**
+     * Leads that ran fine but were intentionally parked for later (delay node,
+     * daily cap, off-hours, unhealthy account, lead replied). These used to be
+     * lumped into `failed`, which made a perfectly healthy "waiting" campaign
+     * report `Succeeded: 0, Failed: 2` and sent us hunting for a bug that
+     * wasn't there. They are NOT failures and NOT successes — the sequence just
+     * hasn't finished yet.
+     */
+    parked: number;
     leadResults: LeadExecutionResult[];
     startedAt: string;
     completedAt: string;

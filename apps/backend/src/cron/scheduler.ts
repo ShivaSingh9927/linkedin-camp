@@ -39,12 +39,13 @@ export const initScheduler = () => {
       
       const activeUsers = await prisma.user.findMany({
         where: { id: { in: userIds } },
-        select: { 
-          id: true, 
+        select: {
+          id: true,
           linkedinCookie: true,
           persistentSessionPath: true,
           linkedinActiveInBrowser: true,
-          lastBrowserActivityAt: true
+          lastBrowserActivityAt: true,
+          accountHealth: true
         }
       });
 
@@ -65,6 +66,23 @@ const isUserActive = redisPresence === 'ACTIVE' || (now - lastActivity < twoMins
         
         if (isUserActive) {
           console.log(`[Scheduler] User ${user.id} is active (browser). Skipping cloud scheduler for safety.`);
+          continue;
+        }
+
+        // Account-health gate. The engine already refuses to launch on a
+        // non-HEALTHY account — but by then we've enqueued a job, taken the
+        // per-account Redis lock, and loaded the user + campaign + leads +
+        // session, all to do nothing. On a 1-minute heartbeat that repeats 1440
+        // times a day per stuck user.
+        //
+        // This matters most when `accountHealth` and `sessionInvalid` disagree,
+        // which is exactly what a re-login used to cause (bug #4: the login
+        // cleared sessionInvalid but left accountHealth at NEEDS_LOGIN, so this
+        // loop spun forever). #4 is fixed, but OTP_REQUIRED / RESTRICTED are
+        // deliberately NOT auto-healed — so they can still diverge, and this is
+        // the right layer to stop it. Don't hand out work the engine will refuse.
+        if (user.accountHealth && user.accountHealth !== 'HEALTHY') {
+          console.log(`[Scheduler] User ${user.id} accountHealth=${user.accountHealth}. Skipping (needs user action).`);
           continue;
         }
 
@@ -285,11 +303,23 @@ const isUserActive = redisPresence === 'ACTIVE' || (now - lastActivity < twoMins
         try {
           const campaign = await prisma.campaign.findUnique({
             where: { id: progress.campaignId },
-            select: { id: true, userId: true, status: true },
+            // Capitalized `User` — the generated client uses the schema's
+            // relation name; the lowercase form silently yields undefined in
+            // prod (see docs on the casing drift).
+            select: { id: true, userId: true, status: true, User: { select: { accountHealth: true } } },
           });
 
           if (!campaign || campaign.status !== 'ACTIVE') {
             console.log(`[Scheduler] Campaign ${progress.campaignId} not active, skipping.`);
+            continue;
+          }
+
+          // Same account-health gate as the 1-minute heartbeat — don't resume a
+          // campaign the engine is going to refuse. Matured leads stay DEFERRED
+          // and get picked up on the sweep after the user recovers.
+          const health = campaign.User?.accountHealth;
+          if (health && health !== 'HEALTHY') {
+            console.log(`[Scheduler] Campaign ${campaign.id} owner accountHealth=${health}. Skipping resume.`);
             continue;
           }
 

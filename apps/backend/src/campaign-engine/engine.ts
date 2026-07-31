@@ -33,8 +33,8 @@ import { sendMessage } from './nodes/send-message';
 import { inboxSyncVoyager } from './nodes/inbox-sync-voyager';
 import { delay } from './nodes/delay';
 import { ifElse } from './nodes/if-else';
-import { checkConnection } from './nodes/check-connection';
 import { checkConnectionVoyager } from './nodes/check-connection-voyager';
+import { runConnectionCheck, resolveConnectionBackend } from './nodes/connection-check';
 import { emailNode } from './nodes/email';
 import { emailFinder } from './nodes/email-finder';
 import { follow } from './nodes/follow';
@@ -72,7 +72,18 @@ const NODE_HANDLERS: Record<NodeType, NodeHandler> = {
     'inbox-sync': inboxSyncDispatch,
     'inbox-sync-voyager': inboxSyncVoyager,
     'if-else': ifElse,
-    'check-connection': checkConnection,
+    // Connection check is a READ, so it follows the same API-first rule as
+    // profile-visit / inbox-sync: dispatch to Voyager by default, DOM only on
+    // an explicit switch (node config `backend: 'dom'` or
+    // CONNECTION_CHECK_BACKEND=dom).
+    //
+    // This node used to be hardwired to the DOM handler, which meant every DM
+    // template did a full Chromium profile navigation just to ask "are they
+    // 1st-degree?" — a read the API answers in ~300ms with no browser. The DOM
+    // handler is still reachable by the switch above, and via
+    // `check-connection-voyager` with mode:'precise' when the exact degree
+    // (2 vs 3) or pending-invite detection is genuinely needed.
+    'check-connection': runConnectionCheck,
     'check-connection-voyager': checkConnectionVoyager,
     'email': emailNode,
     'email-finder': emailFinder,
@@ -107,16 +118,28 @@ const FATAL_NODES: Set<string> = new Set(['profile-visit']);
 
 // Whether a node requires a live Chromium page (lazy-launch gate). Browser-FREE:
 // delay + if-else (DB-only), email/email-finder (SMTP / backend service), and
-// check-connection-voyager in 'fast' mode (pure Voyager read via apiRequest).
+// BOTH connection-check node types whenever they resolve to Voyager 'fast'
+// (a pure API read via apiRequest — the common case since reads are API-first).
 // Everything else — writes (connect/send-message/like/comment/follow),
-// profile-visit (DOM enrichment: fsd resolve + contact-info + posts), DOM
-// check-connection, and messenger inbox-sync (needs a live page-instance) —
-// needs the browser. Unknown types default to needing it (safe).
+// profile-visit (DOM enrichment: fsd resolve + contact-info + posts), a
+// connection check explicitly switched to DOM / mode:'precise', and messenger
+// inbox-sync (needs a live page-instance) — needs the browser. Unknown types
+// default to needing it (safe).
 const BROWSER_FREE_NODES: Set<string> = new Set(['delay', 'if-else', 'email', 'email-finder']);
 function nodeNeedsBrowser(nodeConfig: CampaignFlowNode): boolean {
     const t = String(nodeConfig.node);
     if (BROWSER_FREE_NODES.has(t)) return false;
-    if (t === 'check-connection-voyager' && (nodeConfig as any).mode !== 'precise') return false;
+    // Connection checks: must mirror the dispatcher's own backend decision,
+    // or we boot Chromium for a node that then does a pure API read. Plain
+    // 'check-connection' resolves through resolveConnectionBackend (Voyager by
+    // default); the explicit '-voyager' type is always Voyager. Either way,
+    // mode:'precise' escalates to DOM and does need a page.
+    if (t === 'check-connection' || t === 'check-connection-voyager') {
+        const usesDom = t === 'check-connection'
+            ? resolveConnectionBackend(nodeConfig) === 'dom'
+            : false;
+        return usesDom || (nodeConfig as any).mode === 'precise';
+    }
     return true;
 }
 
@@ -324,6 +347,23 @@ async function runLead(
         // ---- Load previously stored outputs ----
         const storedOutputs = await readNodeOutputs(campaignId, lead.id);
 
+        // Seed the run's connection state from the last recorded probe. This
+        // field was declared on NodeContext but never populated, so every
+        // IF_ELSE condition on `connectionStatus` silently read the
+        // 'not_connected' fallback. CHECK_CONNECTION overwrites it in place
+        // when it runs.
+        let seedConnectionStatus: 'not_connected' | 'pending' | 'connected' | 'unknown' | undefined;
+        try {
+            const prog = await prisma.campaignLeadProgress.findUnique({
+                where: { campaignId_leadId: { campaignId, leadId: lead.id } },
+                select: { connectionStatus: true },
+            });
+            const s = prog?.connectionStatus;
+            if (s === 'connected' || s === 'pending' || s === 'not_connected' || s === 'unknown') {
+                seedConnectionStatus = s;
+            }
+        } catch { /* non-fatal — the gate has other sources */ }
+
         // ---- Execute flow ----
         console.log(`[ENGINE] Flow received: ${JSON.stringify(flow)}`);
         console.log(`[ENGINE] Flow length: ${flow?.length}`);
@@ -505,6 +545,7 @@ async function runLead(
                 apiRequest,
                 campaign: campaignData,
                 aiContext,
+                connectionStatus: seedConnectionStatus,
             };
 
             // Phase C — sequence awareness for AI-capable nodes. Only assembled
@@ -564,6 +605,11 @@ async function runLead(
                 ? await mockNode(nodeCtx, nodeConfig)
                 : await handler(nodeCtx, nodeConfig);
             currentNodeName = null;
+
+            // Carry a connection-state refresh (CHECK_CONNECTION mutates its
+            // own ctx) forward to the next node — nodeCtx is rebuilt per node,
+            // so without this the fresh reading dies with the object.
+            seedConnectionStatus = nodeCtx.connectionStatus ?? seedConnectionStatus;
 
             // Emit socket event for real-time activity
             if (socket) {
@@ -641,6 +687,15 @@ async function runLead(
                 if (result.output) {
                     storedOutputs[nodeType] = result.output;
                     await writeNodeOutput(campaignId, lead.id, nodeExec);
+                }
+
+                // A gate that declined ends the sequence (its false branch is
+                // an END node). Carry the reason up so the lead's terminal
+                // record says WHY instead of the generic 'sequence_finished' —
+                // this is what makes an unknown-state skip visible in the
+                // funnel rather than looking like a clean success.
+                if (nodeType === 'if-else' && (result.output as any)?.skipReason) {
+                    execResult.skipReason = (result.output as any).skipReason;
                 }
 
                 // If profile-visit, update lead enrichment
@@ -867,6 +922,7 @@ export async function runCampaign(
         totalLeads: campaignLeads.length,
         succeeded: 0,
         failed: 0,
+        parked: 0,
         leadResults: [],
         startedAt,
         completedAt: '',
@@ -964,7 +1020,10 @@ export async function runCampaign(
                 data: { isCompleted: true, lastActionAt: new Date() },
             }).catch(() => {});
             await transitionLead(campaignId, cl.leadId, 'COMPLETED', {
-                reason: 'sequence_finished',
+                // A gate-declined lead is still a soft terminal (never retried),
+                // but it records the gate's reason so the funnel can separate
+                // "skipped, couldn't confirm connection" from a full sequence.
+                reason: result.skipReason || 'sequence_finished',
             }).catch(err => console.error(`[CAMPAIGN] transitionLead COMPLETED failed: ${err.message}`));
         } else if (result.status === 'failed') {
             summary.failed++;
@@ -975,8 +1034,12 @@ export async function runCampaign(
                 reason: result.failedAt || 'unknown',
             }).catch(err => console.error(`[CAMPAIGN] transitionLead FAILED failed: ${err.message}`));
         } else {
-            // 'paused' — runLead already transitioned (REPLIED / DEFERRED / STALLED).
-            summary.failed++;
+            // 'paused' — runLead already transitioned (REPLIED / DEFERRED /
+            // STALLED). This is a lead waiting its turn, not a failure. Counting
+            // it as one is what produced the misleading
+            // "Succeeded: 0, Failed: 2" during user testing on accounts that
+            // were simply awaiting re-login.
+            summary.parked++;
         }
 
         // Gap between leads — 30–120s. Tight enough that a campaign of
@@ -994,17 +1057,21 @@ export async function runCampaign(
     console.log(`Total Leads:  ${summary.totalLeads}`);
     console.log(`Succeeded:    ${summary.succeeded}`);
     console.log(`Failed:       ${summary.failed}`);
+    console.log(`Parked:       ${summary.parked}  (waiting: delay / cap / off-hours / re-login / replied)`);
     console.log('');
 
     for (const lr of summary.leadResults) {
-        const icon = lr.status === 'completed' ? '✅' : '❌';
+        // ⏸ for parked leads — they neither succeeded nor failed, and showing
+        // them as ❌ is what made healthy waiting campaigns look broken.
+        const icon = lr.status === 'completed' ? '✅' : lr.status === 'paused' ? '⏸' : '❌';
         const nodes = lr.nodesExecuted
             .map(n => {
                 const nIcon = n.status === 'success' ? '✅' : '❌';
                 return `${n.node}${nIcon}`;
             })
             .join(' → ');
-        console.log(`${icon} ${lr.leadName}: ${nodes}`);
+        const why = lr.status === 'paused' && lr.pausedReason ? ` (parked: ${lr.pausedReason})` : '';
+        console.log(`${icon} ${lr.leadName}: ${nodes}${why}`);
 
         // Print errors
         for (const n of lr.nodesExecuted) {

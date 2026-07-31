@@ -32,7 +32,7 @@ import { NodeHandler, NodeResult, ProfileVisitOutput } from '../types';
 import { prisma } from '@repo/db';
 import {
     getProfileByFsd,
-    isFirstDegree,
+    checkFirstDegree,
     getAllConnections,
 } from '../../services/voyager-api.service';
 import { cleanPersonField } from '../scrape/sanitize';
@@ -59,7 +59,10 @@ export const profileVisitVoyager: NodeHandler = async (ctx, config): Promise<Nod
         about: null,
         email: null,
         phone: null,
-        connected: false,
+        // Starts unknown, not false — if we never reach the 1st-degree check
+        // (early return / thrown error) the gate must not read a fabricated
+        // negative out of this field.
+        connected: null,
         connectedDate: null,
         experience: [],
         education: [],
@@ -141,11 +144,16 @@ export const profileVisitVoyager: NodeHandler = async (ctx, config): Promise<Nod
         }
 
         // ---- Step 4: Connection degree check (cheap; uses cached 1st-deg list) ----
-        // isFirstDegree returns true/false from the in-memory cache. Only tells
-        // us 1st vs 2nd/3rd — the exact number still needs a DOM probe.
-        const is1st = await isFirstDegree(userId, vanity, page).catch(() => false);
+        // checkFirstDegree returns true / false / null from the in-memory cache.
+        // Only tells us 1st vs 2nd/3rd — the exact number still needs a DOM probe.
+        //
+        // The `null` (couldn't determine) case must survive: this output is read
+        // by the IF_ELSE connection gate, potentially DAYS later across a delay
+        // node. A swallowed error stored as `connected: false` here is what made
+        // the gate skip messages to real 1st-degree leads.
+        const is1st = await checkFirstDegree(userId, vanity, page).catch(() => null);
         output.connected = is1st;
-        if (is1st) {
+        if (is1st === true) {
             // Set the binary "is 1st-degree" hint on Lead row. Don't write
             // connectionDegree as a specific 1/2/3 number — we don't know.
             await prisma.lead.update({

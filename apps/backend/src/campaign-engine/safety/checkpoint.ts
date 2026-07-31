@@ -212,20 +212,69 @@ export async function markAccountHealthy(userId: string): Promise<void> {
         select: { id: true, name: true },
     });
     if (toResume.length > 0) {
-        await prisma.campaign.updateMany({
-            where: { userId, status: 'PAUSED', pausedReason: 'session_expired' },
-            data: { status: 'ACTIVE', pausedReason: null },
-        }).catch(err => console.error(`[checkpoint] auto-resume failed: ${err.message}`));
+        // Respect the 1-ACTIVE-campaign-per-user invariant. While this user's
+        // campaign sat PAUSED they could have started another one — that one is
+        // now ACTIVE, and a blanket PAUSED→ACTIVE here would give them two,
+        // which the queue model (campaign-queue.service.ts) forbids and the
+        // per-account LinkedIn budget can't honour anyway.
+        //
+        // So: the first campaign only claims the ACTIVE slot if it's free;
+        // everything else goes to the tail of the QUEUED list and gets promoted
+        // normally when the active one finishes. Nothing is lost either way.
+        const activeAlready = await prisma.campaign.findFirst({
+            where: { userId, status: 'ACTIVE' },
+            select: { id: true },
+        }).catch(() => null);
+
+        let slotFree = !activeAlready;
+        const resumed: typeof toResume = [];
+        const queued: typeof toResume = [];
+        for (const c of toResume) {
+            if (slotFree) {
+                await prisma.campaign.update({
+                    where: { id: c.id },
+                    data: { status: 'ACTIVE', pausedReason: null },
+                }).catch(err => console.error(`[checkpoint] auto-resume failed for ${c.id}: ${err.message}`));
+                slotFree = false;
+                resumed.push(c);
+            } else {
+                const tail = await prisma.campaign.findFirst({
+                    where: { userId, status: 'QUEUED' },
+                    orderBy: { queuePosition: 'desc' },
+                    select: { queuePosition: true },
+                }).catch(() => null);
+                await prisma.campaign.update({
+                    where: { id: c.id },
+                    data: {
+                        status: 'QUEUED',
+                        pausedReason: null,
+                        queuePosition: (tail?.queuePosition ?? 0) + 1,
+                    },
+                }).catch(err => console.error(`[checkpoint] auto-queue failed for ${c.id}: ${err.message}`));
+                console.log(`[checkpoint] user=${userId} campaign ${c.id} → QUEUED (another campaign holds the active slot)`);
+                queued.push(c);
+            }
+        }
+
+        // Tell the user what actually happened. A campaign that went to the
+        // queue has NOT resumed, and saying it did would send them looking for
+        // activity that isn't coming.
+        const parts: string[] = [];
+        if (resumed.length === 1) parts.push(`"${resumed[0].name}" has resumed`);
+        else if (resumed.length > 1) parts.push(`${resumed.length} campaigns resumed`);
+        if (queued.length === 1) parts.push(`"${queued[0].name}" is queued behind your active campaign`);
+        else if (queued.length > 1) parts.push(`${queued.length} campaigns are queued behind your active campaign`);
 
         await prisma.notification.create({
             data: {
                 userId,
                 type: 'ACCOUNT_HEALTH',
-                title: 'Campaign resumed',
-                body: toResume.length === 1
-                    ? `Re-login succeeded — "${toResume[0].name}" has resumed.`
-                    : `Re-login succeeded — ${toResume.length} campaigns resumed.`,
-                meta: { resumedCampaignIds: toResume.map(c => c.id) },
+                title: resumed.length > 0 ? 'Campaign resumed' : 'Campaign queued',
+                body: `Re-login succeeded — ${parts.join('; ')}.`,
+                meta: {
+                    resumedCampaignIds: resumed.map(c => c.id),
+                    queuedCampaignIds: queued.map(c => c.id),
+                },
             },
         }).catch(err => console.error(`[checkpoint] resume notification failed: ${err.message}`));
 
@@ -238,7 +287,12 @@ export async function markAccountHealthy(userId: string): Promise<void> {
             if (io && typeof (io as any).to === 'function') {
                 io.to(`user_${userId}`).emit('CAMPAIGN_RESUMED', {
                     userId,
+                    // campaignIds kept as the full set for backwards compat with
+                    // any listener that just refetches; the split tells the UI
+                    // which ones actually started.
                     campaignIds: toResume.map(c => c.id),
+                    resumedCampaignIds: resumed.map(c => c.id),
+                    queuedCampaignIds: queued.map(c => c.id),
                     timestamp: new Date().toISOString(),
                 });
             }
@@ -246,6 +300,6 @@ export async function markAccountHealthy(userId: string): Promise<void> {
             console.error(`[checkpoint] resume socket emit failed: ${err?.message}`);
         }
 
-        console.log(`[checkpoint] user=${userId} auto-resumed ${toResume.length} campaign(s)`);
+        console.log(`[checkpoint] user=${userId} auto-resumed ${resumed.length} campaign(s), queued ${queued.length}`);
     }
 }

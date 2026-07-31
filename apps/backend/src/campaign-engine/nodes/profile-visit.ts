@@ -25,7 +25,8 @@ export const profileVisit: NodeHandler = async (ctx, config): Promise<NodeResult
         about: null,
         email: null,
         phone: null,
-        connected: false,
+        // Unknown until proven either way — see ProfileVisitOutput.connected.
+        connected: null,
         connectedDate: null,
         experience: [],
         education: [],
@@ -57,7 +58,9 @@ export const profileVisit: NodeHandler = async (ctx, config): Promise<NodeResult
         // check returned false for everyone.
         try {
             const state = await detectConnectionState(page, lead.linkedinUrl);
-            output.connected = state.isDmable;
+            // isUnknown = none of the signals rendered. Leave `connected` as
+            // null rather than claiming a negative the DOM never gave us.
+            output.connected = state.isUnknown ? null : state.isDmable;
             // Persist connectionDegree onto the Lead row when we have a
             // confident reading. Only write non-null degree — a probe that
             // failed to read the badge shouldn't wipe out a previously-known

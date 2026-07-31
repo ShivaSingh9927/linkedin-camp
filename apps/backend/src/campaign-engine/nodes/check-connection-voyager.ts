@@ -20,7 +20,7 @@
  */
 import { NodeHandler, NodeResult, CheckConnectionOutput } from '../types';
 import { prisma } from '@repo/db';
-import { isFirstDegree, getAllConnections } from '../../services/voyager-api.service';
+import { checkFirstDegree, getAllConnections } from '../../services/voyager-api.service';
 import { checkConnection } from './check-connection';
 
 export const checkConnectionVoyager: NodeHandler = async (ctx, config): Promise<NodeResult> => {
@@ -57,17 +57,22 @@ export const checkConnectionVoyager: NodeHandler = async (ctx, config): Promise<
         }
 
         // mode === 'fast': Voyager-only (page when available, else browser-free)
-        const is1st = await isFirstDegree(userId, vanity, page, apiRequest);
+        // checkFirstDegree (not isFirstDegree) so a failed connections fetch
+        // comes back as null — "couldn't tell" — instead of masquerading as a
+        // confident "not connected".
+        const is1st = await checkFirstDegree(userId, vanity, page, apiRequest);
         output.connected = is1st;
-        output.connectionStatus = is1st ? 'connected' : 'not_connected';
+        output.connectionStatus = is1st === true ? 'connected'
+            : is1st === false ? 'not_connected'
+            : 'unknown';
         // Surface degree=1 on a confirmed 1st-degree so callers that read
         // `output.connectionDegree` (e.g. the IF_ELSE probe) get parity with
         // the DOM node. We never claim 2/3 here — fast mode can't see those.
-        if (is1st) output.connectionDegree = 1;
+        if (is1st === true) output.connectionDegree = 1;
 
         // Persist Lead.connectionDegree as 1 when we know it; null otherwise
         // (write-only-when-confident so a previous known value isn't wiped).
-        if (is1st && lead.id) {
+        if (is1st === true && lead.id) {
             await prisma.lead.update({
                 where: { id: lead.id },
                 data: {
@@ -75,10 +80,15 @@ export const checkConnectionVoyager: NodeHandler = async (ctx, config): Promise<
                     status: 'CONNECTED',
                 },
             }).catch(() => {});
-        } else if (lead.id) {
-            // Confirmed NOT 1st-degree — wipe the binary guess from the row
+        } else if (is1st === false && lead.id) {
+            // CONFIRMED not 1st-degree — wipe the binary guess from the row
             // (if it was 1) so downstream IF_ELSE checks see accurate state.
             // Don't touch other degrees since we don't know them.
+            //
+            // Guarded on `=== false` deliberately: on `null` (probe failed) we
+            // must NOT clear the row, because the Lead row is exactly the
+            // fallback the gate leans on when the live probe can't answer.
+            // Wiping it here would destroy the evidence we're about to need.
             const current = await prisma.lead.findUnique({
                 where: { id: lead.id },
                 select: { connectionDegree: true },
@@ -100,16 +110,19 @@ export const checkConnectionVoyager: NodeHandler = async (ctx, config): Promise<
                     leadId: lead.id,
                     connectionStatus: output.connectionStatus,
                     lastConnectionCheck: new Date(),
-                    needsRetry: !is1st,
+                    needsRetry: is1st !== true,
                 },
                 update: {
                     connectionStatus: output.connectionStatus,
                     lastConnectionCheck: new Date(),
-                    needsRetry: !is1st,
+                    needsRetry: is1st !== true,
                     updatedAt: new Date(),
                 },
             }).catch(() => {});
         }
+
+        // Keep the in-flight context in step (see check-connection.ts).
+        ctx.connectionStatus = output.connectionStatus;
 
         console.log(`[CHECK-CONNECTION-VOYAGER] ${lead.firstName}: ${output.connectionStatus} (mode=${mode})`);
         return { success: true, output };
