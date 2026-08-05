@@ -130,7 +130,7 @@ Verify: `cd apps/backend && npx ts-node --transpile-only src/scripts/verify-acco
 ordering, the queue invariant, and that the de-park is still present).
 
 ### 5. ✅ Leads reported Failed on NEEDS_LOGIN + campaign re-run loop
-**FIXED 2026-07-30 — code complete, NOT yet deployed.**
+**FIXED 2026-07-30, deployed 2026-07-30, both halves verified in prod 2026-08-05.**
 ```
 [ENGINE] accountHealth=NEEDS_LOGIN — refusing to launch
 Stats -> Succeeded: 0, Failed: 2   (repeats every cycle)
@@ -161,6 +161,24 @@ gate is now a backstop rather than the only defence.
 
 Verify: `cd apps/backend && npx ts-node --transpile-only src/scripts/verify-account-recovery.ts`
 (21 assertions, covering #4 and #5).
+
+**Prod verification of the scheduler gate (2026-08-05).** The `parked` counter and
+the un-gate (recovery after re-login) were confirmed earlier; the *gate* itself
+needed an unhealthy account, which no natural test produced. Done as a controlled
+experiment — an ACTIVE campaign with a lead ready **now**, so a quiet scheduler
+could not be mistaken for a working gate, and only `accountHealth` was varied:
+
+```
+15:54:00  Found 1 users with ACTIVE campaigns.
+15:54:00  User cmpposqs... accountHealth=OTP_REQUIRED. Skipping (needs user action).
+15:55:00  User cmpposqs... accountHealth=OTP_REQUIRED. Skipping (needs user action).
+          -> queue wait/delayed/paused = 0/0/0, CampaignLeadProgress rows = 0
+15:55:17  accountHealth reverted to HEALTHY
+15:56:00  Received job: task_cl-step4-... -> Starting Campaign -> Succeeded: 1
+```
+
+Same campaign, same ready lead; the only variable was the health field. DB-only
+setup, and the campaign was profile-visit-only so even the control run was a read.
 
 ### 6. 🔧 OTP submit fails in mobile in-app browsers + attempt confusion
 - "Submit code" shows **Network Error** in in-app browsers (WhatsApp/LinkedIn
