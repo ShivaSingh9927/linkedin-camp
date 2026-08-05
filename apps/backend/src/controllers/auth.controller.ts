@@ -9,6 +9,7 @@ import axios from 'axios';
 import { LinkedInService } from '../services/linkedin.service';
 import { mailService } from '../services/mail.service';
 import { sessionManager } from '../services/session-manager.service';
+import { sessionValidator } from '../services/session-validator.service';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'supersecretkey';
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
@@ -133,17 +134,42 @@ export const getCloudStatus = async (req: any, res: Response) => {
 export const getLinkedinStatus = async (req: any, res: Response) => {
     const userId = req.user.id;
     try {
-        const user = await prisma.user.findUnique({
+        let user = await prisma.user.findUnique({
             where: { id: userId }
         });
 
         if (!user) return res.status(404).json({ error: 'User not found' });
 
         // CRITICAL: DO NOT use LinkedInService.isSessionValid here.
-        // It's a polling endpoint; checking LinkedIn validity on every poll is session suicide.
-        // We rely on the flags the worker/liveCheck already wrote: sessionInvalid
-        // + accountHealth. A session whose cookie exists but is flagged dead is
-        // "expired", not "connected" — so the top-bar indicator can go red.
+        // It launches Chromium; doing that on every poll is session suicide.
+        //
+        // But trusting the DB flags ALONE is what made the top-bar pill show
+        // "Signal Active" over a session LinkedIn had already killed: nothing
+        // rewrites sessionInvalid until a campaign happens to run, so between
+        // the session dying and the next run the UI confidently lies.
+        //
+        // So when the flags look healthy but haven't been confirmed against
+        // LinkedIn recently, spend ONE browser-free Voyager /me call to find
+        // out. liveCheckCached enforces a TTL and collapses concurrent polls,
+        // so a 30s-polling UI costs at most one probe per user per 15 min.
+        // liveCheck writes the flags itself (marks invalid on a confirmed 401,
+        // refreshes sessionValidatedAt on success, ignores transient failures),
+        // so we re-read the row rather than mirroring its decision here.
+        const flagsLookConnected = (!!user.linkedinCookie || !!user.persistentSessionPath)
+            && !user.sessionInvalid
+            && user.accountHealth === 'HEALTHY';
+        if (flagsLookConnected) {
+            const probed = await sessionValidator.liveCheckCached(userId).catch((err: any) => {
+                console.error(`[AUTH-CTRL] linkedin-status live probe failed for ${userId}: ${err?.message}`);
+                return null;
+            });
+            if (probed) {
+                user = (await prisma.user.findUnique({ where: { id: userId } })) || user;
+            }
+        }
+
+        // A session whose cookie exists but is flagged dead is "expired", not
+        // "connected" — so the top-bar indicator can go red.
         const hasSession = !!user.linkedinCookie || !!user.persistentSessionPath;
         const expired = hasSession && (user.sessionInvalid || user.accountHealth !== 'HEALTHY');
         const connected = hasSession && !expired;

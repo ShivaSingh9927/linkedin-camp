@@ -26,6 +26,8 @@ interface Lead {
     connectionDegree?: number | null;
     experience?: any;
     education?: any;
+    latestPost?: string | null;
+    latestPostUrl?: string | null;
     enrichedAt?: string | null;
 }
 

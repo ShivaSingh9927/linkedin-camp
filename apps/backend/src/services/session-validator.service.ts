@@ -241,9 +241,9 @@ class SessionValidatorService {
             return { connected: false, sessionInvalid: false };
         }
 
-        const needsValidation = !user.sessionValidatedAt ||
-            (Date.now() - user.sessionValidatedAt.getTime() > 60 * 60 * 1000);
-
+        // NOTE: this is a flags-only answer — it does NOT mean LinkedIn agrees.
+        // Freshness is liveCheckCached's job; callers that need the truth (any
+        // user-facing status endpoint) must go through that instead.
         return {
             connected: true,
             sessionInvalid: false,
@@ -300,6 +300,63 @@ class SessionValidatorService {
         // surface a real checkpoint if the session is genuinely gone).
         console.warn(`[SESSION-VALIDATOR] liveCheck inconclusive for ${userId}: ${res.reason}`);
         return { connected: true, sessionInvalid: false, sessionValidatedAt: pre.sessionValidatedAt };
+    }
+
+    /**
+     * liveCheck behind a freshness gate, safe to call from a polling endpoint.
+     *
+     * Returns the liveCheck result when it actually probed, or `null` when it
+     * decided the cached DB flags are fresh enough — in which case the caller
+     * should just use those flags unchanged.
+     *
+     * Two independent guards, both needed:
+     *  - `sessionValidatedAt` (DB): survives process restarts and is shared by
+     *    every writer (worker runs, logins), so a session a campaign confirmed
+     *    30s ago costs the UI nothing.
+     *  - `liveProbeAt` (in-process): guards ATTEMPTS, not just successes. A
+     *    transient proxy failure deliberately does NOT stamp sessionValidatedAt,
+     *    so without this a 30s UI poll would become a 30s /me retry loop for as
+     *    long as the proxy is sick.
+     *
+     * `liveProbeInflight` collapses concurrent callers (multiple browser tabs,
+     * or the pill and ActivationHero on the same page load) into one probe.
+     */
+    private liveProbeAt = new Map<string, number>();
+    private liveProbeInflight = new Map<string, Promise<{ connected: boolean; sessionInvalid: boolean; sessionValidatedAt?: Date }>>();
+
+    async liveCheckCached(
+        userId: string,
+        ttlMs = 15 * 60 * 1000,
+    ): Promise<{ connected: boolean; sessionInvalid: boolean; sessionValidatedAt?: Date } | null> {
+        const inflight = this.liveProbeInflight.get(userId);
+        if (inflight) return inflight;
+
+        const now = Date.now();
+        if (now - (this.liveProbeAt.get(userId) ?? 0) < ttlMs) return null;
+
+        const user = await prisma.user.findUnique({
+            where: { id: userId },
+            select: { sessionValidatedAt: true },
+        }).catch(() => null);
+        if (user?.sessionValidatedAt && now - user.sessionValidatedAt.getTime() < ttlMs) return null;
+
+        // Stamp BEFORE awaiting, so requests that arrive between this line and
+        // the probe finishing are throttled even if the probe throws.
+        this.liveProbeAt.set(userId, now);
+        this.pruneProbeCache(ttlMs);
+
+        const p = this.liveCheck(userId).finally(() => this.liveProbeInflight.delete(userId));
+        this.liveProbeInflight.set(userId, p);
+        return p;
+    }
+
+    /** Keep liveProbeAt from growing without bound in a long-lived API process. */
+    private pruneProbeCache(ttlMs: number): void {
+        if (this.liveProbeAt.size < 5000) return;
+        const cutoff = Date.now() - ttlMs * 2;
+        for (const [k, t] of this.liveProbeAt) {
+            if (t < cutoff) this.liveProbeAt.delete(k);
+        }
     }
 
     /**

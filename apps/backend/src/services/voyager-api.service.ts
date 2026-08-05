@@ -393,15 +393,25 @@ export async function getProfileByFsd(
     const memberId = data.objectUrn?.startsWith('urn:li:member:')
         ? data.objectUrn.split(':').pop()
         : null;
-    // Location is nested: locationUnion = { geo: { countryCode, city, ... } }
-    //   or locationName directly on the entity (older profiles).
+    // Location. `locationName` is null on most modern profiles and `location`
+    // only carries a bare countryCode; the human-readable value lives in a Geo
+    // entity in included[], referenced by geoLocation["*geo"]. That Geo also
+    // points at a country Geo, so "Greater Delhi Area" + "India" recombine into
+    // the string LinkedIn itself renders.
+    //
+    // (The old chain read data.locationUnion, which FullProfile-76 doesn't
+    // return at all — which is why enriched leads had a blank location.)
+    const geoUrn = data.geoLocation?.['*geo'] || data.geoLocation?.geoUrn || null;
+    const geo = geoUrn ? included.find((e: any) => e.entityUrn === geoUrn) : null;
+    const countryUrn = geo?.['*country'] || geo?.countryUrn || null;
+    const country = countryUrn ? included.find((e: any) => e.entityUrn === countryUrn) : null;
     const location = data.locationName
+        || [geo?.defaultLocalizedName, country?.defaultLocalizedName]
+            .filter(Boolean)
+            // "Greater Delhi Area, India", but don't emit "India, India".
+            .filter((v: string, i: number, a: string[]) => a.indexOf(v) === i)
+            .join(', ')
         || data.location?.defaultLocalizedName
-        || data.location?.postalCode
-        || (data.locationUnion?.geo ? [
-            data.locationUnion.geo.city,
-            data.locationUnion.geo.countryCode,
-        ].filter(Boolean).join(', ') : null)
         || null;
     // Industry: either as a string (industryName) or as a URN.
     const industry = data.industryName
@@ -433,11 +443,119 @@ export async function getProfileByFsd(
         education: [],
     };
 
-    // Best-effort current company/title. The FullProfile body may also carry
-    // a `currentPositions` or `positionGroups` (URN ref) — those are linked
-    // entities in included[]. Skip resolution for now; node caller can also
-    // hit /identity/profiles/{vanity}/positions if it needs them.
+    // experience/education are NOT in this response — FullProfile-76's
+    // included[] carries only Geo + Industry entities (verified live). They come
+    // from the two dedicated dash collections; see getProfilePositions /
+    // getProfileEducations below, which the profile-visit node layers on.
     return { ok: true, status: r.status, data: enriched };
+}
+
+const MONTHS = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** { month: 7, year: 2026 } -> "Jul 2026" (year alone if no month). */
+function fmtVoyagerDate(d: any): string | null {
+    if (!d || !d.year) return null;
+    const mon = d.month && MONTHS[d.month] ? `${MONTHS[d.month]} ` : '';
+    return `${mon}${d.year}`;
+}
+
+/**
+ * dateRange -> "Jul 2026 - Present", matching the shape the DOM scraper
+ * produces so the UI renders both paths identically.
+ */
+function fmtVoyagerDateRange(dr: any): string | null {
+    const start = fmtVoyagerDate(dr?.start);
+    const end = fmtVoyagerDate(dr?.end);
+    if (!start && !end) return null;
+    if (!start) return end;
+    return `${start} - ${end || 'Present'}`;
+}
+
+/**
+ * Experience + education, browser-free.
+ *
+ * These live on `identity/dash/profilePositions` and
+ * `identity/dash/profileEducations` with `q=viewee&profileUrn=<fsd>`.
+ *
+ * Two traps, both confirmed the hard way against a live profile:
+ *  - Passing a `decorationId` makes both return HTTP 400. Omit it and they
+ *    return 200 with the full entity inline in `included[]`.
+ *  - The old `identity/profiles/{vanity}/positions` REST routes are retired —
+ *    they answer HTTP 410 Gone.
+ *
+ * Field values are duplicated across `title`/`multiLocaleTitle`; the plain form
+ * is already localized so we read that and fall back to en_US.
+ */
+const pickLocale = (plain: any, multi: any): string | null =>
+    plain || multi?.en_US || (multi ? Object.values(multi)[0] as string : null) || null;
+
+export interface VoyagerExperience {
+    title: string | null;
+    company: string | null;
+    dateRange: string | null;
+    location: string | null;
+    description: string | null;
+}
+
+export interface VoyagerEducation {
+    school: string | null;
+    degree: string | null;
+    fieldOfStudy: string | null;
+    dateRange: string | null;
+}
+
+async function fetchProfileCollection(
+    userId: string,
+    kind: 'profilePositions' | 'profileEducations',
+    fsdUrn: string,
+    page?: Page,
+): Promise<VoyagerResult<any[]>> {
+    const fsdId = fsdUrn.includes(':') ? fsdUrn.split(':').pop()! : fsdUrn;
+    const profileUrn = encodeURIComponent(`urn:li:fsd_profile:${fsdId}`);
+    const url = `https://www.linkedin.com/voyager/api/identity/dash/${kind}?q=viewee&profileUrn=${profileUrn}`;
+    const r = await voyagerFetch<any>(userId, url, { page });
+    if (!r.ok) return r;
+    const included = Array.isArray((r.data as any)?.included) ? (r.data as any).included : [];
+    return { ok: true, status: r.status, data: included };
+}
+
+export async function getProfilePositions(
+    userId: string,
+    fsdUrn: string,
+    page?: Page,
+): Promise<VoyagerResult<VoyagerExperience[]>> {
+    const r = await fetchProfileCollection(userId, 'profilePositions', fsdUrn, page);
+    if (!r.ok) return r;
+    // The collection also echoes a CollectionResponse envelope into included[];
+    // filter to actual Position entities.
+    const rows = r.data
+        .filter((e: any) => String(e?.$type || '').endsWith('profile.Position'))
+        .map((e: any): VoyagerExperience => ({
+            title: pickLocale(e.title, e.multiLocaleTitle),
+            company: pickLocale(e.companyName, e.multiLocaleCompanyName),
+            dateRange: fmtVoyagerDateRange(e.dateRange),
+            location: pickLocale(e.locationName || e.geoLocationName, e.multiLocaleLocationName),
+            description: pickLocale(e.description, e.multiLocaleDescription),
+        }));
+    return { ok: true, status: r.status, data: rows };
+}
+
+export async function getProfileEducations(
+    userId: string,
+    fsdUrn: string,
+    page?: Page,
+): Promise<VoyagerResult<VoyagerEducation[]>> {
+    const r = await fetchProfileCollection(userId, 'profileEducations', fsdUrn, page);
+    if (!r.ok) return r;
+    const rows = r.data
+        .filter((e: any) => String(e?.$type || '').endsWith('profile.Education'))
+        .map((e: any): VoyagerEducation => ({
+            school: pickLocale(e.schoolName, e.multiLocaleSchoolName),
+            degree: pickLocale(e.degreeName, e.multiLocaleDegreeName),
+            fieldOfStudy: pickLocale(e.fieldOfStudy, e.multiLocaleFieldOfStudy),
+            dateRange: fmtVoyagerDateRange(e.dateRange),
+        }));
+    return { ok: true, status: r.status, data: rows };
 }
 
 function extractPhotoUrl(profile: any, _included: any[]): string | null {

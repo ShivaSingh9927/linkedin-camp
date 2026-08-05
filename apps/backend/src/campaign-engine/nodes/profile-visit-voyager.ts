@@ -21,9 +21,14 @@
  *
  * So the algorithm is:
  *   1. Call FullProfile-76 → get all the easy stuff.
- *   2. If lead is 1st-degree AND `enrichContact` is set → DOM modal click
+ *   2. Call profilePositions + profileEducations → experience/education, and
+ *      the authoritative current company/title. FullProfile-76 carries none of
+ *      this (its included[] is only Geo + Industry), so these two extra HTTP
+ *      calls are the difference between a populated Career panel and an empty
+ *      one. Skip with `enrichExperience: false`.
+ *   3. If lead is 1st-degree AND `enrichContact` is set → DOM modal click
  *      (rare; only for the small subset of leads in the user's network).
- *   3. If `enrichPosts` is set → DOM /recent-activity nav + scrape.
+ *   4. If `enrichPosts` is set → DOM /recent-activity nav + scrape.
  *
  * The point: the 719-row CSV enrichment (no contact, no posts) goes from
  * ~15s/lead (full profile nav + scroll + extract) to ~300ms/lead.
@@ -32,6 +37,8 @@ import { NodeHandler, NodeResult, ProfileVisitOutput } from '../types';
 import { prisma } from '@repo/db';
 import {
     getProfileByFsd,
+    getProfilePositions,
+    getProfileEducations,
     checkFirstDegree,
     getAllConnections,
 } from '../../services/voyager-api.service';
@@ -111,10 +118,39 @@ export const profileVisitVoyager: NodeHandler = async (ctx, config): Promise<Nod
         output.location = p.location;
         output.about = p.summary;
 
-        // company / jobTitle: if FullProfile didn't carry them inline (it
-        // typically doesn't), try parsing "<title> at <company>" out of the
-        // headline as a fallback. Matches the DOM node's behavior.
-        if (output.headline) {
+        // ---- Step 2b: Experience + education (two more browser-free calls) ----
+        // FullProfile-76 carries none of this, so without these calls the
+        // Career & education panel is permanently empty on API-enriched leads
+        // and company/jobTitle fall back to guessing from the headline.
+        //
+        // Best-effort: a failure here degrades the record, it must not fail the
+        // node (the connection gate downstream depends on this node finishing).
+        // Set `enrichExperience: false` on the node to skip both calls when
+        // bulk-enriching and only name/headline is wanted.
+        //
+        // Sequential, NOT Promise.all: voyagerFetch's per-user 1500ms read gap
+        // is a read-then-write on a Redis key, so two concurrent calls both see
+        // the old timestamp and fire together — silently defeating the pacing
+        // that keeps these reads looking human.
+        if ((config as any).enrichExperience !== false) {
+            const posRes = await getProfilePositions(userId, fsd, page).catch(() => null);
+            const eduRes = await getProfileEducations(userId, fsd, page).catch(() => null);
+            if (posRes?.ok) output.experience = posRes.data as any;
+            else console.log(`[PROFILE-VISIT-VOYAGER] positions unavailable: ${(posRes as any)?.error || (posRes as any)?.status || 'error'}`);
+            if (eduRes?.ok) output.education = eduRes.data as any;
+            else console.log(`[PROFILE-VISIT-VOYAGER] educations unavailable: ${(eduRes as any)?.error || (eduRes as any)?.status || 'error'}`);
+        }
+
+        // company / jobTitle: the current position is authoritative, so prefer
+        // it. Only fall back to parsing "<title> at <company>" out of the
+        // headline when there's no position row — that regex takes the first
+        // " at "/"@" it sees, which mangles multi-clause headlines like
+        // "intern @1DS | CS Student @ GLA University | Java Developer".
+        const current = (output.experience as any[])?.[0];
+        if (current?.title) output.jobTitle = cleanPersonField(current.title, output.name || '');
+        if (current?.company) output.company = current.company;
+
+        if (output.headline && (!output.jobTitle || !output.company)) {
             const m = output.headline.match(/^(.+?)\s+(?:at|@)\s+(.+?)$/i);
             if (m) {
                 if (!output.jobTitle) output.jobTitle = cleanPersonField(m[1].trim(), output.name || '');

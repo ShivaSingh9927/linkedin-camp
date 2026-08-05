@@ -621,6 +621,11 @@ export const getCampaignLeads = async (req: any, res: Response) => {
             experience: (r.Lead as any).experience ?? null,
             education: (r.Lead as any).education ?? null,
             enrichedAt: (r.Lead as any).enrichedAt ?? null,
+            // profile-visit stores the lead's most recent post; it was being
+            // dropped here, so the campaign Leads tab showed nothing even when
+            // the scrape had captured it.
+            latestPost: (r.Lead as any).latestPost ?? null,
+            latestPostUrl: (r.Lead as any).latestPostUrl ?? null,
         }));
 
         res.json({ leads, total, page, limit, stageCounts });

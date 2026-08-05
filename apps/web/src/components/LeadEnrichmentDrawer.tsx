@@ -1,6 +1,6 @@
 'use client';
 
-import { X, ExternalLink, Mail, Phone, MapPin, Briefcase, GraduationCap, Sparkles, FileText } from 'lucide-react';
+import { X, ExternalLink, Mail, Phone, MapPin, Briefcase, GraduationCap, Sparkles, FileText, Newspaper } from 'lucide-react';
 
 export interface EnrichedLead {
     name?: string;
@@ -18,6 +18,8 @@ export interface EnrichedLead {
     connectionDegree?: number | null;
     experience?: any;
     education?: any;
+    latestPost?: string | null;
+    latestPostUrl?: string | null;
     enrichedAt?: string | null;
 }
 
@@ -162,6 +164,19 @@ export function LeadEnrichmentDrawer({ lead, onClose }: { lead: EnrichedLead | n
                                     </div>
                                 ))}
                             </div>
+                        </div>
+                    )}
+
+                    {/* Recent activity — captured by profile-visit's enrichPosts */}
+                    {lead.latestPost && (
+                        <div>
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-1.5"><Newspaper className="w-3.5 h-3.5" /> Recent post</p>
+                            <p className="text-sm text-slate-700 leading-relaxed line-clamp-5 whitespace-pre-line">{lead.latestPost}</p>
+                            {lead.latestPostUrl && (
+                                <a href={lead.latestPostUrl} target="_blank" rel="noopener" className="mt-2 inline-flex items-center gap-1.5 text-xs font-bold text-violet-600 hover:underline">
+                                    <ExternalLink className="w-3.5 h-3.5" /> View post
+                                </a>
+                            )}
                         </div>
                     )}
 

@@ -80,7 +80,12 @@ export const getSessionStatus = async (req: any, res: Response) => {
     const userId = req.user.id;
 
     try {
-        const result = await sessionValidator.quickCheck(userId);
+        // Same problem as /auth/linkedin-status: quickCheck only reads DB flags,
+        // so it reports a LinkedIn-killed session as connected until something
+        // else notices. Probe for real when the flags are stale (TTL-gated,
+        // browser-free), otherwise fall back to the cached flags.
+        const result = await sessionValidator.liveCheckCached(userId).catch(() => null)
+            ?? await sessionValidator.quickCheck(userId);
         res.json(result);
     } catch (error: any) {
         console.error(`[SESSION-CTRL] getSessionStatus error: ${error.message}`);
