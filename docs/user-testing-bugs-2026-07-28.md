@@ -239,6 +239,56 @@ Fix: accept `apiRequest` (as `check-connection-voyager` does) and mark it
 browser-free when `enrichContact`/`enrichPosts` are off — those two genuinely
 need the DOM. Pure throughput/cost win, not a correctness bug.
 
+### 13. ✅ "Signal Active" shown over a dead session
+Reported 2026-08-05. `/auth/linkedin-status` (the endpoint behind the top-bar
+pill and `ActivationHero`) answered purely from DB flags: cookie exists,
+`!sessionInvalid`, `accountHealth === 'HEALTHY'`. Nothing rewrites those flags
+until a campaign happens to run, so between LinkedIn killing a session and the
+next run the UI reported a healthy connection — observed with `li_at` literally
+set to `delete me`.
+
+The browser-free confirmation already existed (`sessionValidator.liveCheck`:
+Voyager `/me` + flag self-heal) but was wired only to the campaign worker. The
+old "checking validity on every poll is session suicide" comment on this handler
+was about `LinkedInService.isSessionValid`, which launches Chromium — a concern
+that doesn't apply to a single HTTP read.
+
+Fixed by adding `liveCheckCached` and routing `/auth/linkedin-status` +
+`/session/session-status` through it. Freshness comes from DB
+`sessionValidatedAt` (shared with the worker, survives restarts) **plus** an
+in-process guard on *attempts* — a transient proxy failure deliberately doesn't
+stamp `sessionValidatedAt`, so without the second guard a 30s UI poll becomes a
+30s `/me` retry loop for as long as the proxy is sick. In-flight dedupe collapses
+multiple tabs. Net: ≤1 browser-free `/me` per user per 15 min, and the probe logs
+itself so a throttle regression is visible.
+
+### 14. ✅ profile-visit campaign showed almost no collected data
+Reported 2026-08-05. Not a display-layer bug — the data genuinely wasn't being
+fetched. **FullProfile-76 carries no experience or education at all** (its
+`included[]` holds only Geo + Industry entities, verified against a live
+profile), so `getProfileByFsd` hardcoded `experience: []` / `education: []` and
+the Career & education panel was permanently empty on API-enriched leads.
+
+They come from `identity/dash/profilePositions` and `profileEducations`. Two
+traps: passing a `decorationId` makes both return **HTTP 400**, and the older
+`identity/profiles/{vanity}/positions` routes are retired (**HTTP 410**). Called
+sequentially, not in `Promise.all` — `voyagerFetch`'s per-user 1500ms read gap is
+a read-then-write on a Redis key, so concurrent calls both see the stale
+timestamp and fire together, defeating the pacing.
+
+Three more gaps fixed at the same time:
+- **company/jobTitle** came from a headline regex that took the first ` at `/`@`
+  it saw. For the test lead that produced
+  `jobTitle="intern @1DS | Computer Science Student"`, `company=null`; the
+  position row says `Business Analyst` at `1DigitalStack`. Position now wins,
+  regex is the fallback.
+- **location** was always blank: the old chain read `data.locationUnion`, which
+  FullProfile-76 never returns. Real value is a Geo entity in `included[]` via
+  `geoLocation["*geo"]`, plus its country ref → "Greater Delhi Area, India".
+- **latestPost/latestPostUrl** were captured and stored but dropped by the
+  campaign leads endpoint, so the Leads tab drawer showed nothing even when the
+  scrape had them. Now returned and rendered in the shared drawer.
+
 ---
 
 ## Not a bug (noted so it isn't chased)
