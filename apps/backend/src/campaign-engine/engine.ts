@@ -38,7 +38,7 @@ import { runConnectionCheck, resolveConnectionBackend } from './nodes/connection
 import { emailNode } from './nodes/email';
 import { emailFinder } from './nodes/email-finder';
 import { follow } from './nodes/follow';
-import { profileVisitDispatch, inboxSyncDispatch } from './nodes/read-backend';
+import { profileVisitDispatch, inboxSyncDispatch, profileVisitNeedsDom, postsCoveredLater } from './nodes/read-backend';
 import { readNodeOutputs, writeNodeOutput, updateLeadEnrichment } from './storage';
 import { checkQuota, nextDayRetryAt, DAILY_CAPS, GovernedAction, isWithinWorkingHours, nextWorkingHourAt } from './safety/quota';
 import { transitionLead, recomputeCampaignStatus } from './safety/lifecycle';
@@ -126,9 +126,17 @@ const FATAL_NODES: Set<string> = new Set(['profile-visit']);
 // inbox-sync (needs a live page-instance) — needs the browser. Unknown types
 // default to needing it (safe).
 const BROWSER_FREE_NODES: Set<string> = new Set(['delay', 'if-else', 'email', 'email-finder']);
-function nodeNeedsBrowser(nodeConfig: CampaignFlowNode): boolean {
+function nodeNeedsBrowser(nodeConfig: CampaignFlowNode, postsHandledLater = false): boolean {
     const t = String(nodeConfig.node);
     if (BROWSER_FREE_NODES.has(t)) return false;
+    // profile-visit is an API read. Every Voyager call in the Voyager handler
+    // works over the browser-free apiRequest context, so the ONLY reasons to pay
+    // for Chromium are the DOM backend, the contact-info modal, and an
+    // activity-feed scrape no later node already covers. Delegated to
+    // profileVisitNeedsDom so this decision and the node's own can't drift.
+    if (t === 'profile-visit' || t === 'profile-visit-voyager') {
+        return profileVisitNeedsDom(nodeConfig, postsHandledLater, t === 'profile-visit-voyager');
+    }
     // Connection checks: must mirror the dispatcher's own backend decision,
     // or we boot Chromium for a node that then does a pure API read. Plain
     // 'check-connection' resolves through resolveConnectionBackend (Voyager by
@@ -433,7 +441,8 @@ async function runLead(
             // check-connection, messenger inbox). Browser-free reads/checks
             // skip this and run via apiRequest, so an acceptance-polling tick
             // never launches a browser.
-            if (nodeNeedsBrowser(nodeConfig)) {
+            const postsHandledLater = postsCoveredLater(flow, i);
+            if (nodeNeedsBrowser(nodeConfig, postsHandledLater)) {
                 const b = await ensureBrowser();
                 if (!b.ok) {
                     execResult.status = 'failed';
@@ -543,6 +552,7 @@ async function runLead(
             const nodeCtx: NodeContext = {
                 page, context, lead, userId, campaignId, storedOutputs,
                 apiRequest,
+                postsCoveredLater: postsHandledLater,
                 campaign: campaignData,
                 aiContext,
                 connectionStatus: seedConnectionStatus,

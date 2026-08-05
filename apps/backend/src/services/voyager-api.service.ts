@@ -361,12 +361,13 @@ export interface EnrichedProfile {
 export async function getProfileByFsd(
     userId: string,
     fsdUrn: string,
-    page?: Page
+    page?: Page,
+    apiRequest?: APIRequestContext
 ): Promise<VoyagerResult<EnrichedProfile>> {
     // fsdUrn format: urn:li:fsd_profile:ACoAA... → extract the ID
     const fsdId = fsdUrn.includes(':') ? fsdUrn.split(':').pop()! : fsdUrn;
     const url = `https://www.linkedin.com/voyager/api/identity/dash/profiles/urn:li:fsd_profile:${fsdId}?decorationId=com.linkedin.voyager.dash.deco.identity.profile.FullProfile-76`;
-    const r = await voyagerFetch<any>(userId, url, { page });
+    const r = await voyagerFetch<any>(userId, url, { page, apiRequest });
     if (!r.ok) return r;
 
     // FullProfile returns the profile entity DIRECTLY under .data (this is a
@@ -509,11 +510,12 @@ async function fetchProfileCollection(
     kind: 'profilePositions' | 'profileEducations',
     fsdUrn: string,
     page?: Page,
+    apiRequest?: APIRequestContext,
 ): Promise<VoyagerResult<any[]>> {
     const fsdId = fsdUrn.includes(':') ? fsdUrn.split(':').pop()! : fsdUrn;
     const profileUrn = encodeURIComponent(`urn:li:fsd_profile:${fsdId}`);
     const url = `https://www.linkedin.com/voyager/api/identity/dash/${kind}?q=viewee&profileUrn=${profileUrn}`;
-    const r = await voyagerFetch<any>(userId, url, { page });
+    const r = await voyagerFetch<any>(userId, url, { page, apiRequest });
     if (!r.ok) return r;
     const included = Array.isArray((r.data as any)?.included) ? (r.data as any).included : [];
     return { ok: true, status: r.status, data: included };
@@ -523,8 +525,9 @@ export async function getProfilePositions(
     userId: string,
     fsdUrn: string,
     page?: Page,
+    apiRequest?: APIRequestContext,
 ): Promise<VoyagerResult<VoyagerExperience[]>> {
-    const r = await fetchProfileCollection(userId, 'profilePositions', fsdUrn, page);
+    const r = await fetchProfileCollection(userId, 'profilePositions', fsdUrn, page, apiRequest);
     if (!r.ok) return r;
     // The collection also echoes a CollectionResponse envelope into included[];
     // filter to actual Position entities.
@@ -544,8 +547,9 @@ export async function getProfileEducations(
     userId: string,
     fsdUrn: string,
     page?: Page,
+    apiRequest?: APIRequestContext,
 ): Promise<VoyagerResult<VoyagerEducation[]>> {
-    const r = await fetchProfileCollection(userId, 'profileEducations', fsdUrn, page);
+    const r = await fetchProfileCollection(userId, 'profileEducations', fsdUrn, page, apiRequest);
     if (!r.ok) return r;
     const rows = r.data
         .filter((e: any) => String(e?.$type || '').endsWith('profile.Education'))

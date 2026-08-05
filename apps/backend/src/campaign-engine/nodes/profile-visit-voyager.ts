@@ -28,10 +28,17 @@
  *      one. Skip with `enrichExperience: false`.
  *   3. If lead is 1st-degree AND `enrichContact` is set → DOM modal click
  *      (rare; only for the small subset of leads in the user's network).
- *   4. If `enrichPosts` is set → DOM /recent-activity nav + scrape.
+ *   4. If `enrichPosts` is set AND no later comment/like node already navigates
+ *      the activity feed → DOM /recent-activity nav + scrape.
+ *
+ * NO BROWSER unless step 3 or 4 actually fires. Every Voyager call above runs
+ * over `ctx.apiRequest` — the browser-free context the engine builds from the
+ * saved session + pinned proxy — so the default enrichment path launches no
+ * Chromium at all. The engine mirrors this decision via profileVisitNeedsDom(),
+ * so it won't pay for a browser this node never uses.
  *
  * The point: the 719-row CSV enrichment (no contact, no posts) goes from
- * ~15s/lead (full profile nav + scroll + extract) to ~300ms/lead.
+ * ~15s/lead (full profile nav + scroll + extract) to a few HTTP reads.
  */
 import { NodeHandler, NodeResult, ProfileVisitOutput } from '../types';
 import { prisma } from '@repo/db';
@@ -42,6 +49,7 @@ import {
     checkFirstDegree,
     getAllConnections,
 } from '../../services/voyager-api.service';
+import { effectiveEnrichPosts } from './read-backend';
 import { cleanPersonField } from '../scrape/sanitize';
 import { extractEmailFromText } from '../scrape/email-from-text';
 import { recordConfirmedEmail } from '../../services/email-dataset.service';
@@ -50,9 +58,16 @@ const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
 const randomRange = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1) + min);
 
 export const profileVisitVoyager: NodeHandler = async (ctx, config): Promise<NodeResult> => {
-    const { page, lead, userId, campaignId } = ctx;
+    const { page, apiRequest, lead, userId, campaignId } = ctx;
     const enrichContact = !!(config as any).enrichContact;
-    const enrichPosts = !!(config as any).enrichPosts;
+    // Not `config.enrichPosts` directly: a later comment/like node navigates the
+    // same activity feed anyway, so scraping it here is a duplicate Chromium
+    // navigation. effectiveEnrichPosts is shared with the engine's browser-launch
+    // decision so the two can never disagree.
+    const enrichPosts = effectiveEnrichPosts(config, ctx.postsCoveredLater);
+    if ((config as any).enrichPosts && !enrichPosts) {
+        console.log('[PROFILE-VISIT-VOYAGER] skipping post scrape — a later comment/like node covers the activity feed');
+    }
 
     const output: ProfileVisitOutput = {
         name: null,
@@ -78,8 +93,15 @@ export const profileVisitVoyager: NodeHandler = async (ctx, config): Promise<Nod
     };
 
     try {
-        if (!page) {
-            return { success: false, error: 'profile-visit-voyager requires a live Page (no page in context)' };
+        // Every Voyager read below runs equally well over the browser-free
+        // apiRequest context (built from the saved session + pinned proxy), so a
+        // page is required ONLY for the two genuinely-DOM sections: the
+        // contact-info modal and the activity-feed scrape.
+        if (!page && !apiRequest) {
+            return { success: false, error: 'profile-visit-voyager requires a Page or apiRequest' };
+        }
+        if (!page && (enrichContact || enrichPosts)) {
+            return { success: false, error: 'profile-visit-voyager needs a live Page for enrichContact/enrichPosts' };
         }
         if (!lead.linkedinUrl) {
             return { success: false, error: 'Lead has no linkedinUrl' };
@@ -96,17 +118,17 @@ export const profileVisitVoyager: NodeHandler = async (ctx, config): Promise<Nod
             return { success: false, error: 'Could not extract vanity from linkedinUrl' };
         }
 
-        // Resolve fsdUrn via the lighter GraphQL endpoint (we still have a
-        // page; ride its session). The endpoint we know works:
+        // Resolve fsdUrn via the lighter GraphQL endpoint. The endpoint we know
+        // works:
         //   /voyager/api/graphql?variables=(memberIdentity:<vanity>)&queryId=voyagerIdentityDashProfiles.b5c27c04968c409fc0ed3546575b9b7a
         // returns the fsd profile URN.
-        const fsd = await resolveVanityToFsd(vanity, userId, page);
+        const fsd = await resolveVanityToFsd(vanity, userId, page, apiRequest);
         if (!fsd) {
             return { success: false, error: `Could not resolve vanity ${vanity} to fsdUrn` };
         }
 
         // ---- Step 2: Call FullProfile-76 ----
-        const r = await getProfileByFsd(userId, fsd, page);
+        const r = await getProfileByFsd(userId, fsd, page, apiRequest);
         if (!r.ok) {
             return { success: false, error: `FullProfile fetch failed: ${(r as any).error || 'unknown'}` };
         }
@@ -133,8 +155,8 @@ export const profileVisitVoyager: NodeHandler = async (ctx, config): Promise<Nod
         // the old timestamp and fire together — silently defeating the pacing
         // that keeps these reads looking human.
         if ((config as any).enrichExperience !== false) {
-            const posRes = await getProfilePositions(userId, fsd, page).catch(() => null);
-            const eduRes = await getProfileEducations(userId, fsd, page).catch(() => null);
+            const posRes = await getProfilePositions(userId, fsd, page, apiRequest).catch(() => null);
+            const eduRes = await getProfileEducations(userId, fsd, page, apiRequest).catch(() => null);
             if (posRes?.ok) output.experience = posRes.data as any;
             else console.log(`[PROFILE-VISIT-VOYAGER] positions unavailable: ${(posRes as any)?.error || (posRes as any)?.status || 'error'}`);
             if (eduRes?.ok) output.education = eduRes.data as any;
@@ -187,7 +209,7 @@ export const profileVisitVoyager: NodeHandler = async (ctx, config): Promise<Nod
         // by the IF_ELSE connection gate, potentially DAYS later across a delay
         // node. A swallowed error stored as `connected: false` here is what made
         // the gate skip messages to real 1st-degree leads.
-        const is1st = await checkFirstDegree(userId, vanity, page).catch(() => null);
+        const is1st = await checkFirstDegree(userId, vanity, page, apiRequest).catch(() => null);
         output.connected = is1st;
         if (is1st === true) {
             // Set the binary "is 1st-degree" hint on Lead row. Don't write
@@ -202,7 +224,7 @@ export const profileVisitVoyager: NodeHandler = async (ctx, config): Promise<Nod
         // For 1st-degree leads, the LinkedIn DOM exposes email + phone on a
         // "Contact info" modal that the API never returns. Open that modal
         // and read the values.
-        if (enrichContact && is1st) {
+        if (enrichContact && is1st && page) {
             try {
                 console.log('[PROFILE-VISIT-VOYAGER] 1st-degree + enrichContact: opening Contact info modal...');
                 await page.goto(lead.linkedinUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
@@ -273,7 +295,7 @@ export const profileVisitVoyager: NodeHandler = async (ctx, config): Promise<Nod
         }
 
         // ---- Step 6: Recent posts (DOM) — only when requested ----
-        if (enrichPosts) {
+        if (enrichPosts && page) {
             try {
                 console.log('[PROFILE-VISIT-VOYAGER] Scraping recent posts...');
                 const activityUrl = lead.linkedinUrl.replace(/\/$/, '') + '/recent-activity/shares/';
@@ -325,12 +347,12 @@ export const profileVisitVoyager: NodeHandler = async (ctx, config): Promise<Nod
  * If resolution fails (account not found, 404, etc.), returns null and
  * lets the caller fall back to a DOM scrape.
  */
-async function resolveVanityToFsd(vanity: string, userId: string, page: any): Promise<string | null> {
+async function resolveVanityToFsd(vanity: string, userId: string, page: any, apiRequest?: any): Promise<string | null> {
     try {
         const url = `https://www.linkedin.com/voyager/api/graphql?variables=(memberIdentity:${encodeURIComponent(vanity)})&queryId=voyagerIdentityDashProfiles.b5c27c04968c409fc0ed3546575b9b7a`;
         // We import dynamically to avoid a hard dep cycle with the service
         const { voyagerFetch } = await import('../../services/voyager-api.service');
-        const r = await voyagerFetch<any>(userId, url, { page, skipRateLimit: true });
+        const r = await voyagerFetch<any>(userId, url, { page, apiRequest, skipRateLimit: true });
         if (!r.ok) {
             console.log(`[PROFILE-VISIT-VOYAGER] vanity resolve failed: status=${(r as any).status} err=${(r as any).error}`);
             return null;

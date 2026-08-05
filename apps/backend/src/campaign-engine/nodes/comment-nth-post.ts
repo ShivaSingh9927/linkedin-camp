@@ -1,6 +1,7 @@
 import { NodeHandler, NodeResult, PostOutput } from '../types';
 import { resolveVariables } from '../variables';
 import { generateAIComment } from '../ai-service';
+import { persistDiscoveredPost } from '../storage';
 
 const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
 const randomRange = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1) + min);
@@ -99,6 +100,12 @@ export const commentNthPost: NodeHandler = async (ctx, config): Promise<NodeResu
             postContent = await page.$eval('.update-components-text, [data-testid="expandable-text-box"]', (el: any) => el.innerText).catch(() => '');
             output.postContent = postContent;
         } catch {}
+
+        // Cache the post on the Lead row. profile-visit deliberately skips its
+        // own activity-feed scrape when this node is in the flow, so this is what
+        // keeps the UI's "Recent post" panel populated. Fire-and-forget: a failed
+        // display-field cache must never block the comment.
+        persistDiscoveredPost(lead.id, output.postUrl, postContent || null).catch(() => {});
 
         // Scroll to ensure comment section is rendered
         await page.mouse.wheel(0, 400);

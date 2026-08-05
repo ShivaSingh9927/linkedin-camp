@@ -86,6 +86,47 @@ export async function updateLeadEnrichment(
 }
 
 /**
+ * Persist a post that a comment/like node discovered onto the Lead row.
+ *
+ * Those nodes navigate the lead's activity feed and read the post URN + text as
+ * a side effect of doing their real job. Because they do, profile-visit is told
+ * to skip its own duplicate scrape (see postsCoveredLater) — so this is what
+ * keeps Lead.latestPost populated for the UI. Without it, dropping the redundant
+ * scrape would silently empty the "Recent post" panel.
+ *
+ * Prefers the login-free public post page for the text: JSON-LD gives the full,
+ * clean articleBody, whereas DOM innerText is truncated and carries reaction/UI
+ * chrome. That fetch uses no session, no cookies and no proxy, so it costs the
+ * LinkedIn account nothing. Falls back to the scraped text.
+ *
+ * Best-effort throughout — a write node must never fail because a display field
+ * couldn't be cached.
+ */
+export async function persistDiscoveredPost(
+    leadId: string,
+    postUrl: string | null,
+    postContent: string | null,
+): Promise<void> {
+    if (!leadId || !postUrl) return;
+    try {
+        let text = postContent || null;
+        const urn = postUrl.match(/urn:li:(?:activity|ugcPost|share):\d+/)?.[0] || null;
+        if (urn) {
+            const { fetchPublicPostContent } = await import('../services/public-post.service');
+            const pub = await fetchPublicPostContent(urn).catch(() => null);
+            if (pub?.text) text = pub.text;
+        }
+        if (!text) return;
+        await prisma.lead.update({
+            where: { id: leadId },
+            data: { latestPost: text, latestPostUrl: postUrl },
+        });
+    } catch (err: any) {
+        console.log(`[STORAGE] persistDiscoveredPost failed for ${leadId}: ${err?.message}`);
+    }
+}
+
+/**
  * Updates CampaignLead status after node execution.
  */
 export async function updateCampaignLeadProgress(

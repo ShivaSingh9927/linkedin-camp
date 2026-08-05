@@ -223,6 +223,10 @@ export interface NodeContext {
     // can run without a page (e.g. check-connection-voyager) should use this
     // when `page` is null. Built once per lead from the saved session.
     apiRequest?: APIRequestContext;
+    // True when a later node in this flow (comment/like) will navigate the
+    // lead's activity feed anyway, making profile-visit's own post scrape
+    // redundant. Set by the engine from the flow; see postsCoveredLater().
+    postsCoveredLater?: boolean;
     storedOutputs: Record<string, Record<string, any>>;
     // Last known connection state for this lead, seeded by the engine from
     // CampaignLeadProgress at the start of the run and refreshed in-place by

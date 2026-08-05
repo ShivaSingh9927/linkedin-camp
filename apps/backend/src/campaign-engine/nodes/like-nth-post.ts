@@ -1,4 +1,5 @@
 import { NodeHandler, NodeResult, PostOutput } from '../types';
+import { persistDiscoveredPost } from '../storage';
 
 const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
 const randomRange = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1) + min);
@@ -94,6 +95,11 @@ export const likeNthPost: NodeHandler = async (ctx, config): Promise<NodeResult>
             }
             output.postContent = await page.$eval('.update-components-text, [data-testid="expandable-text-box"]', (el: any) => el.innerText).catch(() => null);
         } catch {}
+
+        // Cache the post on the Lead row — profile-visit skips its own duplicate
+        // activity-feed scrape when this node is present, so this keeps the UI's
+        // "Recent post" panel populated. Fire-and-forget.
+        persistDiscoveredPost(lead.id, output.postUrl, output.postContent).catch(() => {});
 
         // Like (use evaluate() to bypass sticky headers, matching testscripts)
         const likeBtn = page.locator('button:has(span:text-is("Like"))').first();
