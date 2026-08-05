@@ -248,14 +248,45 @@ sent-invite lists) before changing anything. Fix if confirmed: navigate to
 `lead.linkedinUrl` first (like every other write node) and slug-bind the
 selector the way `connection-state.ts` already does.
 
-### 12. 🧩 profile-visit boots Chromium for what is now an API read
-`profile-visit-voyager` gets its data from Voyager but passes `page` into
-`getProfileByFsd`, and never uses the browser-free `apiRequest` context the
-engine already builds. So it always launches Chromium. After #1's dispatcher
-change, `check-connection` is the only genuinely browser-free LinkedIn read.
-Fix: accept `apiRequest` (as `check-connection-voyager` does) and mark it
-browser-free when `enrichContact`/`enrichPosts` are off — those two genuinely
-need the DOM. Pure throughput/cost win, not a correctness bug.
+### 12. ✅ profile-visit boots Chromium for what is now an API read
+**FIXED 2026-08-05.** `profile-visit-voyager` got its data from Voyager but
+hard-failed on `if (!page)` and threaded `page` into every call, so it always
+launched Chromium. Measured on prod: **24s** with the browser (`15:27:02`
+lazy-launch → `15:27:26` done) for what is three HTTP reads.
+
+Nothing new was needed — `ctx.apiRequest` was already in `NodeContext`, the
+engine already built it via `getBrowserlessVoyagerContext`, `voyagerFetch`
+already accepted it, and `check-connection-voyager` already used the pattern.
+Threaded it through `resolveVanityToFsd` / `getProfileByFsd` /
+`getProfilePositions` / `getProfileEducations` / `checkFirstDegree`, and now
+require a page only for the two genuinely-DOM sections (contact-info modal,
+activity-feed scrape).
+
+**Second half — the duplicate feed scrape.** `enrichPosts` was wasted work
+whenever a comment or like node followed: those nodes navigate
+`/recent-activity/shares/` and extract the URN from the DOM themselves (they read
+profile-visit's output *only* for AI context — headline/company/about — never for
+the post). So two Chromium navigations to the same feed, and that scrape was the
+**only** thing forcing a browser in the common flow. `postsCoveredLater()` now
+suppresses it when a later node covers the feed.
+
+The data isn't lost: comment/like persist what they discover to
+`Lead.latestPost/latestPostUrl` via `persistDiscoveredPost`, preferring the
+login-free public-post JSON-LD over DOM innerText. Without that the "Recent post"
+panel would have quietly emptied.
+
+The browser decision is made **twice** — engine (launch) and node (scrape) — so
+both route through `profileVisitNeedsDom` / `effectiveEnrichPosts` in
+`read-backend.ts`. Drift means either an unused Chromium or a scrape against a
+null page. Verify:
+`npx ts-node --transpile-only src/scripts/verify-browser-free-profile-visit.ts`
+(28 assertions over the full matrix, asserting both failure directions).
+
+**Deliberately not done:** reusing profile-visit's stored URN so comment can skip
+its discovery nav. `storedOutputs` is DB-backed and survives multi-day delay
+nodes, so a stale URN would make `n=1` comment on a post that is no longer the
+latest — a correctness regression traded for one page load in a session that
+already has Chromium up.
 
 ### 13. ✅ "Signal Active" shown over a dead session
 Reported 2026-08-05. `/auth/linkedin-status` (the endpoint behind the top-bar
