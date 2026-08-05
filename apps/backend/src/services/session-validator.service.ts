@@ -345,6 +345,12 @@ class SessionValidatorService {
         this.liveProbeAt.set(userId, now);
         this.pruneProbeCache(ttlMs);
 
+        // Logged on purpose: this is a UI-poll-triggered call to LinkedIn. If the
+        // throttle ever regresses, this line appearing every 30s instead of every
+        // 15min is the only way anyone would notice.
+        const lastAt = user?.sessionValidatedAt ? `${Math.round((now - user.sessionValidatedAt.getTime()) / 1000)}s ago` : 'never';
+        console.log(`[SESSION-VALIDATOR] live probe for ${userId} (last confirmed ${lastAt}, ttl ${Math.round(ttlMs / 1000)}s)`);
+
         const p = this.liveCheck(userId).finally(() => this.liveProbeInflight.delete(userId));
         this.liveProbeInflight.set(userId, p);
         return p;

@@ -2,6 +2,22 @@
 
 - Auto-deployed to Hetzner: 2026-03-26
 
+## The two commands, in full
+
+Copy these verbatim. **`-f production.docker-compose.worker.yml` is not optional**
+— the repo's default `docker-compose.yml` declares only `db` and `reacher`, so
+omitting `-f` fails with `no such service: backend-api`. The running containers
+are built from the `production.*` file; confirm any time with
+`docker inspect backend-api --format '{{index .Config.Labels "com.docker.compose.project.config_files"}}'`.
+
+```bash
+cd /home/deploy/linkedin-camp && docker compose -f production.docker-compose.worker.yml --env-file .env.production build backend-api
+```
+
+```bash
+cd /home/deploy/linkedin-camp && docker compose -f production.docker-compose.worker.yml --env-file .env.production up -d backend-api backend-worker
+```
+
 ## 2026-07-30 — `83cf418f` (worker box only)
 
 Campaign gate + account-recovery fixes (#1, #4, #5 in
@@ -61,6 +77,15 @@ window during a build that doesn't fit.
 - `--env-file .env.production` is mandatory. Verify after: `docker exec backend-api sh -c 'echo ${DATABASE_URL:+set}'`.
 - Detach with `setsid nohup ... < /dev/null &` and **close the SSH command's own
   stdout**, or the SSH call blocks for the whole build.
+- `ssh 'cd X && setsid nohup CMD & disown'` does **not** survive — the `&`
+  backgrounds the whole `&&` chain and it dies when ssh exits, leaving no
+  process and no log. Write a script on the box and launch that instead:
+  `setsid bash -c "nohup /root/dobuild.sh > /root/build2.log 2>&1 &" < /dev/null`,
+  then confirm with `pgrep -af "^docker compose"` before waiting on it.
+- Have the build script echo its own `BUILD_EXIT=$?` sentinel and **poll for
+  that**, never for `ERROR`/`no space left` in the log. Reusing a log path from a
+  previous deploy means those strings are already present, so the wait returns
+  instantly and you conclude the build failed when it never started.
 - Don't `pkill -f "docker compose.*build"` — the pattern matches your own
   `bash -c` wrapper and kills your SSH session. Use `pgrep -f "^docker compose"`
   and kill the PIDs.
