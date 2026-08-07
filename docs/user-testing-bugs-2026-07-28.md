@@ -232,21 +232,70 @@ rule — just not wired for these accounts). Highest-leverage scaling fix.
 
 ## Found later (not from user testing)
 
-### 11. 🔎 CONNECT may invite the wrong person — UNVERIFIED, high impact if real
-Found 2026-07-29 while fixing #1. `connect.ts` is the **only** write node that
-never calls `page.goto` — it runs `detectConnectionState(page, lead.linkedinUrl)`
-against whatever page is already open. In `coldInvite` the flow is
-`PROFILE_VISIT → WAIT 1d → CONNECT`, so CONNECT resumes in a fresh run where
-`warmup` has just navigated to `/feed/` (and PROFILE_VISIT is now the Voyager
-backend, so it leaves no profile page open even within one run).
-On `/feed/` the slug-bound signals are absent → `isUnknown` → the code falls
-through to `page.locator('[aria-label*="to connect"]').first()`, which is **not**
-bound to the lead's slug, while the feed's "People you may know" sidebar is full
-of Connect buttons.
-Needs prod evidence (ActionLog `actionType='connect'` vs the accounts' actual
-sent-invite lists) before changing anything. Fix if confirmed: navigate to
-`lead.linkedinUrl` first (like every other write node) and slug-bind the
-selector the way `connection-state.ts` already does.
+### 11. ✅ CONNECT acted on the wrong page — invites never sent
+**FIXED + VERIFIED IN PROD 2026-08-07.** Found 2026-07-29 while fixing #1.
+
+`connect.ts` was the only write node that never called `page.goto`. It ran
+`detectConnectionState(page, lead.linkedinUrl)` — whose own header says it
+"assumes already navigated to" — against whatever page happened to be open. With
+profile-visit on the Voyager backend there is no profile page open, so the engine
+lazy-launches a browser for CONNECT, warmup navigates to `/feed/`, and the whole
+node then operates on the feed.
+
+**The ActionLog reframed the severity.** The original worry was invites going to
+strangers off the feed's "People you may know" sidebar. What actually happened:
+
+| result | count | error |
+|---|---|---|
+| FAILED | 13 | `Connect button not found on profile` |
+| SUCCESS | 2 | — both **2026-05-28**, before the Voyager switch |
+
+So no wrong-person invite ever fired — the unbound selector found nothing on the
+feed and the node failed safely. The real impact was that **connect never worked
+at all**, i.e. `coldInvite` was broken end to end. The wrong-person risk was
+latent but genuine: `page.locator('[aria-label*="to connect"]').first()` is bound
+to nobody and searches the whole page, one markup change away from firing. Note
+`detectConnectionState` already binds *its* lookup to the lead's vanity slug —
+with the comment "so we never pick up the connect link for a People you may know
+card" — and connect discarded that guarantee one line later.
+
+Fixes:
+- navigate to `lead.linkedinUrl` first, like every other write node
+- verify we landed on that lead before touching a button, so a redirect
+  (checkpoint, login wall, deleted profile) can't become a click
+- bind the Connect selector to the lead's slug; scope the aria-label and
+  More-menu fallbacks to `<main>` / the open dropdown ("People also viewed"
+  renders in `<aside>`)
+- `state.isUnknown` used to fall through to the blind click; it now fails. A
+  missed invite is recoverable, a wrong one isn't.
+
+The landed-page check compares **parsed slugs for equality**, not
+`url.includes(slug)` — LinkedIn slugs are routinely one another's prefixes
+(name + digits), so `includes()` accepts `/in/john-smith-123` for a lead whose
+slug is `john-smith`. Verify:
+`npx ts-node --transpile-only src/scripts/verify-connect-targeting.ts`
+(22 assertions incl. that impostor case, feed/checkpoint/login-wall refusals,
+sub-pages, percent-encoded slugs).
+
+**Prod verification (2026-08-07).** Ran a connect-only campaign against a
+confirmed 1st-degree lead, so the node must early-return above the button lookup
+and send nothing:
+
+```
+10:22:01  [ENGINE] Lazy-launched browser for Akash (first DOM node reached).
+10:22:20  [CONNECT] Navigating to Akash's profile...        <- new; the fix
+10:22:26  [CONNECT] Checking connection status for Akash...
+10:22:26  [CONNECT] Already DMable (1st-degree or Open Profile).
+```
+
+Output `status: "already_connected"` (not `sent`), ActionLog `connect | SUCCESS`
+— the first non-failure since 2026-05-28. Lead row unchanged at `CONNECTED/1`.
+The same lead has `Connect button not found on profile` failures on record under
+the old code, so this is a clean before/after.
+
+**Still untested: the actual send path.** All of rajaji's leads are 1st-degree,
+so nothing available exercises "invite reaches the right person". That requires
+sending a real invitation to a real human and a deliberate choice of target.
 
 ### 12. ✅ profile-visit boots Chromium for what is now an API read
 **FIXED 2026-08-05.** `profile-visit-voyager` got its data from Voyager but
