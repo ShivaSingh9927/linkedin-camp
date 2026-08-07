@@ -40,6 +40,35 @@ export function extractSlug(linkedinUrl: string): string {
     return (linkedinUrl.split('/in/').pop() || '').replace(/\/+$/, '').replace(/\?.*$/, '');
 }
 
+/**
+ * The `/in/<slug>` segment of a LinkedIn profile URL, lowercased, or null if
+ * the URL isn't a profile at all (e.g. /feed/, a checkpoint interstitial).
+ *
+ * Unlike extractSlug this stops at the first `/`, `?` or `#`, so sub-pages like
+ * `/in/foo/recent-activity/shares/` still resolve to `foo`.
+ */
+export function profileSlugFromUrl(url: string): string | null {
+    const m = (url || '').match(/\/in\/([^/?#]+)/i);
+    if (!m) return null;
+    let s = m[1];
+    try { s = decodeURIComponent(s); } catch { /* keep raw on malformed escapes */ }
+    return s.toLowerCase() || null;
+}
+
+/**
+ * Are we looking at THIS lead's profile right now?
+ *
+ * Compares parsed slugs for EQUALITY rather than substring-matching the URL:
+ * `url.includes(slug)` would happily accept `/in/john-smith-123` for a lead
+ * whose slug is `john-smith`, which is exactly the wrong-person class of bug
+ * this check exists to prevent.
+ */
+export function isOnLeadProfile(currentUrl: string, leadLinkedinUrl: string): boolean {
+    const here = profileSlugFromUrl(currentUrl);
+    const want = profileSlugFromUrl(leadLinkedinUrl);
+    return !!here && !!want && here === want;
+}
+
 export async function detectConnectionState(page: Page, leadLinkedinUrl: string): Promise<ConnectionState> {
     const slug = extractSlug(leadLinkedinUrl);
 
