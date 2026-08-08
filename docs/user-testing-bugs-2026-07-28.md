@@ -180,7 +180,7 @@ could not be mistaken for a working gate, and only `accountHealth` was varied:
 Same campaign, same ready lead; the only variable was the health field. DB-only
 setup, and the campaign was profile-visit-only so even the control run was a read.
 
-### 6. 🔧 OTP submit fails in mobile in-app browsers — *concurrency half FIXED*
+### 6. ✅ OTP submit fails in mobile in-app browsers
 - "Submit code" shows **Network Error** in in-app browsers (WhatsApp/LinkedIn
   webview); the code never reaches the relay (`no otp-relay enqueued`). *(open)*
 - No retry-on-network-failure, and no "open in a real browser" hint. *(open)*
@@ -207,8 +207,22 @@ setup, and the campaign was profile-visit-only so even the control run was a rea
   refused → re-attach returns the original id → TTL 240s → wrong owner cannot
   release (0) → true owner releases (1) → next attempt claims.
 
-Remaining: retry on network error, "open in browser" hint, invalidate old
-requestIds.
+- ✅ **No retry on network failure / no "open in a real browser" hint.**
+  FIXED 2026-08-08 (frontend only, `lib/net.ts` + `OtpRecoveryModal`).
+  `withNetworkRetry` retries 3x with backoff but **only on transport failures** —
+  axios sets `response` whenever the server answered, so its absence is the
+  signal. Retrying HTTP errors would be actively harmful: LinkedIn allows ~3 OTP
+  attempts and silently resubmitting a rejected code burns them.
+  `describeError` now names the browser and the way out instead of showing a bare
+  "Network Error", and an advisory banner with a copy-link button appears
+  *before* the password field rather than after the submit fails.
+  Verify (apps/web has no test runner, so it runs standalone):
+  `cd apps/web && npx --yes ts-node --skip-project --compiler-options '{"module":"commonjs","target":"es2019","esModuleInterop":true}' src/lib/net.verify.ts`
+  — 21 assertions, incl. "a 400 is never retried" and "real Safari/Chrome are not
+  misflagged as webviews".
+
+**#6 is now closed.** The webview itself can still drop a request; it just no
+longer ends the recovery, mislead the user, or damage the account.
 
 ### 7. 🔧 Possible: corrupted credentials typed into LinkedIn login
 Pranav's early attempts submitted a mangled email
