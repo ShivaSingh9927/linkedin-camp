@@ -387,6 +387,70 @@ Three more gaps fixed at the same time:
   campaign leads endpoint, so the Leads tab drawer showed nothing even when the
   scrape had them. Now returned and rendered in the shared drawer.
 
+### 15. ✅ ROOT CAUSE of the recurring "session expired" — Qampi was killing it
+**FIXED 2026-08-08.** The mystery of sessions dying every day or two.
+
+`withdraw.worker.ts` (the 2am auto-withdraw cron) built its own Chromium launch
+and read `(user as any).proxy` behind a `@ts-ignore`. That value is **always
+undefined** — `findUnique` loads no relations, and the relation is named `Proxy`
+anyway — so the `if` never fired and the browser launched with **no proxy at
+all**. It then injected the user's real session cookies and browsed LinkedIn.
+
+| path | egress LinkedIn sees |
+|---|---|
+| login, campaigns, inbox sync | `82.41.252.111` (pinned dedicated ISP) |
+| this job | **`204.168.167.198`** (Hetzner box) |
+
+Plus a **random user agent** (`getRandomUserAgent()`, 4-way pool) instead of the
+pinned `linkedinFingerprint` — so OS and browser changed nightly too. Running for
+every user with a cookie, with no `sessionInvalid` / `accountHealth` filter.
+
+**Confirmed prospectively**, not just by inspection:
+```
+Aug 7 10:20   re-synced                                    -> HEALTHY
+Aug 7 10:23   connect test ran fine                        -> session working
+Aug 8 02:00:11 [Withdraw Sync] Navigating to sent invitations...   (unproxied)
+Aug 8 04:00   [INBOX-WORKER] Redirected to: linkedin.com/uas/login
+Aug 8 05:18   -> SESSION_EXPIRED
+```
+Notification history shows the same 04:0x signature back to 2026-07-27.
+
+**It never worked either.** 11/11 runs on 08-08 logged "No sent invitations found
+or layout changed" and withdrew nothing — the unproxied browser was being served
+an authwall, and that benign-sounding message is what hid this for weeks. The job
+now distinguishes an authwall from an empty list.
+
+**Ruled out first:** proxy rotation. 551 samples over 18h, all `82.41.252.111`.
+The dedicated ISP proxy is stable, as expected.
+
+Fixes: withdraw.worker routed through `launchAuthenticatedContext`; the 2am cron
+disabled behind `ENABLE_AUTO_WITHDRAW` and given the health/presence gates the
+4am sweep already had.
+
+**Full audit of every runtime path that can carry a session** found two more:
+- `session-validator.service.ts` set the proxy on `contextOptions` **only** —
+  which `session-launch.ts` explicitly warns is insufficient (Chrome's background
+  requests escape a context proxy on Linux) — and used `getOrAssignProxy` (the
+  *current* assignment) rather than the snapshot the cookies were captured
+  behind. Identical today with one proxy; diverges the moment a second is added,
+  and would then mark healthy accounts dead.
+- `linkedin.worker.ts` injects cookies and launched with no proxy. Dormant (the
+  legacy `linkedin-actions` queue has had 0 jobs ever), but a loaded gun. Now
+  pins the snapshot; strong deletion candidate.
+
+Clean and unchanged: `session-launch.ts` (canonical), `inbox.worker`,
+`self-enrichment`, `getBrowserlessVoyagerContext`, `login-with-otp`,
+`session-manager` (cold login — it establishes the snapshot).
+
+Guard: `npx ts-node --transpile-only src/scripts/verify-sticky-proxy.ts`
+enumerates every `chromium.launch` in the runtime tree and **fails on any
+unreviewed one**, so a new launch site can't quietly skip the proxy (29
+assertions).
+
+**Note:** `DEFAULT_PROXY_SERVER` is set in prod to the same IP as the only proxy,
+so `session-manager`'s cold-login fallback is harmless today. Once a second proxy
+exists it would pin some users to the wrong egress at login. Revisit then.
+
 ---
 
 ## Not a bug (noted so it isn't chased)
