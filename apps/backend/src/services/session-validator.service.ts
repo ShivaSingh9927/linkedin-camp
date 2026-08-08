@@ -1,7 +1,6 @@
 import { chromium } from 'patchright';
 import type { Cookie } from 'patchright';
 import { prisma, Prisma } from '@repo/db';
-import { getOrAssignProxy } from './proxy.service';
 
 export interface ValidationResult {
     valid: boolean;
@@ -95,19 +94,35 @@ class SessionValidatorService {
                 timezoneId: 'America/New_York'
             };
 
-            try {
-                const proxy = await getOrAssignProxy(userId);
-                if (proxy) {
-                    contextOptions.proxy = {
-                        server: `http://${proxy.proxyHost}:${proxy.proxyPort}`,
-                        username: proxy.proxyUsername || undefined,
-                        password: proxy.proxyPassword || undefined,
-                    };
-                    console.log(`[SESSION-VALIDATOR] Using sticky proxy ${proxy.proxyHost}:${proxy.proxyPort} for user ${userId}`);
-                }
-            } catch (err: any) {
-                console.error(`[SESSION-VALIDATOR] Failed to load proxy: ${err.message}`);
+            // Sticky-proxy invariant. Two things were wrong here:
+            //
+            //  1. The proxy was set on contextOptions ONLY. session-launch.ts's
+            //     header spells out why that isn't enough — Chrome's background
+            //     requests escape the context proxy on Linux and leak through
+            //     the host IP, which is exactly what invalidates a session.
+            //     It must be on launchOptions.
+            //  2. It used getOrAssignProxy (the user's CURRENT assignment)
+            //     rather than linkedinProxySnapshot (the exact egress the
+            //     cookies were captured behind). Those are the same today with
+            //     one proxy in the pool, but they diverge the moment a second
+            //     one is added — and then this would validate a session from
+            //     the wrong IP and mark a healthy account dead.
+            //
+            // Abort rather than fall back: no snapshot means we cannot reproduce
+            // the login egress, and guessing is the guaranteed ban path.
+            const snapshot: any = (user as any).linkedinProxySnapshot;
+            if (!snapshot?.server) {
+                console.error(`[SESSION-VALIDATOR] No linkedinProxySnapshot for ${userId} — refusing to validate (sticky-proxy). Re-login required.`);
+                return { valid: false, reason: 'NO_SESSION' };
             }
+            const proxyConfig = {
+                server: snapshot.server,
+                username: snapshot.username || undefined,
+                password: snapshot.password || undefined,
+            };
+            launchOptions.proxy = proxyConfig;
+            contextOptions.proxy = proxyConfig;
+            console.log(`[SESSION-VALIDATOR] Using pinned login proxy ${proxyConfig.server} for user ${userId}`);
 
             console.log(`[SESSION-VALIDATOR] Validating session for user ${userId} with ${cookies.length} cookies`);
 

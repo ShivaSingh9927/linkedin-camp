@@ -214,23 +214,57 @@ const isUserActive = redisPresence === 'ACTIVE' || (now - lastActivity < twoMins
     }
   });
 
-  // 3. Auto-Withdraw Invitations (Run Daily at 2:00 AM)
-  cron.schedule('0 2 * * *', async () => {
-    console.log('Running daily invitation auto-withdraw sync...');
-    try {
-      const usersWithCookies = await prisma.user.findMany({
-        where: { linkedinCookie: { not: null } },
-        select: { id: true }
-      });
+  // 3. Auto-Withdraw Invitations — DISABLED by default since 2026-08-08.
+  //
+  // This job was destroying LinkedIn sessions every night. withdrawOldInvites
+  // launched Chromium with the user's real cookies but NO proxy (a dead
+  // `if ((user as any).proxy)` behind a @ts-ignore — the relation was never
+  // loaded and is named `Proxy` anyway), so LinkedIn saw each account jump from
+  // its pinned ISP egress to the Hetzner datacenter IP, with a random user agent
+  // on top. Sessions died within hours, every night, for weeks.
+  //
+  // It also never actually worked: 11/11 runs on 2026-08-08 logged "No sent
+  // invitations found or layout changed" and withdrew nothing — the unproxied
+  // browser was landing on an authwall, not the invitations page.
+  //
+  // withdrawOldInvites is now fixed (routes through launchAuthenticatedContext),
+  // but stays off until a night of observation confirms sessions survive.
+  // Re-enable with ENABLE_AUTO_WITHDRAW=true.
+  if (process.env.ENABLE_AUTO_WITHDRAW === 'true') {
+    cron.schedule('0 2 * * *', async () => {
+      console.log('Running daily invitation auto-withdraw sync...');
+      try {
+        // Same health gates the 4am inbox sweep uses. Driving an account whose
+        // session is already dead can only produce authwall hits from an
+        // automated browser — no upside, and it looks exactly like scraping.
+        const usersWithCookies = await prisma.user.findMany({
+          where: {
+            linkedinCookie: { not: null },
+            sessionInvalid: false,
+            accountHealth: 'HEALTHY',
+          },
+          select: { id: true, lastBrowserActivityAt: true }
+        });
 
-      for (const user of usersWithCookies) {
-        // Sequentially withdraw to avoid system overload
-        await withdrawOldInvites(user.id, 30);
+        const now = Date.now();
+        const twoMins = 2 * 60 * 1000;
+
+        for (const user of usersWithCookies) {
+          // Don't drive the account while the user is on LinkedIn themselves.
+          const redisPresence = redisConnection ? await redisConnection.get(`user_presence:${user.id}`) : null;
+          const lastActivity = user.lastBrowserActivityAt ? new Date(user.lastBrowserActivityAt).getTime() : 0;
+          if (redisPresence === 'ACTIVE' || (now - lastActivity < twoMins)) continue;
+
+          // Sequentially withdraw to avoid system overload
+          await withdrawOldInvites(user.id, 30);
+        }
+      } catch (error) {
+        console.error('Auto-withdraw sync failed:', error);
       }
-    } catch (error) {
-      console.error('Auto-withdraw sync failed:', error);
-    }
-  });
+    });
+  } else {
+    console.log('[Scheduler] Auto-withdraw cron DISABLED (set ENABLE_AUTO_WITHDRAW=true to re-enable).');
+  }
 
   // 4. Onboarding Reminder Scheduler (Every 12 hours)
   cron.schedule('0 0,12 * * *', async () => {

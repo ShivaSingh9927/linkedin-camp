@@ -120,8 +120,34 @@ export const processWorkflowStep = async (data: any, job: Job) => {
             timezoneId: 'Asia/Kolkata'
         };
 
+        // Sticky-proxy invariant. This worker injects the user's real session
+        // cookies below, so launching without the pinned egress is the same
+        // session-destroying bug that withdraw.worker had: LinkedIn sees the
+        // account move from its ISP IP to this datacenter and invalidates it.
+        //
+        // Proxy goes on launchOptions, not just contextOptions — Chrome's
+        // background requests escape a context-level proxy on Linux.
+        // Abort rather than fall back to a different IP; see session-launch.ts.
+        //
+        // NOTE: this worker consumes the legacy `linkedin-actions` queue, which
+        // has had 0 jobs ever in prod (campaigns run through `campaign-actions`
+        // / campaign-worker). It is a strong candidate for deletion — this guard
+        // exists so a dormant path can't quietly destroy a session if something
+        // starts feeding it again.
+        const snapshot: any = (user as any).linkedinProxySnapshot;
+        if (!snapshot?.server) {
+            console.error(`[WORKER] No linkedinProxySnapshot for ${userId} — refusing to launch (sticky-proxy). Re-login required.`);
+            return;
+        }
+        launchOptions.proxy = {
+            server: snapshot.server,
+            username: snapshot.username || undefined,
+            password: snapshot.password || undefined,
+        };
+        contextOptions.proxy = launchOptions.proxy;
+
         // We strictly mimic phase2.js: standard launch + fresh context + injection
-        console.log(`[WORKER] Launching standard browser for ${userId} (Mirroring phase2.js behavior)`);
+        console.log(`[WORKER] Launching browser for ${userId} through pinned proxy ${snapshot.server}`);
         browser = await chromium.launch(launchOptions);
         context = await browser.newContext(contextOptions);
 
