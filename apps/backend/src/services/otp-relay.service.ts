@@ -69,3 +69,55 @@ export async function submitOtp(userId: string, requestId: string, code: string)
     await r.expire(key, 60); // codes are valid for ~5 min on LinkedIn's side anyway
     console.log(`[otp-relay] enqueued code for ${key}`);
 }
+
+// ---- One login attempt per account ----
+//
+// POST /session/refresh used to spawn a fresh headless LinkedIn login on EVERY
+// call, with no check for one already running. In a mobile in-app browser the
+// OTP submit fails with a network error, the user naturally hits retry, and each
+// retry started another concurrent login for the same account — each triggering
+// its own LinkedIn code. The codes cross, none of them work, and LinkedIn
+// degrades the account for rapid repeat logins (this is what took Saloni's
+// session from valid back to NEEDS_LOGIN).
+//
+// Redis rather than an in-process Map so the guard survives an API restart and
+// still holds if the API is ever scaled past one container. The TTL is the
+// safety valve: if the process dies mid-login the slot frees itself instead of
+// locking the user out forever.
+const REFRESH_SLOT_KEY = (userId: string) => `linkedin-refresh:${userId}`;
+
+/**
+ * Try to claim the single refresh slot for this account.
+ *
+ * Returns `{ claimed: true }` when this attempt owns the slot, or
+ * `{ claimed: false, existingRequestId }` when a login is already in flight —
+ * in which case the caller should hand the CALLER BACK the in-flight requestId
+ * rather than erroring. That way a user mashing retry simply re-attaches to the
+ * attempt already running, and the code they type reaches the worker waiting
+ * for it.
+ */
+export async function claimRefreshSlot(
+    userId: string,
+    requestId: string,
+    ttlSeconds = 240,
+): Promise<{ claimed: true } | { claimed: false; existingRequestId: string | null }> {
+    const r = getRedis();
+    const key = REFRESH_SLOT_KEY(userId);
+    const ok = await r.set(key, requestId, 'EX', ttlSeconds, 'NX');
+    if (ok) return { claimed: true };
+    // Lost the race — report who holds it. It may have expired in the gap, in
+    // which case existingRequestId is null and the caller retries the claim.
+    const existing = await r.get(key);
+    return { claimed: false, existingRequestId: existing };
+}
+
+/**
+ * Release the slot, but ONLY if this requestId still owns it. Compare-and-delete
+ * so a slow finishing attempt can't free a slot that has since been re-claimed
+ * by a newer one after the TTL lapsed.
+ */
+export async function releaseRefreshSlot(userId: string, requestId: string): Promise<void> {
+    const r = getRedis();
+    const lua = `if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end`;
+    await r.eval(lua, 1, REFRESH_SLOT_KEY(userId), requestId).catch(() => {});
+}

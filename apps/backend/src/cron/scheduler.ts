@@ -186,8 +186,17 @@ const isUserActive = redisPresence === 'ACTIVE' || (now - lastActivity < twoMins
   cron.schedule('0 4 * * *', async () => {
     console.log('Running daily inbox sync sweep...');
     try {
+      // Gate on accountHealth as well as sessionInvalid. Those two flags can
+      // disagree (a half-finished login used to clear one and not the other),
+      // and when they do, filtering on sessionInvalid alone sends this sweep to
+      // drive a dead account — which just launches a browser into an authwall
+      // every night. accountHealth is the authoritative signal.
       const usersWithCookies = await prisma.user.findMany({
-        where: { linkedinCookie: { not: null }, sessionInvalid: false },
+        where: {
+          linkedinCookie: { not: null },
+          sessionInvalid: false,
+          accountHealth: 'HEALTHY',
+        },
         select: { id: true, lastBrowserActivityAt: true }
       });
 

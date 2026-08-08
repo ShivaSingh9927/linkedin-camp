@@ -9,7 +9,7 @@ import {
 import { authMiddleware } from '../middleware/auth.middleware';
 import { prisma } from '@repo/db';
 import { loginWithOtp } from '../services/login-with-otp.service';
-import { redisOtpResolver, submitOtp, newRequestId } from '../services/otp-relay.service';
+import { redisOtpResolver, submitOtp, newRequestId, claimRefreshSlot, releaseRefreshSlot } from '../services/otp-relay.service';
 
 const router = Router();
 
@@ -73,7 +73,28 @@ router.post('/refresh', authMiddleware, async (req: any, res) => {
         return res.status(400).json({ error: 'No proxy snapshot pinned — cold login flow required, not refresh.' });
     }
 
+    // One login attempt per account. Without this, every retry — and in a mobile
+    // in-app browser the OTP submit fails often enough that users retry a lot —
+    // started ANOTHER concurrent headless login, each pulling its own LinkedIn
+    // code. Crossed codes, none working, and LinkedIn penalising the account for
+    // rapid repeat logins.
+    //
+    // A retry re-attaches to the in-flight attempt instead of erroring, so the
+    // code the user types still reaches the worker that's waiting for it.
     const requestId = newRequestId();
+    const slot = await claimRefreshSlot(userId, requestId);
+    if (!slot.claimed) {
+        if (slot.existingRequestId) {
+            console.log(`[session/refresh] user=${userId} already has attempt ${slot.existingRequestId} in flight — re-attaching`);
+            return res.json({ requestId: slot.existingRequestId, reattached: true });
+        }
+        // Slot expired in the gap between our SET NX and the GET; take it now.
+        const retry = await claimRefreshSlot(userId, requestId);
+        if (!retry.claimed) {
+            return res.status(409).json({ error: 'A login attempt is already running for this account. Please wait a moment.' });
+        }
+    }
+
     refreshState.set(requestId, { status: 'running' });
 
     let fp: any = {};
@@ -93,6 +114,11 @@ router.post('/refresh', authMiddleware, async (req: any, res) => {
         setTimeout(() => refreshState.delete(requestId), 5 * 60 * 1000);
     }).catch(err => {
         refreshState.set(requestId, { status: 'done', outcome: { kind: 'unknown', error: err.message } });
+    }).finally(() => {
+        // Free the slot the moment this attempt finishes — success or failure —
+        // so a user whose login legitimately failed can retry immediately rather
+        // than waiting out the TTL.
+        void releaseRefreshSlot(userId, requestId);
     });
 
     return res.json({ requestId });

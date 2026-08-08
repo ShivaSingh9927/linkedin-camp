@@ -78,10 +78,19 @@ class SessionManagerService {
             if (fs.existsSync(fp)) fs.unlinkSync(fp);
         });
 
-        await prisma.user.update({
-            where: { id: userId },
-            data: { sessionInvalid: false }
-        });
+        // NOTE: we deliberately do NOT clear `sessionInvalid` here.
+        //
+        // This used to optimistically set `sessionInvalid: false` at the START of
+        // the login — before a single credential had been submitted. Open the
+        // Connect modal and abandon it, and the DB then claimed a working session
+        // while `accountHealth` still said SESSION_EXPIRED. Those two flags
+        // disagreeing is the same divergence that caused the campaign re-run loop
+        // (bug #5), and it made the 4am inbox sweep — which filters on
+        // `sessionInvalid: false` — drive a dead account into an authwall nightly.
+        //
+        // Both success paths (the inline credential login and handleSuccess)
+        // already clear the flag once cookies are actually captured, which is the
+        // only point at which it's true.
 
         const launchOptions: any = {
             headless: false,
