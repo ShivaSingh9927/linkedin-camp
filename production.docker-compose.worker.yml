@@ -69,6 +69,18 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+    # Same volume backend-worker uses. The API writes to /app/sessions too
+    # (SESSION_STORAGE_PATH above), and the login flow runs in THIS process —
+    # so challenge-capture.service archives every unhandled LinkedIn challenge
+    # screen (raw HTML + screenshot) here. Without the mount those landed on the
+    # container's ephemeral layer and were destroyed on every deploy: 0 captures
+    # survived. Those screens are rare and can't be summoned on demand, and they
+    # are the only real material for teaching classifyPage to tell an app-approval
+    # prompt from a phone verification from a captcha, so losing them is
+    # expensive. Sharing one volume is safe — both services write per-user
+    # subdirectories, and only one login runs per account at a time.
+    volumes:
+      - sessions_data:/app/sessions
 
   backend-worker:
     image: linkedin-camp-backend:latest
