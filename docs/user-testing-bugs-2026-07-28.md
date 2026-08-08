@@ -180,16 +180,35 @@ could not be mistaken for a working gate, and only `accountHealth` was varied:
 Same campaign, same ready lead; the only variable was the health field. DB-only
 setup, and the campaign was profile-visit-only so even the control run was a read.
 
-### 6. 🔧 OTP submit fails in mobile in-app browsers + attempt confusion
+### 6. 🔧 OTP submit fails in mobile in-app browsers — *concurrency half FIXED*
 - "Submit code" shows **Network Error** in in-app browsers (WhatsApp/LinkedIn
-  webview); the code never reaches the relay (`no otp-relay enqueued`).
-- No retry-on-network-failure, and no "open in a real browser" hint.
-- Users restart the login repeatedly → multiple concurrent attempts, each with
-  its own LinkedIn code → codes get crossed/expired → `OTP unresolved`.
-- Repeated fresh logins in quick succession also degrade the account
-  (Saloni went valid → back to NEEDS_LOGIN from the retry storm).
-Fix: retry on network error, guard against rapid repeat attempts (one active
-attempt per user), surface an "open in browser" hint, invalidate old requestIds.
+  webview); the code never reaches the relay (`no otp-relay enqueued`). *(open)*
+- No retry-on-network-failure, and no "open in a real browser" hint. *(open)*
+- ✅ **Users restart the login repeatedly → multiple concurrent attempts, each
+  with its own LinkedIn code → codes crossed/expired.** FIXED 2026-08-08.
+  `POST /session/refresh` spawned a fresh headless login on **every** call with
+  no in-flight check, so N retries meant N simultaneous logins for one account.
+  This is also what degraded the account itself (Saloni: valid → NEEDS_LOGIN from
+  the retry storm), since LinkedIn penalises rapid repeat logins.
+
+  `claimRefreshSlot` / `releaseRefreshSlot` now allow **one attempt per account**.
+  A retry **re-attaches** to the in-flight attempt (returns its `requestId`)
+  rather than erroring — so the natural user behaviour becomes harmless instead
+  of destructive, and the code they type still reaches the worker awaiting it.
+
+  Redis-backed, not an in-process Map, so it survives an API restart and holds if
+  the API is scaled past one container. 240s TTL is the safety valve (a process
+  death frees the slot rather than locking the account out); release is a Lua
+  compare-and-delete so a slow finisher can't free a slot already re-claimed
+  after the TTL, and runs in `.finally()` so a genuinely failed login can be
+  retried at once.
+
+  Verified against prod Redis with a fake user id: claim → concurrent claim
+  refused → re-attach returns the original id → TTL 240s → wrong owner cannot
+  release (0) → true owner releases (1) → next attempt claims.
+
+Remaining: retry on network error, "open in browser" hint, invalidate old
+requestIds.
 
 ### 7. 🔧 Possible: corrupted credentials typed into LinkedIn login
 Pranav's early attempts submitted a mangled email
@@ -450,6 +469,25 @@ assertions).
 **Note:** `DEFAULT_PROXY_SERVER` is set in prod to the same IP as the only proxy,
 so `session-manager`'s cold-login fallback is harmless today. Once a second proxy
 exists it would pin some users to the wrong egress at login. Revisit then.
+
+### 16. ✅ sessionInvalid cleared before the login even happened
+**FIXED 2026-08-08.** Spotted live: rajaji sat at `accountHealth=SESSION_EXPIRED`
+with `sessionInvalid=false` — the two flags contradicting each other.
+
+`startLogin()` optimistically set `sessionInvalid: false` at the *start* of the
+login, before a single credential was submitted, and never touched
+`accountHealth`. Open the Connect modal and abandon it and the DB claimed a
+working session.
+
+Not merely untidy: the **4am inbox sweep filters on `sessionInvalid: false`**, so
+it would drive a dead account into a LinkedIn authwall with an automated browser
+every night — accumulating exactly the signal you don't want on an account. It's
+also the same flag divergence behind the campaign re-run loop (#5).
+
+Removed; both success paths already clear the flag once cookies are actually
+captured, which is the only moment it's true. The 4am sweep now additionally
+gates on `accountHealth` — the authoritative signal — so no future divergence,
+whatever its cause, can put it back into that state.
 
 ---
 
