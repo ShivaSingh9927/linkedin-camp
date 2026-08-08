@@ -2,8 +2,9 @@
 
 import { useEffect, useRef, useState } from 'react';
 import api from '@/lib/api';
+import { withNetworkRetry, detectInAppBrowser, describeError } from '@/lib/net';
 import { Button } from '@/components/ui/button';
-import { X, Loader2, MailCheck, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { X, Loader2, MailCheck, AlertCircle, CheckCircle2, Copy } from 'lucide-react';
 
 // Account-recovery modal. Three stages:
 //   1. CREDS  — collect email + password
@@ -33,9 +34,17 @@ export function OtpRecoveryModal({ open, onClose, defaultEmail }: Props) {
     const [error, setError] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
     const [otpRejectedHint, setOtpRejectedHint] = useState(false);
+    const [inAppBrowser, setInAppBrowser] = useState<string | null>(null);
+    const [linkCopied, setLinkCopied] = useState(false);
     const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     useEffect(() => { if (defaultEmail) setEmail(defaultEmail); }, [defaultEmail]);
+
+    // In an effect, not during render — `navigator` doesn't exist while Next
+    // server-renders this, and reading it inline would break hydration.
+    useEffect(() => {
+        if (typeof navigator !== 'undefined') setInAppBrowser(detectInAppBrowser(navigator.userAgent));
+    }, []);
 
     // Reset modal state every time it reopens.
     useEffect(() => {
@@ -58,14 +67,17 @@ export function OtpRecoveryModal({ open, onClose, defaultEmail }: Props) {
     async function startRefresh() {
         setBusy(true); setError(null);
         try {
-            const res = await api.post('/session/refresh', { email, password });
+            // Safe to retry: the backend holds one refresh slot per account, so a
+            // duplicate call re-attaches to the attempt already running and hands
+            // back its requestId rather than starting a second login.
+            const res = await withNetworkRetry(() => api.post('/session/refresh', { email, password }));
             const id = res.data?.requestId;
             if (!id) throw new Error('No requestId returned');
             setRequestId(id);
             setStage('otp');
             beginPolling(id);
         } catch (e: any) {
-            setError(e.response?.data?.error || e.message || 'Failed to start refresh');
+            setError(describeError(e, 'Failed to start refresh', inAppBrowser));
         } finally {
             setBusy(false);
         }
@@ -101,7 +113,7 @@ export function OtpRecoveryModal({ open, onClose, defaultEmail }: Props) {
         if (!requestId || !code) return;
         setBusy(true); setError(null); setOtpRejectedHint(false);
         try {
-            await api.post('/session/otp', { requestId, code });
+            await withNetworkRetry(() => api.post('/session/otp', { requestId, code }));
             // Worker now consumes the code. If the code was wrong, the worker
             // will re-block on Redis for another code — the request stays
             // running, status stays 'running'. After ~10s of no resolution,
@@ -111,7 +123,7 @@ export function OtpRecoveryModal({ open, onClose, defaultEmail }: Props) {
             }, 12000);
             setCode('');
         } catch (e: any) {
-            setError(e.response?.data?.error || e.message || 'Failed to submit code');
+            setError(describeError(e, 'Failed to submit code', inAppBrowser));
         } finally {
             setBusy(false);
         }
@@ -132,6 +144,35 @@ export function OtpRecoveryModal({ open, onClose, defaultEmail }: Props) {
                         <X className="h-4 w-4" />
                     </button>
                 </div>
+
+                {/* Warn BEFORE they type a password, not after the submit fails.
+                    These webviews are where the OTP POST dies, and the generic
+                    "Network Error" gives no clue that the browser is the problem. */}
+                {inAppBrowser && stage !== 'done' && (
+                    <div className="mx-5 mt-4 flex items-start gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 p-3">
+                        <AlertCircle className="h-5 w-5 text-amber-600 mt-0.5 shrink-0" />
+                        <div className="text-sm space-y-2">
+                            <div className="font-medium">Open this in your normal browser</div>
+                            <div className="text-muted-foreground">
+                                You&apos;re in {inAppBrowser}&apos;s in-app browser, which often blocks
+                                the verification step. Copy the link and paste it into Chrome or Safari.
+                            </div>
+                            <button
+                                type="button"
+                                onClick={async () => {
+                                    try {
+                                        await navigator.clipboard.writeText(window.location.href);
+                                        setLinkCopied(true);
+                                        setTimeout(() => setLinkCopied(false), 2500);
+                                    } catch { /* clipboard blocked in some webviews — the URL bar still works */ }
+                                }}
+                                className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-700 hover:underline"
+                            >
+                                {linkCopied ? <><CheckCircle2 className="h-3.5 w-3.5" /> Link copied</> : <><Copy className="h-3.5 w-3.5" /> Copy link</>}
+                            </button>
+                        </div>
+                    </div>
+                )}
 
                 {stage === 'creds' && (
                     <div className="p-5 space-y-4">
