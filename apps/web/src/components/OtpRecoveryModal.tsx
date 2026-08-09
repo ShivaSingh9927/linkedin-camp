@@ -6,18 +6,26 @@ import { withNetworkRetry, detectInAppBrowser, describeError } from '@/lib/net';
 import { Button } from '@/components/ui/button';
 import { X, Loader2, MailCheck, AlertCircle, CheckCircle2, Copy } from 'lucide-react';
 
-// Account-recovery modal. Three stages:
-//   1. CREDS  — collect email + password
-//   2. OTP    — kicked off recovery, waiting for the user to paste the OTP
-//                from their email
-//   3. DONE   — success or failure terminal state
+// Account-recovery modal. Stages:
+//   1. CREDS      — collect email + password
+//   2. CONNECTING — login is driving; LinkedIn hasn't asked for anything yet
+//   3. OTP        — LinkedIn asked for a code, waiting on the user
+//   4. VERIFYING  — code handed over, waiting on LinkedIn
+//   5. DONE       — success or failure terminal state
 //
 // Maps 1:1 to the backend recovery flow:
 //   POST /session/refresh { email, password }      → returns { requestId }
 //   POST /session/otp     { requestId, code }      → wakes the worker
-//   GET  /session/refresh-status?requestId=...     → polled by step 2 + 3
+//   GET  /session/refresh-status?requestId=...     → polled from step 2 on
+//
+// Stage comes from the server's `phase`, never from a local guess. It used to
+// jump straight to OTP the moment /refresh returned — before LinkedIn had asked
+// for anything — and then, after a code was submitted, keep showing the same
+// empty box and warn on a 12s timer that the code looked rejected. A correct
+// code was indistinguishable from a wrong one for the ~50s a login takes.
 
-type Stage = 'creds' | 'otp' | 'done';
+type Stage = 'creds' | 'connecting' | 'otp' | 'verifying' | 'done';
+type Phase = 'starting' | 'awaiting_otp' | 'verifying' | 'done';
 
 interface Props {
     open: boolean;
@@ -74,7 +82,9 @@ export function OtpRecoveryModal({ open, onClose, defaultEmail }: Props) {
             const id = res.data?.requestId;
             if (!id) throw new Error('No requestId returned');
             setRequestId(id);
-            setStage('otp');
+            // NOT 'otp' — LinkedIn often completes a refresh without asking for
+            // a code at all. Wait for the server to say it was asked.
+            setStage('connecting');
             beginPolling(id);
         } catch (e: any) {
             setError(describeError(e, 'Failed to start refresh', inAppBrowser));
@@ -88,6 +98,27 @@ export function OtpRecoveryModal({ open, onClose, defaultEmail }: Props) {
         pollRef.current = setInterval(async () => {
             try {
                 const res = await api.get(`/session/refresh-status?requestId=${encodeURIComponent(id)}`);
+
+                // Mid-flight phases. `attempt` rising above 1 is the server
+                // telling us LinkedIn refused the previous code and issued a
+                // new one — a fact, replacing the old 12-second guess.
+                const phase: Phase = res.data?.phase || 'starting';
+                const attempt: number = res.data?.attempt || 1;
+                if (res.data?.status !== 'done') {
+                    if (phase === 'awaiting_otp') {
+                        setStage('otp');
+                        if (attempt > 1) {
+                            setOtpRejectedHint(true);
+                            setCode('');
+                        }
+                    } else if (phase === 'verifying') {
+                        setStage('verifying');
+                        setOtpRejectedHint(false);
+                    } else {
+                        setStage('connecting');
+                    }
+                }
+
                 if (res.data?.status === 'done') {
                     if (pollRef.current) clearInterval(pollRef.current);
                     pollRef.current = null;
@@ -114,13 +145,13 @@ export function OtpRecoveryModal({ open, onClose, defaultEmail }: Props) {
         setBusy(true); setError(null); setOtpRejectedHint(false);
         try {
             await withNetworkRetry(() => api.post('/session/otp', { requestId, code }));
-            // Worker now consumes the code. If the code was wrong, the worker
-            // will re-block on Redis for another code — the request stays
-            // running, status stays 'running'. After ~10s of no resolution,
-            // surface a soft hint to retry with a new code.
-            setTimeout(() => {
-                if (stage === 'otp' && pollRef.current) setOtpRejectedHint(true);
-            }, 12000);
+            // Show progress immediately rather than leaving the prompt up while
+            // the worker consumes the code — polling will correct this within a
+            // tick if the server disagrees. If LinkedIn refuses the code it
+            // re-asks, the resolver is called again with a higher `attempt`,
+            // and the poll above turns that into the rejection notice.
+            setStage('verifying');
+            setOtpRejectedHint(false);
             setCode('');
         } catch (e: any) {
             setError(describeError(e, 'Failed to submit code', inAppBrowser));
@@ -219,6 +250,28 @@ export function OtpRecoveryModal({ open, onClose, defaultEmail }: Props) {
                     </div>
                 )}
 
+                {(stage === 'connecting' || stage === 'verifying') && (
+                    <div className="p-5 space-y-4">
+                        <div className="flex items-start gap-3 rounded-md border bg-muted/40 p-3">
+                            <Loader2 className="h-5 w-5 text-primary mt-0.5 shrink-0 animate-spin" />
+                            <div className="text-sm">
+                                <div className="font-medium">
+                                    {stage === 'connecting' ? 'Signing in to LinkedIn' : 'Verifying your code'}
+                                </div>
+                                <div className="text-muted-foreground">
+                                    {stage === 'connecting'
+                                        ? 'This usually takes under a minute. We’ll ask for a code only if LinkedIn requests one.'
+                                        : 'LinkedIn is checking the code you entered. Don’t close this window.'}
+                                </div>
+                            </div>
+                        </div>
+                        {error && <ErrorRow text={error} />}
+                        <div className="flex gap-2 pt-2">
+                            <Button variant="outline" onClick={onClose} className="flex-1">Cancel</Button>
+                        </div>
+                    </div>
+                )}
+
                 {stage === 'otp' && (
                     <div className="p-5 space-y-4">
                         <div className="flex items-start gap-3 rounded-md border bg-muted/40 p-3">
@@ -249,8 +302,8 @@ export function OtpRecoveryModal({ open, onClose, defaultEmail }: Props) {
                             <div className="text-xs text-amber-600 flex items-start gap-2">
                                 <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
                                 <span>
-                                    Still waiting. If LinkedIn rejected the code, request a new
-                                    one and try again.
+                                    That code wasn’t accepted. LinkedIn has sent a new one —
+                                    check your email and enter the latest code.
                                 </span>
                             </div>
                         )}

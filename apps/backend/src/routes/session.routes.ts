@@ -55,7 +55,30 @@ router.get('/health', authMiddleware, async (req: any, res) => {
 //   returns: { status, outcome? }
 //   light status check the UI can poll after submitting the OTP.
 
-const refreshState = new Map<string, { status: 'running' | 'done', outcome?: any }>();
+/**
+ * `phase` exists because the UI was guessing. It flipped to the OTP prompt the
+ * instant /refresh returned a requestId — before LinkedIn had asked for
+ * anything — and after a code was submitted it kept showing the same empty box,
+ * then warned that the code looked rejected on a 12-second timer. A correct
+ * code therefore looked exactly like a wrong one for the ~50s a login takes.
+ *
+ * The backend already knows the truth: the otpResolver is called only when
+ * LinkedIn actually asks, and called AGAIN when a code is refused. Reporting
+ * that removes every guess from the client.
+ *
+ *   starting     — driving the login form, nothing asked of the user yet
+ *   awaiting_otp — LinkedIn asked; `attempt` > 1 means the last code was refused
+ *   verifying    — a code was handed over, waiting on LinkedIn
+ *   done         — terminal; read `outcome`
+ */
+type RefreshPhase = 'starting' | 'awaiting_otp' | 'verifying' | 'done';
+
+const refreshState = new Map<string, {
+    status: 'running' | 'done',
+    phase: RefreshPhase,
+    attempt?: number,
+    outcome?: any,
+}>();
 
 router.post('/refresh', authMiddleware, async (req: any, res) => {
     const userId = req.user?.id;
@@ -95,25 +118,43 @@ router.post('/refresh', authMiddleware, async (req: any, res) => {
         }
     }
 
-    refreshState.set(requestId, { status: 'running' });
-
     let fp: any = {};
     try { fp = user?.linkedinFingerprint ? JSON.parse(user.linkedinFingerprint as any) : {}; } catch {}
 
     // Fire-and-forget. The worker resolves OTPs through Redis; meanwhile the
     // UI polls /refresh-status?requestId=... and POSTs codes via /session/otp.
+    refreshState.set(requestId, { status: 'running', phase: 'starting' });
+
+    // Wrap the resolver rather than reaching into loginWithOtp: it is called
+    // exactly when LinkedIn puts up the code prompt, and called again with a
+    // higher `attempt` when a code is refused. That makes it the precise
+    // boundary between "asking the user" and "waiting on LinkedIn".
+    const resolveOtp = redisOtpResolver(userId, requestId);
+    const trackedResolver = async (attempt: number) => {
+        refreshState.set(requestId, { status: 'running', phase: 'awaiting_otp', attempt });
+        const code = await resolveOtp(attempt);
+        // An empty code means the relay timed out waiting, not that a code was
+        // supplied — don't claim to be verifying something we never got.
+        refreshState.set(requestId, {
+            status: 'running',
+            phase: code ? 'verifying' : 'awaiting_otp',
+            attempt,
+        });
+        return code;
+    };
+
     loginWithOtp({
         userId,
         email,
         password,
         proxy: { server: snap.server, username: snap.username, password: snap.password },
         userAgent: fp.userAgent,
-        otpResolver: redisOtpResolver(userId, requestId),
+        otpResolver: trackedResolver,
     }).then(outcome => {
-        refreshState.set(requestId, { status: 'done', outcome });
+        refreshState.set(requestId, { status: 'done', phase: 'done', outcome });
         setTimeout(() => refreshState.delete(requestId), 5 * 60 * 1000);
     }).catch(err => {
-        refreshState.set(requestId, { status: 'done', outcome: { kind: 'unknown', error: err.message } });
+        refreshState.set(requestId, { status: 'done', phase: 'done', outcome: { kind: 'unknown', error: err.message } });
     }).finally(() => {
         // Free the slot the moment this attempt finishes — success or failure —
         // so a user whose login legitimately failed can retry immediately rather
@@ -135,7 +176,10 @@ router.post('/otp', authMiddleware, async (req: any, res) => {
 router.get('/refresh-status', authMiddleware, (req: any, res) => {
     const requestId = String(req.query.requestId || '');
     const state = refreshState.get(requestId);
-    if (!state) return res.json({ status: 'unknown' });
+    // 'unknown' means this API process has no record — either a bad requestId
+    // or the 5-minute retention elapsed. Report a phase so the client never has
+    // to infer one from a missing field.
+    if (!state) return res.json({ status: 'unknown', phase: 'starting' });
     return res.json(state);
 });
 
