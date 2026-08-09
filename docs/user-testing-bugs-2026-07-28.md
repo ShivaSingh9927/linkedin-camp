@@ -460,6 +460,21 @@ Fixes: withdraw.worker routed through `launchAuthenticatedContext`; the 2am cron
 disabled behind `ENABLE_AUTO_WITHDRAW` and given the health/presence gates the
 4am sweep already had.
 
+**CONFIRMED FIXED — overnight test, 2026-08-09.** First night with the 2am job
+disabled. Session logged in 08-08 06:24 and was still live 08-09 05:33 — **~23h**,
+against dying within 17h on every previous night.
+
+```
+withdraw job runs overnight:  0          (was: 11 users driven unproxied)
+04:00 inbox sync:             Found 5 threads. Inbox sync complete.
+                                         (was: Redirected to /uas/login)
+session-expired notifications: 0         (was: one every night since 07-27)
+sessionValidatedAt:           05:33:35   fresh browser-free /me, 200 + identity
+```
+
+Verified two independent ways: a full messenger sync through the session at
+04:00, and a Voyager `/me` probe at 05:33. Not a stale flag.
+
 **Full audit of every runtime path that can carry a session** found two more:
 - `session-validator.service.ts` set the proxy on `contextOptions` **only** —
   which `session-launch.ts` explicitly warns is insufficient (Chrome's background
