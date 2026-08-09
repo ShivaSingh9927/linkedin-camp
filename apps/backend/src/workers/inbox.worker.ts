@@ -2,6 +2,7 @@ import { Worker, Job, Queue } from 'bullmq';
 import { prisma } from '@repo/db';
 import Redis from 'ioredis';
 import { launchAuthenticatedContext } from '../campaign-engine/session-launch';
+import { classifyPage, isCheckpoint, handleCheckpoint } from '../campaign-engine/safety/checkpoint';
 import { tryAcquireAccountLock, releaseAccountLock } from './campaign-worker';
 import {
     syncInbox as voyagerSyncInbox,
@@ -98,14 +99,16 @@ export const syncInbox = async (userId: string) => {
         if (!launch.ok) {
             console.error(`[INBOX-WORKER] Launch failed (${launch.failedAt}): ${launch.error}`);
             if (launch.failedAt === 'proxy-snapshot-missing') {
-                await prisma.notification.create({
-                    data: {
-                        userId,
-                        title: 'Inbox Sync Skipped',
-                        body: 'No pinned LinkedIn proxy. Please re-sync your session.',
-                        type: 'ERROR',
-                    },
-                }).catch(() => {});
+                // No pinned snapshot means we can't reproduce the egress the
+                // cookies were captured behind, so this account genuinely needs
+                // a re-login — that's an account-health fact, not a per-run blip.
+                // Recording it stops the sweep retrying nightly, and routing it
+                // through handleCheckpoint dedupes the notification (this branch
+                // had written 63 identical rows, one per night, forever).
+                await handleCheckpoint({
+                    userId,
+                    info: { kind: 'still_login', url: 'no-proxy-snapshot' },
+                }).catch(err => console.error(`[INBOX-WORKER] handleCheckpoint failed: ${err.message}`));
             }
             return;
         }
@@ -117,17 +120,29 @@ export const syncInbox = async (userId: string) => {
         await safeGoto(page, 'https://www.linkedin.com/feed/');
         await wait(randomRange(5000, 8000));
 
-        const feedUrl = page.url();
-        if (feedUrl.includes('authwall') || feedUrl.includes('login') || feedUrl.includes('checkpoint')) {
-            console.error(`[INBOX-WORKER] Session invalid. Redirected to: ${feedUrl}`);
-            await prisma.notification.create({
-                data: {
-                    userId,
-                    title: 'Inbox Sync Failed',
-                    body: 'LinkedIn session expired. Please re-sync your session.',
-                    type: 'ERROR',
-                }
-            }).catch(() => {});
+        // Being bounced off /feed/ is LinkedIn stating plainly that this session
+        // is not authenticated — the strongest evidence we ever get, and it
+        // arrives on the very first navigation, before this worker has done
+        // anything. It used to be thrown away: the worker logged it, wrote an
+        // ERROR notification, and returned WITHOUT recording the health change.
+        // So accountHealth stayed HEALTHY while LinkedIn bounced the account
+        // every single night — five accounts were in exactly that state on
+        // 2026-08-09, one of them stale since June.
+        //
+        // Route through the canonical classifier + handler instead of matching
+        // URL substrings here. That buys three things the old code couldn't do:
+        //   - the right health per kind (authwall→SESSION_EXPIRED,
+        //     login→NEEDS_LOGIN, pin→OTP_REQUIRED, else RESTRICTED), rather
+        //     than collapsing everything into one message
+        //   - sessionInvalid set, so the 4am sweep stops re-driving a dead
+        //     account into the same wall tomorrow
+        //   - notifications only on TRANSITION. The old code inserted one every
+        //     night forever: 39 rows for snehlata, 34 for shiva@gmail.com.
+        const info = await classifyPage(page);
+        if (isCheckpoint(info)) {
+            console.error(`[INBOX-WORKER] Session not usable — kind=${info.kind} url=${info.url}`);
+            await handleCheckpoint({ userId, info }).catch(err =>
+                console.error(`[INBOX-WORKER] handleCheckpoint failed: ${err.message}`));
             return;
         }
 
@@ -151,15 +166,14 @@ export const syncInbox = async (userId: string) => {
         console.log(`[INBOX-WORKER] Warming self cache...`);
         const meR = await warmSelfCache(userId, page);
         if (!meR.ok) {
-            console.error(`[INBOX-WORKER] warmSelfCache failed: ${(meR as any).error || 'unknown'}`);
-            await prisma.notification.create({
-                data: {
-                    userId,
-                    title: 'Inbox Sync Failed',
-                    body: 'Could not warm LinkedIn cache. Please try again.',
-                    type: 'ERROR',
-                }
-            }).catch(() => {});
+            // Log only — deliberately no user notification. This is an internal
+            // transient (headers/getMe didn't come back on this pass), and the
+            // old "Could not warm LinkedIn cache. Please try again." gave the
+            // user nothing to act on while carrying the same un-deduped
+            // per-night spam risk as the two branches above. If the session is
+            // genuinely dead, the classifyPage gate at warmup catches it on the
+            // next run and records it properly through handleCheckpoint.
+            console.error(`[INBOX-WORKER] warmSelfCache failed: ${(meR as any).error || 'unknown'} — skipping this run`);
             return;
         }
 
