@@ -237,6 +237,15 @@ export const syncInbox = async (userId: string) => {
         // 6. For each thread, fetch full message bodies via Voyager GraphQL
         //    with fallback to the last-message preview from the thread list.
         let totalNewReplies = 0;
+        // Canary counters. The 2026-06→08 breakage logged a clean
+        // "Inbox sync complete" every night while saving nothing, for two
+        // months. Note what would NOT have caught it: a zero-thread check.
+        // Threads were found fine (13 of them) — it was every per-thread fetch
+        // 400ing and the fallback preview being null. So the signal that
+        // matters is "matched leads, but not one message body came back".
+        let leadsMatched = 0;
+        let msgFetchOk = 0;
+        let msgFetchFailed = 0;
 
         for (const c of conversations) {
             const participantName = `${c.otherFirstName} ${c.otherLastName}`.trim() || 'Unknown';
@@ -262,8 +271,17 @@ export const syncInbox = async (userId: string) => {
                 continue;
             }
 
+            leadsMatched++;
             console.log(`[INBOX-WORKER] Fetching messages for ${participantName}...`);
             const msgs = await getMessagesInConversation(userId, c.conversationUrn, page, apiRequest);
+            if (msgs.ok && msgs.data.length > 0) msgFetchOk++;
+            else {
+                msgFetchFailed++;
+                // Was silent: the code fell straight through to the preview
+                // fallback, so a 400 on every thread looked like a quiet run.
+                console.warn(`[INBOX-WORKER] Message fetch returned nothing for ${participantName}` +
+                    `${msgs.ok ? ' (ok but empty)' : `: ${(msgs as any).error || 'unknown'}`}`);
+            }
             let chatHistory: Array<{ sender: string; text: string; direction: 'SENT' | 'RECEIVED' }>;
             if (msgs.ok && msgs.data.length > 0) {
                 chatHistory = msgs.data.map((m) => ({
@@ -363,6 +381,23 @@ export const syncInbox = async (userId: string) => {
         }
 
         console.log(`[INBOX-WORKER] Inbox sync complete. Synced ${conversations.length} threads, ${totalNewReplies} with new replies.`);
+
+        // Canary. Deliberately log-only: this is an engineering signal about
+        // OUR integration drifting, not something the account owner can act on,
+        // and a per-night user notification is exactly the spam that was ripped
+        // out this morning. Grep [INBOX-HEALTH] to see it.
+        if (conversations.length === 0) {
+            console.warn(`[INBOX-HEALTH] user=${userId} 0 threads returned. Real mailboxes are rarely empty — ` +
+                `suspect the conversations queryId or response shape changed.`);
+        } else if (leadsMatched > 0 && msgFetchOk === 0) {
+            console.error(`[INBOX-HEALTH] user=${userId} matched ${leadsMatched} lead(s) across ` +
+                `${conversations.length} threads but NOT ONE message body came back ` +
+                `(${msgFetchFailed} failed). This is the exact signature of the 2026-06-10 breakage — ` +
+                `suspect the messages queryId, URN encoding, or payload shape.`);
+        } else if (msgFetchFailed > 0) {
+            console.warn(`[INBOX-HEALTH] user=${userId} ${msgFetchFailed}/${leadsMatched} message fetches ` +
+                `returned nothing (${msgFetchOk} ok). Partial failure — worth watching if it persists.`);
+        }
 
     } catch (err: any) {
         console.error(`[INBOX-WORKER] Error:`, err.message);

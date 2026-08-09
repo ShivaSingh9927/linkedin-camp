@@ -126,6 +126,29 @@ export default function InboxPage() {
     const t = setInterval(fetchConversations, 30000);
     return () => clearInterval(t);
   }, []);
+
+  // Ask LinkedIn for anything new when the page is opened.
+  //
+  // Without this, the only automatic pull is the 04:00 cron, so a user with no
+  // running campaign opened Inbox to data up to 24h old and had to notice the
+  // Sync button. The server debounces this to once per 10 minutes per user, so
+  // returning to the tab all afternoon costs nothing — opening it after lunch
+  // gets fresh mail.
+  //
+  // Deliberately fire-and-forget: the 30s poll above picks the results up on
+  // its own a few seconds later, so there's nothing to await and no spinner to
+  // sit through. Failures are silent by design — the user didn't ask for this,
+  // and they still have the Sync button, which does report errors.
+  useEffect(() => {
+    fetch(`${API_BASE}/api/v1/inbox/sync`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${localStorage.getItem('token')}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ auto: true }),
+    }).catch(() => {});
+  }, []);
   useEffect(() => { if (selectedConvo) fetchMessages(selectedConvo.id); }, [selectedConvo]);
 
   const handleSync = async () => {
@@ -138,11 +161,15 @@ export default function InboxPage() {
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
       });
       if (res.ok) {
+        const data = await res.json().catch(() => ({}));
         const stamp = Date.now();
         localStorage.setItem(SYNC_KEY, String(stamp));
         setLastSyncedAt(stamp);
         setNow(stamp);
-        setTimeout(fetchConversations, 30000); // background pull takes time
+        // queued === false means the server debounced this — we synced very
+        // recently, so the data on screen is already current. Not an error;
+        // just don't promise a refresh that isn't coming.
+        if (data?.queued !== false) setTimeout(fetchConversations, 30000);
       } else if (res.status === 409) {
         setSyncError('LinkedIn is busy with another action — try again in a few seconds.');
       } else {

@@ -195,5 +195,40 @@ console.log('\n--- csrf must outlive a sync ---');
         /opts\.apiRequest[\s\S]{0,120}storageState\(\)/.test(svc));
 }
 
+console.log('\n--- the canary must catch THIS bug, not a strawman ---');
+{
+    // A zero-thread check would NOT have caught the 2026-06-10 breakage: 13
+    // threads came back fine and every per-thread fetch 400'd. The assertion
+    // that matters is the leads-matched-but-no-bodies case.
+    check('warns when zero threads come back', /INBOX-HEALTH[\s\S]{0,200}0 threads/.test(worker));
+    check('ERRORS on matched-leads-but-no-message-bodies (the real signature)',
+        /leadsMatched\s*>\s*0\s*&&\s*msgFetchOk\s*===\s*0/.test(worker),
+        'without this the canary would have stayed silent through the actual outage');
+    check('counts partial failures too', /msgFetchFailed\s*>\s*0/.test(worker));
+    check('a failed message fetch is logged, not swallowed',
+        /msgFetchFailed\+\+[\s\S]{0,300}console\.warn/.test(worker));
+    check('canary is log-only — no notification rows',
+        !/INBOX-HEALTH[\s\S]{0,400}prisma\.notification/.test(worker),
+        'a per-night notification is exactly the spam removed this morning');
+    check('grep-able tag', worker.includes('[INBOX-HEALTH]'));
+}
+
+console.log('\n--- manual sync goes through the debounce ---');
+{
+    const ctl = readCode('controllers/inbox.controller.ts');
+    check('no raw queue push (that bypassed the debounce entirely)',
+        !/inboxQueue\.add\(/.test(ctl),
+        'pressing Sync repeatedly drove a full LinkedIn sync every 30s');
+    check('uses enqueueInboxSync', ctl.includes('enqueueInboxSync'));
+    check('page-open syncs are debounced far harder than a click',
+        /auto\s*\?\s*10\s*\*\s*60\s*:\s*2\s*\*\s*60/.test(ctl));
+    check('an auto sync never returns an error the user must read',
+        /if\s*\(auto\)\s*return res\.json\(\{\s*queued:\s*false/.test(ctl));
+    check('an explicit click still gets the 409 when the account is busy',
+        /return res\.status\(409\)/.test(ctl));
+    check('reports whether it actually queued, so the UI can stop promising a refresh',
+        /queued,/.test(ctl));
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail === 0 ? 0 : 1);

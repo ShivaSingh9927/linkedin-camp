@@ -1,6 +1,6 @@
 import { Response } from 'express';
 import { prisma } from '@repo/db';
-import { syncInbox, inboxQueue } from '../workers/inbox.worker';
+import { syncInbox, inboxQueue, enqueueInboxSync } from '../workers/inbox.worker';
 
 // ─── CONVERSATIONS (grouped messages by lead) ───
 
@@ -296,21 +296,42 @@ export const syncInboxManual = async (req: any, res: Response) => {
         const user = await prisma.user.findUnique({ where: { id: userId } });
         if (!user) return res.status(404).json({ error: 'User not found' });
 
+        if (!inboxQueue) {
+            return res.status(500).json({ error: 'Sync service currently unavailable' });
+        }
+
+        // `auto` = fired by the Inbox page on open, not by the user pressing
+        // Sync. Both hit LinkedIn identically, so the only difference is how
+        // eagerly we're willing to do it.
+        const auto = req.body?.auto === true;
+
         const now = new Date();
         const lastAction = user.lastCloudActionAt ? user.lastCloudActionAt.getTime() : 0;
-        const isRecentlyActive = (now.getTime() - lastAction) < (30 * 1000); // 30 seconds
+        const isRecentlyActive = (now.getTime() - lastAction) < (30 * 1000);
 
         if (user.cloudWorkerActive || isRecentlyActive) {
+            // An automatic open-the-page sync must never surface an error: the
+            // user didn't ask for anything, and a red banner for "we skipped an
+            // optional refresh" is noise. A deliberate click still gets told.
+            if (auto) return res.json({ queued: false, reason: 'busy' });
             return res.status(409).json({ error: 'Cloud worker is currently active. Please try again in a few seconds.' });
         }
 
-        // Run in background via Queue
-        if (inboxQueue) {
-            await inboxQueue.add('inbox-sync', { userId }, { removeOnComplete: true });
-            res.json({ message: 'Sync started in background' });
-        } else {
-            res.status(500).json({ error: 'Sync service currently unavailable' });
-        }
+        // This used to push onto the queue directly, bypassing the debounce the
+        // cron and campaign triggers both use — so holding down Sync drove a
+        // full LinkedIn sync every 30s indefinitely. That is the one place a
+        // user could reproduce, by hand, the rapid-request pattern that most
+        // likely killed a test session on 2026-08-09.
+        const queued = await enqueueInboxSync(userId, {
+            debounceSec: auto ? 10 * 60 : 2 * 60,
+        });
+
+        // 200 either way: "already synced recently" is a normal outcome, not a
+        // failure. `queued` lets the UI show progress only when there is some.
+        return res.json({
+            queued,
+            message: queued ? 'Sync started in background' : 'Synced recently — showing the latest data',
+        });
     } catch (error) {
         res.status(500).json({ error: 'Failed to start sync' });
     }
