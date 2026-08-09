@@ -179,7 +179,12 @@ export const syncInbox = async (userId: string) => {
 
         // 5. Fetch inbox thread list via Voyager GraphQL
         console.log(`[INBOX-WORKER] Fetching inbox threads via Voyager API...`);
-        const inbox = await voyagerSyncInbox(userId, page, { maxThreads: 5 });
+        // 5 was leaving replies unread: rajaji's mailbox has 18 threads, so
+        // anything below the 5 most recent was never even looked at. The thread
+        // list is a single API call whatever the count, and the per-thread
+        // fetches below are now gated on the participant being a tracked lead,
+        // so widening this costs ~nothing.
+        const inbox = await voyagerSyncInbox(userId, page, { maxThreads: 25 });
         if (!inbox.ok) {
             console.error(`[INBOX-WORKER] syncInbox failed: ${(inbox as any).error || 'unknown'}`);
             return;
@@ -194,8 +199,29 @@ export const syncInbox = async (userId: string) => {
 
         for (const c of conversations) {
             const participantName = `${c.otherFirstName} ${c.otherLastName}`.trim() || 'Unknown';
-            console.log(`[INBOX-WORKER] Fetching messages for ${participantName}...`);
 
+            // Match the lead FIRST. The old order fetched the full message
+            // history for every thread and only then looked for a lead,
+            // throwing most of it away — on this mailbox that's 18 Voyager
+            // calls to keep maybe 2. Every discarded call was still a request
+            // LinkedIn saw us make, so this is a footprint reduction as much as
+            // a speed one.
+            const lead = await prisma.lead.findFirst({
+                where: {
+                    userId,
+                    OR: [
+                        c.otherProfileUrl ? { linkedinUrl: { contains: extractVanityFromUrl(c.otherProfileUrl) || '__no_match__' } } : { id: '__no_match__' },
+                        { firstName: { contains: c.otherFirstName, mode: 'insensitive' } },
+                    ],
+                }
+            });
+
+            if (!lead) {
+                console.log(`[INBOX-WORKER] No matching lead for "${participantName}". Skipping.`);
+                continue;
+            }
+
+            console.log(`[INBOX-WORKER] Fetching messages for ${participantName}...`);
             const msgs = await getMessagesInConversation(userId, c.conversationUrn, page);
             let chatHistory: Array<{ sender: string; text: string; direction: 'SENT' | 'RECEIVED' }>;
             if (msgs.ok && msgs.data.length > 0) {
@@ -218,91 +244,77 @@ export const syncInbox = async (userId: string) => {
 
             console.log(`[INBOX-WORKER] Got ${chatHistory.length} messages for ${participantName}.`);
 
-            // 7. Save to DB — match lead by profile URL/vanity
-            const lead = await prisma.lead.findFirst({
-                where: {
-                    userId,
-                    OR: [
-                        c.otherProfileUrl ? { linkedinUrl: { contains: extractVanityFromUrl(c.otherProfileUrl) || '__no_match__' } } : { id: '__no_match__' },
-                        { firstName: { contains: c.otherFirstName, mode: 'insensitive' } },
-                    ],
-                }
-            });
-
-            if (lead) {
-                let hasNewReply = false;
-                const base = Date.now();
-                const total = chatHistory.length;
-                for (let m = 0; m < total; m++) {
-                    const msg = chatHistory[m];
-                    const exists = await prisma.message.findFirst({
-                        where: { leadId: lead.id, content: msg.text }
-                    });
-                    if (!exists) {
-                        await prisma.message.create({
-                            data: {
-                                userId,
-                                leadId: lead.id,
-                                direction: msg.direction,
-                                content: msg.text,
-                                source: 'LINKEDIN_SYNC',
-                                sentAt: new Date(base - (total - m) * 1000),
-                            }
-                        });
-                        if (msg.direction === 'RECEIVED') hasNewReply = true;
-                    }
-                }
-
-                if (hasNewReply) {
-                    totalNewReplies++;
-                    await prisma.lead.update({
-                        where: { id: lead.id },
-                        data: { status: 'REPLIED' }
-                    });
-                    await prisma.campaignLead.updateMany({
-                        where: { leadId: lead.id, isCompleted: false },
-                        data: { status: 'REPLIED' }
-                    });
-
-                    const activeLinks = await prisma.campaignLead.findMany({
-                        where: { leadId: lead.id, isCompleted: false },
-                        select: { campaignId: true },
-                    });
-                    const lastInbound = [...chatHistory].reverse().find(msg => msg.direction === 'RECEIVED');
-                    for (const link of activeLinks) {
-                        import('../services/crm-events').then(({ emitCrmEvent }) =>
-                            emitCrmEvent({
-                                event: 'lead.replied',
-                                userId,
-                                campaignId: link.campaignId,
-                                leadId: lead.id,
-                                meta: { replyContent: lastInbound?.text },
-                            }),
-                        ).catch(() => {});
-                    }
-                    await prisma.notification.create({
+            // 7. Save to DB
+            let hasNewReply = false;
+            const base = Date.now();
+            const total = chatHistory.length;
+            for (let m = 0; m < total; m++) {
+                const msg = chatHistory[m];
+                const exists = await prisma.message.findFirst({
+                    where: { leadId: lead.id, content: msg.text }
+                });
+                if (!exists) {
+                    await prisma.message.create({
                         data: {
                             userId,
-                            title: 'New Reply Received',
-                            body: `${participantName} messaged you back.`,
-                            type: 'REPLY',
-                            meta: { leadId: lead.id }
+                            leadId: lead.id,
+                            direction: msg.direction,
+                            content: msg.text,
+                            source: 'LINKEDIN_SYNC',
+                            sentAt: new Date(base - (total - m) * 1000),
                         }
                     });
+                    if (msg.direction === 'RECEIVED') hasNewReply = true;
+                }
+            }
 
-                    import('../socket').then(({ io }) =>
-                        io?.to(`user_${userId}`).emit('INBOX_UPDATED', {
+            if (hasNewReply) {
+                totalNewReplies++;
+                await prisma.lead.update({
+                    where: { id: lead.id },
+                    data: { status: 'REPLIED' }
+                });
+                await prisma.campaignLead.updateMany({
+                    where: { leadId: lead.id, isCompleted: false },
+                    data: { status: 'REPLIED' }
+                });
+
+                const activeLinks = await prisma.campaignLead.findMany({
+                    where: { leadId: lead.id, isCompleted: false },
+                    select: { campaignId: true },
+                });
+                const lastInbound = [...chatHistory].reverse().find(msg => msg.direction === 'RECEIVED');
+                for (const link of activeLinks) {
+                    import('../services/crm-events').then(({ emitCrmEvent }) =>
+                        emitCrmEvent({
+                            event: 'lead.replied',
+                            userId,
+                            campaignId: link.campaignId,
                             leadId: lead.id,
-                            participantName,
-                            replyContent: lastInbound?.text,
-                            timestamp: new Date().toISOString(),
+                            meta: { replyContent: lastInbound?.text },
                         }),
                     ).catch(() => {});
-
-                    console.log(`[INBOX-WORKER] Lead ${participantName} marked as REPLIED.`);
                 }
-            } else {
-                console.log(`[INBOX-WORKER] No matching lead found for "${participantName}". Skipping DB save.`);
+                await prisma.notification.create({
+                    data: {
+                        userId,
+                        title: 'New Reply Received',
+                        body: `${participantName} messaged you back.`,
+                        type: 'REPLY',
+                        meta: { leadId: lead.id }
+                    }
+                });
+
+                import('../socket').then(({ io }) =>
+                    io?.to(`user_${userId}`).emit('INBOX_UPDATED', {
+                        leadId: lead.id,
+                        participantName,
+                        replyContent: lastInbound?.text,
+                        timestamp: new Date().toISOString(),
+                    }),
+                ).catch(() => {});
+
+                console.log(`[INBOX-WORKER] Lead ${participantName} marked as REPLIED.`);
             }
 
             // Brief pause between threads

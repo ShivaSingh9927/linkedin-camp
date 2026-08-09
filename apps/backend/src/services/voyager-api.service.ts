@@ -4,15 +4,22 @@
  * Thin wrapper around LinkedIn's "voyager" internal GraphQL/REST API. Used as a
  * fast read-path to complement (not replace) the existing DOM-based read nodes.
  *
- * The big constraint: LinkedIn gates the messenger GraphQL with an in-page
- * "page-instance" UUID + signed csrf-token tied to a real browser context, plus
- * the `x-li-track` JSON blob LinkedIn's webpack bundle emits per page. A raw
- * `fetch` from Node.js (or even a re-fire from `page.evaluate`) is missing one
- * or more of these and returns either 403 "This profile can't be accessed" or
- * 200 with empty data. The proven path is to ride an existing authenticated
- * Playwright context (page.context().request or page.request) so all cookies,
- * localStorage, fingerprints, and proxy wiring are honored exactly as the
- * real UI would.
+ * This file used to claim the messenger GraphQL was gated behind an in-page
+ * "page-instance" UUID and a csrf-token bound to a live browser context, so a
+ * Page was mandatory. Probed against production on 2026-08-09 and that is NOT
+ * true: messengerConversations returned 200 with all 18 threads from a bare
+ * request context (saved cookies + csrf derived from the JSESSIONID cookie +
+ * the pinned proxy), tested three ways — with a synthesized page-instance,
+ * with the real sniffed one, and with the header omitted entirely. All three
+ * identical. So `page-instance` is telemetry, not authentication.
+ *
+ * What IS load-bearing: the cookies, the csrf-token, and egressing from the
+ * proxy the session was created behind. Passing a live Page satisfies all
+ * three automatically, which is why it looked required.
+ *
+ * Callers may therefore pass either a Page or a browser-free `apiRequest`
+ * (see getBrowserlessVoyagerContext) for reads, messenger included. Writes are
+ * a different story — see below.
  *
  * Writes (createMessage, invitations, reactions) are NOT exposed here —
  * LinkedIn's `mailboxPreWriteValidate` gate rejects them unless preceded by
@@ -37,10 +44,13 @@
  *   - /voyagerMessagingGraphQL/graphql?queryId=messengerMessages.5846eeb...
  *   - /premium/featureAccess?name=reactivationFeaturesEligible
  *
- * For messenger endpoints, the caller MUST pass a live Playwright `Page` (we'll
- * ride its context's request client). For non-messenger reads, we still prefer
- * a Page when available (preserves fingerprinting) but can fall back to a
- * bare context if the caller has no Page yet.
+ * URN values inside a Rest.li `variables=(...)` tuple must go through
+ * encodeUrn(), NOT encodeURIComponent — see that function for why.
+ *
+ * Reads prefer a live Page when one is already open (it preserves the real
+ * fingerprint for free) but fall back to a bare context or a browser-free
+ * apiRequest. The inbox worker still opens a Page today; that is now a
+ * choice, not a requirement.
  */
 import type { Page, BrowserContext, APIRequestContext } from 'patchright';
 import { request } from 'patchright';
@@ -159,6 +169,24 @@ export async function captureVoyagerHeaders(page: Page, userId: string, timeoutM
             }
         }, timeoutMs);
     });
+}
+
+/**
+ * Percent-encode a URN for a Rest.li `variables=(key:value)` tuple.
+ *
+ * NOT interchangeable with encodeURIComponent, which deliberately leaves
+ * `!'()*` unescaped. Conversation URNs are nested — e.g.
+ * `urn:li:msg_conversation:(urn:li:fsd_profile:ABC,2-XYZ==)` — so those raw
+ * parentheses land inside the tuple and Rest.li parses them as tuple
+ * delimiters. LinkedIn answers 400. Encoding them as %28/%29 (which is what
+ * the real messaging UI sends) makes the value opaque again.
+ *
+ * This silently broke every per-thread message fetch: the inbox worker found
+ * threads fine but got 400 on all of them, so no LINKEDIN_SYNC message row was
+ * written after 2026-06-10.
+ */
+function encodeUrn(urn: string): string {
+    return encodeURIComponent(urn).replace(/[!'()*]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase());
 }
 
 // ---- Core fetch ----
@@ -513,7 +541,7 @@ async function fetchProfileCollection(
     apiRequest?: APIRequestContext,
 ): Promise<VoyagerResult<any[]>> {
     const fsdId = fsdUrn.includes(':') ? fsdUrn.split(':').pop()! : fsdUrn;
-    const profileUrn = encodeURIComponent(`urn:li:fsd_profile:${fsdId}`);
+    const profileUrn = encodeUrn(`urn:li:fsd_profile:${fsdId}`);
     const url = `https://www.linkedin.com/voyager/api/identity/dash/${kind}?q=viewee&profileUrn=${profileUrn}`;
     const r = await voyagerFetch<any>(userId, url, { page, apiRequest });
     if (!r.ok) return r;
@@ -738,7 +766,7 @@ export interface MailboxCount {
 export async function getMailboxCounts(userId: string, page: Page): Promise<VoyagerResult<MailboxCount[]>> {
     const mailboxUrn = await selfMailboxUrn(userId);
     if (!mailboxUrn) return { ok: false, error: 'self mailbox urn not cached' };
-    const url = `https://www.linkedin.com/voyager/api/voyagerMessagingGraphQL/graphql?queryId=messengerMailboxCounts.fc528a5a81a76dff212a4a3d2d48e84b&variables=(mailboxUrn:${encodeURIComponent(mailboxUrn)})`;
+    const url = `https://www.linkedin.com/voyager/api/voyagerMessagingGraphQL/graphql?queryId=messengerMailboxCounts.fc528a5a81a76dff212a4a3d2d48e84b&variables=(mailboxUrn:${encodeUrn(mailboxUrn)})`;
     const r = await voyagerFetch<any>(userId, url, { page });
     if (!r.ok) return r;
     const elements = (r.data as any)?.data?.messengerMailboxCountsByMailbox?.elements || [];
@@ -789,15 +817,17 @@ function getCachedSelfData(userId: string): SelfData | null {
  * that's already navigated to /messaging/ (or any page where a real voyager
  * call has happened) so the page-instance + csrf headers are warm.
  *
- * Returns thread list (no full message bodies — those need a follow-up call
- * per thread via getMessagesInConversation if you want the body text).
+ * Returns the thread list with the LATEST message of each thread inline
+ * (`lastMessageText`) — enough to detect a new reply without a second call.
+ * Use getMessagesInConversation only when you need the full history, e.g. as
+ * AI context for a lead you actually track.
  */
 export async function syncInbox(userId: string, page: Page, opts: { maxThreads?: number } = {}): Promise<VoyagerResult<InboxSyncResult>> {
     const mailboxUrn = await selfMailboxUrn(userId);
     if (!mailboxUrn) {
         return { ok: false, error: 'self mailbox urn not in cache — call getMe first' };
     }
-    const url = `https://www.linkedin.com/voyager/api/voyagerMessagingGraphQL/graphql?queryId=messengerConversations.0d5e6781bbee71c3e51c8843c6519f48&variables=(mailboxUrn:${encodeURIComponent(mailboxUrn)})`;
+    const url = `https://www.linkedin.com/voyager/api/voyagerMessagingGraphQL/graphql?queryId=messengerConversations.0d5e6781bbee71c3e51c8843c6519f48&variables=(mailboxUrn:${encodeUrn(mailboxUrn)})`;
     const r = await voyagerFetch<any>(userId, url, { page, skipRateLimit: true, accept: 'application/graphql' });
     if (!r.ok) return r;
 
@@ -809,7 +839,16 @@ export async function syncInbox(userId: string, page: Page, opts: { maxThreads?:
         const me = c.conversationParticipants?.find((p: any) => p.participantType?.member?.distance === 'SELF')?.participantType?.member;
         const other = c.conversationParticipants?.find((p: any) => p.participantType?.member?.distance !== 'SELF')?.participantType?.member;
         if (!other) continue;
-        const lastMsg = c.events?.[0]?.eventContent?.message?.body?.text || null;
+        // LinkedIn moved the last-message preview: conversations no longer carry
+        // an `events` array at all — the body now hangs off `messages.elements`.
+        // Probed live 2026-08-09: 18/18 threads had messages.elements[0].body.text
+        // and not one had `events`, so the old path returned null every time and
+        // the worker's fallback preview was always empty. `events` is kept as a
+        // second choice purely so an older response shape still parses.
+        const lastMsg =
+            c.messages?.elements?.[0]?.body?.text ||
+            c.events?.[0]?.eventContent?.message?.body?.text ||
+            null;
         conversations.push({
             conversationUrn: c.entityUrn,
             otherFirstName: (other.firstName?.text || '').trim(),
@@ -856,7 +895,7 @@ export async function getMessagesInConversation(
     conversationUrn: string,
     page: Page
 ): Promise<VoyagerResult<Message[]>> {
-    const url = `https://www.linkedin.com/voyager/api/voyagerMessagingGraphQL/graphql?queryId=messengerMessages.5846eeb71c981f11e0134cb6626cc314&variables=(conversationUrn:${encodeURIComponent(conversationUrn)})`;
+    const url = `https://www.linkedin.com/voyager/api/voyagerMessagingGraphQL/graphql?queryId=messengerMessages.5846eeb71c981f11e0134cb6626cc314&variables=(conversationUrn:${encodeUrn(conversationUrn)})`;
     const r = await voyagerFetch<any>(userId, url, { page, skipRateLimit: true, accept: 'application/graphql' });
     if (!r.ok) return r;
     const elements: any[] = (r.data as any)?.data?.messengerMessagesBySyncToken?.elements || [];
