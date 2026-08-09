@@ -110,5 +110,90 @@ console.log('\n--- thread coverage ---');
         `maxThreads=${n} would silently ignore older threads`);
 }
 
+console.log('\n--- browser-free classification matches the Page-based rules ---');
+{
+    // Imported for real, not pattern-matched: these are the rules that decide
+    // whether an account gets flagged, and a regression here either locks out a
+    // healthy account or lets a dead one keep reading HEALTHY.
+    const { classifyUrl, classifyHtml, isCheckpoint } =
+        require('../campaign-engine/safety/checkpoint');
+
+    const cases: Array<[string, string]> = [
+        ['https://www.linkedin.com/feed/', 'feed'],
+        ['https://www.linkedin.com/uas/login?session_redirect=x', 'still_login'],
+        ['https://www.linkedin.com/login/?session_redirect=x', 'still_login'],
+        ['https://www.linkedin.com/authwall?trk=x', 'authwall'],
+        ['https://www.linkedin.com/messaging/', 'unknown'],
+    ];
+    for (const [url, want] of cases) {
+        check(`classifyUrl ${url.slice(24) || '/'} -> ${want}`, classifyUrl(url).kind === want,
+            `got ${classifyUrl(url).kind}`);
+    }
+
+    // The otp/challenge_other split was the ONLY thing classifyPage needed the
+    // DOM for. Off-browser it comes from the returned HTML instead.
+    const cp = 'https://www.linkedin.com/checkpoint/challenge/xyz';
+    check('checkpoint + pin markup -> otp',
+        classifyHtml(cp, '<input id="input__email_verification_pin" />').kind === 'otp');
+    check('checkpoint + name="pin" -> otp',
+        classifyHtml(cp, '<input name="pin" type="text">').kind === 'otp');
+    check('checkpoint + captcha markup -> challenge_other',
+        classifyHtml(cp, '<div id="captcha-internal"></div>').kind === 'challenge_other');
+    check('checkpoint with NO html -> challenge_other, never otp',
+        classifyHtml(cp, null).kind === 'challenge_other',
+        'guessing otp would start a flow with nothing to collect');
+    check('a non-checkpoint url ignores the html entirely',
+        classifyHtml('https://www.linkedin.com/feed/', '<input name="pin">').kind === 'feed');
+
+    check('unknown is still not a checkpoint (no health write on a new url shape)',
+        isCheckpoint({ kind: 'unknown', url: 'x' }) === false);
+    check('feed is still not a checkpoint', isCheckpoint({ kind: 'feed', url: 'x' }) === false);
+    check('still_login IS a checkpoint', isCheckpoint({ kind: 'still_login', url: 'x' }) === true);
+}
+
+console.log('\n--- worker runs browser-free, with a way back ---');
+{
+    check('browser-free is the DEFAULT (opt-in to the browser, not out)',
+        /INBOX_SYNC_USE_BROWSER\s*===\s*'1'/.test(worker),
+        'a default-on browser would make the whole change a no-op in prod');
+    check('escape hatch is env-driven, so reverting needs no rebuild',
+        worker.includes('process.env.INBOX_SYNC_USE_BROWSER'));
+    check('builds a browser-free context', worker.includes('getBrowserlessVoyagerContext'));
+    check('disposes it (a leaked APIRequestContext leaks its proxy socket)',
+        /disposeApi\s*\(\)/.test(worker) && /disposeApi\s*=\s*bl\.dispose/.test(worker));
+    check('threads apiRequest into the thread list', /voyagerSyncInbox\([^)]*apiRequest/.test(worker));
+    check('threads apiRequest into the per-thread fetch',
+        /getMessagesInConversation\([^)]*apiRequest/.test(worker));
+    check('threads apiRequest into warmSelfCache', /warmSelfCache\([^)]*apiRequest/.test(worker));
+    check('missing proxy snapshot still records health browser-free',
+        /getBrowserlessVoyagerContext[\s\S]{0,900}handleCheckpoint/.test(worker));
+
+    // The warmup is what makes the browser-free path work at all — a bare
+    // context going straight to /me gets 401.
+    check('warms up on /feed/ before any voyager call',
+        /apiRequest\.get\('https:\/\/www\.linkedin\.com\/feed\/'\)/.test(worker));
+    const warmIdx = worker.indexOf("apiRequest.get('https://www.linkedin.com/feed/')");
+    const meIdx = worker.indexOf('await warmSelfCache(');   // the CALL, not the import
+    check('warmup precedes warmSelfCache', warmIdx !== -1 && warmIdx < meIdx,
+        `warm@${warmIdx} me@${meIdx}`);
+    check('classifies the warmup response instead of re-fetching',
+        /classifyHtml\(landed, html\)/.test(worker));
+    check('only pulls HTML for /checkpoint/ urls',
+        /landed\.includes\('\/checkpoint\/'\)\s*\?\s*await warm\.text\(\)/.test(worker));
+}
+
+console.log('\n--- csrf must outlive a sync ---');
+{
+    const m = svc.match(/const CSRF_TTL_SEC\s*=\s*([^;]+);/);
+    const ttl = m ? Function(`return (${m[1]})`)() : 0;
+    check('csrf TTL is its own constant, not page-instance\'s', !!m);
+    check(`csrf TTL (${ttl}s) comfortably exceeds a full sync`, ttl >= 600,
+        'a 30s TTL expires mid-run and, with no browser context to re-derive from, the rest of the sync 403s');
+    check('page-instance keeps its short TTL (it really does rotate)',
+        /PAGE_INSTANCE_TTL_SEC\s*=\s*30\b/.test(svc));
+    check('csrf falls back to the apiRequest cookie jar off-browser',
+        /opts\.apiRequest[\s\S]{0,120}storageState\(\)/.test(svc));
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail === 0 ? 0 : 1);

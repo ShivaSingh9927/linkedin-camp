@@ -47,10 +47,14 @@
  * URN values inside a Rest.li `variables=(...)` tuple must go through
  * encodeUrn(), NOT encodeURIComponent — see that function for why.
  *
- * Reads prefer a live Page when one is already open (it preserves the real
- * fingerprint for free) but fall back to a bare context or a browser-free
- * apiRequest. The inbox worker still opens a Page today; that is now a
- * choice, not a requirement.
+ * Reads take either a live Page or a browser-free apiRequest. The inbox worker
+ * runs browser-free by default as of 2026-08-09.
+ *
+ * One rule for the browser-free path: issue a real page request (GET /feed/)
+ * before any /voyager/ call on a fresh context. Going straight to /me returns
+ * 401; the same context succeeds after the warmup, because LinkedIn refreshes
+ * its routing/session cookies (`lidc` et al) on a page request. A Page gets
+ * this for free by navigating.
  */
 import type { Page, BrowserContext, APIRequestContext } from 'patchright';
 import { request } from 'patchright';
@@ -106,6 +110,14 @@ export type VoyagerResult<T> =
 // seen value lets subsequent calls from a different code path use the same
 // page-instance the real UI just used (matters for messenger endpoints).
 const PAGE_INSTANCE_TTL_SEC = 30;
+// csrf is NOT page-instance and must not share its TTL. page-instance really
+// does rotate per page load; the csrf-token is just the JSESSIONID cookie value
+// and is stable for the life of the session. They were on one 30s TTL, which
+// was survivable only because voyagerFetch could re-derive csrf from a live
+// browser context's cookie jar when the cache went cold. A browser-free run has
+// no such context, so a sync longer than 30s — 13 threads paced at 1.5s is
+// ~20s plus warmup — would start 403ing halfway through.
+const CSRF_TTL_SEC = 60 * 60;
 const pageInstanceCache = new Map<string, { value: string; fetchedAt: number }>();
 const csrfCache = new Map<string, { value: string; fetchedAt: number }>();
 
@@ -124,7 +136,7 @@ function getCachedPageInstance(userId: string): string | null {
 function getCachedCsrf(userId: string): string | null {
     const c = csrfCache.get(userId);
     if (!c) return null;
-    if (Date.now() - c.fetchedAt > PAGE_INSTANCE_TTL_SEC * 1000) return null;
+    if (Date.now() - c.fetchedAt > CSRF_TTL_SEC * 1000) return null;
     return c.value;
 }
 
@@ -245,10 +257,18 @@ export async function voyagerFetch<T = any>(
     if (!csrf) {
         try {
             const ctx = opts.page?.context() || opts.context;
-            const cookies = ctx ? await ctx.cookies('https://www.linkedin.com') : [];
+            // A browser-free caller has no BrowserContext to read cookies from,
+            // but an APIRequestContext exposes the same jar via storageState().
+            // Without this branch the fallback silently no-ops off-browser and
+            // every call goes out unauthenticated.
+            const cookies: any[] = ctx
+                ? await ctx.cookies('https://www.linkedin.com')
+                : opts.apiRequest
+                    ? ((await opts.apiRequest.storageState()).cookies || [])
+                    : [];
             const j = cookies.find((c: any) => c.name === 'JSESSIONID');
             if (j?.value) {
-                csrf = j.value.replace(/"/g, '');
+                csrf = String(j.value).replace(/"/g, '');
                 rememberCsrf(userId, csrf);
             }
         } catch { /* best-effort */ }
@@ -318,8 +338,8 @@ export interface SelfData {
     };
 }
 
-export async function getMe(userId: string, page?: Page): Promise<VoyagerResult<SelfData>> {
-    const r = await voyagerFetch<any>(userId, 'https://www.linkedin.com/voyager/api/me', { page });
+export async function getMe(userId: string, page?: Page | null, apiRequest?: APIRequestContext): Promise<VoyagerResult<SelfData>> {
+    const r = await voyagerFetch<any>(userId, 'https://www.linkedin.com/voyager/api/me', { page: page || undefined, apiRequest });
     if (!r.ok) return r;
     // /me returns:
     //   data.plainId (number)
@@ -763,11 +783,11 @@ export interface MailboxCount {
     unreadConversationCount: number;
 }
 
-export async function getMailboxCounts(userId: string, page: Page): Promise<VoyagerResult<MailboxCount[]>> {
+export async function getMailboxCounts(userId: string, page?: Page | null, apiRequest?: APIRequestContext): Promise<VoyagerResult<MailboxCount[]>> {
     const mailboxUrn = await selfMailboxUrn(userId);
     if (!mailboxUrn) return { ok: false, error: 'self mailbox urn not cached' };
     const url = `https://www.linkedin.com/voyager/api/voyagerMessagingGraphQL/graphql?queryId=messengerMailboxCounts.fc528a5a81a76dff212a4a3d2d48e84b&variables=(mailboxUrn:${encodeUrn(mailboxUrn)})`;
-    const r = await voyagerFetch<any>(userId, url, { page });
+    const r = await voyagerFetch<any>(userId, url, { page: page || undefined, apiRequest });
     if (!r.ok) return r;
     const elements = (r.data as any)?.data?.messengerMailboxCountsByMailbox?.elements || [];
     return { ok: true, status: r.status, data: elements };
@@ -822,13 +842,13 @@ function getCachedSelfData(userId: string): SelfData | null {
  * Use getMessagesInConversation only when you need the full history, e.g. as
  * AI context for a lead you actually track.
  */
-export async function syncInbox(userId: string, page: Page, opts: { maxThreads?: number } = {}): Promise<VoyagerResult<InboxSyncResult>> {
+export async function syncInbox(userId: string, page: Page | null, opts: { maxThreads?: number } = {}, apiRequest?: APIRequestContext): Promise<VoyagerResult<InboxSyncResult>> {
     const mailboxUrn = await selfMailboxUrn(userId);
     if (!mailboxUrn) {
         return { ok: false, error: 'self mailbox urn not in cache — call getMe first' };
     }
     const url = `https://www.linkedin.com/voyager/api/voyagerMessagingGraphQL/graphql?queryId=messengerConversations.0d5e6781bbee71c3e51c8843c6519f48&variables=(mailboxUrn:${encodeUrn(mailboxUrn)})`;
-    const r = await voyagerFetch<any>(userId, url, { page, skipRateLimit: true, accept: 'application/graphql' });
+    const r = await voyagerFetch<any>(userId, url, { page: page || undefined, apiRequest, skipRateLimit: true, accept: 'application/graphql' });
     if (!r.ok) return r;
 
     const ct = (r.data as any)?.data?.messengerConversationsBySyncToken;
@@ -863,7 +883,7 @@ export async function syncInbox(userId: string, page: Page, opts: { maxThreads?:
     }
 
     // Also fetch mailbox counts in parallel
-    const counts = await getMailboxCounts(userId, page);
+    const counts = await getMailboxCounts(userId, page, apiRequest);
 
     return {
         ok: true,
@@ -893,10 +913,11 @@ export interface Message {
 export async function getMessagesInConversation(
     userId: string,
     conversationUrn: string,
-    page: Page
+    page?: Page | null,
+    apiRequest?: APIRequestContext
 ): Promise<VoyagerResult<Message[]>> {
     const url = `https://www.linkedin.com/voyager/api/voyagerMessagingGraphQL/graphql?queryId=messengerMessages.5846eeb71c981f11e0134cb6626cc314&variables=(conversationUrn:${encodeUrn(conversationUrn)})`;
-    const r = await voyagerFetch<any>(userId, url, { page, skipRateLimit: true, accept: 'application/graphql' });
+    const r = await voyagerFetch<any>(userId, url, { page: page || undefined, apiRequest, skipRateLimit: true, accept: 'application/graphql' });
     if (!r.ok) return r;
     const elements: any[] = (r.data as any)?.data?.messengerMessagesBySyncToken?.elements || [];
     const messages: Message[] = elements.map((m: any) => {
@@ -951,9 +972,12 @@ export async function markAllNotificationsSeen(userId: string, page?: Page): Pro
  * campaign run / per fresh page so subsequent messenger calls have a valid
  * mailboxUrn parameter.
  */
-export async function warmSelfCache(userId: string, page: Page): Promise<VoyagerResult<SelfData>> {
-    await captureVoyagerHeaders(page, userId);
-    const r = await getMe(userId, page);
+export async function warmSelfCache(userId: string, page?: Page | null, apiRequest?: APIRequestContext): Promise<VoyagerResult<SelfData>> {
+    // Sniffing headers needs a live page. Off-browser there is nothing to sniff
+    // and nothing to miss: csrf comes from the cookie jar and page-instance is
+    // telemetry (proven 2026-08-09 — omitting it returns the same 200).
+    if (page) await captureVoyagerHeaders(page, userId);
+    const r = await getMe(userId, page, apiRequest);
     if (r.ok && r.data) {
         selfCache.set(userId, { data: r.data, fetchedAt: Date.now() });
         if (r.data.miniProfile.dashEntityUrn) {

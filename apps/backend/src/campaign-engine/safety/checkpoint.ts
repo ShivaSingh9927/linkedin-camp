@@ -26,6 +26,44 @@ export interface CheckpointInfo {
 }
 
 /**
+ * The classification rules themselves. Everything except the otp vs
+ * challenge_other split is decided by the URL alone, which is why this can be
+ * shared by callers that have a live Page and callers that only have an HTTP
+ * response (see classifyPage / classifyHtml).
+ *
+ * `hasPinInput` distinguishes the one auto-resolvable challenge (email pin)
+ * from the ones needing a human (phone, captcha, app-prompt). Callers detect it
+ * however they can; when they can't, challenge_other is the safe answer since
+ * it asks for manual intervention rather than starting an OTP flow that has
+ * nothing to collect.
+ */
+export function classifyUrl(url: string, probe?: { hasPinInput?: boolean }): CheckpointInfo {
+    if (url.includes('/feed')) return { kind: 'feed', url };
+    if (url.includes('/authwall')) return { kind: 'authwall', url };
+    if (url.includes('/checkpoint/')) {
+        return { kind: probe?.hasPinInput ? 'otp' : 'challenge_other', url };
+    }
+    if (url.includes('/login') || url.includes('/uas/login')) {
+        return { kind: 'still_login', url };
+    }
+    return { kind: 'unknown', url };
+}
+
+/** The pin field, as rendered by LinkedIn's challenge page. */
+const PIN_INPUT_RE = /(id="input__email_verification_pin"|name="pin")/i;
+
+/**
+ * Classify from a raw HTTP response instead of a Page — for browser-free
+ * callers. Same rules; the pin probe becomes a regex over the returned HTML
+ * rather than a DOM query, so an OTP challenge is still told apart from a
+ * captcha without launching Chromium.
+ */
+export function classifyHtml(url: string, html?: string | null): CheckpointInfo {
+    if (!url.includes('/checkpoint/')) return classifyUrl(url);
+    return classifyUrl(url, { hasPinInput: !!html && PIN_INPUT_RE.test(html) });
+}
+
+/**
  * Classify the page's current state. Cheap — one URL read + (for /checkpoint
  * URLs) a single $('input[name="pin"]') probe. Safe to call after every
  * navigation in the engine without measurable cost.
@@ -35,23 +73,9 @@ export interface CheckpointInfo {
  */
 export async function classifyPage(page: Page): Promise<CheckpointInfo> {
     const url = page.url();
-
-    if (url.includes('/feed')) return { kind: 'feed', url };
-    if (url.includes('/authwall')) return { kind: 'authwall', url };
-
-    if (url.includes('/checkpoint/')) {
-        // The email-pin input is the only auto-resolvable challenge variant.
-        // Anything else (phone, captcha, app-prompt) lands in challenge_other
-        // and needs manual user intervention.
-        const pinInput = await page.$('#input__email_verification_pin, input[name="pin"]').catch(() => null);
-        return { kind: pinInput ? 'otp' : 'challenge_other', url };
-    }
-
-    if (url.includes('/login') || url.includes('/uas/login')) {
-        return { kind: 'still_login', url };
-    }
-
-    return { kind: 'unknown', url };
+    if (!url.includes('/checkpoint/')) return classifyUrl(url);
+    const pinInput = await page.$('#input__email_verification_pin, input[name="pin"]').catch(() => null);
+    return classifyUrl(url, { hasPinInput: !!pinInput });
 }
 
 const CHECKPOINT_TO_HEALTH = {
