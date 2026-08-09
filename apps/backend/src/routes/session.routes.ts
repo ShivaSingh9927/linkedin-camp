@@ -9,7 +9,7 @@ import {
 import { authMiddleware } from '../middleware/auth.middleware';
 import { prisma } from '@repo/db';
 import { loginWithOtp } from '../services/login-with-otp.service';
-import { redisOtpResolver, submitOtp, newRequestId, claimRefreshSlot, releaseRefreshSlot } from '../services/otp-relay.service';
+import { redisOtpResolver, submitOtp, newRequestId, claimRefreshSlot, releaseRefreshSlot, setRefreshState, getRefreshState } from '../services/otp-relay.service';
 
 const router = Router();
 
@@ -70,15 +70,10 @@ router.get('/health', authMiddleware, async (req: any, res) => {
  *   awaiting_otp — LinkedIn asked; `attempt` > 1 means the last code was refused
  *   verifying    — a code was handed over, waiting on LinkedIn
  *   done         — terminal; read `outcome`
+ *
+ * Stored in Redis (see setRefreshState) rather than in this process, so the
+ * status survives a restart and is answerable by any replica.
  */
-type RefreshPhase = 'starting' | 'awaiting_otp' | 'verifying' | 'done';
-
-const refreshState = new Map<string, {
-    status: 'running' | 'done',
-    phase: RefreshPhase,
-    attempt?: number,
-    outcome?: any,
-}>();
 
 router.post('/refresh', authMiddleware, async (req: any, res) => {
     const userId = req.user?.id;
@@ -123,7 +118,7 @@ router.post('/refresh', authMiddleware, async (req: any, res) => {
 
     // Fire-and-forget. The worker resolves OTPs through Redis; meanwhile the
     // UI polls /refresh-status?requestId=... and POSTs codes via /session/otp.
-    refreshState.set(requestId, { status: 'running', phase: 'starting' });
+    await setRefreshState(requestId, { status: 'running', phase: 'starting' });
 
     // Wrap the resolver rather than reaching into loginWithOtp: it is called
     // exactly when LinkedIn puts up the code prompt, and called again with a
@@ -131,11 +126,11 @@ router.post('/refresh', authMiddleware, async (req: any, res) => {
     // boundary between "asking the user" and "waiting on LinkedIn".
     const resolveOtp = redisOtpResolver(userId, requestId);
     const trackedResolver = async (attempt: number) => {
-        refreshState.set(requestId, { status: 'running', phase: 'awaiting_otp', attempt });
+        await setRefreshState(requestId, { status: 'running', phase: 'awaiting_otp', attempt });
         const code = await resolveOtp(attempt);
         // An empty code means the relay timed out waiting, not that a code was
         // supplied — don't claim to be verifying something we never got.
-        refreshState.set(requestId, {
+        await setRefreshState(requestId, {
             status: 'running',
             phase: code ? 'verifying' : 'awaiting_otp',
             attempt,
@@ -151,10 +146,11 @@ router.post('/refresh', authMiddleware, async (req: any, res) => {
         userAgent: fp.userAgent,
         otpResolver: trackedResolver,
     }).then(outcome => {
-        refreshState.set(requestId, { status: 'done', phase: 'done', outcome });
-        setTimeout(() => refreshState.delete(requestId), 5 * 60 * 1000);
+        // Redis expires this on its own TTL — no timer to leak, and no cleanup
+        // that a restart could skip.
+        void setRefreshState(requestId, { status: 'done', phase: 'done', outcome });
     }).catch(err => {
-        refreshState.set(requestId, { status: 'done', phase: 'done', outcome: { kind: 'unknown', error: err.message } });
+        void setRefreshState(requestId, { status: 'done', phase: 'done', outcome: { kind: 'unknown', error: err.message } });
     }).finally(() => {
         // Free the slot the moment this attempt finishes — success or failure —
         // so a user whose login legitimately failed can retry immediately rather
@@ -173,12 +169,12 @@ router.post('/otp', authMiddleware, async (req: any, res) => {
     return res.json({ queued: true });
 });
 
-router.get('/refresh-status', authMiddleware, (req: any, res) => {
+router.get('/refresh-status', authMiddleware, async (req: any, res) => {
     const requestId = String(req.query.requestId || '');
-    const state = refreshState.get(requestId);
-    // 'unknown' means this API process has no record — either a bad requestId
-    // or the 5-minute retention elapsed. Report a phase so the client never has
-    // to infer one from a missing field.
+    const state = await getRefreshState(requestId);
+    // 'unknown' now genuinely means no such request — a bad id or an expired
+    // TTL — rather than "you reached the wrong replica". Report a phase so the
+    // client never has to infer one from a missing field.
     if (!state) return res.json({ status: 'unknown', phase: 'starting' });
     return res.json(state);
 });

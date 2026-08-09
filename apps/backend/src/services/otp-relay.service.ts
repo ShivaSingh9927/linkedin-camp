@@ -15,6 +15,58 @@ import crypto from 'crypto';
 const OTP_KEY = (userId: string, requestId: string) => `otp:${userId}:${requestId}`;
 const DEFAULT_TIMEOUT_SEC = 600; // 10 min — covers a user fetching the OTP from email
 
+// ---- Login progress, shared across processes ----
+//
+// This lived in a `Map` inside the API process. That works only while there is
+// exactly one backend-api that never restarts: the POST that starts a login and
+// the status polls that follow are separate requests, so with two replicas
+// behind the load balancer the polls land on a process that never saw the
+// login and answer "unknown" forever. A deploy mid-login does the same thing to
+// a single replica.
+//
+// Redis is already a hard dependency of this file (the OTP codes travel through
+// it), so putting the status beside them costs nothing and both problems go
+// away. NOTE this fixes *reporting*, not ownership: loginWithOtp still runs
+// in-process, so restarting backend-api mid-login still kills that login. It
+// just stops the UI from spinning against a status nobody can answer.
+const REFRESH_STATE_KEY = (requestId: string) => `session:refresh-state:${requestId}`;
+const REFRESH_RUNNING_TTL_SEC = 15 * 60; // comfortably longer than a login (~50s)
+const REFRESH_DONE_TTL_SEC = 5 * 60;     // matches the old in-memory retention
+
+export type RefreshPhase = 'starting' | 'awaiting_otp' | 'verifying' | 'done';
+
+export interface RefreshState {
+    status: 'running' | 'done';
+    phase: RefreshPhase;
+    attempt?: number;
+    outcome?: any;
+}
+
+/**
+ * Best-effort: a failed status write must never take down a login that is
+ * otherwise working. The UI degrades to "still connecting", which is what it
+ * showed before this existed at all.
+ */
+export async function setRefreshState(requestId: string, state: RefreshState): Promise<void> {
+    try {
+        const ttl = state.status === 'done' ? REFRESH_DONE_TTL_SEC : REFRESH_RUNNING_TTL_SEC;
+        await getRedis().set(REFRESH_STATE_KEY(requestId), JSON.stringify(state), 'EX', ttl);
+    } catch (err: any) {
+        console.error(`[otp-relay] setRefreshState failed for ${requestId}: ${err?.message}`);
+    }
+}
+
+/** null means no such request — a bogus id, or the TTL elapsed. */
+export async function getRefreshState(requestId: string): Promise<RefreshState | null> {
+    try {
+        const raw = await getRedis().get(REFRESH_STATE_KEY(requestId));
+        return raw ? JSON.parse(raw) as RefreshState : null;
+    } catch (err: any) {
+        console.error(`[otp-relay] getRefreshState failed for ${requestId}: ${err?.message}`);
+        return null;
+    }
+}
+
 let _client: Redis | null = null;
 function getRedis(): Redis {
     if (_client) return _client;
