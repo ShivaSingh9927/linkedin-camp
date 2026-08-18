@@ -89,6 +89,67 @@ export function isCheckpoint(info: CheckpointInfo): boolean {
     return info.kind !== 'feed' && info.kind !== 'unknown';
 }
 
+/**
+ * The only two health states a working session disproves.
+ *
+ * SESSION_EXPIRED and NEEDS_LOGIN are claims about authentication, and a
+ * successful LinkedIn read is direct evidence against them. OTP_REQUIRED and
+ * RESTRICTED are not: LinkedIn will happily serve reads while it is also
+ * challenging an account or throttling it, so a good read says nothing about
+ * either. Auto-clearing those is how an "OTP please" becomes a real
+ * restriction — the engine resumes, keeps acting, and LinkedIn escalates.
+ *
+ * Exported so the callers that heal (session-validator's liveCheck, the inbox
+ * worker's successful sync) share one rule instead of each carrying a copy that
+ * can drift.
+ */
+const HEALABLE_HEALTH = new Set(['SESSION_EXPIRED', 'NEEDS_LOGIN']);
+
+export function isHealableHealth(health: string | null | undefined): boolean {
+    return !!health && HEALABLE_HEALTH.has(health);
+}
+
+/**
+ * Record that this session just proved itself alive against LinkedIn.
+ *
+ * The inbox worker recorded failure (through handleCheckpoint) but nothing on
+ * success, so a session syncing cleanly every night still read as last-validated
+ * whenever someone happened to have the app open — six days stale on a perfectly
+ * good account, observed 2026-08-18. Same failure shape as the bug that started
+ * all this: the strongest signal available, thrown away.
+ *
+ * Deliberately two paths:
+ *  - a healable state is a real recovery, so go through markAccountHealthy,
+ *    which un-parks deferred leads, resumes the campaign we auto-paused, and
+ *    tells the user.
+ *  - otherwise just stamp the timestamp. Calling the full recovery path nightly
+ *    on an already-healthy account would re-run its un-park UPDATE and resume
+ *    queries every time for nothing.
+ */
+export async function recordSessionAlive(userId: string): Promise<void> {
+    const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { accountHealth: true },
+    });
+
+    if (isHealableHealth(user?.accountHealth)) {
+        console.log(`[checkpoint] user=${userId} health was ${user?.accountHealth} but a sync just succeeded → healing`);
+        await markAccountHealthy(userId);
+        return;
+    }
+
+    // Clear sessionInvalid only when health already agrees the account is fine.
+    // HEALTHY + sessionInvalid=true is the exact contradiction the 4am sweep
+    // comment warns about, so resolving it here is a fix. For a challenged
+    // account, leave the gating flags alone and record liveness only.
+    await prisma.user.update({
+        where: { id: userId },
+        data: user?.accountHealth === 'HEALTHY'
+            ? { sessionValidatedAt: new Date(), sessionInvalid: false }
+            : { sessionValidatedAt: new Date() },
+    });
+}
+
 export interface HandleCheckpointArgs {
     userId: string;
     campaignId?: string;

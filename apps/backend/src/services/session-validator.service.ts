@@ -394,11 +394,14 @@ class SessionValidatorService {
      *    a real restriction — the precise thing the health gate exists to stop.
      *  - Already-HEALTHY short-circuits with zero queries, so the hourly
      *    validation sweep costs nothing extra in the common case.
+     *
+     * The which-states-are-healable rule lives in checkpoint.isHealableHealth,
+     * shared with the inbox worker's recordSessionAlive so the two can't drift.
      */
     private async healStaleAccountHealth(userId: string, currentHealth: string | undefined): Promise<void> {
-        if (currentHealth !== 'SESSION_EXPIRED' && currentHealth !== 'NEEDS_LOGIN') return;
+        const { markAccountHealthy, isHealableHealth } = await import('../campaign-engine/safety/checkpoint');
+        if (!isHealableHealth(currentHealth)) return;
         try {
-            const { markAccountHealthy } = await import('../campaign-engine/safety/checkpoint');
             await markAccountHealthy(userId);
             console.log(`[SESSION-VALIDATOR] user=${userId} health was ${currentHealth} but session is live → healed to HEALTHY`);
         } catch (err: any) {

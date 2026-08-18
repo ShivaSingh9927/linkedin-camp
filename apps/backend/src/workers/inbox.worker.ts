@@ -2,7 +2,7 @@ import { Worker, Job, Queue } from 'bullmq';
 import { prisma } from '@repo/db';
 import Redis from 'ioredis';
 import { launchAuthenticatedContext } from '../campaign-engine/session-launch';
-import { classifyPage, classifyHtml, isCheckpoint, handleCheckpoint } from '../campaign-engine/safety/checkpoint';
+import { classifyPage, classifyHtml, isCheckpoint, handleCheckpoint, recordSessionAlive } from '../campaign-engine/safety/checkpoint';
 import { tryAcquireAccountLock, releaseAccountLock } from './campaign-worker';
 import {
     syncInbox as voyagerSyncInbox,
@@ -381,6 +381,16 @@ export const syncInbox = async (userId: string) => {
         }
 
         console.log(`[INBOX-WORKER] Inbox sync complete. Synced ${conversations.length} threads, ${totalNewReplies} with new replies.`);
+
+        // Reaching here means warmSelfCache's getMe returned 200 — the exact
+        // liveness proof liveCheck uses — so this is a real, current validation
+        // of the session, independent of how many threads came back. Recording
+        // it advances sessionValidatedAt (was going stale on accounts that sync
+        // cleanly nightly but whose UI is never opened) and, if the account had
+        // drifted to SESSION_EXPIRED/NEEDS_LOGIN, heals it. Best-effort: a
+        // bookkeeping write must never fail an otherwise-successful sync.
+        await recordSessionAlive(userId).catch(err =>
+            console.error(`[INBOX-WORKER] recordSessionAlive failed: ${err.message}`));
 
         // Canary. Deliberately log-only: this is an engineering signal about
         // OUR integration drifting, not something the account owner can act on,
