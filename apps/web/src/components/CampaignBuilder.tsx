@@ -360,6 +360,14 @@ function CampaignBuilderInner({
             </button>
 
             <button
+              onClick={() => addNode('EMAIL_FINDER', 'Find Email', 'ACTION')}
+              className="flex items-center gap-2 p-2 rounded-lg hover:bg-violet-50 text-slate-600 hover:text-violet-600 border border-transparent hover:border-violet-100 transition-all text-xs font-bold"
+            >
+              <div className="p-1 bg-violet-100 rounded text-violet-600"><AtSign className="w-3 h-3" /></div>
+              Find Email
+            </button>
+
+            <button
               onClick={() => addNode('EMAIL', 'Send Email', 'ACTION')}
               className="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-50 text-slate-600 hover:text-slate-900 border border-transparent hover:border-slate-200 transition-all text-xs font-bold"
             >

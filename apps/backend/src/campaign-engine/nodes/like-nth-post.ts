@@ -1,8 +1,8 @@
 import { NodeHandler, NodeResult, PostOutput } from '../types';
 import { persistDiscoveredPost } from '../storage';
+import { discoverNthPostUrl } from './post-discovery';
 
 const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
-const randomRange = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1) + min);
 
 async function safeGoto(page: any, url: string, retries = 3) {
     for (let i = 0; i < retries; i++) {
@@ -23,63 +23,14 @@ export const likeNthPost: NodeHandler = async (ctx, config): Promise<NodeResult>
     const output: PostOutput = { postUrl: null, postContent: null, liked: false };
 
     try {
-        // Navigate to profile's recent activity
-        const cleanUrl = lead.linkedinUrl.split('?')[0].replace(/\/$/, '');
-        const activityUrl = cleanUrl + '/recent-activity/shares/';
-
         console.log(`[LIKE-NTH-POST] Navigating to posts feed (target: post #${n})...`);
-        // Find the Nth post link with retries
-        let postLink: string | null = null;
 
-        for (let attempt = 1; attempt <= 3; attempt++) {
-            await safeGoto(page, activityUrl);
-            await wait(4000);
-
-            // Wait for post elements to appear
-            await page.waitForSelector(
-                'div[data-urn*="urn:li:activity"], div[data-urn*="urn:li:ugcPost"], div[data-urn*="urn:li:share"], a[href*="/feed/update/urn:li:"]',
-                { timeout: 15000 }
-            ).catch(() => {});
-
-            // Scroll enough to load the Nth post
-            for (let i = 0; i < n + 2; i++) {
-                await page.mouse.wheel(0, 800);
-                await wait(1500);
-            }
-
-            postLink = await page.evaluate((targetNum: number) => {
-                const targetIndex = targetNum - 1;
-                const postWrappers = Array.from(document.querySelectorAll('div[data-urn*="urn:li:activity"], div[data-urn*="urn:li:ugcPost"], div[data-urn*="urn:li:share"]'));
-
-                if (postWrappers.length > targetIndex) {
-                    const urn = postWrappers[targetIndex].getAttribute('data-urn');
-                    return `https://www.linkedin.com/feed/update/${urn}/`;
-                }
-
-                const links = Array.from(document.querySelectorAll('a[href*="/feed/update/urn:li:"]'));
-                const uniqueLinks: string[] = [];
-                for (const link of links) {
-                    if (!(link as HTMLAnchorElement).href.includes('?commentUrn=')) {
-                        const cleanLink = (link as HTMLAnchorElement).href.split('?')[0];
-                        if (!uniqueLinks.includes(cleanLink)) uniqueLinks.push(cleanLink);
-                    }
-                }
-                if (uniqueLinks.length > targetIndex) return uniqueLinks[targetIndex];
-                return null;
-            }, n);
-
-            if (postLink) break;
-
-            if (attempt < 3) {
-                console.log(`[LIKE-NTH-POST] Post not found, retrying (${attempt}/3)...`);
-                await wait(randomRange(3000, 5000));
-            }
-        }
-
-        if (!postLink) {
+        const discovered = await discoverNthPostUrl(page, lead.linkedinUrl, n, 'LIKE-NTH-POST');
+        if (!discovered) {
             return { success: false, error: `Post #${n} not found` };
         }
 
+        const postLink = discovered.url;
         output.postUrl = postLink;
         console.log(`[LIKE-NTH-POST] Found post #${n}. Navigating...`);
 

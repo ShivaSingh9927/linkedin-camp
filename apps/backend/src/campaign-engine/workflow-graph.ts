@@ -242,8 +242,10 @@ const CANONICAL_TO_ENGINE_NODE: Partial<Record<CanonicalStepType, string>> = {
 
 /**
  * Flatten a DAG `{nodes, edges}` into the linear `flow[]` shape that
- * `runLead` consumes. Skips NOOP nodes (START/END/TRIGGER/FOLLOW/
- * EMAIL/EMAIL_FINDER/...) so the engine never sees unknown node types.
+ * `runLead` consumes. Skips genuine NOOP nodes (START/END/TRIGGER/...) so
+ * the engine never sees unknown node types. Nodes with a real handler in
+ * CANONICAL_TO_ENGINE_NODE (EMAIL, EMAIL_FINDER, FOLLOW, ...) are emitted,
+ * not skipped.
  * IF_ELSE nodes are emitted with nested `trueBranch`/`falseBranch`
  * arrays built from the corresponding `sourceHandle` edges — matches
  * the engine's existing if-else handler contract.
