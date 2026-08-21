@@ -18,6 +18,7 @@ const bootstrap = async () => {
         const { initCampaignWorker } = await import('./workers/campaign-worker');
         const { initProxyHealthWorker } = await import('./workers/proxy.worker');
         const { initInboxWorker } = await import('./workers/inbox.worker');
+        const { initInboxReplyWorker } = await import('./workers/inbox-reply.worker');
         const { initCRMWorker } = await import('./workers/crm.worker');
         const { initEnrichmentWorker } = await import('./workers/enrichment-worker');
 
@@ -26,6 +27,7 @@ const bootstrap = async () => {
         initCampaignWorker();
         initProxyHealthWorker();
         initInboxWorker();
+        initInboxReplyWorker();
         initCRMWorker();
         initEnrichmentWorker();
 

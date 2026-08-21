@@ -58,6 +58,7 @@
  */
 import type { Page, BrowserContext, APIRequestContext } from 'patchright';
 import { request } from 'patchright';
+import { randomBytes } from 'crypto';
 import { prisma } from '@repo/db';
 import { randomRange } from './stealth.service';
 import Redis from 'ioredis';
@@ -933,6 +934,59 @@ export async function getMessagesInConversation(
         };
     });
     return { ok: true, status: r.status, data: messages };
+}
+
+/**
+ * Send a reply into an EXISTING conversation — browser-free.
+ *
+ * The ONE Voyager write that isn't gated. The modern dash createMessage 400s
+ * (mailboxPreWriteValidate), but the LEGACY events endpoint delivers into a
+ * thread both parties are already in (PROVEN 2026-08-21, rajaji→shiva, no
+ * Chromium). Cold / new-conversation sends stay DOM-only. See the reply-send
+ * note in project_dom_vs_api_strategy.
+ *
+ * `conversationUrn` is `urn:li:msg_conversation:(urn:li:fsd_profile:<self>,<threadId>)`;
+ * the endpoint keys on the <threadId> tuple element.
+ */
+export async function sendMessageToConversation(
+    userId: string,
+    conversationUrn: string,
+    text: string,
+    opts: { page?: Page | null; apiRequest?: APIRequestContext } = {}
+): Promise<VoyagerResult<{ eventUrn: string }>> {
+    const m = conversationUrn.match(/,\s*([^),]+)\)\s*$/);
+    const threadId = m ? m[1] : null;
+    if (!threadId) return { ok: false, error: `cannot parse threadId from ${conversationUrn}` };
+
+    const url = `https://www.linkedin.com/voyager/api/messaging/conversations/${encodeUrn(threadId)}/events?action=create`;
+    const body = {
+        eventCreate: {
+            value: {
+                'com.linkedin.voyager.messaging.create.MessageCreate': {
+                    body: text,
+                    attachments: [],
+                    attributedBody: { text, attributes: [] },
+                    mediaAttachments: [],
+                },
+            },
+        },
+        dedupeByClientGeneratedToken: false,
+        trackingId: randomBytes(16).toString('base64'),
+    };
+    const r = await voyagerFetch<any>(userId, url, {
+        method: 'POST',
+        body,
+        page: opts.page || undefined,
+        apiRequest: opts.apiRequest,
+        accept: 'application/vnd.linkedin.normalized+json+2.1',
+        skipRateLimit: true,
+    });
+    if (!r.ok) return r;
+    const eventUrn =
+        (r.data as any)?.data?.value?.eventUrn ||
+        (r.data as any)?.value?.eventUrn ||
+        '';
+    return { ok: true, status: r.status, data: { eventUrn } };
 }
 
 // ---- Notifications ----

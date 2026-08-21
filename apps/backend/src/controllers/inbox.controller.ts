@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { prisma } from '@repo/db';
 import { syncInbox, inboxQueue, enqueueInboxSync } from '../workers/inbox.worker';
+import { enqueueInboxReplyFlush } from '../workers/inbox-reply.worker';
 
 // ─── CONVERSATIONS (grouped messages by lead) ───
 
@@ -85,35 +86,50 @@ export const getMessages = async (req: any, res: Response) => {
     }
 };
 
-// ─── SEND / LOG A MESSAGE ───
+// ─── SEND A REPLY (queued + coalesced to LinkedIn) ───
+//
+// A human-composed inbox reply. We do NOT open a browser here — that would
+// be a synchronous LinkedIn write per click, racing outside the proven queue.
+// Instead we persist the reply as PENDING and enqueue a DEBOUNCED per-account
+// flush; the inbox-reply worker drains all of a user's pending replies in one
+// browser session, on the same account lock + sticky proxy + daily cap as
+// campaigns. The row shows immediately in the thread as "Sending…"; the worker
+// flips it to SENT/FAILED.
 
 export const sendMessage = async (req: any, res: Response) => {
     const userId = req.user.id;
     const { leadId } = req.params;
-    const { content, source, campaignId, templateId, direction } = req.body;
+    const { content } = req.body;
 
     if (!content || !leadId) {
         return res.status(400).json({ error: 'Content and leadId are required' });
     }
 
     try {
+        // Ownership check — never let one user queue a send against another's lead.
+        const lead = await prisma.lead.findFirst({ where: { id: leadId, userId }, select: { id: true } });
+        if (!lead) return res.status(404).json({ error: 'Lead not found' });
+
         const message = await prisma.message.create({
             data: {
                 userId,
                 leadId,
-                direction: direction || 'SENT',
+                direction: 'SENT',
+                channel: 'linkedin',
                 content,
-                source: source || 'MANUAL',
-                campaignId: campaignId || null,
-                templateId: templateId || null,
+                source: 'MANUAL',
+                deliveryStatus: 'PENDING',
                 sentAt: new Date(),
             },
         });
 
-        res.status(201).json(message);
+        // Debounced so a burst of replies coalesces into one browser session.
+        const queued = await enqueueInboxReplyFlush(userId, { debounceSec: 20 });
+
+        res.status(201).json({ message, queued, deliveryStatus: 'PENDING' });
     } catch (error) {
-        console.error('Failed to send message:', error);
-        res.status(500).json({ error: 'Failed to send message' });
+        console.error('Failed to queue reply:', error);
+        res.status(500).json({ error: 'Failed to queue reply' });
     }
 };
 

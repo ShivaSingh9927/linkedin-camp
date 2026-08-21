@@ -263,6 +263,12 @@ model Message {
   messageId  String?
   content    String
   source     String   @default("MANUAL")
+  // Delivery lifecycle for outbound messages the USER sends from the inbox.
+  // null    = already delivered (campaign sends + legacy rows — no queueing)
+  // PENDING = queued, awaiting the coalescing inbox-reply flush worker
+  // SENT    = confirmed delivered to LinkedIn by the flush worker
+  // FAILED  = delivery attempted and failed (not DMable / DOM error)
+  deliveryStatus String?
   // Human-readable "why this message" — the personalization signals the AI
   // actually had when it wrote this (their recent post, role, your messaging
   // pillar, ICP pain, sequence step). Assembled deterministically at send
@@ -274,6 +280,7 @@ model Message {
   User       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, channel, sentAt])
+  @@index([userId, deliveryStatus])
 }
 
 // SMTP credentials for sending email from a campaign EMAIL node. One

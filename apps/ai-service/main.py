@@ -183,6 +183,12 @@ class EnhanceRequest(BaseModel):
     persona: Optional[str] = None
     value_proposition: Optional[str] = None
     ai_strategy: Optional[Dict[str, Any]] = None
+    # Reply-awareness: who replied + why we're talking to them, so a suggested
+    # reply references the actual person and moves toward the outreach goal.
+    profile_name: Optional[str] = None
+    profile_headline: Optional[str] = None
+    company: Optional[str] = None
+    campaign_objective: Optional[str] = None
 
 
 class StrategyRequest(BaseModel):
@@ -849,28 +855,43 @@ def enhance_reply(req: EnhanceRequest):
     brand = get_brand_context(req.persona, req.value_proposition)
     strategy_ctx = get_strategy_context(req.ai_strategy)
     
+    # Who we're replying to + why — so a suggested reply is grounded in the
+    # actual person and the outreach goal, not a generic "thanks for reaching out".
+    recipient = ""
+    if req.profile_name:
+        bits = [req.profile_name]
+        if req.profile_headline:
+            bits.append(req.profile_headline)
+        if req.company:
+            bits.append(f"at {req.company}")
+        recipient = "\nYou are replying to: " + " — ".join(bits) + "."
+    objective = f"\nYour outreach goal with them: {req.campaign_objective}" if req.campaign_objective else ""
+
     thread_ctx = ""
     if req.thread_history:
         thread_ctx = "\nRecent Conversation History (last 6 messages):\n"
         for msg in req.thread_history[-6:]:
             thread_ctx += f"- {msg.sender}: {msg.text}\n"
     elif req.original_message:
-        thread_ctx = f"\nLast message received: {req.original_message}"
-    
-    system = f"""Expert LinkedIn Communication Coach.{brand}{strategy_ctx}
-Enhance draft replies or suggest a reply based on conversation history.
-Tone: {req.tone}. Stay authentic to the persona provided."""
-    
-    user = f"""{thread_ctx}
+        thread_ctx = f"\nTheir latest message to you: {req.original_message}"
 
-User's current draft: "{req.draft_reply or '(No draft provided, please suggest a fresh reply)'}"
+    system = f"""Expert LinkedIn Communication Coach.{brand}{strategy_ctx}
+Enhance the user's draft reply, or if there's no draft, suggest one — always as a
+direct response to what the other person just said. Tone: {req.tone}. Stay
+authentic to the persona provided."""
+
+    user = f"""{recipient}{objective}
+{thread_ctx}
+
+User's current draft: "{req.draft_reply or '(No draft provided — suggest a fresh reply)'}"
 
 INSTRUCTIONS:
-- Enhance the draft to be more engaging and natural.
-- If no draft is provided, write a thoughtful reply based on the history.
+- Respond to what THEY actually said — reference it specifically, don't be generic.
+- If no draft is provided, write a thoughtful reply from the conversation.
+- Nudge gently toward the outreach goal without being pushy or salesy.
 - Maintain the user's voice and brand identity.
 - 2-4 sentences maximum.
-- Output ONLY the enhanced reply, no preamble."""
+- Output ONLY the reply text, no preamble."""
     
     try:
         enhanced = call_llm(system, user, temperature=0.8)

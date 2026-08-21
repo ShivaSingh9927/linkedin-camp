@@ -56,6 +56,7 @@ export default function InboxPage() {
 
   const [replyText, setReplyText] = useState('');
   const [isEnhancing, setIsEnhancing] = useState(false);
+  const [isSending, setIsSending] = useState(false);
   const [lastReceivedMessage, setLastReceivedMessage] = useState('');
 
   // Tick so the cooldown / "synced Xm ago" label stays live.
@@ -188,14 +189,18 @@ export default function InboxPage() {
     if (!selectedConvo || !lastReceivedMessage) return;
     setIsEnhancing(true);
     try {
+      // Shape must match the backend ThreadMessage ({sender, text}) — not
+      // {role, content}, which reached the model as undefined and gave the AI
+      // no history to work from.
       const threadHistory = messages.slice(-6).map((m) => ({
-        role: m.direction === 'SENT' ? 'assistant' : 'user',
-        content: m.content,
+        sender: m.direction === 'SENT' ? 'You' : (selectedConvo.firstName || 'Them'),
+        text: m.content,
       }));
       const res = await fetch(`${API_BASE}/api/v1/ai/enhance`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` },
-        body: JSON.stringify({ original_message: lastReceivedMessage, draft_reply: replyText || '', thread_history: threadHistory }),
+        // leadId lets the backend ground the suggestion in who replied + why.
+        body: JSON.stringify({ leadId: selectedConvo.id, original_message: lastReceivedMessage, draft_reply: replyText || '', thread_history: threadHistory }),
       });
       if (res.ok) {
         const data = await res.json();
@@ -205,6 +210,36 @@ export default function InboxPage() {
       console.error('Enhance failed:', err);
     } finally {
       setIsEnhancing(false);
+    }
+  };
+
+  const handleSendReply = async () => {
+    if (!selectedConvo || !replyText.trim() || isSending) return;
+    const leadId = selectedConvo.id;
+    const content = replyText.trim();
+    setIsSending(true);
+    // Optimistic bubble — the reply is queued (PENDING) and delivered by the
+    // coalescing flush worker; we reflect that immediately, then refetch to
+    // pick up SENT/FAILED.
+    const tempId = `temp-${Date.now()}`;
+    setMessages((prev) => [...prev, { id: tempId, direction: 'SENT', content, deliveryStatus: 'PENDING', sentAt: new Date().toISOString() }]);
+    setReplyText('');
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/inbox/conversations/${leadId}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` },
+        body: JSON.stringify({ content }),
+      });
+      if (!res.ok) throw new Error(`send failed (${res.status})`);
+      // The flush is debounced ~20s; refetch a couple of times to surface the
+      // real SENT/FAILED status without waiting for the 30s auto-refresh.
+      setTimeout(() => { if (selectedConvo?.id === leadId) fetchMessages(leadId); }, 25000);
+      setTimeout(() => { if (selectedConvo?.id === leadId) fetchMessages(leadId); }, 60000);
+    } catch (err) {
+      console.error('Send failed:', err);
+      setMessages((prev) => prev.map((m) => (m.id === tempId ? { ...m, deliveryStatus: 'FAILED' } : m)));
+    } finally {
+      setIsSending(false);
     }
   };
 
@@ -318,7 +353,11 @@ export default function InboxPage() {
                           msg.direction === 'SENT' ? 'bg-brand text-white rounded-tr-chip' : 'bg-card border border-line rounded-tl-chip')}>
                           {msg.content}
                         </div>
-                        <span className="text-[10px] text-ink-400 font-medium mt-1 px-1">{new Date(msg.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                        <span className="text-[10px] text-ink-400 font-medium mt-1 px-1">
+                          {new Date(msg.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          {msg.direction === 'SENT' && msg.deliveryStatus === 'PENDING' && <span className="ml-1.5 text-ink-400">· Sending…</span>}
+                          {msg.direction === 'SENT' && msg.deliveryStatus === 'FAILED' && <span className="ml-1.5 text-rose-500">· Failed to send</span>}
+                        </span>
                       </div>
                     ))}
                   </div>
@@ -339,10 +378,18 @@ export default function InboxPage() {
                     placeholder="Write a reply… or let AI draft it"
                     value={replyText}
                     onChange={(e) => setReplyText(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendReply(); } }}
                     rows={1}
                     className="flex-1 bg-transparent outline-none text-[13px] font-medium resize-none py-1.5 max-h-32"
                   />
-                  <button className="shrink-0 w-9 h-9 grid place-items-center rounded-chip bg-brand text-white hover:bg-brand-600 transition-colors"><Send className="w-4 h-4" /></button>
+                  <button
+                    onClick={handleSendReply}
+                    disabled={isSending || !replyText.trim()}
+                    title="Send reply"
+                    className="shrink-0 w-9 h-9 grid place-items-center rounded-chip bg-brand text-white hover:bg-brand-600 disabled:opacity-50 transition-colors"
+                  >
+                    {isSending ? <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> : <Send className="w-4 h-4" />}
+                  </button>
                 </div>
               </div>
             </>

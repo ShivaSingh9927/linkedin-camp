@@ -293,7 +293,13 @@ export async function generateAIEnhance(options: AIGenerateOptions): Promise<str
             original_message: options.originalMessage,
             tone: options.tone || 'professional',
             persona: options.persona,
-            value_proposition: options.valueProposition
+            value_proposition: options.valueProposition,
+            ai_strategy: options.aiStrategy,
+            // Reply-awareness — who replied + why we're reaching out.
+            profile_name: options.profileName,
+            profile_headline: options.profileHeadline,
+            company: options.company,
+            campaign_objective: options.campaignDescription,
         }, { timeout: 30000 });
         
         const raw = response.data.enhanced;

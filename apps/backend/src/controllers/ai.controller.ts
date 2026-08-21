@@ -109,7 +109,7 @@ export const generateMessage = async (req: AuthRequest, res: Response) => {
 
 export const enhanceReply = async (req: AuthRequest, res: Response) => {
     try {
-        const { original_message, thread_history, draft_reply, tone } = req.body;
+        const { original_message, thread_history, draft_reply, tone, leadId } = req.body;
         const userId = req.user?.id;
 
         if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -118,8 +118,36 @@ export const enhanceReply = async (req: AuthRequest, res: Response) => {
             where: { userId }
         });
 
+        // Reply-awareness: ground the suggestion in WHO replied and WHY we're
+        // talking to them (their most recent campaign's objective).
+        let profileName = 'there';
+        let profileHeadline: string | undefined;
+        let company: string | undefined;
+        let campaignObjective: string | undefined;
+        if (leadId) {
+            const lead = await prisma.lead.findFirst({
+                where: { id: leadId, userId },
+                include: {
+                    CampaignLead: {
+                        include: { Campaign: { select: { objective: true, description: true } } },
+                        take: 1,
+                    },
+                },
+            });
+            if (lead) {
+                profileName = `${lead.firstName || ''} ${lead.lastName || ''}`.trim() || 'there';
+                profileHeadline = lead.headline || lead.jobTitle || undefined;
+                company = lead.company || undefined;
+                const camp = lead.CampaignLead?.[0]?.Campaign;
+                campaignObjective = camp?.objective || camp?.description || undefined;
+            }
+        }
+
         const enhanced = await generateAIEnhance({
-            profileName: 'User', // Generic since it's an inbox reply
+            profileName,
+            profileHeadline,
+            company,
+            campaignDescription: campaignObjective,
             originalMessage: original_message,
             threadHistory: thread_history, // Expecting [{sender, text}]
             draftReply: draft_reply,
@@ -128,7 +156,7 @@ export const enhanceReply = async (req: AuthRequest, res: Response) => {
             valueProposition: businessProfile?.valueProp || undefined,
             aiStrategy: businessProfile?.aiStrategy || undefined,
         });
-        
+
         res.json({ enhanced });
     } catch (error: any) {
         console.error('[AI-CONTROLLER] Error enhancing reply:', error.message);
