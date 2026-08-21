@@ -54,9 +54,14 @@ const DOM_MAX_GAP_MS = 45_000;
 
 const PENDING_WHERE = { deliveryStatus: 'PENDING', channel: 'linkedin', direction: 'SENT' } as const;
 
-function vanity(url: string | null | undefined): string | null {
-    const m = (url || '').match(/\/in\/([^/?]+)/);
-    return m ? m[1].toLowerCase() : null;
+// Resolve a lead → conversation by NAME. messengerConversations returns the
+// participant's profileUrl as /in/<opaque-member-id>, NOT the vanity slug, so
+// a vanity-URL match always misses (the inbox sync matches by name for the same
+// reason). Names aren't unique, so a duplicate name is marked AMBIGUOUS and
+// falls to the DOM path rather than risk sending to the wrong thread.
+const AMBIGUOUS = '__AMBIGUOUS__';
+function nameKey(first?: string | null, last?: string | null): string {
+    return `${(first || '').trim()} ${(last || '').trim()}`.toLowerCase().trim();
 }
 
 /**
@@ -157,7 +162,7 @@ export const initInboxReplyWorker = () => {
             }
 
             let sessionAlive = false;
-            const convByVanity = new Map<string, string>();
+            const convByName = new Map<string, string>();
             try {
                 const warm = await warmSelfCache(userId, null, bl.ctx);
                 if (warm.ok) {
@@ -165,8 +170,9 @@ export const initInboxReplyWorker = () => {
                     if (inbox.ok) {
                         sessionAlive = true;
                         for (const c of inbox.data!.conversations) {
-                            const v = vanity(c.otherProfileUrl);
-                            if (v) convByVanity.set(v, c.conversationUrn);
+                            const k = nameKey(c.otherFirstName, c.otherLastName);
+                            if (!k) continue;
+                            convByName.set(k, convByName.has(k) ? AMBIGUOUS : c.conversationUrn);
                         }
                     }
                 }
@@ -176,10 +182,11 @@ export const initInboxReplyWorker = () => {
                         const quota = await checkQuota(userId, 'send-message');
                         if (!quota.allowed) { capHit = true; break; }
 
-                        const url = (msg as any).Lead?.linkedinUrl as string | undefined;
-                        const convUrn = url ? convByVanity.get(vanity(url) || '') : undefined;
-                        if (!convUrn || !url) {
-                            // No existing thread found (cold / unsynced) → DOM fallback.
+                        const lead = (msg as any).Lead;
+                        const url = lead?.linkedinUrl as string | undefined;
+                        const convUrn = lead ? convByName.get(nameKey(lead.firstName, lead.lastName)) : undefined;
+                        if (!convUrn || convUrn === AMBIGUOUS || !url) {
+                            // No unambiguous thread (cold / unsynced / duplicate name) → DOM fallback.
                             if (url) needsDom.push({ id: msg.id, leadId: msg.leadId, content: msg.content, linkedinUrl: url });
                             else await markFailed(userId, msg, 'lead has no linkedinUrl');
                             continue;
