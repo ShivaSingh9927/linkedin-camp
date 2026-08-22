@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Search, RefreshCw, MessageSquare, Sparkles, Inbox as InboxIcon, ArrowLeft, Send } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Search, RefreshCw, MessageSquare, Sparkles, Inbox as InboxIcon, ArrowLeft, Send, X, Wand2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Card, Button, Badge, Avatar, PageHeader } from '@/components/ui';
 
@@ -58,6 +58,12 @@ export default function InboxPage() {
   const [isEnhancing, setIsEnhancing] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [lastReceivedMessage, setLastReceivedMessage] = useState('');
+
+  // Reply copilot: the suggestions popover above the composer.
+  const [suggestions, setSuggestions] = useState<any | null>(null);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [isSuggesting, setIsSuggesting] = useState(false);
+  const composerRef = useRef<HTMLDivElement | null>(null);
 
   // Tick so the cooldown / "synced Xm ago" label stays live.
   useEffect(() => {
@@ -150,7 +156,24 @@ export default function InboxPage() {
       body: JSON.stringify({ auto: true }),
     }).catch(() => {});
   }, []);
-  useEffect(() => { if (selectedConvo) fetchMessages(selectedConvo.id); }, [selectedConvo]);
+  useEffect(() => {
+    // Switching threads: close the copilot popover and drop stale suggestions.
+    setShowSuggestions(false);
+    setSuggestions(null);
+    if (selectedConvo) fetchMessages(selectedConvo.id);
+  }, [selectedConvo]);
+
+  // Dismiss the suggestions popover on click-outside / Escape.
+  useEffect(() => {
+    if (!showSuggestions) return;
+    const onDown = (e: MouseEvent) => {
+      if (composerRef.current && !composerRef.current.contains(e.target as Node)) setShowSuggestions(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setShowSuggestions(false); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey); };
+  }, [showSuggestions]);
 
   const handleSync = async () => {
     if (onCooldown || isSyncing) return;
@@ -212,6 +235,33 @@ export default function InboxPage() {
       console.error('Enhance failed:', err);
     } finally {
       setIsEnhancing(false);
+    }
+  };
+
+  const handleSuggestReplies = async () => {
+    if (!selectedConvo || isSuggesting) return;
+    setIsSuggesting(true);
+    setShowSuggestions(true);
+    try {
+      const threadHistory = messages.slice(-12).map((m) => ({
+        sender: m.direction === 'SENT' ? 'You' : (selectedConvo.firstName || 'Them'),
+        text: m.content,
+      }));
+      const res = await fetch(`${API_BASE}/api/v1/ai/reply-suggestions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` },
+        body: JSON.stringify({ leadId: selectedConvo.id, thread_history: threadHistory, tone: 'professional' }),
+      });
+      if (res.ok) {
+        setSuggestions(await res.json());
+      } else {
+        setSuggestions({ situation: null, recommendedNext: '', variations: [] });
+      }
+    } catch (err) {
+      console.error('Suggest failed:', err);
+      setSuggestions({ situation: null, recommendedNext: '', variations: [] });
+    } finally {
+      setIsSuggesting(false);
     }
   };
 
@@ -366,23 +416,85 @@ export default function InboxPage() {
                 )}
               </div>
 
-              <div className="p-4 border-t border-line">
-                {/* Prominent, labelled AI-draft control — reply-aware (grounded in
-                    their reply + the lead's profile + the campaign goal). */}
+              <div className="p-4 border-t border-line relative" ref={composerRef}>
+                {/* Reply copilot — situation read + 2-3 draft options, floating above the box. */}
+                {showSuggestions && (
+                  <div className="absolute bottom-full left-4 right-4 mb-2 bg-card border border-line rounded-card shadow-lift z-50 p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-1.5 text-[12px] font-bold text-foreground">
+                        <Sparkles className="w-3.5 h-3.5 text-brand" /> AI reply suggestions
+                      </div>
+                      <button onClick={() => setShowSuggestions(false)} className="text-ink-400 hover:text-foreground"><X className="w-4 h-4" /></button>
+                    </div>
+
+                    {isSuggesting ? (
+                      <div className="py-6 grid place-items-center text-ink-400">
+                        <div className="w-5 h-5 border-2 border-brand-200 border-t-brand rounded-full animate-spin mb-2" />
+                        <span className="text-[12px] font-medium">Reading the conversation…</span>
+                      </div>
+                    ) : suggestions ? (
+                      <>
+                        {(suggestions.situation?.summary || suggestions.recommendedNext) && (
+                          <div className="mb-3 p-2.5 rounded-control bg-surface">
+                            <div className="flex items-center gap-1.5 mb-1">
+                              <Badge tone={suggestions.situation?.sentiment === 'positive' ? 'success' : suggestions.situation?.sentiment === 'negative' ? 'danger' : 'neutral'}>
+                                {suggestions.situation?.stage || 'situation'}
+                              </Badge>
+                              {suggestions.situation?.intent && <span className="text-[11px] text-ink-500 font-medium">{suggestions.situation.intent}</span>}
+                            </div>
+                            {suggestions.situation?.summary && <p className="text-[12px] text-ink-700 font-medium">{suggestions.situation.summary}</p>}
+                            {suggestions.recommendedNext && <p className="text-[11px] text-brand font-semibold mt-1">→ {suggestions.recommendedNext}</p>}
+                          </div>
+                        )}
+                        <div className="space-y-2 max-h-64 overflow-y-auto">
+                          {(suggestions.variations || []).map((v: any, i: number) => (
+                            <button
+                              key={i}
+                              onClick={() => { setReplyText(v.text); setShowSuggestions(false); }}
+                              className="w-full text-left p-2.5 rounded-control bg-card border border-line hover:border-brand hover:bg-brand-50/40 transition-colors"
+                            >
+                              <div className="text-[11px] font-bold text-brand mb-1">{v.label}</div>
+                              <div className="text-[12.5px] text-ink-700 leading-snug">{v.text}</div>
+                            </button>
+                          ))}
+                          {(!suggestions.variations || suggestions.variations.length === 0) && (
+                            <div className="text-[12px] text-ink-400 py-2 text-center">No suggestions — try Regenerate.</div>
+                          )}
+                        </div>
+                        <div className="flex justify-end mt-2">
+                          <button onClick={handleSuggestReplies} disabled={isSuggesting} className="inline-flex items-center gap-1 text-[11px] font-bold text-brand hover:text-brand-700 disabled:opacity-50">
+                            <RefreshCw className="w-3 h-3" /> Regenerate
+                          </button>
+                        </div>
+                      </>
+                    ) : null}
+                  </div>
+                )}
+
                 <div className="flex items-center gap-2 mb-2">
                   <button
-                    onClick={handleEnhanceReply}
-                    disabled={isEnhancing}
-                    title="Generate a reply-aware AI draft — grounded in their message, the thread, and this lead's profile/goal"
+                    onClick={handleSuggestReplies}
+                    disabled={isSuggesting}
+                    title="AI reply suggestions — reads the conversation and drafts 2-3 options to pick from"
                     className="inline-flex items-center gap-1.5 px-3 h-8 rounded-chip bg-brand-50 text-brand text-[12px] font-bold hover:bg-brand-100 disabled:opacity-50 transition-colors"
                   >
-                    {isEnhancing
+                    {isSuggesting
                       ? <div className="w-3.5 h-3.5 border-2 border-brand-200 border-t-brand rounded-full animate-spin" />
                       : <Sparkles className="w-3.5 h-3.5" />}
-                    {isEnhancing ? 'Drafting…' : (replyText.trim() ? 'Polish with AI' : 'AI draft reply')}
+                    {isSuggesting ? 'Thinking…' : 'AI reply suggestions'}
                   </button>
-                  {!lastReceivedMessage && (
-                    <span className="text-[11px] text-ink-400 font-medium">No reply yet — AI drafts from the thread</span>
+                  {replyText.trim() && (
+                    <button
+                      onClick={handleEnhanceReply}
+                      disabled={isEnhancing}
+                      title="Polish the reply you've written"
+                      className="inline-flex items-center gap-1.5 px-3 h-8 rounded-chip text-ink-500 text-[12px] font-bold hover:bg-surface disabled:opacity-50 transition-colors"
+                    >
+                      {isEnhancing
+                        ? <div className="w-3.5 h-3.5 border-2 border-brand-200 border-t-brand rounded-full animate-spin" />
+                        : <Wand2 className="w-3.5 h-3.5" />}
+                      {isEnhancing ? 'Polishing…' : 'Polish'}
+                    </button>
                   )}
                 </div>
                 <div className="flex items-end gap-2 bg-surface rounded-control p-2">

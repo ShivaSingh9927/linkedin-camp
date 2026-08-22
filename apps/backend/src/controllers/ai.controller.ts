@@ -1,10 +1,11 @@
 import { Response } from 'express';
 import { prisma } from '@repo/db';
 import { AuthRequest } from '../middleware/auth.middleware';
-import { 
-    generateAIComment, 
-    generateAIMessage, 
-    generateAIEnhance 
+import {
+    generateAIComment,
+    generateAIMessage,
+    generateAIEnhance,
+    generateReplySuggestions
 } from '../campaign-engine/ai-service';
 
 export const generateComment = async (req: AuthRequest, res: Response) => {
@@ -161,5 +162,60 @@ export const enhanceReply = async (req: AuthRequest, res: Response) => {
     } catch (error: any) {
         console.error('[AI-CONTROLLER] Error enhancing reply:', error.message);
         res.status(500).json({ error: 'Failed to enhance reply' });
+    }
+};
+
+// Reply copilot: analyze the thread + lead + goal and return the situation +
+// 2-3 distinct reply drafts for the inbox popover. Human picks/edits/sends.
+export const replySuggestions = async (req: AuthRequest, res: Response) => {
+    try {
+        const { thread_history, tone, leadId } = req.body;
+        const userId = req.user?.id;
+        if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+        const businessProfile = await prisma.businessProfile.findUnique({ where: { userId } });
+
+        let profileName: string | undefined;
+        let profileHeadline: string | undefined;
+        let company: string | undefined;
+        let profileAbout: string | undefined;
+        let campaignObjective: string | undefined;
+        if (leadId) {
+            const lead = await prisma.lead.findFirst({
+                where: { id: leadId, userId },
+                include: {
+                    CampaignLead: {
+                        include: { Campaign: { select: { objective: true, description: true } } },
+                        take: 1,
+                    },
+                },
+            });
+            if (lead) {
+                profileName = `${lead.firstName || ''} ${lead.lastName || ''}`.trim() || undefined;
+                profileHeadline = lead.headline || lead.jobTitle || undefined;
+                company = lead.company || undefined;
+                profileAbout = (lead as any).aboutInfo || undefined;
+                const camp = lead.CampaignLead?.[0]?.Campaign;
+                campaignObjective = camp?.objective || camp?.description || undefined;
+            }
+        }
+
+        const result = await generateReplySuggestions({
+            threadHistory: thread_history,
+            tone: tone || 'professional',
+            persona: businessProfile?.persona || undefined,
+            valueProposition: businessProfile?.valueProp || undefined,
+            aiStrategy: businessProfile?.aiStrategy || undefined,
+            profileName,
+            profileHeadline,
+            company,
+            profileAbout,
+            campaignObjective,
+        });
+
+        res.json(result);
+    } catch (error: any) {
+        console.error('[AI-CONTROLLER] Error generating reply suggestions:', error.message);
+        res.status(500).json({ error: 'Failed to generate reply suggestions' });
     }
 };

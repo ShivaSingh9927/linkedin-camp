@@ -310,3 +310,65 @@ export async function generateAIEnhance(options: AIGenerateOptions): Promise<str
         throw new Error('Failed to enhance AI message');
     }
 }
+
+export interface ReplySuggestion {
+    label: string;
+    text: string;
+}
+
+export interface ReplySuggestionsResult {
+    situation: { stage: string; intent: string; sentiment: string; summary: string };
+    recommendedNext: string;
+    variations: ReplySuggestion[];
+}
+
+export interface ReplySuggestionsOptions {
+    threadHistory?: ThreadMessage[];
+    tone?: string;
+    persona?: string;
+    valueProposition?: string;
+    aiStrategy?: any;
+    profileName?: string;
+    profileHeadline?: string;
+    company?: string;
+    profileAbout?: string;
+    campaignObjective?: string;
+}
+
+/**
+ * Reply copilot: returns the conversation situation + a recommended next move +
+ * 2-3 distinct reply drafts (structured JSON from /ai/reply-suggestions). Unlike
+ * generateAIEnhance (which polishes one string), this returns the whole object
+ * for the inbox popover to render.
+ */
+export async function generateReplySuggestions(options: ReplySuggestionsOptions): Promise<ReplySuggestionsResult> {
+    if (isMockAI()) {
+        await mockAiWait();
+        return {
+            situation: { stage: 'interested', intent: 'exploring fit', sentiment: 'positive', summary: '[MOCK] They replied with interest.' },
+            recommendedNext: '[MOCK] Propose a quick call.',
+            variations: [
+                { label: 'Propose a call', text: '[MOCK] Great to hear — would a quick 15-min call this week work?' },
+                { label: 'Add value', text: '[MOCK] Happy to share a relevant example first — want me to send it over?' },
+            ],
+        };
+    }
+    try {
+        const response = await axios.post(`${AI_SERVICE_URL}/ai/reply-suggestions`, {
+            thread_history: options.threadHistory,
+            tone: options.tone || 'professional',
+            persona: options.persona,
+            value_proposition: options.valueProposition,
+            ai_strategy: options.aiStrategy,
+            profile_name: options.profileName,
+            profile_headline: options.profileHeadline,
+            company: options.company,
+            profile_about: options.profileAbout,
+            campaign_objective: options.campaignObjective,
+        }, { timeout: 30000 });
+        return response.data as ReplySuggestionsResult;
+    } catch (error: any) {
+        console.error('[AI-SERVICE] Error generating reply suggestions:', error.message);
+        throw new Error('Failed to generate reply suggestions');
+    }
+}

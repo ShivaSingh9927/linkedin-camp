@@ -191,6 +191,19 @@ class EnhanceRequest(BaseModel):
     campaign_objective: Optional[str] = None
 
 
+class ReplySuggestionsRequest(BaseModel):
+    thread_history: Optional[List[ThreadMessage]] = None
+    tone: str = "professional"
+    persona: Optional[str] = None
+    value_proposition: Optional[str] = None
+    ai_strategy: Optional[Dict[str, Any]] = None
+    profile_name: Optional[str] = None
+    profile_headline: Optional[str] = None
+    company: Optional[str] = None
+    profile_about: Optional[str] = None
+    campaign_objective: Optional[str] = None
+
+
 class StrategyRequest(BaseModel):
     user_id: str
     company: Optional[str] = None
@@ -372,7 +385,7 @@ CF_BYOK_ALIAS_DEEPSEEK = os.environ.get("CF_BYOK_ALIAS_DEEPSEEK", "qampi-deepsee
 CF_BYOK_ALIAS_GROQ = os.environ.get("CF_BYOK_ALIAS_GROQ", "")  # unset = skip
 
 
-def call_llm(system: str, user: str, temperature: float = 0.7, model: str = "deepseek/deepseek-chat") -> str:
+def call_llm(system: str, user: str, temperature: float = 0.7, model: str = "deepseek/deepseek-chat", max_tokens: int = 600) -> str:
     model_name = model
 
     extra_headers = {}
@@ -393,7 +406,7 @@ def call_llm(system: str, user: str, temperature: float = 0.7, model: str = "dee
             {"role": "user", "content": user}
         ],
         temperature=temperature,
-        max_tokens=600,
+        max_tokens=max_tokens,
         extra_headers=extra_headers if extra_headers else None,
     )
     return response.choices[0].message.content
@@ -896,6 +909,90 @@ INSTRUCTIONS:
     try:
         enhanced = call_llm(system, user, temperature=0.8)
         return {"enhanced": enhanced}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/ai/reply-suggestions")
+def reply_suggestions(req: ReplySuggestionsRequest):
+    """Reply copilot: read a LinkedIn DM thread, judge where it stands, and
+    return the situation + a recommended next move + 2-3 GENUINELY DIFFERENT
+    reply drafts. One LLM call, JSON out. Grounded in the lead's profile, the
+    campaign goal, and the user's brand/GTM strategy (pillars, ICP, objections).
+    The human picks/edits/sends — this only drafts."""
+    brand = get_brand_context(req.persona, req.value_proposition)
+    strategy_ctx = get_strategy_context(req.ai_strategy)
+
+    recipient_bits = []
+    if req.profile_name:
+        recipient_bits.append(req.profile_name)
+    if req.profile_headline:
+        recipient_bits.append(req.profile_headline)
+    if req.company:
+        recipient_bits.append(f"at {req.company}")
+    recipient = ("They are: " + " — ".join(recipient_bits) + ".") if recipient_bits else ""
+    if req.profile_about:
+        recipient += f"\nAbout them: {req.profile_about[:400]}"
+    objective = f"\nYour outreach goal with them: {req.campaign_objective}" if req.campaign_objective else ""
+
+    thread_ctx = ""
+    if req.thread_history:
+        lines = []
+        for m in req.thread_history[-12:]:
+            who = "YOU" if (m.sender or "").strip().lower() in ("you", "me") else (m.sender or "THEM")
+            lines.append(f"- {who}: {m.text}")
+        thread_ctx = "\nCONVERSATION (oldest→newest):\n" + "\n".join(lines)
+
+    system = (
+        f"You are an expert B2B sales rep drafting LinkedIn DM replies for the user.{brand}{strategy_ctx}\n"
+        f"Read the conversation, judge where it stands, and propose replies that move it toward the goal "
+        f"without being pushy. Tone: {req.tone}. Write in the user's voice. Return ONLY valid JSON."
+    )
+    user = f"""{recipient}{objective}{thread_ctx}
+
+Analyze the situation and draft replies. Return EXACTLY this JSON shape:
+{{
+  "situation": {{
+    "stage": "<one of: opener, rapport, interested, question, objection, scheduling, closed, cold>",
+    "intent": "<what THEY want / are signalling, ~5 words>",
+    "sentiment": "<positive | neutral | negative>",
+    "summary": "<one plain sentence on where the conversation stands>"
+  }},
+  "recommendedNext": "<one sentence: what this reply should accomplish>",
+  "variations": [
+    {{ "label": "<3-word angle>", "text": "<the reply>" }}
+  ]
+}}
+
+RULES:
+- Give 3 variations, each a GENUINELY DIFFERENT approach (e.g. advance-to-call / answer-and-add-value / soft-curiosity) — not rephrasings of each other.
+- Each reply: 2-4 sentences, a direct response to their last message, referencing something specific about them or the thread.
+- LinkedIn tone: warm, concise, human. NO "I hope this finds you well", no corporate filler, no emojis unless the thread already uses them.
+- If they raised an objection, address it using the strategy's objection guidance above.
+- Output ONLY the JSON, no prose, no code fences."""
+
+    try:
+        raw = call_llm(system, user, temperature=0.7, max_tokens=1200)
+        cleaned = _re.sub(r"^```(?:json)?|```$", "", raw.strip(), flags=_re.MULTILINE).strip()
+        match = _re.search(r"\{.*\}", cleaned, _re.DOTALL)
+        data = _json.loads(match.group(0) if match else cleaned)
+        sit = data.get("situation") or {}
+        variations = []
+        for v in (data.get("variations") or [])[:3]:
+            text = (v.get("text") or "").strip()
+            if not text:
+                continue
+            variations.append({"label": (v.get("label") or "Reply").strip(), "text": text})
+        return {
+            "situation": {
+                "stage": (sit.get("stage") or "").strip(),
+                "intent": (sit.get("intent") or "").strip(),
+                "sentiment": (sit.get("sentiment") or "neutral").strip().lower(),
+                "summary": (sit.get("summary") or "").strip(),
+            },
+            "recommendedNext": (data.get("recommendedNext") or "").strip(),
+            "variations": variations,
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
