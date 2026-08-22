@@ -186,7 +186,9 @@ export default function InboxPage() {
   };
 
   const handleEnhanceReply = async () => {
-    if (!selectedConvo || !lastReceivedMessage) return;
+    // Works whenever a thread is open — the AI drafts from the inbound message
+    // (if any), the thread history, and the lead's profile/campaign goal.
+    if (!selectedConvo || isEnhancing) return;
     setIsEnhancing(true);
     try {
       // Shape must match the backend ThreadMessage ({sender, text}) — not
@@ -365,17 +367,27 @@ export default function InboxPage() {
               </div>
 
               <div className="p-4 border-t border-line">
-                <div className="flex items-end gap-2 bg-surface rounded-control p-2">
+                {/* Prominent, labelled AI-draft control — reply-aware (grounded in
+                    their reply + the lead's profile + the campaign goal). */}
+                <div className="flex items-center gap-2 mb-2">
                   <button
                     onClick={handleEnhanceReply}
-                    disabled={isEnhancing || !lastReceivedMessage}
-                    title={lastReceivedMessage ? 'Let AI draft / polish this reply' : 'No incoming message to reply to yet'}
-                    className="shrink-0 w-9 h-9 grid place-items-center rounded-chip bg-brand-50 text-brand hover:bg-brand-100 disabled:opacity-50 transition-colors"
+                    disabled={isEnhancing}
+                    title="Generate a reply-aware AI draft — grounded in their message, the thread, and this lead's profile/goal"
+                    className="inline-flex items-center gap-1.5 px-3 h-8 rounded-chip bg-brand-50 text-brand text-[12px] font-bold hover:bg-brand-100 disabled:opacity-50 transition-colors"
                   >
-                    {isEnhancing ? <div className="w-4 h-4 border-2 border-brand-200 border-t-brand rounded-full animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                    {isEnhancing
+                      ? <div className="w-3.5 h-3.5 border-2 border-brand-200 border-t-brand rounded-full animate-spin" />
+                      : <Sparkles className="w-3.5 h-3.5" />}
+                    {isEnhancing ? 'Drafting…' : (replyText.trim() ? 'Polish with AI' : 'AI draft reply')}
                   </button>
+                  {!lastReceivedMessage && (
+                    <span className="text-[11px] text-ink-400 font-medium">No reply yet — AI drafts from the thread</span>
+                  )}
+                </div>
+                <div className="flex items-end gap-2 bg-surface rounded-control p-2">
                   <textarea
-                    placeholder="Write a reply… or let AI draft it"
+                    placeholder="Write a reply… or hit “AI draft reply”"
                     value={replyText}
                     onChange={(e) => setReplyText(e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendReply(); } }}
