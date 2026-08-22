@@ -972,6 +972,8 @@ RULES:
 - Output ONLY the JSON, no prose, no code fences."""
 
     try:
+        import re as _re
+        import json as _json
         raw = call_llm(system, user, temperature=0.7, max_tokens=1200)
         cleaned = _re.sub(r"^```(?:json)?|```$", "", raw.strip(), flags=_re.MULTILINE).strip()
         match = _re.search(r"\{.*\}", cleaned, _re.DOTALL)
