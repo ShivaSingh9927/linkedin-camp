@@ -64,6 +64,17 @@ export default function InboxPage() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [isSuggesting, setIsSuggesting] = useState(false);
   const composerRef = useRef<HTMLDivElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // Auto-grow the reply box to fit its content, up to a cap (then it scrolls).
+  // Keyed on replyText so it grows both when typing and when a suggestion /
+  // polish fills the box programmatically. Shrinks back on delete.
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+  }, [replyText]);
 
   // Tick so the cooldown / "synced Xm ago" label stays live.
   useEffect(() => {
@@ -419,10 +430,10 @@ export default function InboxPage() {
               <div className="p-4 border-t border-line relative" ref={composerRef}>
                 {/* Reply copilot — situation read + 2-3 draft options, floating above the box. */}
                 {showSuggestions && (
-                  <div className="absolute bottom-full left-4 right-4 mb-2 bg-card border border-line rounded-card shadow-lift z-50 p-3">
+                  <div className="absolute bottom-full left-4 right-4 mb-2 bg-card border border-line rounded-card shadow-lift z-50 p-3 max-h-[46vh] overflow-y-auto flex flex-col">
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-1.5 text-[12px] font-bold text-foreground">
-                        <Sparkles className="w-3.5 h-3.5 text-brand" /> AI reply suggestions
+                        <Sparkles className="w-3.5 h-3.5 text-brand" /> Qampi suggests a reply
                       </div>
                       <button onClick={() => setShowSuggestions(false)} className="text-ink-400 hover:text-foreground"><X className="w-4 h-4" /></button>
                     </div>
@@ -430,7 +441,7 @@ export default function InboxPage() {
                     {isSuggesting ? (
                       <div className="py-6 grid place-items-center text-ink-400">
                         <div className="w-5 h-5 border-2 border-brand-200 border-t-brand rounded-full animate-spin mb-2" />
-                        <span className="text-[12px] font-medium">Reading the conversation…</span>
+                        <span className="text-[12px] font-medium">Qampi is reading the conversation…</span>
                       </div>
                     ) : suggestions ? (
                       <>
@@ -446,7 +457,7 @@ export default function InboxPage() {
                             {suggestions.recommendedNext && <p className="text-[11px] text-brand font-semibold mt-1">→ {suggestions.recommendedNext}</p>}
                           </div>
                         )}
-                        <div className="space-y-2 max-h-64 overflow-y-auto">
+                        <div className="space-y-2">
                           {(suggestions.variations || []).map((v: any, i: number) => (
                             <button
                               key={i}
@@ -475,13 +486,13 @@ export default function InboxPage() {
                   <button
                     onClick={handleSuggestReplies}
                     disabled={isSuggesting}
-                    title="AI reply suggestions — reads the conversation and drafts 2-3 options to pick from"
+                    title="Qampi reads the conversation and drafts 2-3 replies to pick from"
                     className="inline-flex items-center gap-1.5 px-3 h-8 rounded-chip bg-brand-50 text-brand text-[12px] font-bold hover:bg-brand-100 disabled:opacity-50 transition-colors"
                   >
                     {isSuggesting
                       ? <div className="w-3.5 h-3.5 border-2 border-brand-200 border-t-brand rounded-full animate-spin" />
                       : <Sparkles className="w-3.5 h-3.5" />}
-                    {isSuggesting ? 'Thinking…' : 'AI reply suggestions'}
+                    {isSuggesting ? 'Qampi is thinking…' : 'Qampi suggests a reply'}
                   </button>
                   {replyText.trim() && (
                     <button
@@ -493,18 +504,19 @@ export default function InboxPage() {
                       {isEnhancing
                         ? <div className="w-3.5 h-3.5 border-2 border-brand-200 border-t-brand rounded-full animate-spin" />
                         : <Wand2 className="w-3.5 h-3.5" />}
-                      {isEnhancing ? 'Polishing…' : 'Polish'}
+                      {isEnhancing ? 'Polishing…' : 'Polish with Qampi'}
                     </button>
                   )}
                 </div>
                 <div className="flex items-end gap-2 bg-surface rounded-control p-2">
                   <textarea
-                    placeholder="Write a reply… or hit “AI draft reply”"
+                    ref={textareaRef}
+                    placeholder="Write a reply… or let Qampi suggest one"
                     value={replyText}
                     onChange={(e) => setReplyText(e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendReply(); } }}
                     rows={1}
-                    className="flex-1 bg-transparent outline-none text-[13px] font-medium resize-none py-1.5 max-h-32"
+                    className="flex-1 bg-transparent outline-none text-[13px] font-medium resize-none py-1.5 overflow-y-auto"
                   />
                   <button
                     onClick={handleSendReply}
