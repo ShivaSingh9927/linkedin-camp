@@ -6,6 +6,7 @@ import { AuthWrapper } from "@/components/AuthWrapper";
 import { Toaster } from 'sonner';
 import { GoogleOAuthProvider } from '@react-oauth/google';
 import { PostHogProvider } from "@/components/PostHogProvider";
+import { CopilotProvider } from "@/components/copilot/CopilotProvider";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -35,9 +36,11 @@ export default function RootLayout({
         <PostHogProvider>
           <GoogleOAuthProvider clientId={googleClientId}>
             <AuthWrapper>
-              <SidebarWrapper>
-                {children}
-              </SidebarWrapper>
+              <CopilotProvider>
+                <SidebarWrapper>
+                  {children}
+                </SidebarWrapper>
+              </CopilotProvider>
             </AuthWrapper>
           </GoogleOAuthProvider>
         </PostHogProvider>

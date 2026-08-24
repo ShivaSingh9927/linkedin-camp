@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '@repo/db';
 import Redis from 'ioredis';
+import { DAILY_CAPS } from '../campaign-engine/safety/quota';
 
 // Per-user dashboard-stats cache. getStats fires ~15 queries; the dashboard is
 // polled frequently, so a short TTL collapses repeat polls to a single Redis
@@ -128,6 +129,14 @@ export const getStats = async (req: any, res: Response) => {
         const totalReplies = await prisma.lead.count({ where: { userId, status: 'REPLIED' } });
         const totalSent = globalInvites + globalMessages;
 
+        // Real, server-enforced daily caps (the same numbers the campaign engine
+        // gates on) — never hardcode these in the UI. Only invites + messages are
+        // governed; profile visits have no enforced daily cap, so we don't invent one.
+        const caps = {
+            invites: DAILY_CAPS['connect'],
+            messages: DAILY_CAPS['send-message'],
+        };
+
         const payload = {
             global: {
                 totalLeads,
@@ -135,7 +144,10 @@ export const getStats = async (req: any, res: Response) => {
                 sentRequests: totalSent,
                 connectedLeads: globalConnected,
                 replyRate: totalSent > 0 ? Math.round((totalReplies / totalSent) * 100) : 0,
-                dailyRemaining: 80, // Legacy
+                caps,
+                // Invites are the tightest daily bottleneck, so "daily remaining"
+                // tracks the invite budget specifically (label reflects this in the UI).
+                dailyRemaining: Math.max(0, caps.invites - todayInvites),
                 today: {
                     invites: todayInvites,
                     messages: todayMessages,

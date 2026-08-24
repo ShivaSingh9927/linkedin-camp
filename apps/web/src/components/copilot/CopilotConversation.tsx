@@ -14,31 +14,27 @@ import { cn } from '@/lib/utils';
 import { track } from '@/lib/analytics';
 import {
     fetchUnderstand, fetchSearchRecommendations, runSearch, importPeople, fetchTemplateRecommendations,
-    routeMessage, launchFromTemplate,
+    routeMessage, launchFromTemplate, fetchAvailableLeads,
     type Understand, type SearchRecommendation, type SearchPerson, type TemplatePick, type HistoryMsg,
 } from './copilotApi';
-
-type Msg =
-    | { id: string; role: 'qampi' | 'user'; kind: 'text'; text: string }
-    | { id: string; role: 'qampi'; kind: 'understand'; loading: boolean; data?: Understand }
-    | { id: string; role: 'qampi'; kind: 'searchChips'; loading: boolean; recs?: SearchRecommendation[] }
-    | { id: string; role: 'qampi'; kind: 'searching'; label: string }
-    | { id: string; role: 'qampi'; kind: 'results'; people: SearchPerson[]; via: string; remaining: number; cap: number }
-    | { id: string; role: 'qampi'; kind: 'templates'; loading: boolean; picks?: TemplatePick[] }
-    | { id: string; role: 'qampi'; kind: 'launchConfirm'; templateId: string; label: string; state: 'idle' | 'launching' | 'done' | 'error'; campaignId?: string; error?: string }
-    | { id: string; role: 'qampi'; kind: 'reconnect' };
-
-let _id = 0;
-const nextId = () => `m${Date.now()}_${_id++}`;
+import { type Msg, nextId } from './copilotTypes';
+import { useCopilot } from './CopilotProvider';
 
 export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen' | 'panel'; onClose?: () => void }) {
-    const [messages, setMessages] = useState<Msg[]>([]);
+    // Conversation state is owned by the layout-level provider so it survives
+    // route navigation and (via localStorage) reloads. This component is a view.
+    const { messages, setMessages, importedLeadIds, setImportedLeadIds, hydrated } = useCopilot();
     const [input, setInput] = useState('');
+    // Guards a single mount from kicking off the opening flow twice (e.g. React
+    // strict-mode double-invoke); the durable "have we started" signal is whether
+    // the restored thread already has messages.
     const [started, setStarted] = useState(false);
     const scrollRef = useRef<HTMLDivElement | null>(null);
     const taRef = useRef<HTMLTextAreaElement | null>(null);
-    // Leads imported during THIS conversation — what a chat launch runs on.
+    // Leads this launch will run on — imported this session, mirrored from the
+    // provider so callbacks can read the latest value synchronously.
     const importedLeadIdsRef = useRef<string[]>([]);
+    importedLeadIdsRef.current = importedLeadIds;
     const messagesRef = useRef<Msg[]>([]);
     messagesRef.current = messages;
 
@@ -96,10 +92,12 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
         await loadSearchChips();
     }, [started, variant, push, patch, loadSearchChips]);
 
+    // Auto-start only after hydration, and only if there's no restored thread —
+    // a returning user sees their conversation, not a fresh "reading your profile…".
     useEffect(() => {
-        if (variant === 'fullscreen') start();
+        if (variant === 'fullscreen' && hydrated && messages.length === 0) start();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [variant]);
+    }, [variant, hydrated]);
 
     const doSearch = useCallback(async (label: string, keywords: string, filters?: SearchRecommendation['filters']) => {
         push({ id: nextId(), role: 'user', kind: 'text', text: label });
@@ -139,33 +137,48 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
     }, [push, patch]);
 
     const afterImport = useCallback(async (count: number, leadIds: string[]) => {
-        importedLeadIdsRef.current = Array.from(new Set([...importedLeadIdsRef.current, ...leadIds]));
+        setImportedLeadIds((prev) => Array.from(new Set([...prev, ...leadIds])));
         push({ id: nextId(), role: 'qampi', kind: 'text', text: `Imported ${count} lead${count === 1 ? '' : 's'}. Here are campaigns that fit — pick one to launch.` });
         await recommendCampaigns();
-    }, [push, recommendCampaigns]);
+    }, [push, recommendCampaigns, setImportedLeadIds]);
 
-    // Launch a chosen template on the imported leads — via the guarded endpoints.
-    const runLaunch = useCallback(async (msgId: string, templateId: string) => {
+    // Launch a chosen template on the leads the confirm card was built for — via
+    // the guarded endpoints (which enforce the 1-active + lead-cap rules).
+    const runLaunch = useCallback(async (msgId: string) => {
+        const msg = messagesRef.current.find((m) => m.id === msgId);
+        if (!msg || msg.kind !== 'launchConfirm') return;
+        const leadIds = msg.leadIds.length ? msg.leadIds : importedLeadIdsRef.current;
         patch(msgId, { state: 'launching' } as Partial<Msg>);
-        const result = await launchFromTemplate(templateId, importedLeadIdsRef.current);
+        const result = await launchFromTemplate(msg.templateId, leadIds);
         if (result.ok) {
-            track('campaign_launched', { source: 'copilot', templateId });
+            track('campaign_launched', { source: 'copilot', templateId: msg.templateId });
             patch(msgId, { state: 'done', campaignId: result.campaignId } as Partial<Msg>);
         } else {
             patch(msgId, { state: 'error', error: result.message } as Partial<Msg>);
         }
     }, [patch]);
 
-    // Offer a one-click launch confirmation for a template.
-    const offerLaunch = useCallback((templateId: string, label: string) => {
+    // Offer a one-click launch confirmation for a template. Prefers leads imported
+    // in this session; if there are none (e.g. after a reload), it falls back to
+    // the user's existing un-campaigned leads and ASKS before launching on them —
+    // never silently bulk-fires at the whole account.
+    const offerLaunch = useCallback(async (templateId: string, label: string) => {
         track('copilot_template_selected', { templateId });
-        if (!importedLeadIdsRef.current.length) {
-            push({ id: nextId(), role: 'qampi', kind: 'text', text: 'Let’s find and import a few leads first — then I can launch that on them.' });
-            if (!started) setStarted(true);
-            loadSearchChips();
+        if (importedLeadIdsRef.current.length) {
+            push({ id: nextId(), role: 'qampi', kind: 'launchConfirm', templateId, label, leadIds: importedLeadIdsRef.current, state: 'idle' });
             return;
         }
-        push({ id: nextId(), role: 'qampi', kind: 'launchConfirm', templateId, label, state: 'idle' });
+        // No session imports — look for leads already in the account.
+        let available = { count: 0, leadIds: [] as string[] };
+        try { available = await fetchAvailableLeads(); } catch { /* fall through to the import nudge */ }
+        if (available.count > 0) {
+            const note = `on your ${available.count} lead${available.count === 1 ? '' : 's'} not yet in a campaign`;
+            push({ id: nextId(), role: 'qampi', kind: 'launchConfirm', templateId, label, leadIds: available.leadIds, note, state: 'idle' });
+            return;
+        }
+        push({ id: nextId(), role: 'qampi', kind: 'text', text: 'Let’s find and import a few leads first — then I can launch that on them.' });
+        if (!started) setStarted(true);
+        loadSearchChips();
     }, [push, started, loadSearchChips]);
 
     // Free-text → intent router → the right closed action (or an honest reply).
@@ -215,7 +228,7 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
 
             {/* messages */}
             <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-3">
-                {variant === 'panel' && !started && <PanelResting onFindLeads={() => { setStarted(true); track('copilot_opened', { variant: 'panel' }); loadSearchChips(); }} />}
+                {variant === 'panel' && hydrated && messages.length === 0 && <PanelResting onFindLeads={() => { setStarted(true); track('copilot_opened', { variant: 'panel' }); loadSearchChips(); }} />}
 
                 {messages.map((m) => (
                     <MessageRow
@@ -278,7 +291,7 @@ function MessageRow({ m, onPickSearch, onImported, onPickTemplate, onLaunch }: {
     onPickSearch: (label: string, keywords: string, filters?: SearchRecommendation['filters']) => void;
     onImported: (count: number, leadIds: string[]) => void;
     onPickTemplate: (templateId: string, label: string) => void;
-    onLaunch: (msgId: string, templateId: string) => void;
+    onLaunch: (msgId: string) => void;
 }) {
     if (m.kind === 'text') {
         return m.role === 'user'
@@ -295,7 +308,7 @@ function MessageRow({ m, onPickSearch, onImported, onPickTemplate, onLaunch }: {
     return null;
 }
 
-function LaunchConfirm({ m, onLaunch }: { m: Extract<Msg, { kind: 'launchConfirm' }>; onLaunch: (msgId: string, templateId: string) => void }) {
+function LaunchConfirm({ m, onLaunch }: { m: Extract<Msg, { kind: 'launchConfirm' }>; onLaunch: (msgId: string) => void }) {
     if (m.state === 'done') {
         return (
             <div className="bg-card border border-line rounded-card px-3.5 py-3 text-[13px]">
@@ -313,15 +326,18 @@ function LaunchConfirm({ m, onLaunch }: { m: Extract<Msg, { kind: 'launchConfirm
         );
     }
     return (
-        <button
-            onClick={() => m.state === 'idle' && onLaunch(m.id, m.templateId)}
-            disabled={m.state === 'launching'}
-            className="inline-flex items-center gap-2 text-[13px] font-medium bg-brand text-white rounded-chip px-3.5 py-2 disabled:opacity-60 hover:bg-brand-600 transition-colors"
-        >
-            {m.state === 'launching'
-                ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Launching…</>
-                : <><Rocket className="w-3.5 h-3.5" /> Launch “{m.label}” on your leads</>}
-        </button>
+        <div className="space-y-1.5">
+            {m.note && <p className="text-[12px] text-ink-500">I’ll launch <span className="text-foreground font-medium">“{m.label}”</span> {m.note}.</p>}
+            <button
+                onClick={() => m.state === 'idle' && onLaunch(m.id)}
+                disabled={m.state === 'launching'}
+                className="inline-flex items-center gap-2 text-[13px] font-medium bg-brand text-white rounded-chip px-3.5 py-2 disabled:opacity-60 hover:bg-brand-600 transition-colors"
+            >
+                {m.state === 'launching'
+                    ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Launching…</>
+                    : <><Rocket className="w-3.5 h-3.5" /> {m.note ? 'Launch campaign' : `Launch “${m.label}” on your leads`}</>}
+            </button>
+        </div>
     );
 }
 

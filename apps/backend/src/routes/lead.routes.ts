@@ -12,7 +12,8 @@ import {
     enrichLead,
     getLeadTimeline,
     getFollowUpLeads,
-    searchLeads
+    searchLeads,
+    getAvailableLeads
 } from '../controllers/lead.controller';
 import { authMiddleware } from '../middleware/auth.middleware';
 import multer from 'multer';
@@ -33,6 +34,7 @@ router.patch('/:id/tags', updateLeadTags);
 router.post('/bulk-tags', bulkUpdateLeadsTags);
 router.get('/companies', getCompanies);
 router.get('/follow-ups', getFollowUpLeads);
+router.get('/available', getAvailableLeads);
 router.post('/:id/enrich', enrichLead);
 router.get('/:id/timeline', getLeadTimeline);
 

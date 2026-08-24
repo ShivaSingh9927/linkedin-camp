@@ -59,7 +59,8 @@ export default function DashboardPage() {
     totalLeads: 0,
     sentRequests: 0,
     connectedLeads: 0,
-    dailyRemaining: 80,
+    dailyRemaining: 18,
+    caps: { invites: 18, messages: 40 },
     today: { invites: 0, messages: 0, visits: 0 },
   });
   const [copilotDismissed, setCopilotDismissed] = useState(true); // assume dismissed until we read localStorage (avoids a flash)
@@ -109,13 +110,15 @@ export default function DashboardPage() {
     { label: 'Active leads', value: stats.totalLeads.toLocaleString(), icon: Users, tone: 'brand' as const, sub: undefined as string | undefined },
     { label: 'Requests sent', value: stats.sentRequests.toLocaleString(), icon: Send, tone: 'success' as const, sub: undefined },
     { label: 'Connected', value: stats.connectedLeads.toLocaleString(), icon: Zap, tone: 'warning' as const, sub: undefined },
-    { label: 'Daily remaining', value: `${stats.dailyRemaining}`, icon: Clock, tone: 'info' as const, sub: '/80' },
+    { label: 'Invites left today', value: `${stats.dailyRemaining}`, icon: Clock, tone: 'info' as const, sub: `/${stats.caps?.invites ?? 18}` },
   ];
 
+  // Only the caps LinkedIn actually enforces on the account, sourced from the
+  // server (never hardcoded) — profile visits aren't daily-capped, so we don't
+  // show a fabricated limit for them.
   const quotas = [
-    { label: 'Invitations', value: stats.today?.invites || 0, total: 30, bar: 'bg-amber-500' },
-    { label: 'Messages', value: stats.today?.messages || 0, total: 50, bar: 'bg-blue-500' },
-    { label: 'Profile visits', value: stats.today?.visits || 0, total: 80, bar: 'bg-emerald-500' },
+    { label: 'Invitations', value: stats.today?.invites || 0, total: stats.caps?.invites ?? 18, bar: 'bg-amber-500' },
+    { label: 'Messages', value: stats.today?.messages || 0, total: stats.caps?.messages ?? 40, bar: 'bg-blue-500' },
   ];
 
   return (

@@ -1009,3 +1009,38 @@ export const getFollowUpLeads = async (req: any, res: Response) => {
         res.status(500).json({ error: 'Failed to load follow-up leads' });
     }
 };
+
+// Leads that aren't in any campaign yet — the "fresh" pool the copilot can offer
+// to launch on when a chat session has no just-imported leads of its own (e.g.
+// after a reload). Deliberately avoids Prisma relation accessors (the Lead↔
+// CampaignLead relation name drifts between the local generated client and the
+// prod runtime — see the casing-drift note); it works purely off scalar fields
+// (userId, leadId), which are identical in both. Capped so a huge account can't
+// build an unbounded payload; the launch path still enforces the lead cap.
+export const getAvailableLeads = async (req: any, res: Response) => {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    try {
+        const leads = await prisma.lead.findMany({
+            where: { userId },
+            select: { id: true },
+            orderBy: { createdAt: 'desc' },
+        });
+        const leadIds = leads.map((l) => l.id);
+
+        const taken = leadIds.length
+            ? await prisma.campaignLead.findMany({
+                where: { leadId: { in: leadIds } },
+                select: { leadId: true },
+            })
+            : [];
+        const takenSet = new Set(taken.map((t) => t.leadId));
+
+        const available = leadIds.filter((id) => !takenSet.has(id)).slice(0, 1000);
+        res.json({ count: available.length, leadIds: available });
+    } catch (error: any) {
+        console.error('Error loading available leads:', error);
+        res.status(500).json({ error: 'Failed to load available leads' });
+    }
+};

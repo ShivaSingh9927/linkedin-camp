@@ -109,6 +109,14 @@ export async function fetchTemplateRecommendations(): Promise<TemplatesResponse>
     return data;
 }
 
+// Leads already in the user's account that aren't in any campaign yet — the pool
+// a chat launch can fall back to when this session imported nothing (e.g. after
+// a reload). The server caps the count; the launch path enforces the lead cap.
+export async function fetchAvailableLeads(): Promise<{ count: number; leadIds: string[] }> {
+    const { data } = await api.get('/leads/available');
+    return { count: data?.count || 0, leadIds: data?.leadIds || [] };
+}
+
 // ---- intent router ----
 
 export type CopilotIntent =
