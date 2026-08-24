@@ -445,6 +445,40 @@ export async function generateActivationUnderstand(g: ActivationGrounding): Prom
     }
 }
 
+export interface CopilotRouted {
+    intent: string;
+    params: { keywords: string; templateId: string };
+    reply: string;
+    needsConfirm: boolean;
+}
+
+// Route a free-text copilot message → one closed intent + reply. The contract
+// (allowed actions + rules + live state) is composed by the caller from the
+// capability manifest and passed as systemContext.
+export async function routeCopilotMessage(opts: {
+    message: string;
+    systemContext: string;
+    allowedIntents: string[];
+    history?: ThreadMessage[];
+}): Promise<CopilotRouted> {
+    if (isMockAI()) {
+        await mockAiWait();
+        return { intent: 'off_topic', params: { keywords: '', templateId: '' }, reply: '[MOCK] I help with LinkedIn outreach — try “find data leaders”.', needsConfirm: false };
+    }
+    try {
+        const response = await axios.post(`${AI_SERVICE_URL}/ai/copilot/route`, {
+            message: opts.message,
+            system_context: opts.systemContext,
+            allowed_intents: opts.allowedIntents,
+            history: opts.history,
+        }, { timeout: 30000 });
+        return response.data as CopilotRouted;
+    } catch (error: any) {
+        console.error('[AI-SERVICE] Error routing copilot message:', error.message);
+        throw new Error('Failed to route copilot message');
+    }
+}
+
 // 2-3 recommended LinkedIn people-searches for the copilot to offer as chips.
 export async function generateActivationSearchRecs(g: ActivationGrounding): Promise<{ recommendations: SearchRecommendation[] }> {
     if (isMockAI()) {

@@ -23,6 +23,7 @@ export function StatTile({
   label,
   sub,
   tone = 'brand',
+  compact = false,
   className,
 }: {
   icon: React.ComponentType<{ className?: string }>;
@@ -30,18 +31,19 @@ export function StatTile({
   label: string;
   sub?: string;
   tone?: Tone;
+  compact?: boolean;
   className?: string;
 }) {
   return (
-    <Card className={cn('p-5', className)}>
-      <div className={cn('w-9 h-9 rounded-control grid place-items-center', iconTone[tone])}>
-        <Icon className="w-[18px] h-[18px]" />
+    <Card className={cn(compact ? 'p-3.5' : 'p-5', className)}>
+      <div className={cn('rounded-control grid place-items-center', iconTone[tone], compact ? 'w-7 h-7' : 'w-9 h-9')}>
+        <Icon className={compact ? 'w-4 h-4' : 'w-[18px] h-[18px]'} />
       </div>
-      <p className="num text-[30px] mt-4 leading-none">
+      <p className={cn('num leading-none', compact ? 'text-[22px] mt-2.5' : 'text-[30px] mt-4')}>
         {value}
-        {sub && <span className="text-ink-400 text-[16px] font-semibold ml-1">{sub}</span>}
+        {sub && <span className={cn('text-ink-400 font-semibold ml-1', compact ? 'text-[13px]' : 'text-[16px]')}>{sub}</span>}
       </p>
-      <p className="label mt-2">{label}</p>
+      <p className={cn('label', compact ? 'mt-1.5' : 'mt-2')}>{label}</p>
     </Card>
   );
 }

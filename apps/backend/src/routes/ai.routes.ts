@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { generateComment, generateMessage, enhanceReply, replySuggestions } from '../controllers/ai.controller';
-import { activationUnderstand, activationRecommendSearch, activationRecommendTemplates } from '../controllers/activation.controller';
+import { activationUnderstand, activationRecommendSearch, activationRecommendTemplates, copilotMessage } from '../controllers/activation.controller';
 import { authMiddleware } from '../middleware/auth.middleware';
 
 const router = Router();
@@ -16,5 +16,6 @@ router.post('/reply-suggestions', replySuggestions);
 router.post('/activation/understand', activationUnderstand);
 router.post('/activation/recommend-search', activationRecommendSearch);
 router.post('/activation/recommend-templates', activationRecommendTemplates);
+router.post('/copilot/message', copilotMessage);
 
 export default router;

@@ -8,14 +8,14 @@
 // stays quiet until the user asks.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Sparkles, Search, Loader2, ArrowUp, Check, Plus, MapPin, Clock, ArrowRight } from 'lucide-react';
+import { Search, Loader2, ArrowUp, Check, Plus, MapPin, Clock, ArrowRight, Rocket, LinkIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { track } from '@/lib/analytics';
 import {
     fetchUnderstand, fetchSearchRecommendations, runSearch, importPeople, fetchTemplateRecommendations,
-    type Understand, type SearchRecommendation, type SearchPerson, type TemplatePick,
+    routeMessage, launchFromTemplate,
+    type Understand, type SearchRecommendation, type SearchPerson, type TemplatePick, type HistoryMsg,
 } from './copilotApi';
 
 type Msg =
@@ -24,18 +24,31 @@ type Msg =
     | { id: string; role: 'qampi'; kind: 'searchChips'; loading: boolean; recs?: SearchRecommendation[] }
     | { id: string; role: 'qampi'; kind: 'searching'; label: string }
     | { id: string; role: 'qampi'; kind: 'results'; people: SearchPerson[]; via: string; remaining: number; cap: number }
-    | { id: string; role: 'qampi'; kind: 'templates'; loading: boolean; picks?: TemplatePick[] };
+    | { id: string; role: 'qampi'; kind: 'templates'; loading: boolean; picks?: TemplatePick[] }
+    | { id: string; role: 'qampi'; kind: 'launchConfirm'; templateId: string; label: string; state: 'idle' | 'launching' | 'done' | 'error'; campaignId?: string; error?: string }
+    | { id: string; role: 'qampi'; kind: 'reconnect' };
 
 let _id = 0;
 const nextId = () => `m${Date.now()}_${_id++}`;
 
 export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen' | 'panel'; onClose?: () => void }) {
-    const router = useRouter();
     const [messages, setMessages] = useState<Msg[]>([]);
     const [input, setInput] = useState('');
     const [started, setStarted] = useState(false);
     const scrollRef = useRef<HTMLDivElement | null>(null);
     const taRef = useRef<HTMLTextAreaElement | null>(null);
+    // Leads imported during THIS conversation — what a chat launch runs on.
+    const importedLeadIdsRef = useRef<string[]>([]);
+    const messagesRef = useRef<Msg[]>([]);
+    messagesRef.current = messages;
+
+    // Compact history for the router (last several text turns only).
+    const historyForRouter = useCallback((): HistoryMsg[] => {
+        return messagesRef.current
+            .filter((m): m is Extract<Msg, { kind: 'text' }> => m.kind === 'text')
+            .slice(-8)
+            .map((m) => ({ sender: m.role === 'user' ? 'you' : 'qampi', text: m.text }));
+    }, []);
 
     const push = useCallback((m: Msg) => setMessages((prev) => [...prev, m]), []);
     const patch = useCallback((id: string, next: Partial<Msg>) => {
@@ -104,14 +117,17 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
             push({ id: nextId(), role: 'qampi', kind: 'results', people: res.people, via: res.via, remaining: res.remaining, cap: res.cap });
         } catch (e) {
             setMessages((prev) => prev.filter((m) => m.id !== sId));
-            const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message
-                || 'That search didn’t go through. Try again in a moment.';
+            const err = e as { response?: { status?: number; data?: { error?: string; message?: string } } };
+            if (err?.response?.status === 419 || err?.response?.data?.error === 'session_expired') {
+                push({ id: nextId(), role: 'qampi', kind: 'reconnect' });
+                return;
+            }
+            const msg = err?.response?.data?.message || 'That search didn’t go through. Try again in a moment.';
             push({ id: nextId(), role: 'qampi', kind: 'text', text: msg });
         }
     }, [push]);
 
-    const afterImport = useCallback(async (count: number) => {
-        push({ id: nextId(), role: 'qampi', kind: 'text', text: `Imported ${count} lead${count === 1 ? '' : 's'}. Here are campaigns that fit — pick one to launch.` });
+    const recommendCampaigns = useCallback(async () => {
         const tId = nextId();
         push({ id: tId, role: 'qampi', kind: 'templates', loading: true });
         try {
@@ -122,21 +138,70 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
         }
     }, [push, patch]);
 
-    const submitInput = useCallback(() => {
+    const afterImport = useCallback(async (count: number, leadIds: string[]) => {
+        importedLeadIdsRef.current = Array.from(new Set([...importedLeadIdsRef.current, ...leadIds]));
+        push({ id: nextId(), role: 'qampi', kind: 'text', text: `Imported ${count} lead${count === 1 ? '' : 's'}. Here are campaigns that fit — pick one to launch.` });
+        await recommendCampaigns();
+    }, [push, recommendCampaigns]);
+
+    // Launch a chosen template on the imported leads — via the guarded endpoints.
+    const runLaunch = useCallback(async (msgId: string, templateId: string) => {
+        patch(msgId, { state: 'launching' } as Partial<Msg>);
+        const result = await launchFromTemplate(templateId, importedLeadIdsRef.current);
+        if (result.ok) {
+            track('campaign_launched', { source: 'copilot', templateId });
+            patch(msgId, { state: 'done', campaignId: result.campaignId } as Partial<Msg>);
+        } else {
+            patch(msgId, { state: 'error', error: result.message } as Partial<Msg>);
+        }
+    }, [patch]);
+
+    // Offer a one-click launch confirmation for a template.
+    const offerLaunch = useCallback((templateId: string, label: string) => {
+        track('copilot_template_selected', { templateId });
+        if (!importedLeadIdsRef.current.length) {
+            push({ id: nextId(), role: 'qampi', kind: 'text', text: 'Let’s find and import a few leads first — then I can launch that on them.' });
+            if (!started) setStarted(true);
+            loadSearchChips();
+            return;
+        }
+        push({ id: nextId(), role: 'qampi', kind: 'launchConfirm', templateId, label, state: 'idle' });
+    }, [push, started, loadSearchChips]);
+
+    // Free-text → intent router → the right closed action (or an honest reply).
+    const submitInput = useCallback(async () => {
         const q = input.trim();
         if (!q) return;
         setInput('');
         if (!started) setStarted(true);
-        doSearch(q, q);
-    }, [input, started, doSearch]);
+        push({ id: nextId(), role: 'user', kind: 'text', text: q });
+        const thinkId = nextId();
+        push({ id: thinkId, role: 'qampi', kind: 'searching', label: '…' });
+        try {
+            const routed = await routeMessage(q, historyForRouter(), importedLeadIdsRef.current.length);
+            setMessages((prev) => prev.filter((m) => m.id !== thinkId));
+            if (routed.reply) push({ id: nextId(), role: 'qampi', kind: 'text', text: routed.reply });
+            if (routed.intent === 'find_leads') {
+                const kw = routed.params.keywords || q;
+                doSearch(kw, kw);
+            } else if (routed.intent === 'recommend_campaign') {
+                recommendCampaigns();
+            } else if (routed.intent === 'launch_campaign') {
+                if (routed.params.templateId) offerLaunch(routed.params.templateId, routed.params.templateId);
+                else recommendCampaigns();
+            }
+            // check_status / explain / unsupported / off_topic → the reply already said it.
+        } catch {
+            setMessages((prev) => prev.filter((m) => m.id !== thinkId));
+            push({ id: nextId(), role: 'qampi', kind: 'text', text: 'I had trouble with that — try rephrasing, or tell me the kind of people you want to reach.' });
+        }
+    }, [input, started, push, doSearch, recommendCampaigns, offerLaunch, historyForRouter]);
 
     return (
         <div className="flex flex-col h-full min-h-0">
             {/* header */}
             <div className="flex items-center gap-2.5 px-4 py-3 border-b border-line shrink-0">
-                <div className="w-7 h-7 rounded-chip bg-brand-50 grid place-items-center text-brand">
-                    <Sparkles className="w-4 h-4" />
-                </div>
+                <img src="/qampi_wbg.png" alt="Qampi" className="w-7 h-7 rounded-chip object-contain shrink-0" />
                 <div className="min-w-0">
                     <p className="text-sm font-semibold text-foreground leading-tight">Qampi</p>
                     <p className="text-[11px] text-ink-500 leading-tight">{variant === 'fullscreen' ? 'Setting up your first campaign' : 'Your outreach copilot'}</p>
@@ -158,7 +223,8 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
                         m={m}
                         onPickSearch={doSearch}
                         onImported={afterImport}
-                        onPickTemplate={(id) => { track('copilot_template_selected', { templateId: id }); router.push(`/campaigns?template=${encodeURIComponent(id)}`); }}
+                        onPickTemplate={offerLaunch}
+                        onLaunch={runLaunch}
                     />
                 ))}
             </div>
@@ -207,11 +273,12 @@ function PanelResting({ onFindLeads }: { onFindLeads: () => void }) {
     );
 }
 
-function MessageRow({ m, onPickSearch, onImported, onPickTemplate }: {
+function MessageRow({ m, onPickSearch, onImported, onPickTemplate, onLaunch }: {
     m: Msg;
     onPickSearch: (label: string, keywords: string, filters?: SearchRecommendation['filters']) => void;
-    onImported: (count: number) => void;
-    onPickTemplate: (templateId: string) => void;
+    onImported: (count: number, leadIds: string[]) => void;
+    onPickTemplate: (templateId: string, label: string) => void;
+    onLaunch: (msgId: string, templateId: string) => void;
 }) {
     if (m.kind === 'text') {
         return m.role === 'user'
@@ -220,18 +287,59 @@ function MessageRow({ m, onPickSearch, onImported, onPickTemplate }: {
     }
     if (m.kind === 'understand') return <QBubble><UnderstandCard loading={m.loading} data={m.data} /></QBubble>;
     if (m.kind === 'searchChips') return <div className="pl-8"><SearchChips loading={m.loading} recs={m.recs} onPick={onPickSearch} /></div>;
-    if (m.kind === 'searching') return <QBubble><span className="inline-flex items-center gap-2 text-ink-500"><Loader2 className="w-3.5 h-3.5 animate-spin text-brand" /> Searching LinkedIn for “{m.label}”…</span></QBubble>;
+    if (m.kind === 'searching') return <QBubble><span className="inline-flex items-center gap-2 text-ink-500"><Loader2 className="w-3.5 h-3.5 animate-spin text-brand" /> {m.label === '…' ? 'Thinking…' : `Searching LinkedIn for “${m.label}”…`}</span></QBubble>;
     if (m.kind === 'results') return <div className="pl-8"><ResultsBlock people={m.people} onImported={onImported} /></div>;
     if (m.kind === 'templates') return <div className="pl-8"><TemplatePicks loading={m.loading} picks={m.picks} onPick={onPickTemplate} /></div>;
+    if (m.kind === 'launchConfirm') return <div className="pl-8"><LaunchConfirm m={m} onLaunch={onLaunch} /></div>;
+    if (m.kind === 'reconnect') return <QBubble><ReconnectNotice /></QBubble>;
     return null;
+}
+
+function LaunchConfirm({ m, onLaunch }: { m: Extract<Msg, { kind: 'launchConfirm' }>; onLaunch: (msgId: string, templateId: string) => void }) {
+    if (m.state === 'done') {
+        return (
+            <div className="bg-card border border-line rounded-card px-3.5 py-3 text-[13px]">
+                <p className="inline-flex items-center gap-1.5 text-emerald-600 font-medium"><Check className="w-4 h-4" /> Campaign launched</p>
+                <Link href={`/campaigns/${m.campaignId}`} className="block mt-1 text-[12px] text-brand hover:underline">View your campaign →</Link>
+            </div>
+        );
+    }
+    if (m.state === 'error') {
+        return (
+            <div className="bg-card border border-line rounded-card px-3.5 py-3 text-[13px] text-ink-700">
+                {m.error}
+                <Link href="/campaigns" className="block mt-1 text-[12px] text-brand hover:underline">Manage campaigns →</Link>
+            </div>
+        );
+    }
+    return (
+        <button
+            onClick={() => m.state === 'idle' && onLaunch(m.id, m.templateId)}
+            disabled={m.state === 'launching'}
+            className="inline-flex items-center gap-2 text-[13px] font-medium bg-brand text-white rounded-chip px-3.5 py-2 disabled:opacity-60 hover:bg-brand-600 transition-colors"
+        >
+            {m.state === 'launching'
+                ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Launching…</>
+                : <><Rocket className="w-3.5 h-3.5" /> Launch “{m.label}” on your leads</>}
+        </button>
+    );
+}
+
+function ReconnectNotice() {
+    return (
+        <div>
+            <p className="mb-2">Your LinkedIn session has expired, so I can’t search right now. Reconnect and I’ll pick up where we left off.</p>
+            <Link href="/settings?tab=linkedin" className="inline-flex items-center gap-1.5 text-[12px] font-medium text-brand hover:underline">
+                <LinkIcon className="w-3.5 h-3.5" /> Reconnect LinkedIn
+            </Link>
+        </div>
+    );
 }
 
 function QBubble({ children }: { children: React.ReactNode }) {
     return (
         <div className="flex gap-2.5">
-            <div className="w-6 h-6 rounded-chip bg-brand-50 grid place-items-center text-brand shrink-0 mt-0.5">
-                <Sparkles className="w-3.5 h-3.5" />
-            </div>
+            <img src="/qampi_wbg.png" alt="Qampi" className="w-6 h-6 rounded-chip object-contain shrink-0 mt-0.5" />
             <div className="bg-card border border-line rounded-card rounded-tl-chip px-3.5 py-2.5 text-[13px] text-foreground leading-relaxed max-w-[85%]">
                 {children}
             </div>
@@ -287,7 +395,7 @@ function SearchChips({ loading, recs, onPick }: { loading: boolean; recs?: Searc
     );
 }
 
-function ResultsBlock({ people, onImported }: { people: SearchPerson[]; onImported: (count: number) => void }) {
+function ResultsBlock({ people, onImported }: { people: SearchPerson[]; onImported: (count: number, leadIds: string[]) => void }) {
     const [selected, setSelected] = useState<Set<number>>(() => new Set(people.map((_, i) => i)));
     const [importing, setImporting] = useState(false);
     const [done, setDone] = useState<number | null>(null);
@@ -303,11 +411,11 @@ function ResultsBlock({ people, onImported }: { people: SearchPerson[]; onImport
         if (!chosen.length) return;
         setImporting(true);
         try {
-            const { importedTotal } = await importPeople(chosen);
+            const { importedTotal, leadIds } = await importPeople(chosen);
             const n = importedTotal || chosen.length;
             track('leads_imported', { count: n, source: 'copilot' });
             setDone(n);
-            onImported(n);
+            onImported(n, leadIds);
         } catch {
             setImporting(false);
         }
@@ -354,7 +462,7 @@ function ResultsBlock({ people, onImported }: { people: SearchPerson[]; onImport
     );
 }
 
-function TemplatePicks({ loading, picks, onPick }: { loading: boolean; picks?: TemplatePick[]; onPick: (id: string) => void }) {
+function TemplatePicks({ loading, picks, onPick }: { loading: boolean; picks?: TemplatePick[]; onPick: (id: string, label: string) => void }) {
     if (loading) return <span className="inline-flex items-center gap-2 text-[13px] text-ink-500"><Loader2 className="w-3.5 h-3.5 animate-spin text-brand" /> Matching campaigns to your goal…</span>;
     if (!picks || !picks.length) return <Link href="/campaigns" className="text-[13px] text-brand hover:underline">Browse campaign templates →</Link>;
     return (
@@ -362,7 +470,7 @@ function TemplatePicks({ loading, picks, onPick }: { loading: boolean; picks?: T
             {picks.map((t) => (
                 <button
                     key={t.templateId}
-                    onClick={() => onPick(t.templateId)}
+                    onClick={() => onPick(t.templateId, t.label)}
                     className="text-left bg-card border border-line rounded-card px-3 py-2.5 hover:border-brand-200 hover:bg-brand-50 transition-colors"
                 >
                     <div className="flex items-center gap-2">

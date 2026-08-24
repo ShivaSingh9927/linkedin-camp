@@ -51,6 +51,16 @@ export interface SearchResult {
     via: 'browserless' | 'dom';
 }
 
+// Thrown when both the browser-free fetch and the DOM fallback indicate the
+// user's LinkedIn session is dead (authwall) — so callers can tell the user to
+// reconnect instead of surfacing a generic failure or blind-retrying.
+export class SessionExpiredError extends Error {
+    constructor() {
+        super('session_expired');
+        this.name = 'SessionExpiredError';
+    }
+}
+
 // ---- text helpers ----
 
 const clean = (t: string | null | undefined) => (t || '').replace(/\s+/g, ' ').trim();
@@ -212,6 +222,7 @@ export async function searchPeople(
 ): Promise<SearchResult> {
     const limit = Math.min(Math.max(opts.limit ?? 10, 1), 10);
     const url = buildSearchUrl(opts.keywords, opts.filters);
+    let sawAuthwall = false; // browser-free signalled a dead session
 
     // ---- browser-free ----
     const bl = await getBrowserlessVoyagerContext(userId);
@@ -224,12 +235,16 @@ export async function searchPeople(
                     'accept-language': 'en-US,en;q=0.9',
                 },
             });
+            const status = resp.status();
             const html = await resp.text().catch(() => '');
-            if (resp.status() === 200 && !looksBlocked(html)) {
+            if (status === 200 && !looksBlocked(html)) {
                 const people = parseSearchPeopleHtml(html, limit);
                 if (people.length > 0) return { people, via: 'browserless' };
+            } else if (status === 401 || status === 403 || looksBlocked(html)) {
+                sawAuthwall = true; // dead session, not just markup churn
+                console.warn(`[people-search] browser-free authwall (status=${status}) — trying DOM to confirm`);
             } else {
-                console.warn(`[people-search] browser-free status=${resp.status()} blocked/empty — DOM fallback`);
+                console.warn(`[people-search] browser-free status=${status} empty — DOM fallback`);
             }
         } catch (e: any) {
             console.warn(`[people-search] browser-free error: ${e?.message || e} — DOM fallback`);
@@ -241,6 +256,11 @@ export async function searchPeople(
     // ---- DOM fallback ----
     const launch = await launchAuthenticatedContext(userId);
     if (!launch.ok) {
+        // A launch that fails on session/proxy setup, after browser-free already
+        // authwalled, means the session is gone — surface it as such.
+        if (sawAuthwall || /session|login|auth|proxy-snapshot/i.test(launch.failedAt || '')) {
+            throw new SessionExpiredError();
+        }
         throw new Error(`people-search: DOM fallback launch failed at ${launch.failedAt}: ${launch.error}`);
     }
     const { browser, context, page } = launch;
@@ -248,10 +268,15 @@ export async function searchPeople(
         // Warm up on /feed — a cold deep-link to search can authwall.
         await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+        // If LinkedIn bounced us to a login/authwall, the session is dead.
+        const landed = page.url();
+        if (/\/(login|authwall|uas\/login)/i.test(landed)) throw new SessionExpiredError();
         // Nudge lazy rendering, then read the hydrated markup and reuse the parser.
         for (let i = 0; i < 4; i++) { await page.mouse.wheel(0, 1400).catch(() => {}); await page.waitForTimeout(800); }
         const html = await page.content().catch(() => '');
         const people = parseSearchPeopleHtml(html, limit);
+        // Browser-free authwalled AND the live DOM returned nothing → session dead.
+        if (people.length === 0 && sawAuthwall) throw new SessionExpiredError();
         return { people, via: 'dom' };
     } finally {
         await context.close().catch(() => {});

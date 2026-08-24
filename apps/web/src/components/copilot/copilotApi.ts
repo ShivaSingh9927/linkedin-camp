@@ -89,7 +89,7 @@ export async function runSearch(keywords: string, filters?: SearchFilters): Prom
     return data;
 }
 
-export async function importPeople(people: SearchPerson[]): Promise<{ importedTotal: number; duplicatesSkipped: number }> {
+export async function importPeople(people: SearchPerson[]): Promise<{ importedTotal: number; duplicatesSkipped: number; leadIds: string[] }> {
     const leads = people.map((p) => ({
         firstName: p.firstName,
         lastName: p.lastName,
@@ -101,10 +101,67 @@ export async function importPeople(people: SearchPerson[]): Promise<{ importedTo
         info: p.headline,
     }));
     const { data } = await api.post('/leads/import', { leads });
-    return { importedTotal: data?.importedTotal || 0, duplicatesSkipped: data?.duplicatesSkipped || 0 };
+    return { importedTotal: data?.importedTotal || 0, duplicatesSkipped: data?.duplicatesSkipped || 0, leadIds: data?.leadIds || [] };
 }
 
 export async function fetchTemplateRecommendations(): Promise<TemplatesResponse> {
     const { data } = await api.post('/ai/activation/recommend-templates', {});
     return data;
+}
+
+// ---- intent router ----
+
+export type CopilotIntent =
+    | 'find_leads' | 'recommend_campaign' | 'launch_campaign'
+    | 'check_status' | 'explain' | 'unsupported' | 'off_topic';
+
+export interface RoutedMessage {
+    intent: CopilotIntent;
+    params: { keywords: string; templateId: string };
+    reply: string;
+    needsConfirm: boolean;
+}
+
+export interface HistoryMsg { sender: 'you' | 'qampi'; text: string }
+
+export async function routeMessage(message: string, history: HistoryMsg[], importedThisSession: number): Promise<RoutedMessage> {
+    const { data } = await api.post('/ai/copilot/message', { message, history, importedThisSession });
+    return data as RoutedMessage;
+}
+
+// ---- one-click launch (reuses the existing guarded endpoints) ----
+
+export type LaunchResult =
+    | { ok: true; campaignId: string; templateName: string }
+    | { ok: false; reason: 'active_exists' | 'lead_cap' | 'no_leads' | 'error'; message: string };
+
+export async function launchFromTemplate(templateId: string, leadIds: string[]): Promise<LaunchResult> {
+    if (!leadIds.length) {
+        return { ok: false, reason: 'no_leads', message: 'Import some leads first, then I can launch a campaign on them.' };
+    }
+    try {
+        const { data: tpl } = await api.get(`/templates/${encodeURIComponent(templateId)}`);
+        const t = tpl?.template;
+        if (!t) return { ok: false, reason: 'error', message: 'That template no longer exists.' };
+        const hint = t.aiStrategyHint || {};
+        const { data: campaign } = await api.post('/campaigns', {
+            name: t.name,
+            workflow: t.workflow,
+            objective: hint.objective,
+            description: hint.description,
+            cta: hint.cta,
+            toneOverride: hint.toneOverride,
+            leads: leadIds,
+        });
+        // Guarded launch — startCampaign enforces the 1-active rule + lead cap.
+        await api.post(`/campaigns/${campaign.id}/start`, { leadIds });
+        return { ok: true, campaignId: campaign.id, templateName: t.name };
+    } catch (e) {
+        const err = e as { response?: { status?: number; data?: { error?: string; message?: string } } };
+        const code = err?.response?.data?.error;
+        const msg = err?.response?.data?.message || '';
+        if (code === 'ACTIVE_CAMPAIGN_EXISTS') return { ok: false, reason: 'active_exists', message: msg || 'You already have an active campaign. Pause it or wait for it to finish before starting another.' };
+        if (code === 'LEAD_CAP_EXCEEDED') return { ok: false, reason: 'lead_cap', message: msg || 'That is more leads than your plan allows for one campaign.' };
+        return { ok: false, reason: 'error', message: 'Could not launch the campaign right now. Try again in a moment.' };
+    }
 }

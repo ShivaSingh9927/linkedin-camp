@@ -168,7 +168,7 @@ export default function DashboardPage() {
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               {kpis.map((kpi, i) => (
                 <motion.div key={kpi.label} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
-                  <StatTile icon={kpi.icon} value={kpi.value} label={kpi.label} sub={kpi.sub} tone={kpi.tone} />
+                  <StatTile icon={kpi.icon} value={kpi.value} label={kpi.label} sub={kpi.sub} tone={kpi.tone} compact />
                 </motion.div>
               ))}
             </div>

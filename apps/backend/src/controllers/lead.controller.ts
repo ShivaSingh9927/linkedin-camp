@@ -5,7 +5,7 @@ import fs from 'fs';
 import { getActionQueue } from '../services/queue.service';
 import { cleanPersonField } from '../campaign-engine/scrape/sanitize';
 import { captureEvent } from '../services/analytics.service';
-import { searchPeople, type SearchFilters } from '../services/people-search.service';
+import { searchPeople, SessionExpiredError, type SearchFilters } from '../services/people-search.service';
 import { checkSearchQuota, logSearchAction } from '../campaign-engine/safety/quota';
 
 // Helper to get team user ids
@@ -247,6 +247,9 @@ export const importLeads = async (req: any, res: Response) => {
             duplicatesSkipped: duplicates,
             campaignInjected: injectedCount,
             activeCollisionSkipped: activeSkippedCount,
+            // IDs of the imported/updated leads — lets the copilot launch a
+            // campaign on exactly the leads it just imported.
+            leadIds: successful.map((l: any) => l.id),
             message: `${successful.length} leads imported successfully. ${activeSkippedCount > 0 ? `(${activeSkippedCount} leads skipped because they are already active in a campaign).` : ''}`,
         });
     } catch (error) {
@@ -299,6 +302,12 @@ export const searchLeads = async (req: any, res: Response) => {
             cap: after.cap,
         });
     } catch (error) {
+        if (error instanceof SessionExpiredError) {
+            return res.status(419).json({
+                error: 'session_expired',
+                message: 'Your LinkedIn session has expired. Reconnect LinkedIn to keep searching.',
+            });
+        }
         console.error('People-search error:', error);
         res.status(502).json({ error: 'search_failed', message: 'Could not run the LinkedIn search right now. Try again in a moment.' });
     }

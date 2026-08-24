@@ -17,9 +17,13 @@ import { AuthRequest } from '../middleware/auth.middleware';
 import {
     generateActivationUnderstand,
     generateActivationSearchRecs,
+    routeCopilotMessage,
     type ActivationGrounding,
 } from '../campaign-engine/ai-service';
 import { TEMPLATES, type TemplateDefinition } from '../campaign-templates';
+import { checkSearchQuota } from '../campaign-engine/safety/quota';
+import { checkQuota } from '../campaign-engine/safety/quota';
+import { renderCapabilityContract, COPILOT_INTENTS, type CopilotContext } from '../copilot/capabilities';
 
 // Build the grounding object from the user's businessProfile. Both self-* fields
 // (read from their real LinkedIn after connect) and the onboarding-provided
@@ -69,6 +73,70 @@ export const activationRecommendSearch = async (req: AuthRequest, res: Response)
     } catch (error: any) {
         console.error('[ACTIVATION] recommend-search error:', error.message);
         res.status(502).json({ error: 'Failed to recommend searches' });
+    }
+};
+
+// Copilot free-text router. Gathers the user's live account state, renders the
+// capability contract from the manifest, and asks the ai-service to classify the
+// message into ONE allowed intent + a reply. Does NOT execute — the frontend
+// runs the proposed action through the already-guarded endpoints, which re-check
+// every limit. So even a jailbroken classification can't exceed the rules.
+export const copilotMessage = async (req: AuthRequest, res: Response) => {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+    const { message, history, importedThisSession } = req.body || {};
+    if (!message || typeof message !== 'string' || !message.trim()) {
+        return res.status(400).json({ error: 'message_required' });
+    }
+
+    try {
+        const [activeCampaignCount, leadCount, searchQ, connectQ, msgQ, user] = await Promise.all([
+            prisma.campaign.count({ where: { userId, status: 'ACTIVE' } }).catch(() => 0),
+            prisma.lead.count({ where: { userId } }).catch(() => 0),
+            checkSearchQuota(userId),
+            checkQuota(userId, 'connect'),
+            checkQuota(userId, 'send-message'),
+            prisma.user.findUnique({ where: { id: userId }, select: { linkedinCookie: true } }).catch(() => null),
+        ]);
+
+        const ctx: CopilotContext = {
+            linkedinConnected: !!user?.linkedinCookie,
+            activeCampaignCount,
+            leadCount,
+            importedThisSession: typeof importedThisSession === 'number' ? importedThisSession : 0,
+            searchesRemaining: searchQ.remaining,
+            searchesCap: searchQ.cap,
+            dailyConnectRemaining: connectQ.remaining,
+            dailyMessageRemaining: msgQ.remaining,
+        };
+
+        const routed = await routeCopilotMessage({
+            message: message.trim(),
+            systemContext: renderCapabilityContract(ctx),
+            allowedIntents: COPILOT_INTENTS,
+            history: Array.isArray(history) ? history : undefined,
+        });
+
+        // Safety net: never let an unknown intent through even if the model/ai
+        // layer misbehaves — coerce to off_topic.
+        const intent = (COPILOT_INTENTS as string[]).includes(routed.intent) ? routed.intent : 'off_topic';
+
+        res.json({
+            intent,
+            params: routed.params,
+            reply: routed.reply,
+            needsConfirm: intent === 'launch_campaign' && routed.needsConfirm,
+            context: {
+                activeCampaignCount,
+                leadCount,
+                searchesRemaining: searchQ.remaining,
+                searchesCap: searchQ.cap,
+                linkedinConnected: ctx.linkedinConnected,
+            },
+        });
+    } catch (error: any) {
+        console.error('[COPILOT] message error:', error.message);
+        res.status(502).json({ error: 'copilot_failed', message: 'I had trouble processing that — try again in a moment.' });
     }
 };
 
