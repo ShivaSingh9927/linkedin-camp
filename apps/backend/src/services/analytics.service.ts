@@ -16,6 +16,7 @@ const client = POSTHOG_KEY
 export type ServerEvent =
   | 'linkedin_connected'
   | 'leads_imported'
+  | 'people_search'
   | 'first_reply_received';
 
 export function captureEvent(userId: string, event: ServerEvent, properties?: Record<string, any>) {

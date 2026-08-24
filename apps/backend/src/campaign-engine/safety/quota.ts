@@ -51,6 +51,69 @@ export async function checkQuota(userId: string, actionType: GovernedAction): Pr
     return { allowed: used < cap, used, cap, remaining };
 }
 
+// ---- Monthly people-search budget (LinkedIn Commercial Use Limit) ----
+//
+// LinkedIn caps SEARCHES per calendar month, not per day: free accounts get a
+// ~300-searches/month "Commercial Use Limit", and hitting it locks all search
+// until the 1st of the next month. We enforce a budget with a safety buffer
+// below that cliff so a copilot session never trips it. LinkedIn Premium
+// relaxes the limit substantially (we grant a much higher ceiling but still
+// cap it to bound runaway usage). This is deliberately SEPARATE from DAILY_CAPS
+// (which govern write actions) and from the ~500/day profile-view limit (which
+// affects visit nodes, not search).
+export const MONTHLY_SEARCH_CAP_FREE = 280;
+export const MONTHLY_SEARCH_CAP_PREMIUM = 900;
+export const SEARCH_ACTION_TYPE = 'people-search';
+
+function startOfMonthUTC(): Date {
+    const d = new Date();
+    return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
+}
+
+// Count this calendar month's successful people-searches for the user.
+export async function getMonthlySearchCount(userId: string): Promise<number> {
+    return prisma.actionLog.count({
+        where: {
+            userId,
+            actionType: SEARCH_ACTION_TYPE,
+            status: 'SUCCESS',
+            executedAt: { gte: startOfMonthUTC() },
+        },
+    }).catch(() => 0);
+}
+
+export interface SearchQuotaCheck {
+    allowed: boolean;
+    used: number;
+    cap: number;
+    remaining: number;
+    isPremium: boolean;
+}
+
+// Premium is a LINKEDIN concept here (it's LinkedIn's limit being relaxed), so
+// key off linkedinPlan / the self-enriched selfPremium flag — NOT Qampi's own
+// subscription tier. Uses the standalone model delegates (prod-safe casing;
+// see memory project_prisma_casing_drift) rather than a User relation include.
+export async function checkSearchQuota(userId: string): Promise<SearchQuotaCheck> {
+    const [user, bp] = await Promise.all([
+        prisma.user.findUnique({ where: { id: userId }, select: { linkedinPlan: true } }).catch(() => null),
+        prisma.businessProfile.findUnique({ where: { userId }, select: { selfPremium: true } }).catch(() => null),
+    ]);
+    const isPremium = user?.linkedinPlan === 'PREMIUM' || bp?.selfPremium === true;
+    const cap = isPremium ? MONTHLY_SEARCH_CAP_PREMIUM : MONTHLY_SEARCH_CAP_FREE;
+    const used = await getMonthlySearchCount(userId);
+    const remaining = Math.max(0, cap - used);
+    return { allowed: used < cap, used, cap, remaining, isPremium };
+}
+
+// Record a successful people-search against the monthly budget. Best-effort —
+// a failed write shouldn't fail the search the user already got results for.
+export async function logSearchAction(userId: string): Promise<void> {
+    await prisma.actionLog.create({
+        data: { userId, actionType: SEARCH_ACTION_TYPE, status: 'SUCCESS' },
+    }).catch(() => {});
+}
+
 // Working-hours window. LinkedIn's behavioural model flags accounts that
 // are active at 3am local — no human messages on LinkedIn in their sleep.
 // We constrain campaign activity to a human-shaped daypart.

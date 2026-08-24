@@ -1,0 +1,64 @@
+<!-- Synthetic, anonymized LinkedIn people-search results fixture.
+     Mirrors the real SSR markup structure (obfuscated class names, the
+     div[role="listitem"] card, the name <p> with a "• Nnd" degree badge,
+     headline + location sibling <div>s, and a nested mutual-connection
+     insight anchor that MUST be excluded). No real people. -->
+<html><body>
+<div role="list">
+
+  <div role="listitem"><div data-display-contents="true">
+    <a tabindex="0" class="wrap" href="https://www.linkedin.com/in/jane-doe-123/">
+      <div class="card">
+        <figure></figure>
+        <div>
+          <p class="name" style="x">
+            <a class="nm" href="https://www.linkedin.com/in/jane-doe-123/">Jane Doe</a>
+            <span class="deg"><span> • 2nd</span></span>
+          </p>
+          <div class="hl"><p><span>Head of Data at Acme Analytics</span></p></div>
+          <div class="loc"><p><span>Berlin, Germany</span></p></div>
+          <div class="insight" id="SearchResultsX">
+            <p><span><a class="mc" href="https://www.linkedin.com/in/friend-one-9/">Friend One</a> is a mutual connection</span></p>
+          </div>
+        </div>
+      </div>
+    </a>
+  </div></div>
+
+  <div role="listitem"><div data-display-contents="true">
+    <a tabindex="0" class="wrap" href="https://www.linkedin.com/in/sam-smith-456/">
+      <div class="card">
+        <figure></figure>
+        <div>
+          <p class="name">
+            <a class="nm" href="https://www.linkedin.com/in/sam-smith-456/">Sam Smith</a>
+            <a class="nm" href="https://www.linkedin.com/in/sam-smith-456/">Sam Smith</a>
+            <span class="deg"><span> • 3rd+</span></span>
+          </p>
+          <div class="hl"><p><span>Analytics Student</span></p></div>
+          <div class="loc"><p><span>Toronto, Ontario, Canada</span></p></div>
+        </div>
+      </div>
+    </a>
+  </div></div>
+
+  <div role="listitem"><div data-display-contents="true">
+    <a tabindex="0" class="wrap" href="https://www.linkedin.com/in/alex-open-789/">
+      <div class="card">
+        <figure></figure>
+        <div>
+          <p class="name">
+            <a class="nm" href="https://www.linkedin.com/in/alex-open-789/">Alex Open</a>
+            <span> is open to work</span>
+            <span class="deg"><span> • 1st</span></span>
+          </p>
+          <div class="hl"><p><span>VP Analytics @ Globex | ex-Initech</span></p></div>
+          <div class="loc"><p><span>New York, United States</span></p></div>
+          <div class="insight"><p><span>Friend One, Friend Two &amp; 3 other mutual connections</span></p></div>
+        </div>
+      </div>
+    </a>
+  </div></div>
+
+</div>
+</body></html>

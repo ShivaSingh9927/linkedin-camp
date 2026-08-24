@@ -18,7 +18,11 @@ export type AnalyticsEvent =
   | 'linkedin_connected'
   | 'leads_imported'
   | 'campaign_launched'
-  | 'first_reply_received';
+  | 'first_reply_received'
+  // Activation copilot funnel
+  | 'copilot_opened'
+  | 'copilot_search_run'
+  | 'copilot_template_selected';
 
 export function track(event: AnalyticsEvent, properties?: Record<string, any>) {
   if (!analyticsEnabled()) return;

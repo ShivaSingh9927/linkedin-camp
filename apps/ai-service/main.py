@@ -1083,6 +1083,224 @@ Return EXACTLY this JSON shape:
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ─── Activation copilot: understand the user + recommend a search ─────────────
+
+class ActivationRequest(BaseModel):
+    # Grounding pulled from the user's businessProfile + connected LinkedIn self-*
+    # fields by the backend. All optional — a brand-new user has almost nothing,
+    # which is exactly when we fall back to a safe, generic plan.
+    goal_type: Optional[str] = None          # sell | recruiting | job_seeking | fundraising | networking
+    sender_name: Optional[str] = None
+    self_headline: Optional[str] = None      # real LinkedIn headline (post-connect)
+    self_about: Optional[str] = None
+    self_industry: Optional[str] = None
+    self_location: Optional[str] = None
+    company: Optional[str] = None
+    company_description: Optional[str] = None
+    products: Optional[str] = None
+    differentiators: Optional[str] = None
+    target_audience: Optional[str] = None
+    industry: Optional[str] = None
+    main_pain_point: Optional[str] = None
+    value_prop: Optional[str] = None
+    persona: Optional[str] = None
+    ai_strategy: Optional[Dict[str, Any]] = None
+
+
+_GOAL_PHRASING = {
+    "sell": "win new customers / book sales conversations",
+    "recruiting": "source and reach candidates to hire",
+    "job_seeking": "reach hiring managers and recruiters to land a role",
+    "fundraising": "reach investors to raise capital",
+    "networking": "build relationships with relevant peers",
+}
+
+
+def _activation_grounding(req: "ActivationRequest") -> str:
+    """Compact, LLM-friendly grounding block from whatever the user has so far."""
+    bits = []
+    if req.sender_name:
+        bits.append(f"Name: {req.sender_name}")
+    if req.self_headline:
+        bits.append(f"LinkedIn headline: {req.self_headline}")
+    if req.self_about:
+        bits.append(f"LinkedIn about: {req.self_about[:400]}")
+    if req.self_industry or req.industry:
+        bits.append(f"Industry: {req.self_industry or req.industry}")
+    if req.self_location:
+        bits.append(f"Location: {req.self_location}")
+    if req.company:
+        bits.append(f"Company: {req.company}")
+    if req.company_description:
+        bits.append(f"What the company does: {req.company_description[:300]}")
+    if req.products:
+        bits.append(f"Products/services: {req.products[:200]}")
+    if req.differentiators:
+        bits.append(f"Differentiators: {req.differentiators[:200]}")
+    if req.value_prop:
+        bits.append(f"Value proposition: {req.value_prop[:200]}")
+    if req.target_audience:
+        bits.append(f"Who they said they target: {req.target_audience[:200]}")
+    if req.main_pain_point:
+        bits.append(f"Pain point they solve: {req.main_pain_point[:200]}")
+    goal = _GOAL_PHRASING.get((req.goal_type or "").lower(), req.goal_type or "grow their network")
+    bits.append(f"Their stated goal on Qampi: {goal}")
+    return "\n".join(f"- {b}" for b in bits)
+
+
+def _repair_json(s: str) -> str:
+    """Best-effort structural repair for LLM JSON: inserts missing closing
+    braces/brackets in the right place. Handles the common failure where the
+    model drops the closing '}' of the last array element before ']' (and plain
+    truncation). String-aware so braces inside strings are ignored."""
+    out = []
+    stack = []
+    in_str = False
+    esc = False
+    closer = {'{': '}', '[': ']'}
+    for ch in s:
+        if in_str:
+            out.append(ch)
+            if esc:
+                esc = False
+            elif ch == '\\':
+                esc = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+            out.append(ch)
+            continue
+        if ch in '{[':
+            stack.append(ch)
+            out.append(ch)
+            continue
+        if ch in '}]':
+            # Insert whatever closers are needed so the top of the stack matches.
+            while stack and closer[stack[-1]] != ch:
+                out.append(closer[stack.pop()])
+            if stack:
+                stack.pop()
+            out.append(ch)
+            continue
+        out.append(ch)
+    while stack:
+        out.append(closer[stack.pop()])
+    return ''.join(out)
+
+
+def _tolerant_json(raw: str) -> Dict[str, Any]:
+    import re as _re, json as _json
+    cleaned = _re.sub(r"^```(?:json)?|```$", "", (raw or "").strip(), flags=_re.MULTILINE).strip()
+    match = _re.search(r"\{.*\}", cleaned, _re.DOTALL)
+    txt = match.group(0) if match else cleaned
+    txt = _re.sub(r",(\s*[}\]])", r"\1", txt)  # drop trailing commas
+    try:
+        return _json.loads(txt)
+    except Exception:
+        return _json.loads(_repair_json(txt))  # repair missing/mismatched closers
+
+
+@app.post("/ai/activation/understand")
+def activation_understand(req: ActivationRequest):
+    """The copilot's opening "here's how I understand you" card. Grounded ONLY in
+    what the user has provided / what we read from their connected LinkedIn — never
+    invents facts. `confidence` drives the cold-start: low → the UI offers a simple
+    safe sequence instead of a bespoke plan."""
+    grounding = _activation_grounding(req)
+    strategy_ctx = get_strategy_context(req.ai_strategy)
+    system = (
+        "You are Qampi, an outreach copilot introducing yourself to a new user. "
+        "From the facts provided, reflect back a short, confident, PLAIN-LANGUAGE picture "
+        "of who they are, what they want, and who they should reach. Ground every claim in "
+        "the facts — if something wasn't provided, don't invent it, and lower your confidence. "
+        "Speak in second person ('You...'). Return ONLY valid JSON."
+    )
+    user = f"""What I know about this user:
+{grounding}{strategy_ctx}
+
+Return EXACTLY this JSON:
+{{
+  "youAre": "<one plain sentence: who they are + what their business does>",
+  "yourGoal": "<one plain sentence: what they're trying to achieve with outreach>",
+  "bestFitBuyer": "<one plain sentence: the kind of person they should reach on LinkedIn>",
+  "confidence": "<high | medium | low — low if the facts above are thin/generic>"
+}}
+Output ONLY the JSON."""
+    try:
+        raw = call_llm(system, user, temperature=0.4, max_tokens=400)
+        data = _tolerant_json(raw)
+        conf = (data.get("confidence") or "low").strip().lower()
+        if conf not in ("high", "medium", "low"):
+            conf = "low"
+        return {
+            "youAre": (data.get("youAre") or "").strip(),
+            "yourGoal": (data.get("yourGoal") or "").strip(),
+            "bestFitBuyer": (data.get("bestFitBuyer") or "").strip(),
+            "confidence": conf,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/ai/activation/recommend-search")
+def activation_recommend_search(req: ActivationRequest):
+    """Recommend 2-3 LinkedIn people-searches the user can run in-app. Each is a
+    ready-to-run boolean keyword string plus display-friendly filter hints. The
+    copilot shows these as tappable chips; the chosen one is sent to /leads/search."""
+    grounding = _activation_grounding(req)
+    system = (
+        "You are Qampi, an outreach copilot that writes effective LinkedIn people-search "
+        "queries. LinkedIn search supports boolean operators (AND, OR, NOT, quotes for exact "
+        "phrases, parentheses for grouping). Best practice is precise TITLE + INDUSTRY + "
+        "LOCATION targeting over vague keyword soup. Propose searches that find the user's "
+        "best-fit buyer. Return ONLY valid JSON."
+    )
+    user = f"""What I know about this user:
+{grounding}
+
+Propose 2-3 DISTINCT people-searches (different angles, not rephrasings). Return EXACTLY:
+{{
+  "recommendations": [
+    {{
+      "label": "<3-5 word name for this search>",
+      "keywords": "<a ready-to-run LinkedIn boolean search string of job titles / terms>",
+      "filters": {{ "title": "<primary title or ''>", "location": "<location or ''>", "industry": "<industry or ''>", "degree": "<any | 2nd | 3rd>" }},
+      "rationale": "<one short sentence: why this finds good leads for them>"
+    }}
+  ]
+}}
+RULES:
+- `keywords` must be a real query using boolean operators and quoted phrases, e.g. ("head of data" OR "VP analytics") AND SaaS.
+- Prefer 2nd-degree by default (warmer than cold 3rd).
+- Keep each `label` human and specific. Keep `keywords` under ~120 characters and each `rationale` under ~15 words.
+- Output ONLY the JSON, no code fences, no trailing commas."""
+    try:
+        raw = call_llm(system, user, temperature=0.6, max_tokens=1200)
+        data = _tolerant_json(raw)
+        recs = []
+        for r in (data.get("recommendations") or [])[:3]:
+            kw = (r.get("keywords") or "").strip()
+            if not kw:
+                continue
+            f = r.get("filters") or {}
+            recs.append({
+                "label": (r.get("label") or "Search").strip(),
+                "keywords": kw,
+                "filters": {
+                    "title": (f.get("title") or "").strip(),
+                    "location": (f.get("location") or "").strip(),
+                    "industry": (f.get("industry") or "").strip(),
+                    "degree": (f.get("degree") or "any").strip().lower(),
+                },
+                "rationale": (r.get("rationale") or "").strip(),
+            })
+        return {"recommendations": recs}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ─── Reflect-back: "here's what I understand about your business" ──────────────
 
 class UnderstandBusinessRequest(BaseModel):

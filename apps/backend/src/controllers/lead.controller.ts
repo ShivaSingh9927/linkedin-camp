@@ -5,6 +5,8 @@ import fs from 'fs';
 import { getActionQueue } from '../services/queue.service';
 import { cleanPersonField } from '../campaign-engine/scrape/sanitize';
 import { captureEvent } from '../services/analytics.service';
+import { searchPeople, type SearchFilters } from '../services/people-search.service';
+import { checkSearchQuota, logSearchAction } from '../campaign-engine/safety/quota';
 
 // Helper to get team user ids
 const getTeamUserIds = async (userId: string) => {
@@ -250,6 +252,55 @@ export const importLeads = async (req: any, res: Response) => {
     } catch (error) {
         console.error('Import error:', error);
         res.status(500).json({ error: 'Failed to import leads' });
+    }
+};
+
+// Run a LinkedIn people-search in-app and return the first page of results so
+// the copilot can show real leads for the keywords it recommended. Guarded by
+// the monthly commercial-use budget; each successful search is logged against
+// it. Does NOT import — the client imports the chosen results via POST /import.
+export const searchLeads = async (req: any, res: Response) => {
+    const userId = req.user.id;
+    const { keywords, filters, limit } = req.body || {};
+
+    if (!keywords || typeof keywords !== 'string' || !keywords.trim()) {
+        return res.status(400).json({ error: 'keywords_required', message: 'A search phrase is required.' });
+    }
+
+    try {
+        const quota = await checkSearchQuota(userId);
+        if (!quota.allowed) {
+            return res.status(429).json({
+                error: 'monthly_search_limit',
+                message: `You've used all ${quota.cap} LinkedIn searches this month. This resets on the 1st.`,
+                remaining: 0,
+                cap: quota.cap,
+            });
+        }
+
+        const result = await searchPeople(userId, {
+            keywords: keywords.trim(),
+            filters: (filters || undefined) as SearchFilters | undefined,
+            limit: typeof limit === 'number' ? limit : undefined,
+        });
+
+        // LinkedIn counts the request against the commercial-use limit whether
+        // or not it returned rows, so log any completed fetch (searchPeople only
+        // returns without throwing when a request actually went through).
+        await logSearchAction(userId);
+        const after = await checkSearchQuota(userId);
+
+        captureEvent(userId, 'people_search', { count: result.people.length, via: result.via });
+
+        res.json({
+            people: result.people,
+            via: result.via,
+            remaining: after.remaining,
+            cap: after.cap,
+        });
+    } catch (error) {
+        console.error('People-search error:', error);
+        res.status(502).json({ error: 'search_failed', message: 'Could not run the LinkedIn search right now. Try again in a moment.' });
     }
 };
 

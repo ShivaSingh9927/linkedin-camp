@@ -84,7 +84,7 @@ function getRedis(): Redis | null {
     return redis;
 }
 
-async function checkRateLimit(userId: string): Promise<void> {
+export async function checkRateLimit(userId: string): Promise<void> {
     // Best-effort rate limit; if Redis is down we still proceed (don't block
     // critical paths on a side-channel).
     try {

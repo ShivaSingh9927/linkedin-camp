@@ -372,3 +372,94 @@ export async function generateReplySuggestions(options: ReplySuggestionsOptions)
         throw new Error('Failed to generate reply suggestions');
     }
 }
+
+// ─── Activation copilot ───────────────────────────────────────────────────────
+
+export interface ActivationGrounding {
+    goalType?: string;
+    senderName?: string;
+    selfHeadline?: string;
+    selfAbout?: string;
+    selfIndustry?: string;
+    selfLocation?: string;
+    company?: string;
+    companyDescription?: string;
+    products?: string;
+    differentiators?: string;
+    targetAudience?: string;
+    industry?: string;
+    mainPainPoint?: string;
+    valueProp?: string;
+    persona?: string;
+    aiStrategy?: any;
+}
+
+export interface ActivationUnderstand {
+    youAre: string;
+    yourGoal: string;
+    bestFitBuyer: string;
+    confidence: 'high' | 'medium' | 'low';
+}
+
+export interface SearchRecommendation {
+    label: string;
+    keywords: string;
+    filters: { title: string; location: string; industry: string; degree: string };
+    rationale: string;
+}
+
+// Map the camelCase grounding to the ai-service snake_case request body.
+function activationPayload(g: ActivationGrounding) {
+    return {
+        goal_type: g.goalType,
+        sender_name: g.senderName,
+        self_headline: g.selfHeadline,
+        self_about: g.selfAbout,
+        self_industry: g.selfIndustry,
+        self_location: g.selfLocation,
+        company: g.company,
+        company_description: g.companyDescription,
+        products: g.products,
+        differentiators: g.differentiators,
+        target_audience: g.targetAudience,
+        industry: g.industry,
+        main_pain_point: g.mainPainPoint,
+        value_prop: g.valueProp,
+        persona: g.persona,
+        ai_strategy: g.aiStrategy,
+    };
+}
+
+// The copilot's "here's how I understand you" card.
+export async function generateActivationUnderstand(g: ActivationGrounding): Promise<ActivationUnderstand> {
+    if (isMockAI()) {
+        await mockAiWait();
+        return { youAre: '[MOCK] You run a B2B SaaS startup.', yourGoal: '[MOCK] Book demos with data teams.', bestFitBuyer: '[MOCK] Heads of Data at mid-market companies.', confidence: 'medium' };
+    }
+    try {
+        const response = await axios.post(`${AI_SERVICE_URL}/ai/activation/understand`, activationPayload(g), { timeout: 30000 });
+        return response.data as ActivationUnderstand;
+    } catch (error: any) {
+        console.error('[AI-SERVICE] Error generating activation understanding:', error.message);
+        throw new Error('Failed to generate activation understanding');
+    }
+}
+
+// 2-3 recommended LinkedIn people-searches for the copilot to offer as chips.
+export async function generateActivationSearchRecs(g: ActivationGrounding): Promise<{ recommendations: SearchRecommendation[] }> {
+    if (isMockAI()) {
+        await mockAiWait();
+        return {
+            recommendations: [
+                { label: 'Heads of Data', keywords: '("head of data" OR "VP analytics") AND SaaS', filters: { title: 'Head of Data', location: '', industry: 'Software', degree: '2nd' }, rationale: '[MOCK] Reaches your best-fit buyer.' },
+            ],
+        };
+    }
+    try {
+        const response = await axios.post(`${AI_SERVICE_URL}/ai/activation/recommend-search`, activationPayload(g), { timeout: 30000 });
+        return response.data as { recommendations: SearchRecommendation[] };
+    } catch (error: any) {
+        console.error('[AI-SERVICE] Error generating search recommendations:', error.message);
+        throw new Error('Failed to generate search recommendations');
+    }
+}

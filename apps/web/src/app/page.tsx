@@ -20,6 +20,8 @@ import { WelcomeReveal } from '@/components/WelcomeReveal';
 import { ActivationHero, type SetupStatus } from '@/components/ActivationHero';
 import { OptionalSetupReminder } from '@/components/OptionalSetupReminder';
 import { StrategySummaryCard } from '@/components/StrategySummaryCard';
+import { ActivationCopilot, ACTIVATION_DISMISSED_KEY } from '@/components/copilot/ActivationCopilot';
+import { QampiDashboardPanel } from '@/components/copilot/QampiDashboardPanel';
 import { Card, StatTile, Badge, SectionHeader, PageHeader, EmptyState, Skeleton, Button } from '@/components/ui';
 import { cn } from '@/lib/utils';
 
@@ -60,6 +62,11 @@ export default function DashboardPage() {
     dailyRemaining: 80,
     today: { invites: 0, messages: 0, visits: 0 },
   });
+  const [copilotDismissed, setCopilotDismissed] = useState(true); // assume dismissed until we read localStorage (avoids a flash)
+
+  useEffect(() => {
+    try { setCopilotDismissed(localStorage.getItem(ACTIVATION_DISMISSED_KEY) === '1'); } catch { /* ignore */ }
+  }, []);
 
   useEffect(() => {
     try {
@@ -92,6 +99,11 @@ export default function DashboardPage() {
 
   const hasData = campaigns.length > 0;
 
+  // First-run copilot: a freshly-connected user (State 2 ⇒ LinkedIn connected)
+  // who hasn't imported a lead or made a campaign yet, and hasn't dismissed it.
+  const showActivationCopilot =
+    !!setup?.requiredDone && !loading && stats.totalLeads === 0 && campaigns.length === 0 && !copilotDismissed;
+
   // Every value is measured — no fabricated week-over-week deltas.
   const kpis = [
     { label: 'Active leads', value: stats.totalLeads.toLocaleString(), icon: Users, tone: 'brand' as const, sub: undefined as string | undefined },
@@ -111,6 +123,9 @@ export default function DashboardPage() {
       <Suspense fallback={null}>
         <WelcomeReveal />
       </Suspense>
+
+      {/* First-run full-screen copilot takeover */}
+      {showActivationCopilot && <ActivationCopilot onDismiss={() => setCopilotDismissed(true)} />}
 
       {/* State 1 — onboarding (renders full page while required setup is incomplete; null once done) */}
       <ActivationHero onResolved={setSetup} />
@@ -230,8 +245,10 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {/* Today's usage */}
+        {/* Right column: Qampi copilot (permanent) + usage */}
         <div className="space-y-3">
+          <QampiDashboardPanel />
+
           <SectionHeader
             title="Today's usage"
             action={<Badge tone="success" dot>Active</Badge>}

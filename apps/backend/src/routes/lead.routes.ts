@@ -11,7 +11,8 @@ import {
     getCompanies,
     enrichLead,
     getLeadTimeline,
-    getFollowUpLeads
+    getFollowUpLeads,
+    searchLeads
 } from '../controllers/lead.controller';
 import { authMiddleware } from '../middleware/auth.middleware';
 import multer from 'multer';
@@ -22,6 +23,7 @@ const router = Router();
 router.use(authMiddleware);
 
 router.post('/import', importLeads);
+router.post('/search', searchLeads);
 router.post('/upload', upload.single('file'), uploadCsvLeads);
 router.get('/', getLeads);
 router.delete('/:id', deleteLead);

@@ -17,6 +17,7 @@
         "adm-zip": "^0.5.16",
         "bcryptjs": "latest",
         "bullmq": "latest",
+        "cheerio": "^1.2.0",
         "cors": "latest",
         "csv-parse": "^6.1.0",
         "dotenv": "latest",
