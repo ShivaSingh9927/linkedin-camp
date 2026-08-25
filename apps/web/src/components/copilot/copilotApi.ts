@@ -78,13 +78,14 @@ function degreeToNumbers(degree?: string): Array<1 | 2 | 3> | undefined {
     return undefined;
 }
 
-export async function runSearch(keywords: string, filters?: SearchFilters): Promise<SearchResponse> {
+export async function runSearch(keywords: string, filters?: SearchFilters, page?: number): Promise<SearchResponse> {
     const degrees = degreeToNumbers(filters?.degree);
     const { data } = await api.post('/leads/search', {
         keywords,
         filters: filters
             ? { title: filters.title, location: filters.location, industry: filters.industry, ...(degrees ? { degrees } : {}) }
             : undefined,
+        ...(page && page > 1 ? { page } : {}),
     });
     return data;
 }
@@ -123,11 +124,19 @@ export type CopilotIntent =
     | 'find_leads' | 'recommend_campaign' | 'launch_campaign'
     | 'check_status' | 'explain' | 'unsupported' | 'off_topic';
 
+// Structured tool results the backend pre-fetched for this intent. Only
+// searchDraft is consumed by the UI today (the reasoned query to show before a
+// search is spent); other tool outputs currently arrive folded into `reply`.
+export interface RoutedToolData {
+    searchDraft?: SearchRecommendation;
+}
+
 export interface RoutedMessage {
-    intent: CopilotIntent;
+    intent: CopilotIntent | 'lookup_lead';
     params: { keywords: string; templateId: string };
     reply: string;
     needsConfirm: boolean;
+    toolData?: RoutedToolData | null;
 }
 
 export interface HistoryMsg { sender: 'you' | 'qampi'; text: string }
@@ -145,15 +154,29 @@ export type LaunchResult =
 
 // The template's default AI strategy — used to PREFILL the launch-setup step so
 // the user confirms/tweaks real values rather than a blank form.
-export async function fetchTemplateHint(templateId: string): Promise<{ name: string; objective: string; cta: string; tone: string }> {
+export interface TemplateHint {
+    name: string;
+    objective: string;
+    cta: string;
+    tone: string;
+    durationDays: number;
+    stepCount: number;
+    needsEmail: boolean;
+}
+
+export async function fetchTemplateHint(templateId: string): Promise<TemplateHint> {
     const { data } = await api.get(`/templates/${encodeURIComponent(templateId)}`);
     const t = data?.template;
     const hint = t?.aiStrategyHint || {};
+    const requires: string[] = t?.requires || [];
     return {
         name: t?.name || '',
         objective: hint.objective || '',
         cta: hint.cta || '',
         tone: hint.toneOverride || 'professional',
+        durationDays: t?.durationDays || 0,
+        stepCount: t?.stepCount || 0,
+        needsEmail: requires.includes('email-finder') || requires.includes('email'),
     };
 }
 

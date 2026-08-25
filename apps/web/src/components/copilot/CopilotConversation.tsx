@@ -15,7 +15,7 @@ import { track } from '@/lib/analytics';
 import {
     fetchUnderstand, fetchSearchRecommendations, runSearch, importPeople, fetchTemplateRecommendations,
     routeMessage, launchFromTemplate, fetchAvailableLeads, fetchTemplateHint,
-    type Understand, type SearchRecommendation, type SearchPerson, type TemplatePick, type HistoryMsg, type LaunchOverrides,
+    type Understand, type SearchRecommendation, type SearchPerson, type TemplatePick, type HistoryMsg, type LaunchOverrides, type TemplateHint,
 } from './copilotApi';
 import { type Msg, nextId } from './copilotTypes';
 import { useCopilot } from './CopilotProvider';
@@ -37,6 +37,10 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
     importedLeadIdsRef.current = importedLeadIds;
     const messagesRef = useRef<Msg[]>([]);
     messagesRef.current = messages;
+    // LinkedIn URLs already shown this session — so "Show 10 more" and repeat
+    // searches never re-surface the same people. Session-only for now; the
+    // durable cross-session coverage engine comes later.
+    const seenUrlsRef = useRef<Set<string>>(new Set());
 
     // Compact history for the router (last several text turns only).
     const historyForRouter = useCallback((): HistoryMsg[] => {
@@ -99,20 +103,29 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [variant, hydrated]);
 
-    const doSearch = useCallback(async (label: string, keywords: string, filters?: SearchRecommendation['filters']) => {
-        push({ id: nextId(), role: 'user', kind: 'text', text: label });
+    const doSearch = useCallback(async (label: string, keywords: string, filters?: SearchRecommendation['filters'], page = 1) => {
+        // Only echo the user's ask on the first page; "Show more" is a quiet continuation.
+        if (page === 1) push({ id: nextId(), role: 'user', kind: 'text', text: label });
         const sId = nextId();
         push({ id: sId, role: 'qampi', kind: 'searching', label });
         try {
-            const res = await runSearch(keywords, filters);
-            track('copilot_search_run', { via: res.via, count: res.people.length });
+            const res = await runSearch(keywords, filters, page);
+            track('copilot_search_run', { via: res.via, count: res.people.length, page });
             setMessages((prev) => prev.filter((m) => m.id !== sId));
-            if (!res.people.length) {
-                push({ id: nextId(), role: 'qampi', kind: 'text', text: 'I couldn’t pull results for that one. Try another search or rephrase it.' });
+            // Drop anyone already shown this session so pages never repeat.
+            const fresh = res.people.filter((p) => p.linkedinUrl && !seenUrlsRef.current.has(p.linkedinUrl));
+            fresh.forEach((p) => p.linkedinUrl && seenUrlsRef.current.add(p.linkedinUrl));
+            if (!fresh.length) {
+                push({
+                    id: nextId(), role: 'qampi', kind: 'text',
+                    text: page > 1
+                        ? 'That’s everyone I can find for this search. Try a different angle, or use the Qampi extension to import a bigger batch.'
+                        : 'I couldn’t pull results for that one. Try another search or rephrase it.',
+                });
                 return;
             }
-            push({ id: nextId(), role: 'qampi', kind: 'text', text: `Found ${res.people.length} people. Pick the ones you want and I’ll import them.` });
-            push({ id: nextId(), role: 'qampi', kind: 'results', people: res.people, via: res.via, remaining: res.remaining, cap: res.cap });
+            push({ id: nextId(), role: 'qampi', kind: 'text', text: page > 1 ? `Found ${fresh.length} more.` : `Found ${fresh.length} people. Pick the ones you want and I’ll import them.` });
+            push({ id: nextId(), role: 'qampi', kind: 'results', people: fresh, via: res.via, remaining: res.remaining, cap: res.cap, keywords, filters, page });
         } catch (e) {
             setMessages((prev) => prev.filter((m) => m.id !== sId));
             const err = e as { response?: { status?: number; data?: { error?: string; message?: string } } };
@@ -124,6 +137,17 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
             push({ id: nextId(), role: 'qampi', kind: 'text', text: msg });
         }
     }, [push]);
+
+    // "Show 10 more" — continue the same query at the next page (dedup handled in doSearch).
+    const showMore = useCallback((keywords: string, filters: SearchRecommendation['filters'] | undefined, nextPage: number) => {
+        doSearch(keywords, keywords, filters, nextPage);
+    }, [doSearch]);
+
+    // Run a reasoned search draft the user approved/edited (removes the draft card).
+    const runDraft = useCallback((msgId: string, label: string, keywords: string, filters?: SearchRecommendation['filters']) => {
+        setMessages((prev) => prev.filter((m) => m.id !== msgId));
+        doSearch(label, keywords, filters, 1);
+    }, [doSearch, setMessages]);
 
     const recommendCampaigns = useCallback(async () => {
         const tId = nextId();
@@ -166,10 +190,11 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
         track('copilot_template_selected', { templateId });
         // Prefill the campaign-level setup (objective/tone/CTA) from the template
         // so the user confirms/tweaks real values, not a blank form.
-        const hint = await fetchTemplateHint(templateId).catch(() => ({ objective: '', cta: '', tone: 'professional' }));
+        const hint = await fetchTemplateHint(templateId).catch((): TemplateHint => ({ name: label, objective: '', cta: '', tone: 'professional', durationDays: 0, stepCount: 0, needsEmail: false }));
         const setup = { objective: hint.objective, cta: hint.cta, tone: hint.tone };
+        const meta = { durationDays: hint.durationDays, stepCount: hint.stepCount, needsEmail: hint.needsEmail };
         if (importedLeadIdsRef.current.length) {
-            push({ id: nextId(), role: 'qampi', kind: 'launchConfirm', templateId, label, leadIds: importedLeadIdsRef.current, setup, state: 'idle' });
+            push({ id: nextId(), role: 'qampi', kind: 'launchConfirm', templateId, label, leadIds: importedLeadIdsRef.current, setup, meta, state: 'idle' });
             return;
         }
         // No session imports — look for leads already in the account.
@@ -177,7 +202,7 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
         try { available = await fetchAvailableLeads(); } catch { /* fall through to the import nudge */ }
         if (available.count > 0) {
             const note = `on your ${available.count} lead${available.count === 1 ? '' : 's'} not yet in a campaign`;
-            push({ id: nextId(), role: 'qampi', kind: 'launchConfirm', templateId, label, leadIds: available.leadIds, note, setup, state: 'idle' });
+            push({ id: nextId(), role: 'qampi', kind: 'launchConfirm', templateId, label, leadIds: available.leadIds, note, setup, meta, state: 'idle' });
             return;
         }
         push({ id: nextId(), role: 'qampi', kind: 'text', text: 'Let’s find and import a few leads first — then I can launch that on them.' });
@@ -185,11 +210,10 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
         loadSearchChips();
     }, [push, started, loadSearchChips]);
 
-    // Free-text → intent router → the right closed action (or an honest reply).
-    const submitInput = useCallback(async () => {
-        const q = input.trim();
-        if (!q) return;
-        setInput('');
+    // Free-text (or a quick-action chip) → intent router → the right closed
+    // action (or an honest reply).
+    const runMessage = useCallback(async (q: string) => {
+        if (!q.trim()) return;
         if (!started) setStarted(true);
         push({ id: nextId(), role: 'user', kind: 'text', text: q });
         const thinkId = nextId();
@@ -199,20 +223,34 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
             setMessages((prev) => prev.filter((m) => m.id !== thinkId));
             if (routed.reply) push({ id: nextId(), role: 'qampi', kind: 'text', text: routed.reply });
             if (routed.intent === 'find_leads') {
-                const kw = routed.params.keywords || q;
-                doSearch(kw, kw);
+                // Show the reasoned query first (approve/edit before spending a search);
+                // fall back to a raw-phrase search if the builder didn't return one.
+                if (routed.toolData?.searchDraft) {
+                    const d = routed.toolData.searchDraft;
+                    push({ id: nextId(), role: 'qampi', kind: 'searchDraft', label: d.label, keywords: d.keywords, filters: d.filters, rationale: d.rationale });
+                } else {
+                    const kw = routed.params.keywords || q;
+                    doSearch(kw, kw);
+                }
             } else if (routed.intent === 'recommend_campaign') {
                 recommendCampaigns();
             } else if (routed.intent === 'launch_campaign') {
                 if (routed.params.templateId) offerLaunch(routed.params.templateId, routed.params.templateId);
                 else recommendCampaigns();
             }
-            // check_status / explain / unsupported / off_topic → the reply already said it.
+            // lookup_lead / check_status / explain / unsupported / off_topic → the reply already said it.
         } catch {
             setMessages((prev) => prev.filter((m) => m.id !== thinkId));
             push({ id: nextId(), role: 'qampi', kind: 'text', text: 'I had trouble with that — try rephrasing, or tell me the kind of people you want to reach.' });
         }
-    }, [input, started, push, doSearch, recommendCampaigns, offerLaunch, historyForRouter]);
+    }, [started, push, doSearch, recommendCampaigns, offerLaunch, historyForRouter]);
+
+    const submitInput = useCallback(() => {
+        const q = input.trim();
+        if (!q) return;
+        setInput('');
+        runMessage(q);
+    }, [input, runMessage]);
 
     return (
         <div className="flex flex-col h-full min-h-0">
@@ -232,13 +270,21 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
 
             {/* messages */}
             <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-3">
-                {variant === 'panel' && hydrated && messages.length === 0 && <PanelResting onFindLeads={() => { setStarted(true); track('copilot_opened', { variant: 'panel' }); loadSearchChips(); }} />}
+                {variant === 'panel' && hydrated && messages.length === 0 && (
+                    <PanelResting
+                        onSuggestSearches={() => { setStarted(true); track('copilot_opened', { variant: 'panel' }); loadSearchChips(); }}
+                        onRecommendCampaign={() => { setStarted(true); recommendCampaigns(); }}
+                        onCheckStatus={() => runMessage('How is my campaign doing?')}
+                    />
+                )}
 
                 {messages.map((m) => (
                     <MessageRow
                         key={m.id}
                         m={m}
                         onPickSearch={doSearch}
+                        onRunDraft={runDraft}
+                        onShowMore={showMore}
                         onImported={afterImport}
                         onPickTemplate={offerLaunch}
                         onLaunch={runLaunch}
@@ -272,27 +318,41 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
     );
 }
 
-function PanelResting({ onFindLeads }: { onFindLeads: () => void }) {
+function PanelResting({ onSuggestSearches, onRecommendCampaign, onCheckStatus }: {
+    onSuggestSearches: () => void;
+    onRecommendCampaign: () => void;
+    onCheckStatus: () => void;
+}) {
+    const chips: { icon: typeof Search; label: string; onClick: () => void }[] = [
+        { icon: Search, label: 'Suggest some searches', onClick: onSuggestSearches },
+        { icon: Rocket, label: 'What campaign should I run?', onClick: onRecommendCampaign },
+        { icon: ArrowRight, label: 'How’s my campaign doing?', onClick: onCheckStatus },
+    ];
     return (
         <div className="space-y-3">
             <QBubble>
-                <p>Hi — I’m here whenever you want to find leads or start a campaign. Want me to suggest some searches?</p>
+                <p>Hi — I can find leads, suggest a campaign, or check how things are going. Where do you want to start?</p>
             </QBubble>
-            <div className="pl-8">
-                <button
-                    onClick={onFindLeads}
-                    className="inline-flex items-center gap-2 text-[13px] font-medium bg-card border border-line rounded-chip px-3 py-2 hover:border-brand-200 hover:bg-brand-50 transition-colors"
-                >
-                    <Search className="w-3.5 h-3.5 text-brand" /> Find leads for me
-                </button>
+            <div className="pl-8 flex flex-col gap-2 items-start">
+                {chips.map((c) => (
+                    <button
+                        key={c.label}
+                        onClick={c.onClick}
+                        className="inline-flex items-center gap-2 text-[13px] font-medium bg-card border border-line rounded-chip px-3 py-2 hover:border-brand-200 hover:bg-brand-50 transition-colors"
+                    >
+                        <c.icon className="w-3.5 h-3.5 text-brand" /> {c.label}
+                    </button>
+                ))}
             </div>
         </div>
     );
 }
 
-function MessageRow({ m, onPickSearch, onImported, onPickTemplate, onLaunch }: {
+function MessageRow({ m, onPickSearch, onRunDraft, onShowMore, onImported, onPickTemplate, onLaunch }: {
     m: Msg;
     onPickSearch: (label: string, keywords: string, filters?: SearchRecommendation['filters']) => void;
+    onRunDraft: (msgId: string, label: string, keywords: string, filters?: SearchRecommendation['filters']) => void;
+    onShowMore: (keywords: string, filters: SearchRecommendation['filters'] | undefined, nextPage: number) => void;
     onImported: (count: number, leadIds: string[]) => void;
     onPickTemplate: (templateId: string, label: string) => void;
     onLaunch: (msgId: string, overrides?: LaunchOverrides) => void;
@@ -304,15 +364,48 @@ function MessageRow({ m, onPickSearch, onImported, onPickTemplate, onLaunch }: {
     }
     if (m.kind === 'understand') return <QBubble><UnderstandCard loading={m.loading} data={m.data} /></QBubble>;
     if (m.kind === 'searchChips') return <div className="pl-8"><SearchChips loading={m.loading} recs={m.recs} onPick={onPickSearch} /></div>;
+    if (m.kind === 'searchDraft') return <div className="pl-8"><SearchDraftCard m={m} onRun={onRunDraft} /></div>;
     if (m.kind === 'searching') return <QBubble><span className="inline-flex items-center gap-2 text-ink-500"><Loader2 className="w-3.5 h-3.5 animate-spin text-brand" /> {m.label === '…' ? 'Thinking…' : `Searching LinkedIn for “${m.label}”…`}</span></QBubble>;
-    if (m.kind === 'results') return <div className="pl-8"><ResultsBlock people={m.people} onImported={onImported} /></div>;
+    if (m.kind === 'results') return <div className="pl-8"><ResultsBlock m={m} onImported={onImported} onShowMore={onShowMore} /></div>;
     if (m.kind === 'templates') return <div className="pl-8"><TemplatePicks loading={m.loading} picks={m.picks} onPick={onPickTemplate} /></div>;
     if (m.kind === 'launchConfirm') return <div className="pl-8"><LaunchConfirm m={m} onLaunch={onLaunch} /></div>;
     if (m.kind === 'reconnect') return <QBubble><ReconnectNotice /></QBubble>;
     return null;
 }
 
+// A reasoned query, shown BEFORE a search is spent. The user edits the boolean +
+// filters, sees why it fits, then runs it (searches are budget-scarce).
+function SearchDraftCard({ m, onRun }: { m: Extract<Msg, { kind: 'searchDraft' }>; onRun: (msgId: string, label: string, keywords: string, filters?: SearchRecommendation['filters']) => void }) {
+    const [keywords, setKeywords] = useState(m.keywords);
+    const fieldCls = 'w-full bg-card border border-line rounded-control px-2.5 py-1.5 text-[12px] text-foreground outline-none focus:border-brand-200 transition-colors font-mono';
+    const facets = [m.filters?.title, m.filters?.industry, m.filters?.location, m.filters?.degree && m.filters.degree !== 'any' ? `${m.filters.degree}°` : '']
+        .filter(Boolean).join(' · ');
+    return (
+        <div className="bg-card border border-line rounded-card p-3 space-y-2">
+            <div className="flex items-center gap-2">
+                <Search className="w-3.5 h-3.5 text-brand shrink-0" />
+                <span className="text-[13px] font-medium text-foreground">{m.label}</span>
+            </div>
+            {m.rationale && <p className="text-[11px] text-ink-500">{m.rationale}</p>}
+            <div>
+                <label className="label !text-[10px] mb-1 block">Search query (editable)</label>
+                <textarea rows={2} value={keywords} onChange={(e) => setKeywords(e.target.value)} className={cn(fieldCls, 'resize-none leading-snug')} />
+            </div>
+            {facets && <p className="text-[10px] text-ink-400">Filters: {facets}</p>}
+            <button
+                onClick={() => onRun(m.id, m.label, keywords.trim() || m.keywords, m.filters)}
+                className="inline-flex items-center gap-2 text-[13px] font-medium bg-brand text-white rounded-chip px-3.5 py-2 hover:bg-brand-600 transition-colors"
+            >
+                <Search className="w-3.5 h-3.5" /> Run this search
+            </button>
+        </div>
+    );
+}
+
 const TONE_OPTIONS = ['direct', 'friendly', 'professional', 'warm', 'consultative'];
+// Mirrors the server's DAILY_CAPS.connect — used only for a pacing ESTIMATE in
+// the launch card ("rolls out over ~N days"), so approximate is fine.
+const DAILY_INVITE_CAP = 18;
 
 function LaunchConfirm({ m, onLaunch }: { m: Extract<Msg, { kind: 'launchConfirm' }>; onLaunch: (msgId: string, overrides?: LaunchOverrides) => void }) {
     // Campaign-level setup, prefilled from the template and editable here. Local
@@ -346,6 +439,16 @@ function LaunchConfirm({ m, onLaunch }: { m: Extract<Msg, { kind: 'launchConfirm
             <p className="text-[12px] text-ink-500">
                 Set up <span className="text-foreground font-medium">“{m.label}”</span>{m.note ? ` — ${m.note}` : ''}. Tweak anything, then launch.
             </p>
+            {m.meta && (m.meta.durationDays > 0 || m.meta.needsEmail) && (
+                <p className="text-[11px] text-ink-500">
+                    {m.meta.durationDays > 0 ? `Runs ~${m.meta.durationDays} days` : ''}{m.meta.stepCount > 0 ? ` · ${m.meta.stepCount} steps` : ''}{m.meta.needsEmail ? ' · needs verified emails (email finder)' : ''}
+                </p>
+            )}
+            {m.leadIds.length > 0 && (
+                <p className="text-[11px] text-ink-500">
+                    LinkedIn caps invites at ~{DAILY_INVITE_CAP}/day, so your {m.leadIds.length} lead{m.leadIds.length === 1 ? '' : 's'} roll out over ~{Math.max(1, Math.ceil(m.leadIds.length / DAILY_INVITE_CAP))} day{Math.max(1, Math.ceil(m.leadIds.length / DAILY_INVITE_CAP)) === 1 ? '' : 's'} — I can’t send them all at once.
+                </p>
+            )}
             <div className="space-y-2">
                 <div>
                     <label className="label !text-[10px] mb-1 block">Objective</label>
@@ -449,7 +552,12 @@ function SearchChips({ loading, recs, onPick }: { loading: boolean; recs?: Searc
     );
 }
 
-function ResultsBlock({ people, onImported }: { people: SearchPerson[]; onImported: (count: number, leadIds: string[]) => void }) {
+function ResultsBlock({ m, onImported, onShowMore }: {
+    m: Extract<Msg, { kind: 'results' }>;
+    onImported: (count: number, leadIds: string[]) => void;
+    onShowMore: (keywords: string, filters: SearchRecommendation['filters'] | undefined, nextPage: number) => void;
+}) {
+    const people = m.people;
     const [selected, setSelected] = useState<Set<number>>(() => new Set(people.map((_, i) => i)));
     const [importing, setImporting] = useState(false);
     const [done, setDone] = useState<number | null>(null);
@@ -511,6 +619,16 @@ function ResultsBlock({ people, onImported }: { people: SearchPerson[]; onImport
                 </button>
             ) : (
                 <p className="text-center text-[12px] text-emerald-600 font-medium py-1.5 inline-flex items-center justify-center gap-1.5 w-full"><Check className="w-3.5 h-3.5" /> {done} imported</p>
+            )}
+            {/* Continue the SAME query at the next page — dedup handled upstream.
+                Shows remaining monthly budget so the cost of another page is clear. */}
+            {m.remaining > 0 && (
+                <button
+                    onClick={() => onShowMore(m.keywords, m.filters, m.page + 1)}
+                    className="w-full mt-0.5 text-[12px] font-medium text-brand rounded-chip py-1.5 hover:bg-brand-50 transition-colors inline-flex items-center justify-center gap-1.5"
+                >
+                    <Plus className="w-3.5 h-3.5" /> Show 10 more <span className="text-ink-400 font-normal">· {m.remaining} searches left</span>
+                </button>
             )}
         </div>
     );

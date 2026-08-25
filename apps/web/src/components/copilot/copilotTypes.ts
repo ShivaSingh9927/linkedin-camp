@@ -2,16 +2,18 @@
 // CopilotProvider (state + persistence) and CopilotConversation (rendering) can
 // import the Msg union without a circular dependency.
 
-import type { Understand, SearchRecommendation, SearchPerson, TemplatePick } from './copilotApi';
+import type { Understand, SearchRecommendation, SearchFilters, SearchPerson, TemplatePick } from './copilotApi';
 
 export type Msg =
     | { id: string; role: 'qampi' | 'user'; kind: 'text'; text: string }
     | { id: string; role: 'qampi'; kind: 'understand'; loading: boolean; data?: Understand }
     | { id: string; role: 'qampi'; kind: 'searchChips'; loading: boolean; recs?: SearchRecommendation[] }
+    // A reasoned query shown BEFORE a search is spent — the user approves/edits it.
+    | { id: string; role: 'qampi'; kind: 'searchDraft'; label: string; keywords: string; filters?: SearchFilters; rationale?: string }
     | { id: string; role: 'qampi'; kind: 'searching'; label: string }
-    | { id: string; role: 'qampi'; kind: 'results'; people: SearchPerson[]; via: string; remaining: number; cap: number }
+    | { id: string; role: 'qampi'; kind: 'results'; people: SearchPerson[]; via: string; remaining: number; cap: number; keywords: string; filters?: SearchFilters; page: number }
     | { id: string; role: 'qampi'; kind: 'templates'; loading: boolean; picks?: TemplatePick[] }
-    | { id: string; role: 'qampi'; kind: 'launchConfirm'; templateId: string; label: string; leadIds: string[]; note?: string; setup?: { objective: string; cta: string; tone: string }; state: 'idle' | 'launching' | 'done' | 'error'; campaignId?: string; error?: string }
+    | { id: string; role: 'qampi'; kind: 'launchConfirm'; templateId: string; label: string; leadIds: string[]; note?: string; setup?: { objective: string; cta: string; tone: string }; meta?: { durationDays: number; stepCount: number; needsEmail: boolean }; state: 'idle' | 'launching' | 'done' | 'error'; campaignId?: string; error?: string }
     | { id: string; role: 'qampi'; kind: 'reconnect' };
 
 export type MsgKind = Msg['kind'];
