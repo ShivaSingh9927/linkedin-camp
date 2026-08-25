@@ -14,8 +14,8 @@ import { cn } from '@/lib/utils';
 import { track } from '@/lib/analytics';
 import {
     fetchUnderstand, fetchSearchRecommendations, runSearch, importPeople, fetchTemplateRecommendations,
-    routeMessage, launchFromTemplate, fetchAvailableLeads,
-    type Understand, type SearchRecommendation, type SearchPerson, type TemplatePick, type HistoryMsg,
+    routeMessage, launchFromTemplate, fetchAvailableLeads, fetchTemplateHint,
+    type Understand, type SearchRecommendation, type SearchPerson, type TemplatePick, type HistoryMsg, type LaunchOverrides,
 } from './copilotApi';
 import { type Msg, nextId } from './copilotTypes';
 import { useCopilot } from './CopilotProvider';
@@ -144,12 +144,12 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
 
     // Launch a chosen template on the leads the confirm card was built for — via
     // the guarded endpoints (which enforce the 1-active + lead-cap rules).
-    const runLaunch = useCallback(async (msgId: string) => {
+    const runLaunch = useCallback(async (msgId: string, overrides?: LaunchOverrides) => {
         const msg = messagesRef.current.find((m) => m.id === msgId);
         if (!msg || msg.kind !== 'launchConfirm') return;
         const leadIds = msg.leadIds.length ? msg.leadIds : importedLeadIdsRef.current;
         patch(msgId, { state: 'launching' } as Partial<Msg>);
-        const result = await launchFromTemplate(msg.templateId, leadIds);
+        const result = await launchFromTemplate(msg.templateId, leadIds, overrides);
         if (result.ok) {
             track('campaign_launched', { source: 'copilot', templateId: msg.templateId });
             patch(msgId, { state: 'done', campaignId: result.campaignId } as Partial<Msg>);
@@ -164,8 +164,12 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
     // never silently bulk-fires at the whole account.
     const offerLaunch = useCallback(async (templateId: string, label: string) => {
         track('copilot_template_selected', { templateId });
+        // Prefill the campaign-level setup (objective/tone/CTA) from the template
+        // so the user confirms/tweaks real values, not a blank form.
+        const hint = await fetchTemplateHint(templateId).catch(() => ({ objective: '', cta: '', tone: 'professional' }));
+        const setup = { objective: hint.objective, cta: hint.cta, tone: hint.tone };
         if (importedLeadIdsRef.current.length) {
-            push({ id: nextId(), role: 'qampi', kind: 'launchConfirm', templateId, label, leadIds: importedLeadIdsRef.current, state: 'idle' });
+            push({ id: nextId(), role: 'qampi', kind: 'launchConfirm', templateId, label, leadIds: importedLeadIdsRef.current, setup, state: 'idle' });
             return;
         }
         // No session imports — look for leads already in the account.
@@ -173,7 +177,7 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
         try { available = await fetchAvailableLeads(); } catch { /* fall through to the import nudge */ }
         if (available.count > 0) {
             const note = `on your ${available.count} lead${available.count === 1 ? '' : 's'} not yet in a campaign`;
-            push({ id: nextId(), role: 'qampi', kind: 'launchConfirm', templateId, label, leadIds: available.leadIds, note, state: 'idle' });
+            push({ id: nextId(), role: 'qampi', kind: 'launchConfirm', templateId, label, leadIds: available.leadIds, note, setup, state: 'idle' });
             return;
         }
         push({ id: nextId(), role: 'qampi', kind: 'text', text: 'Let’s find and import a few leads first — then I can launch that on them.' });
@@ -291,7 +295,7 @@ function MessageRow({ m, onPickSearch, onImported, onPickTemplate, onLaunch }: {
     onPickSearch: (label: string, keywords: string, filters?: SearchRecommendation['filters']) => void;
     onImported: (count: number, leadIds: string[]) => void;
     onPickTemplate: (templateId: string, label: string) => void;
-    onLaunch: (msgId: string) => void;
+    onLaunch: (msgId: string, overrides?: LaunchOverrides) => void;
 }) {
     if (m.kind === 'text') {
         return m.role === 'user'
@@ -308,7 +312,15 @@ function MessageRow({ m, onPickSearch, onImported, onPickTemplate, onLaunch }: {
     return null;
 }
 
-function LaunchConfirm({ m, onLaunch }: { m: Extract<Msg, { kind: 'launchConfirm' }>; onLaunch: (msgId: string) => void }) {
+const TONE_OPTIONS = ['direct', 'friendly', 'professional', 'warm', 'consultative'];
+
+function LaunchConfirm({ m, onLaunch }: { m: Extract<Msg, { kind: 'launchConfirm' }>; onLaunch: (msgId: string, overrides?: LaunchOverrides) => void }) {
+    // Campaign-level setup, prefilled from the template and editable here. Local
+    // state (launchConfirm only persists once done), passed as overrides on launch.
+    const [objective, setObjective] = useState(m.setup?.objective || '');
+    const [cta, setCta] = useState(m.setup?.cta || '');
+    const [tone, setTone] = useState(m.setup?.tone || 'professional');
+
     if (m.state === 'done') {
         return (
             <div className="bg-card border border-line rounded-card px-3.5 py-3 text-[13px]">
@@ -325,17 +337,43 @@ function LaunchConfirm({ m, onLaunch }: { m: Extract<Msg, { kind: 'launchConfirm
             </div>
         );
     }
+
+    const launching = m.state === 'launching';
+    const fieldCls = 'w-full bg-card border border-line rounded-control px-2.5 py-1.5 text-[12px] text-foreground outline-none focus:border-brand-200 transition-colors disabled:opacity-60';
+
     return (
-        <div className="space-y-1.5">
-            {m.note && <p className="text-[12px] text-ink-500">I’ll launch <span className="text-foreground font-medium">“{m.label}”</span> {m.note}.</p>}
+        <div className="bg-card border border-line rounded-card p-3 space-y-2.5">
+            <p className="text-[12px] text-ink-500">
+                Set up <span className="text-foreground font-medium">“{m.label}”</span>{m.note ? ` — ${m.note}` : ''}. Tweak anything, then launch.
+            </p>
+            <div className="space-y-2">
+                <div>
+                    <label className="label !text-[10px] mb-1 block">Objective</label>
+                    <textarea rows={2} value={objective} onChange={(e) => setObjective(e.target.value)} disabled={launching}
+                        className={cn(fieldCls, 'resize-none leading-snug')} placeholder="What should this campaign achieve?" />
+                </div>
+                <div className="flex gap-2">
+                    <div className="w-[38%]">
+                        <label className="label !text-[10px] mb-1 block">Tone</label>
+                        <select value={tone} onChange={(e) => setTone(e.target.value)} disabled={launching} className={cn(fieldCls, 'capitalize')}>
+                            {TONE_OPTIONS.map((t) => <option key={t} value={t} className="capitalize">{t}</option>)}
+                        </select>
+                    </div>
+                    <div className="flex-1">
+                        <label className="label !text-[10px] mb-1 block">Call to action</label>
+                        <input value={cta} onChange={(e) => setCta(e.target.value)} disabled={launching}
+                            className={fieldCls} placeholder="e.g. book a 20-min call" />
+                    </div>
+                </div>
+            </div>
             <button
-                onClick={() => m.state === 'idle' && onLaunch(m.id)}
-                disabled={m.state === 'launching'}
+                onClick={() => m.state === 'idle' && onLaunch(m.id, { objective: objective.trim(), cta: cta.trim(), toneOverride: tone })}
+                disabled={launching}
                 className="inline-flex items-center gap-2 text-[13px] font-medium bg-brand text-white rounded-chip px-3.5 py-2 disabled:opacity-60 hover:bg-brand-600 transition-colors"
             >
-                {m.state === 'launching'
+                {launching
                     ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Launching…</>
-                    : <><Rocket className="w-3.5 h-3.5" /> {m.note ? 'Launch campaign' : `Launch “${m.label}” on your leads`}</>}
+                    : <><Rocket className="w-3.5 h-3.5" /> Launch campaign</>}
             </button>
         </div>
     );

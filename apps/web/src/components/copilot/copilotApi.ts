@@ -143,7 +143,23 @@ export type LaunchResult =
     | { ok: true; campaignId: string; templateName: string }
     | { ok: false; reason: 'active_exists' | 'lead_cap' | 'no_leads' | 'error'; message: string };
 
-export async function launchFromTemplate(templateId: string, leadIds: string[]): Promise<LaunchResult> {
+// The template's default AI strategy — used to PREFILL the launch-setup step so
+// the user confirms/tweaks real values rather than a blank form.
+export async function fetchTemplateHint(templateId: string): Promise<{ name: string; objective: string; cta: string; tone: string }> {
+    const { data } = await api.get(`/templates/${encodeURIComponent(templateId)}`);
+    const t = data?.template;
+    const hint = t?.aiStrategyHint || {};
+    return {
+        name: t?.name || '',
+        objective: hint.objective || '',
+        cta: hint.cta || '',
+        tone: hint.toneOverride || 'professional',
+    };
+}
+
+export interface LaunchOverrides { objective?: string; cta?: string; toneOverride?: string }
+
+export async function launchFromTemplate(templateId: string, leadIds: string[], overrides?: LaunchOverrides): Promise<LaunchResult> {
     if (!leadIds.length) {
         return { ok: false, reason: 'no_leads', message: 'Import some leads first, then I can launch a campaign on them.' };
     }
@@ -152,13 +168,15 @@ export async function launchFromTemplate(templateId: string, leadIds: string[]):
         const t = tpl?.template;
         if (!t) return { ok: false, reason: 'error', message: 'That template no longer exists.' };
         const hint = t.aiStrategyHint || {};
+        // The user's edited campaign-level inputs win over the template defaults;
+        // description stays templated (not user-edited in the chat flow).
         const { data: campaign } = await api.post('/campaigns', {
             name: t.name,
             workflow: t.workflow,
-            objective: hint.objective,
+            objective: overrides?.objective ?? hint.objective,
             description: hint.description,
-            cta: hint.cta,
-            toneOverride: hint.toneOverride,
+            cta: overrides?.cta ?? hint.cta,
+            toneOverride: overrides?.toneOverride ?? hint.toneOverride,
             leads: leadIds,
         });
         // Guarded launch — startCampaign enforces the 1-active rule + lead cap.

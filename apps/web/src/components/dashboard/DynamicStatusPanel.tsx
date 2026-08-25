@@ -9,7 +9,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
-    UserPlus, Send, Eye, Mail, MessageSquare, Rocket, Sparkles, Play, Activity, CheckCircle2,
+    UserPlus, Send, Eye, MessageSquare, Rocket, Sparkles, Play, Activity, CheckCircle2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import api from '@/lib/api';
@@ -38,12 +38,13 @@ export interface StatusLog {
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 // Only user-facing actions belong in the activity feed — internal bookkeeping
-// (reply polling, AI personalisation) would just be noise.
+// (CRM syncs, reply polling) would just be noise. Keys are the raw actionType
+// STRINGS the engine writes (it's a free-text column, not an enum): INVITE,
+// MESSAGE, VISIT.
 const ACTION_META: Record<string, { icon: typeof Send; verb: (name: string) => string }> = {
     INVITE: { icon: UserPlus, verb: (n) => `Sent invite to ${n}` },
     MESSAGE: { icon: Send, verb: (n) => `Messaged ${n}` },
-    PROFILE_VISIT: { icon: Eye, verb: (n) => `Visited ${n}${n === 'a lead' ? '' : "'s"} profile` },
-    EMAIL: { icon: Mail, verb: (n) => `Emailed ${n}` },
+    VISIT: { icon: Eye, verb: (n) => `Visited ${n}${n === 'a lead' ? '' : "'s"} profile` },
 };
 
 function leadName(log: StatusLog): string {

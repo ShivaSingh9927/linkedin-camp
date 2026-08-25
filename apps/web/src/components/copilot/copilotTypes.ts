@@ -11,7 +11,7 @@ export type Msg =
     | { id: string; role: 'qampi'; kind: 'searching'; label: string }
     | { id: string; role: 'qampi'; kind: 'results'; people: SearchPerson[]; via: string; remaining: number; cap: number }
     | { id: string; role: 'qampi'; kind: 'templates'; loading: boolean; picks?: TemplatePick[] }
-    | { id: string; role: 'qampi'; kind: 'launchConfirm'; templateId: string; label: string; leadIds: string[]; note?: string; state: 'idle' | 'launching' | 'done' | 'error'; campaignId?: string; error?: string }
+    | { id: string; role: 'qampi'; kind: 'launchConfirm'; templateId: string; label: string; leadIds: string[]; note?: string; setup?: { objective: string; cta: string; tone: string }; state: 'idle' | 'launching' | 'done' | 'error'; campaignId?: string; error?: string }
     | { id: string; role: 'qampi'; kind: 'reconnect' };
 
 export type MsgKind = Msg['kind'];
