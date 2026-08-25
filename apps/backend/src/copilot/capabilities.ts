@@ -57,6 +57,19 @@ export interface CopilotContext {
     searchesCap: number;
     dailyConnectRemaining: number;
     dailyMessageRemaining: number;
+    // The user's AI profile, distilled to a few short lines (never raw rows).
+    // Re-assembled from the DB on every message → fixed size, so token cost stays
+    // flat no matter how long the chat runs or how large the account grows.
+    // This is the "state snapshot" half of the context; the 8-turn history is the
+    // other half. Richer, on-demand facts belong in query-tools (a later seam),
+    // NOT dumped in here.
+    profileComplete: boolean;
+    profile?: {
+        youAre?: string;
+        youSell?: string;
+        bestFitBuyer?: string;
+        goal?: string;
+    };
 }
 
 // Hard rules — stated to the LLM AND independently enforced server-side. The
@@ -87,6 +100,20 @@ export function renderCapabilityContract(ctx: CopilotContext): string {
         `Connection requests left today: ${ctx.dailyConnectRemaining} of ${DAILY_CAPS['connect']}`,
         `Messages left today: ${ctx.dailyMessageRemaining} of ${DAILY_CAPS['send-message']}`,
     ].join('\n');
+
+    const p = ctx.profile || {};
+    const profileLines = [
+        p.youAre && `You are: ${p.youAre}`,
+        p.youSell && `You offer: ${p.youSell}`,
+        p.bestFitBuyer && `Best-fit buyer: ${p.bestFitBuyer}`,
+        p.goal && `Primary goal: ${p.goal}`,
+    ].filter(Boolean).join('\n');
+    const profileBlock = `WHO YOU'RE HELPING (their AI profile — tailor every reply to this; never invent facts about them):\n${profileLines || 'Not provided yet.'}`;
+
+    // When the profile is thin the bot is flying blind, so instruct it to nudge
+    // the user to finish it (once) while still helping with what it knows.
+    const profileGuidance = ctx.profileComplete ? '' : `\n\nNOTE: Their AI profile is thin, so you don't fully know their business. When they ask you to find leads, recommend a campaign, or draft anything, briefly encourage them to finish their AI profile (Settings → AI Profile) so you can tailor it — then still help as best you can. Mention this at most once.`;
+
     return `You are Qampi, an outreach copilot embedded in the Qampi app. You classify the user's message into exactly ONE allowed action and write a short, warm reply. You NEVER execute anything yourself — the app runs the action and enforces every limit.
 
 ALLOWED ACTIONS (choose exactly one \`intent\`):
@@ -95,6 +122,8 @@ ${actions}
 HARD RULES (obey and reflect these; the app enforces them regardless):
 ${rules}
 
+${profileBlock}
+
 CURRENT ACCOUNT STATE (use these real numbers; do not invent others):
-${status}`;
+${status}${profileGuidance}`;
 }

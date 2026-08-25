@@ -50,6 +50,31 @@ async function loadGrounding(userId: string): Promise<ActivationGrounding> {
     };
 }
 
+// Keep individual grounding lines short so the profile snapshot stays a fixed,
+// small size regardless of how verbose a field is.
+function clamp(s?: string, max = 160): string | undefined {
+    if (!s) return undefined;
+    const t = s.replace(/\s+/g, ' ').trim();
+    return t.length > max ? `${t.slice(0, max - 1)}…` : t;
+}
+
+// Distill the full grounding into the 4-line snapshot the chat contract renders.
+// Never the raw rows — just enough for the bot to sound like it knows the user.
+function distillProfile(g: ActivationGrounding) {
+    return {
+        youAre: clamp([g.senderName, g.selfHeadline].filter(Boolean).join(' — ')) || undefined,
+        youSell: clamp([g.company, g.companyDescription || g.products || g.valueProp].filter(Boolean).join(': ')) || undefined,
+        bestFitBuyer: clamp(g.targetAudience || g.persona || g.industry),
+        goal: clamp(g.goalType),
+    };
+}
+
+// The profile counts as "made" once any substantive field is present. Below this
+// the copilot flags it and nudges the user to finish their AI profile.
+function isProfileComplete(g: ActivationGrounding): boolean {
+    return !!(g.company || g.companyDescription || g.products || g.valueProp || g.targetAudience || g.aiStrategy);
+}
+
 export const activationUnderstand = async (req: AuthRequest, res: Response) => {
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -90,13 +115,18 @@ export const copilotMessage = async (req: AuthRequest, res: Response) => {
     }
 
     try {
-        const [activeCampaignCount, leadCount, searchQ, connectQ, msgQ, user] = await Promise.all([
+        // All fetched fresh per message and summarized into a fixed-size snapshot
+        // (counts + a distilled profile) — never raw rows. grounding is one indexed
+        // lookup by userId; it's what finally gives the CHAT (not just the opening
+        // cards) knowledge of who the user is.
+        const [activeCampaignCount, leadCount, searchQ, connectQ, msgQ, user, grounding] = await Promise.all([
             prisma.campaign.count({ where: { userId, status: 'ACTIVE' } }).catch(() => 0),
             prisma.lead.count({ where: { userId } }).catch(() => 0),
             checkSearchQuota(userId),
             checkQuota(userId, 'connect'),
             checkQuota(userId, 'send-message'),
             prisma.user.findUnique({ where: { id: userId }, select: { linkedinCookie: true } }).catch(() => null),
+            loadGrounding(userId).catch(() => ({} as ActivationGrounding)),
         ]);
 
         const ctx: CopilotContext = {
@@ -108,6 +138,8 @@ export const copilotMessage = async (req: AuthRequest, res: Response) => {
             searchesCap: searchQ.cap,
             dailyConnectRemaining: connectQ.remaining,
             dailyMessageRemaining: msgQ.remaining,
+            profileComplete: isProfileComplete(grounding),
+            profile: distillProfile(grounding),
         };
 
         const routed = await routeCopilotMessage({
@@ -132,6 +164,7 @@ export const copilotMessage = async (req: AuthRequest, res: Response) => {
                 searchesRemaining: searchQ.remaining,
                 searchesCap: searchQ.cap,
                 linkedinConnected: ctx.linkedinConnected,
+                profileComplete: ctx.profileComplete,
             },
         });
     } catch (error: any) {
