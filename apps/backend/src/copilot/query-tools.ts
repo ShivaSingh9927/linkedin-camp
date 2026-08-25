@@ -183,25 +183,41 @@ export async function getAudienceSummary(userId: string): Promise<AudienceSummar
 export async function findLeadByName(userId: string, query: string): Promise<LeadMatch[]> {
     const q = (query || '').trim();
     if (!q) return [];
-    const tokens = q.split(/\s+/).map((t) => t.trim()).filter((t) => t.length >= 2).slice(0, 4);
-    const terms = tokens.length ? tokens : [q];
-    const OR = terms.flatMap((t) => [
-        { firstName: { contains: t, mode: 'insensitive' as const } },
-        { lastName: { contains: t, mode: 'insensitive' as const } },
-    ]);
-    const leads = await prisma.lead.findMany({
-        where: { userId, OR },
-        select: { firstName: true, lastName: true, jobTitle: true, company: true, location: true, linkedinUrl: true, status: true },
-        take: 5,
-    });
-    return leads.map((l) => ({
+    const SELECT = { firstName: true, lastName: true, jobTitle: true, company: true, location: true, linkedinUrl: true, status: true } as const;
+    const toMatch = (l: { firstName: string | null; lastName: string | null; jobTitle: string | null; company: string | null; location: string | null; linkedinUrl: string | null; status: string }): LeadMatch => ({
         name: fullName(l.firstName, l.lastName),
         jobTitle: l.jobTitle || undefined,
         company: l.company || undefined,
         location: l.location || undefined,
         linkedinUrl: l.linkedinUrl || undefined,
         status: l.status,
-    }));
+    });
+
+    // Primary: token substring match on first/last name (fast, handles "sneh",
+    // "singh", "sneh singh").
+    const tokens = q.split(/\s+/).map((t) => t.trim()).filter((t) => t.length >= 2).slice(0, 4);
+    const terms = tokens.length ? tokens : [q];
+    const OR = terms.flatMap((t) => [
+        { firstName: { contains: t, mode: 'insensitive' as const } },
+        { lastName: { contains: t, mode: 'insensitive' as const } },
+    ]);
+    const primary = await prisma.lead.findMany({ where: { userId, OR }, select: SELECT, take: 5 });
+    if (primary.length) return primary.map(toMatch);
+
+    // Fuzzy fallback: the query joined the name or misspelled the spacing
+    // ("snehsingh" → "sneh singh"). Normalize both sides (drop non-alphanumerics)
+    // and match the concatenated full name. Bounded scan; only runs on a miss.
+    const norm = (s?: string | null) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const nq = norm(q);
+    if (nq.length < 3) return [];
+    const candidates = await prisma.lead.findMany({ where: { userId }, select: SELECT, take: 500 });
+    return candidates
+        .filter((l) => {
+            const full = norm(`${l.firstName || ''}${l.lastName || ''}`);
+            return full.length >= 3 && (full.includes(nq) || nq.includes(full));
+        })
+        .slice(0, 5)
+        .map(toMatch);
 }
 
 // One lead in depth — for per-lead reasoning (e.g. drafting a reply in the
