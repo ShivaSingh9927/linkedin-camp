@@ -17,13 +17,15 @@ import { AuthRequest } from '../middleware/auth.middleware';
 import {
     generateActivationUnderstand,
     generateActivationSearchRecs,
+    generateActivationTemplatePicks,
     routeCopilotMessage,
     type ActivationGrounding,
 } from '../campaign-engine/ai-service';
 import { TEMPLATES, type TemplateDefinition } from '../campaign-templates';
 import { checkSearchQuota } from '../campaign-engine/safety/quota';
 import { checkQuota } from '../campaign-engine/safety/quota';
-import { renderCapabilityContract, COPILOT_INTENTS, type CopilotContext } from '../copilot/capabilities';
+import { renderCapabilityContract, COPILOT_INTENTS, type CopilotContext, type CopilotIntent } from '../copilot/capabilities';
+import { runIntentQuery, getAudienceSummary, type QueryToolData, type AudienceSummaryData } from '../copilot/query-tools';
 
 // Build the grounding object from the user's businessProfile. Both self-* fields
 // (read from their real LinkedIn after connect) and the onboarding-provided
@@ -73,6 +75,26 @@ function distillProfile(g: ActivationGrounding) {
 // the copilot flags it and nudges the user to finish their AI profile.
 function isProfileComplete(g: ActivationGrounding): boolean {
     return !!(g.company || g.companyDescription || g.products || g.valueProp || g.targetAudience || g.aiStrategy);
+}
+
+// Compose the authoritative "here's where things stand" line from the read-only
+// tools. The model writes the warm intro; THIS provides the numbers, so status
+// answers are always exact (the model never invents figures).
+function statusFacts(td: QueryToolData, ctx: CopilotContext): string {
+    const parts: string[] = [];
+    if (td.campaign) {
+        const c = td.campaign;
+        parts.push(`Your campaign “${c.name}” is ${c.pct}% done — ${c.processed}/${c.total} leads processed, ${c.connected} connected, ${c.replied} replied.`);
+    } else {
+        parts.push('No campaign is running right now.');
+    }
+    if (td.repliesWaiting && td.repliesWaiting.count > 0) {
+        const n = td.repliesWaiting.count;
+        const who = td.repliesWaiting.names.slice(0, 2).filter(Boolean).join(', ');
+        parts.push(`${n} conversation${n === 1 ? '' : 's'} awaiting your reply${who ? ` (e.g. ${who})` : ''}.`);
+    }
+    parts.push(`Searches left this month: ${ctx.searchesRemaining}/${ctx.searchesCap}. Invites left today: ${ctx.dailyConnectRemaining}.`);
+    return parts.join(' ');
 }
 
 export const activationUnderstand = async (req: AuthRequest, res: Response) => {
@@ -151,13 +173,26 @@ export const copilotMessage = async (req: AuthRequest, res: Response) => {
 
         // Safety net: never let an unknown intent through even if the model/ai
         // layer misbehaves — coerce to off_topic.
-        const intent = (COPILOT_INTENTS as string[]).includes(routed.intent) ? routed.intent : 'off_topic';
+        const intent = ((COPILOT_INTENTS as string[]).includes(routed.intent) ? routed.intent : 'off_topic') as CopilotIntent;
+
+        // Deterministic read-only pre-fetch (Option B): run the query the intent
+        // needs, then ground the reply in the result. No second LLM call.
+        const toolData = await runIntentQuery(intent, userId).catch(() => null);
+
+        let reply = routed.reply;
+        if (intent === 'check_status' && toolData) {
+            const facts = statusFacts(toolData, ctx);
+            reply = [reply, facts].filter(Boolean).join('\n\n');
+        }
 
         res.json({
             intent,
             params: routed.params,
-            reply: routed.reply,
+            reply,
             needsConfirm: intent === 'launch_campaign' && routed.needsConfirm,
+            // Structured tool results for the client to render richer cards later
+            // (status, audience). Null when the intent needs no live lookup.
+            toolData,
             context: {
                 activeCampaignCount,
                 leadCount,
@@ -201,24 +236,34 @@ function simplicityScore(t: TemplateDefinition): number {
     return (needsEmail ? 100 : 0) + t.stepCount;
 }
 
+// Compact one-line summary of the imported audience for the LLM — top roles /
+// companies / warmth. Empty string when nothing's imported yet.
+function formatAudience(a: AudienceSummaryData): string {
+    if (!a || !a.total) return '';
+    const roles = a.topTitles.slice(0, 3).map((t) => `${t.value} (${t.count})`).join(', ');
+    const companies = a.topCompanies.slice(0, 3).map((c) => `${c.value} (${c.count})`).join(', ');
+    const cold = (a.byStatus['IMPORTED'] || 0) + (a.byStatus['PENDING'] || 0);
+    const warm = (a.byStatus['CONNECTED'] || 0) + (a.byStatus['REPLIED'] || 0);
+    const parts = [`${a.total} leads imported (${warm} connected/replied, ${cold} not yet contacted)`];
+    if (roles) parts.push(`top roles: ${roles}`);
+    if (companies) parts.push(`top companies: ${companies}`);
+    return parts.join('; ');
+}
+
 export const activationRecommendTemplates = async (req: AuthRequest, res: Response) => {
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
     try {
-        const bp = await prisma.businessProfile.findUnique({
-            where: { userId },
-            select: { goalType: true },
-        }).catch(() => null);
-        const goalType = bp?.goalType || 'sell';
+        const grounding = await loadGrounding(userId);
+        const goalType = grounding.goalType || 'sell';
         const icp = GOAL_TO_ICP[goalType] || 'universal';
 
         // Candidates: goal-matched + universal starter campaigns.
         const matched = TEMPLATES.filter((t) => isStarterCampaign(t) && t.icp === icp);
         const universal = TEMPLATES.filter((t) => isStarterCampaign(t) && t.icp === 'universal' && icp !== 'universal');
 
-        // Rank for the leads-first flow: the user is about to run this on COLD
-        // leads they just searched, so cold (out-of-network) sequences match best;
-        // then goal-icp fit; then simplicity (approachable first campaign).
+        // Heuristic rank narrows the catalog: cold (out-of-network) first, then
+        // goal-icp fit, then simplicity. Top ~8 become the LLM's candidate set.
         const ranked = [...matched, ...universal].sort((a, b) => {
             const coldA = a.group === 'out-of-network' ? 0 : 1;
             const coldB = b.group === 'out-of-network' ? 0 : 1;
@@ -233,15 +278,39 @@ export const activationRecommendTemplates = async (req: AuthRequest, res: Respon
         // simple universal set, which is the safe connect→visit→message shape.
         const coldStart = matched.length === 0;
 
-        const picks = ranked.slice(0, 3).map((t) => ({
+        const needsEmailOf = (t: TemplateDefinition) => (t.requires || []).includes('email-finder') || (t.requires || []).includes('email');
+        const buildPick = (t: TemplateDefinition, why?: string) => ({
             templateId: t.id,
             label: t.name,
-            why: t.bestFor || t.useCase,
+            why: why || t.bestFor || t.useCase,
             icon: t.icon,
             stepCount: t.stepCount,
             durationDays: t.durationDays,
-            needsEmail: (t.requires || []).includes('email-finder') || (t.requires || []).includes('email'),
-        }));
+            needsEmail: needsEmailOf(t),
+        });
+
+        // Deterministic heuristic fallback (used if the LLM pick fails/empties).
+        let picks = ranked.slice(0, 3).map((t) => buildPick(t));
+
+        // Smart pick: the LLM chooses from the narrowed candidates, grounded on the
+        // profile + the audience actually imported, with a tailored "why". Failure
+        // is non-fatal — we keep the heuristic list.
+        try {
+            const candidates = ranked.slice(0, 8);
+            const audience = await getAudienceSummary(userId).then(formatAudience).catch(() => '');
+            const { picks: llmPicks } = await generateActivationTemplatePicks(
+                grounding,
+                audience,
+                candidates.map((t) => ({ id: t.id, name: t.name, bestFor: t.bestFor || t.useCase, audience: t.audience, needsEmail: needsEmailOf(t) })),
+            );
+            const byId = new Map(candidates.map((t) => [t.id, t] as const));
+            const smart = llmPicks
+                .map((p) => { const t = byId.get(p.templateId); return t ? buildPick(t, p.why) : null; })
+                .filter((x): x is ReturnType<typeof buildPick> => x !== null);
+            if (smart.length) picks = smart;
+        } catch (e: any) {
+            console.warn('[ACTIVATION] smart template pick failed, using heuristic:', e?.message);
+        }
 
         res.json({ picks, coldStart, goalType });
     } catch (error: any) {

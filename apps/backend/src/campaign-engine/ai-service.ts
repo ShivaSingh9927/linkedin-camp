@@ -497,3 +497,37 @@ export async function generateActivationSearchRecs(g: ActivationGrounding): Prom
         throw new Error('Failed to generate search recommendations');
     }
 }
+
+export interface TemplateCandidate {
+    id: string;
+    name: string;
+    bestFor?: string;
+    audience?: string;   // 'cold' | 'warm' | ...
+    needsEmail?: boolean;
+}
+
+// Smart template pick: the LLM chooses the best-fit templates from a pre-filtered
+// candidate set, grounded on the profile + the audience the user actually
+// imported, returning a tailored "why". The backend narrows the candidates and
+// enforces the final list; this only ranks + phrases.
+export async function generateActivationTemplatePicks(
+    g: ActivationGrounding,
+    audience: string,
+    candidates: TemplateCandidate[],
+): Promise<{ picks: { templateId: string; why: string }[] }> {
+    if (isMockAI()) {
+        await mockAiWait();
+        return { picks: candidates.slice(0, 3).map((c) => ({ templateId: c.id, why: `[MOCK] Fits your audience.` })) };
+    }
+    try {
+        const response = await axios.post(
+            `${AI_SERVICE_URL}/ai/activation/recommend-templates`,
+            { ...activationPayload(g), audience, candidates },
+            { timeout: 30000 },
+        );
+        return response.data as { picks: { templateId: string; why: string }[] };
+    } catch (error: any) {
+        console.error('[AI-SERVICE] Error generating template picks:', error.message);
+        throw new Error('Failed to generate template picks');
+    }
+}

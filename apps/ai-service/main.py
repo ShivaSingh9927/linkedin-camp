@@ -1107,6 +1107,14 @@ class ActivationRequest(BaseModel):
     ai_strategy: Optional[Dict[str, Any]] = None
 
 
+class ActivationTemplateRequest(ActivationRequest):
+    # A compact summary of who the user has ACTUALLY imported (top titles /
+    # companies / status) so picks reflect the real audience, not just the stated
+    # profile — plus the pre-filtered candidate templates to choose from.
+    audience: Optional[str] = None
+    candidates: List[Dict[str, Any]] = []
+
+
 _GOAL_PHRASING = {
     "sell": "win new customers / book sales conversations",
     "recruiting": "source and reach candidates to hire",
@@ -1297,6 +1305,61 @@ RULES:
                 "rationale": (r.get("rationale") or "").strip(),
             })
         return {"recommendations": recs}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/ai/activation/recommend-templates")
+def activation_recommend_templates(req: ActivationTemplateRequest):
+    """Pick the best-fit campaign templates for THIS user from a pre-filtered
+    candidate set, grounded on their profile + the audience they've actually
+    imported, with a tailored 'why this fits you'. The backend narrows the
+    candidates, maps the chosen ids back to full metadata, and enforces the
+    final list — this service only ranks + phrases."""
+    if not req.candidates:
+        return {"picks": []}
+    grounding = _activation_grounding(req)
+    audience = (req.audience or "").strip() or "No leads imported yet."
+    catalog = "\n".join(
+        f'- id: {c.get("id")} | name: {c.get("name")} | best for: {c.get("bestFor") or ""} '
+        f'| audience: {c.get("audience") or ""} | needs email finder: {"yes" if c.get("needsEmail") else "no"}'
+        for c in req.candidates[:8]
+    )
+    system = (
+        "You are Qampi, an outreach copilot. Choose the campaign templates that best fit "
+        "THIS user and the leads they've actually imported. Pick ONLY from the provided "
+        "candidates — never invent a template. Return ONLY valid JSON."
+    )
+    user = f"""What I know about this user:
+{grounding}
+
+Who they've imported (their real audience):
+{audience}
+
+Candidate templates (choose from these ids ONLY):
+{catalog}
+
+Pick the 2-3 best-fit templates. Return EXACTLY:
+{{
+  "picks": [
+    {{ "templateId": "<one of the candidate ids>", "why": "<one sentence: why THIS fits this user + their audience>" }}
+  ]
+}}
+RULES:
+- Order best-fit first. Choose 2-3, never more.
+- Each `why` must reference something concrete about them or their audience, under ~20 words.
+- Prefer templates that do NOT need the email finder unless the audience clearly needs email.
+- Output ONLY the JSON, no code fences, no trailing commas."""
+    try:
+        raw = call_llm(system, user, temperature=0.5, max_tokens=700)
+        data = _tolerant_json(raw)
+        valid_ids = {c.get("id") for c in req.candidates}
+        picks = []
+        for p in (data.get("picks") or [])[:3]:
+            tid = (p.get("templateId") or "").strip()
+            if tid in valid_ids and not any(x["templateId"] == tid for x in picks):
+                picks.append({"templateId": tid, "why": (p.get("why") or "").strip()})
+        return {"picks": picks}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
