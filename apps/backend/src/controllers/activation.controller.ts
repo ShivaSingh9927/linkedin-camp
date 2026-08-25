@@ -25,7 +25,7 @@ import { TEMPLATES, type TemplateDefinition } from '../campaign-templates';
 import { checkSearchQuota } from '../campaign-engine/safety/quota';
 import { checkQuota } from '../campaign-engine/safety/quota';
 import { renderCapabilityContract, COPILOT_INTENTS, type CopilotContext, type CopilotIntent } from '../copilot/capabilities';
-import { runIntentQuery, getAudienceSummary, type QueryToolData, type AudienceSummaryData } from '../copilot/query-tools';
+import { runIntentQuery, getAudienceSummary, findLeadByName, type QueryToolData, type AudienceSummaryData, type LeadMatch } from '../copilot/query-tools';
 
 // Build the grounding object from the user's businessProfile. Both self-* fields
 // (read from their real LinkedIn after connect) and the onboarding-provided
@@ -95,6 +95,21 @@ function statusFacts(td: QueryToolData, ctx: CopilotContext): string {
     }
     parts.push(`Searches left this month: ${ctx.searchesRemaining}/${ctx.searchesCap}. Invites left today: ${ctx.dailyConnectRemaining}.`);
     return parts.join(' ');
+}
+
+// Answer a "look up X in my leads" request from the user's OWN imported leads.
+function leadLookupReply(query: string, matches: LeadMatch[]): string {
+    if (!matches.length) {
+        return `I couldn’t find a lead matching “${query}” in your list. I can only look up leads you’ve already imported — want me to search LinkedIn for them instead?`;
+    }
+    if (matches.length === 1) {
+        const m = matches[0];
+        const role = [m.jobTitle, m.company].filter(Boolean).join(' at ');
+        const head = [m.name, role].filter(Boolean).join(' — ');
+        return `${head}${m.location ? ` (${m.location})` : ''}. Status: ${m.status}.${m.linkedinUrl ? `\n${m.linkedinUrl}` : ''}`;
+    }
+    const lines = matches.map((m) => `• ${m.name}${m.company ? ` — ${m.company}` : ''}${m.linkedinUrl ? ` — ${m.linkedinUrl}` : ''}`);
+    return `I found ${matches.length} matching leads:\n${lines.join('\n')}`;
 }
 
 export const activationUnderstand = async (req: AuthRequest, res: Response) => {
@@ -177,12 +192,20 @@ export const copilotMessage = async (req: AuthRequest, res: Response) => {
 
         // Deterministic read-only pre-fetch (Option B): run the query the intent
         // needs, then ground the reply in the result. No second LLM call.
-        const toolData = await runIntentQuery(intent, userId).catch(() => null);
+        let toolData = await runIntentQuery(intent, userId).catch(() => null);
 
         let reply = routed.reply;
         if (intent === 'check_status' && toolData) {
             const facts = statusFacts(toolData, ctx);
             reply = [reply, facts].filter(Boolean).join('\n\n');
+        }
+        // lookup_lead: read the person straight from the user's own lead list
+        // (never a LinkedIn search) and answer with their real fields.
+        if (intent === 'lookup_lead') {
+            const q = (routed.params?.keywords || message).trim();
+            const matches = await findLeadByName(userId, q).catch(() => [] as LeadMatch[]);
+            reply = leadLookupReply(q, matches);
+            toolData = { ...(toolData || {}), leads: matches };
         }
 
         res.json({

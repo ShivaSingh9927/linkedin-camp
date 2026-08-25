@@ -1399,7 +1399,7 @@ def copilot_route(req: CopilotRouteRequest):
 Classify the message into exactly ONE intent from the allowed list and write a short warm reply. Return EXACTLY this JSON:
 {{
   "intent": "<one of: {', '.join(intents)}>",
-  "params": {{ "keywords": "<if find_leads: a ready-to-run LinkedIn search string; else ''>", "templateId": "<if launch_campaign and the user named a specific template; else ''>" }},
+  "params": {{ "keywords": "<if find_leads: a ready-to-run LinkedIn search string; if lookup_lead: the person's name to find in their existing leads; else ''>", "templateId": "<if launch_campaign and the user named a specific template; else ''>" }},
   "reply": "<one short, warm sentence to show the user; if unsupported/off_topic, gently say what you can help with instead>",
   "needsConfirm": <true ONLY if intent is launch_campaign, else false>
 }}

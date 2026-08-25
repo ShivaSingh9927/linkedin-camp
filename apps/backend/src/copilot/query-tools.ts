@@ -37,6 +37,15 @@ export interface AudienceSummaryData {
     byDegree: Record<string, number>;
 }
 
+export interface LeadMatch {
+    name: string;
+    jobTitle?: string;
+    company?: string;
+    location?: string;
+    linkedinUrl?: string;
+    status: string;
+}
+
 export interface LeadInfoData {
     name: string;
     headline?: string;
@@ -59,6 +68,7 @@ export interface QueryToolData {
     repliesWaiting?: RepliesWaitingData;
     available?: { count: number };
     audience?: AudienceSummaryData;
+    leads?: LeadMatch[];
 }
 
 const clip = (s: string, n = 90) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
@@ -164,6 +174,34 @@ export async function getAudienceSummary(userId: string): Promise<AudienceSummar
         byStatus,
         byDegree,
     };
+}
+
+// Look up leads ALREADY in the user's list by name (read-only). Case-insensitive
+// match on first/last name across the query's word tokens. Returns the top few
+// so the copilot can answer "what's X's company / URL / status?" from the user's
+// own data — never a LinkedIn search.
+export async function findLeadByName(userId: string, query: string): Promise<LeadMatch[]> {
+    const q = (query || '').trim();
+    if (!q) return [];
+    const tokens = q.split(/\s+/).map((t) => t.trim()).filter((t) => t.length >= 2).slice(0, 4);
+    const terms = tokens.length ? tokens : [q];
+    const OR = terms.flatMap((t) => [
+        { firstName: { contains: t, mode: 'insensitive' as const } },
+        { lastName: { contains: t, mode: 'insensitive' as const } },
+    ]);
+    const leads = await prisma.lead.findMany({
+        where: { userId, OR },
+        select: { firstName: true, lastName: true, jobTitle: true, company: true, location: true, linkedinUrl: true, status: true },
+        take: 5,
+    });
+    return leads.map((l) => ({
+        name: fullName(l.firstName, l.lastName),
+        jobTitle: l.jobTitle || undefined,
+        company: l.company || undefined,
+        location: l.location || undefined,
+        linkedinUrl: l.linkedinUrl || undefined,
+        status: l.status,
+    }));
 }
 
 // One lead in depth — for per-lead reasoning (e.g. drafting a reply in the
