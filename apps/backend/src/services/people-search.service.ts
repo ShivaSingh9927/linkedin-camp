@@ -187,7 +187,7 @@ const DEGREE_TOKEN: Record<1 | 2 | 3, string> = { 1: 'F', 2: 'S', 3: 'O' };
 // URN lookup needs a typeahead round-trip we deliberately skip for v1 — LinkedIn
 // keyword search already ranks title/location/industry text well, and this keeps
 // the request a single GET. Degree is a clean enum, so it goes on as a real param.
-export function buildSearchUrl(keywords: string, filters?: SearchFilters): string {
+export function buildSearchUrl(keywords: string, filters?: SearchFilters, page?: number): string {
     const terms = [keywords, filters?.title, filters?.location, filters?.industry]
         .map((t) => clean(t || ''))
         .filter(Boolean);
@@ -199,6 +199,8 @@ export function buildSearchUrl(keywords: string, filters?: SearchFilters): strin
         const tokens = filters.degrees.map((d) => DEGREE_TOKEN[d]).filter(Boolean);
         if (tokens.length) params.set('network', JSON.stringify(tokens));
     }
+    // Page 2+ for "show more" — LinkedIn people-search paginates via `page`.
+    if (page && page > 1) params.set('page', String(page));
     return `https://www.linkedin.com/search/results/people/?${params.toString()}`;
 }
 
@@ -218,10 +220,10 @@ function looksBlocked(html: string): boolean {
  */
 export async function searchPeople(
     userId: string,
-    opts: { keywords: string; filters?: SearchFilters; limit?: number },
+    opts: { keywords: string; filters?: SearchFilters; limit?: number; page?: number },
 ): Promise<SearchResult> {
     const limit = Math.min(Math.max(opts.limit ?? 10, 1), 10);
-    const url = buildSearchUrl(opts.keywords, opts.filters);
+    const url = buildSearchUrl(opts.keywords, opts.filters, opts.page);
     let sawAuthwall = false; // browser-free signalled a dead session
 
     // ---- browser-free ----

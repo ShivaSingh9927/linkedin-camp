@@ -18,6 +18,7 @@ import {
     generateActivationUnderstand,
     generateActivationSearchRecs,
     generateActivationTemplatePicks,
+    generateSearchQuery,
     routeCopilotMessage,
     type ActivationGrounding,
 } from '../campaign-engine/ai-service';
@@ -85,6 +86,14 @@ function statusFacts(td: QueryToolData, ctx: CopilotContext): string {
     if (td.campaign) {
         const c = td.campaign;
         parts.push(`Your campaign “${c.name}” is ${c.pct}% done — ${c.processed}/${c.total} leads processed, ${c.connected} connected, ${c.replied} replied.`);
+    } else if (td.lastCompleted && td.lastCompleted.total > 0) {
+        // Retrospective on the most recent finished campaign, with a light judgment.
+        const c = td.lastCompleted;
+        const connectPct = c.total ? Math.round((c.connected / c.total) * 100) : 0;
+        const assess = connectPct >= 30
+            ? 'Solid connect rate.'
+            : 'Connect rate is on the low side — a tighter ICP or a warmer invite note could lift it.';
+        parts.push(`No campaign running now. Your last one, “${c.name}”, finished: ${c.total} leads, ${c.connected} connected (${connectPct}%), ${c.replied} replied. ${assess}`);
     } else {
         parts.push('No campaign is running right now.');
     }
@@ -206,6 +215,17 @@ export const copilotMessage = async (req: AuthRequest, res: Response) => {
             const matches = await findLeadByName(userId, q).catch(() => [] as LeadMatch[]);
             reply = leadLookupReply(q, matches);
             toolData = { ...(toolData || {}), leads: matches };
+        }
+        // find_leads: don't search yet — REASON a strong boolean query from the
+        // phrase + profile + audience and hand it back for the user to approve/edit
+        // (searches are budget-scarce, so we show before we spend).
+        if (intent === 'find_leads') {
+            const phrase = (routed.params?.keywords || message).trim();
+            const audienceStr = toolData?.audience ? formatAudience(toolData.audience) : '';
+            try {
+                const draft = await generateSearchQuery(phrase, grounding, audienceStr);
+                toolData = { ...(toolData || {}), searchDraft: { label: draft.label, keywords: draft.keywords, filters: draft.filters, rationale: draft.rationale } };
+            } catch { /* frontend falls back to searching the raw phrase */ }
         }
 
         res.json({

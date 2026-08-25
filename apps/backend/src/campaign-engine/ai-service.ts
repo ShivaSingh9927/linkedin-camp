@@ -506,6 +506,27 @@ export interface TemplateCandidate {
     needsEmail?: boolean;
 }
 
+// Turn a free-text phrase into ONE strong LinkedIn boolean search, grounded on
+// the profile + imported audience. Shown to the user to approve/edit BEFORE a
+// search is spent (searches are budget-scarce).
+export async function generateSearchQuery(phrase: string, g: ActivationGrounding, audience: string): Promise<SearchRecommendation> {
+    if (isMockAI()) {
+        await mockAiWait();
+        return { label: phrase, keywords: `("${phrase}")`, filters: { title: '', location: '', industry: '', degree: '2nd' }, rationale: '[MOCK] Grounded boolean query.' };
+    }
+    try {
+        const response = await axios.post(
+            `${AI_SERVICE_URL}/ai/activation/build-search`,
+            { ...activationPayload(g), phrase, audience },
+            { timeout: 30000 },
+        );
+        return response.data as SearchRecommendation;
+    } catch (error: any) {
+        console.error('[AI-SERVICE] Error building search query:', error.message);
+        throw new Error('Failed to build search query');
+    }
+}
+
 // Smart template pick: the LLM chooses the best-fit templates from a pre-filtered
 // candidate set, grounded on the profile + the audience the user actually
 // imported, returning a tailored "why". The backend narrows the candidates and

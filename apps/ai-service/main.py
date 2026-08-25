@@ -1115,6 +1115,14 @@ class ActivationTemplateRequest(ActivationRequest):
     candidates: List[Dict[str, Any]] = []
 
 
+class BuildSearchRequest(ActivationRequest):
+    # The user's free-text phrase ("founders", "heads of growth in fintech") to
+    # turn into ONE strong LinkedIn boolean query, grounded on their profile +
+    # the audience they've already imported.
+    phrase: str
+    audience: Optional[str] = None
+
+
 _GOAL_PHRASING = {
     "sell": "win new customers / book sales conversations",
     "recruiting": "source and reach candidates to hire",
@@ -1360,6 +1368,64 @@ RULES:
             if tid in valid_ids and not any(x["templateId"] == tid for x in picks):
                 picks.append({"templateId": tid, "why": (p.get("why") or "").strip()})
         return {"picks": picks}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/ai/activation/build-search")
+def activation_build_search(req: BuildSearchRequest):
+    """Turn the user's free-text phrase into ONE strong, ready-to-run LinkedIn
+    boolean people-search, grounded on their profile + imported audience. The
+    copilot shows this to the user to approve/edit BEFORE spending a search."""
+    phrase = (req.phrase or "").strip()
+    if not phrase:
+        raise HTTPException(status_code=400, detail="phrase required")
+    grounding = _activation_grounding(req)
+    audience = (req.audience or "").strip() or "No leads imported yet."
+    system = (
+        "You are Qampi, an expert at LinkedIn people-search. LinkedIn's keyword box "
+        "supports boolean: AND, OR, NOT, \"quoted phrases\", and (parentheses). Best "
+        "practice: OR-groups of role SYNONYMS, quote multi-word titles, and NOT out "
+        "noise (freelance, recruiter, intern, student, assistant) — precise targeting "
+        "beats a vague keyword. Return ONLY valid JSON."
+    )
+    user = f"""What I know about this user:
+{grounding}
+
+Who they've already imported (bias toward this audience):
+{audience}
+
+The user asked to find: "{phrase}"
+
+Build ONE strong LinkedIn boolean search. Return EXACTLY:
+{{
+  "label": "<3-5 word name for this search>",
+  "keywords": "<a ready-to-run LinkedIn boolean string: OR-groups of role synonyms, quoted multi-word titles, NOT-exclusions for noise>",
+  "filters": {{ "title": "<primary title or ''>", "location": "<location or ''>", "industry": "<industry or ''>", "degree": "<any | 2nd | 3rd>" }},
+  "rationale": "<one short sentence: why this finds good leads for them>"
+}}
+RULES:
+- `keywords` MUST use boolean operators, e.g. ("founder" OR "co-founder" OR "founding member" OR CEO) NOT (freelance OR recruiter OR intern).
+- If the user already typed a valid boolean query, keep it (just tidy it) — don't dumb it down.
+- Ground titles/industry/location in their profile + audience when the phrase is vague.
+- Default degree to 2nd (warmer than cold 3rd). Keep `keywords` under ~200 characters, `rationale` under ~15 words.
+- Output ONLY the JSON, no code fences, no trailing commas."""
+    try:
+        raw = call_llm(system, user, temperature=0.5, max_tokens=500)
+        data = _tolerant_json(raw)
+        kw = (data.get("keywords") or "").strip() or phrase
+        f = data.get("filters") or {}
+        return {
+            "label": (data.get("label") or phrase).strip(),
+            "keywords": kw,
+            "filters": {
+                "title": (f.get("title") or "").strip(),
+                "location": (f.get("location") or "").strip(),
+                "industry": (f.get("industry") or "").strip(),
+                "degree": (f.get("degree") or "any").strip().lower(),
+            },
+            "rationale": (data.get("rationale") or "").strip(),
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

@@ -63,12 +63,21 @@ export interface LeadInfoData {
 // What the intent dispatcher hands back to the caller. All fields optional — a
 // given intent only fills the slice it needs, and any tool that throws is
 // swallowed (fail-open) so a lookup hiccup never blocks the reply.
+export interface SearchDraft {
+    label: string;
+    keywords: string;
+    filters: { title?: string; location?: string; industry?: string; degree?: string };
+    rationale: string;
+}
+
 export interface QueryToolData {
     campaign?: CampaignStatusData | null;
+    lastCompleted?: CampaignStatusData | null;
     repliesWaiting?: RepliesWaitingData;
     available?: { count: number };
     audience?: AudienceSummaryData;
     leads?: LeadMatch[];
+    searchDraft?: SearchDraft;
 }
 
 const clip = (s: string, n = 90) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
@@ -98,6 +107,29 @@ export async function getCampaignStatus(userId: string): Promise<CampaignStatusD
     const processed = Math.max(0, total - pending);
     const pct = total > 0 ? Math.round((processed / total) * 100) : 0;
     return { name: active.name, total, processed, pct, connected, replied };
+}
+
+// Most recently created COMPLETED campaign + its outcome — for a retrospective
+// ("your last campaign finished: N connected, R replied"). Campaign has no
+// updatedAt, so "most recent" is by createdAt (good enough for the newest one).
+export async function getLastCompletedCampaign(userId: string): Promise<CampaignStatusData | null> {
+    const done = await prisma.campaign.findFirst({
+        where: { userId, status: 'COMPLETED' },
+        select: { id: true, name: true },
+        orderBy: { createdAt: 'desc' },
+    });
+    if (!done) return null;
+    const groups = await prisma.campaignLead.groupBy({
+        by: ['status'],
+        where: { campaignId: done.id },
+        _count: { _all: true },
+    });
+    const by: Record<string, number> = {};
+    for (const g of groups) by[g.status] = g._count._all;
+    const total = Object.values(by).reduce((s, n) => s + n, 0);
+    const connected = (by['CONNECTED'] || 0) + (by['REPLIED'] || 0);
+    const replied = by['REPLIED'] || 0;
+    return { name: done.name, total, processed: total, pct: 100, connected, replied };
 }
 
 // Uncampaigned leads. Scalar-only set-diff (userId + leadId) — no relation
@@ -265,11 +297,15 @@ export async function getLeadInfo(userId: string, leadId: string): Promise<LeadI
 export async function runIntentQuery(intent: CopilotIntent, userId: string): Promise<QueryToolData | null> {
     const safe = async <T>(p: Promise<T>, fallback: T): Promise<T> => p.catch(() => fallback);
     switch (intent) {
-        case 'check_status':
+        case 'check_status': {
+            const campaign = await safe(getCampaignStatus(userId), null);
             return {
-                campaign: await safe(getCampaignStatus(userId), null),
+                campaign,
+                // Only bother with the retrospective when nothing's running now.
+                lastCompleted: campaign ? null : await safe(getLastCompletedCampaign(userId), null),
                 repliesWaiting: await safe(getRepliesWaiting(userId), { count: 0, names: [] }),
             };
+        }
         case 'launch_campaign':
             return { available: await safe(getAvailableLeadsCount(userId), { count: 0 }) };
         case 'recommend_campaign':

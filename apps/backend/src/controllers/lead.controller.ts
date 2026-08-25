@@ -264,11 +264,12 @@ export const importLeads = async (req: any, res: Response) => {
 // it. Does NOT import — the client imports the chosen results via POST /import.
 export const searchLeads = async (req: any, res: Response) => {
     const userId = req.user.id;
-    const { keywords, filters, limit } = req.body || {};
+    const { keywords, filters, limit, page } = req.body || {};
 
     if (!keywords || typeof keywords !== 'string' || !keywords.trim()) {
         return res.status(400).json({ error: 'keywords_required', message: 'A search phrase is required.' });
     }
+    const pageNum = typeof page === 'number' && page > 1 ? Math.min(page, 100) : 1;
 
     try {
         const quota = await checkSearchQuota(userId);
@@ -285,6 +286,7 @@ export const searchLeads = async (req: any, res: Response) => {
             keywords: keywords.trim(),
             filters: (filters || undefined) as SearchFilters | undefined,
             limit: typeof limit === 'number' ? limit : undefined,
+            page: pageNum,
         });
 
         // LinkedIn counts the request against the commercial-use limit whether

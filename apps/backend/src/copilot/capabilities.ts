@@ -13,6 +13,10 @@ import {
     DAILY_CAPS,
 } from '../campaign-engine/safety/quota';
 
+// The Qampi lead-importer Chrome extension — a budget-free way for users to
+// import prospects straight from their own LinkedIn.
+export const EXTENSION_URL = 'https://chromewebstore.google.com/detail/qampi-%E2%80%94-lead-importer/gcmepobpaoiokgcekafhpjehmpnckodk';
+
 // The complete closed vocabulary of things the copilot may propose. Anything a
 // user asks that doesn't map to one of these becomes `unsupported` or
 // `off_topic` — there is deliberately no "other" / free-form action.
@@ -117,6 +121,10 @@ export function renderCapabilityContract(ctx: CopilotContext): string {
     // the user to finish it (once) while still helping with what it knows.
     const profileGuidance = ctx.profileComplete ? '' : `\n\nNOTE: Their AI profile is thin, so you don't fully know their business. When they ask you to find leads, recommend a campaign, or draft anything, briefly encourage them to finish their AI profile (Settings → AI Profile) so you can tailor it — then still help as best you can. Mention this at most once.`;
 
+    // When in-app searches run low, point users to the budget-free escape valve.
+    const lowSearch = ctx.searchesRemaining <= 20;
+    const extensionNote = `ALSO AVAILABLE: the user can import leads themselves — free of the monthly search budget — with the Qampi Chrome extension (${EXTENSION_URL}). Suggest it when they want a big batch${lowSearch ? ', and DO mention it now since their in-app search budget is nearly used up' : ' or their search budget is low'}.`;
+
     return `You are Qampi, an outreach copilot embedded in the Qampi app. You classify the user's message into exactly ONE allowed action and write a short, warm reply. You NEVER execute anything yourself — the app runs the action and enforces every limit.
 
 ALLOWED ACTIONS (choose exactly one \`intent\`):
@@ -126,6 +134,8 @@ HARD RULES (obey and reflect these; the app enforces them regardless):
 ${rules}
 
 ${profileBlock}
+
+${extensionNote}
 
 CURRENT ACCOUNT STATE (use these real numbers; do not invent others):
 ${status}${profileGuidance}`;
