@@ -70,6 +70,14 @@ export interface SearchDraft {
     rationale: string;
 }
 
+export interface WaitingReplyItem {
+    leadId: string;
+    name: string;
+    subtitle: string;   // "jobTitle · 2nd"
+    message: string;    // their last inbound message (clipped)
+    at: string;         // ISO of their reply
+}
+
 export interface QueryToolData {
     campaign?: CampaignStatusData | null;
     lastCompleted?: CampaignStatusData | null;
@@ -78,6 +86,7 @@ export interface QueryToolData {
     audience?: AudienceSummaryData;
     leads?: LeadMatch[];
     searchDraft?: SearchDraft;
+    waitingReplies?: WaitingReplyItem[];
 }
 
 const clip = (s: string, n = 90) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
@@ -250,6 +259,50 @@ export async function findLeadByName(userId: string, query: string): Promise<Lea
         })
         .slice(0, 5)
         .map(toMatch);
+}
+
+// Leads whose LATEST message is inbound (they replied, we haven't answered) —
+// with the lead + their last message, so the copilot can draft in-chat. Same
+// unanswered-inbound signal as getRepliesWaiting, but returns the content needed
+// to render a reply card. Newest reply first; bounded.
+export async function getWaitingReplies(userId: string, limit = 10): Promise<WaitingReplyItem[]> {
+    const messages = await prisma.message.findMany({
+        where: { userId },
+        select: { leadId: true, direction: true, content: true, sentAt: true },
+        orderBy: { sentAt: 'asc' },
+    });
+    type Sig = { lastInbound: number | null; lastOutbound: number | null; content: string; at: string };
+    const sig: Record<string, Sig> = {};
+    for (const m of messages) {
+        const s = (sig[m.leadId] ||= { lastInbound: null, lastOutbound: null, content: '', at: '' });
+        const t = new Date(m.sentAt).getTime();
+        if (m.direction === 'RECEIVED') {
+            if (s.lastInbound == null || t >= s.lastInbound) { s.lastInbound = t; s.content = m.content || ''; s.at = new Date(m.sentAt).toISOString(); }
+        } else {
+            s.lastOutbound = Math.max(s.lastOutbound ?? 0, t);
+        }
+    }
+    const ids = Object.entries(sig)
+        .filter(([, s]) => s.lastInbound != null && (s.lastOutbound == null || s.lastInbound > s.lastOutbound))
+        .sort((a, b) => (b[1].lastInbound ?? 0) - (a[1].lastInbound ?? 0))
+        .map(([id]) => id)
+        .slice(0, limit);
+    if (!ids.length) return [];
+    const leads = await prisma.lead.findMany({
+        where: { id: { in: ids }, userId },
+        select: { id: true, firstName: true, lastName: true, jobTitle: true, connectionDegree: true },
+    });
+    const byId: Record<string, (typeof leads)[number]> = {};
+    leads.forEach((l) => { byId[l.id] = l; });
+    return ids
+        .map((id): WaitingReplyItem | null => {
+            const l = byId[id];
+            if (!l) return null;
+            const deg = l.connectionDegree === 1 ? '1st' : l.connectionDegree === 2 ? '2nd' : l.connectionDegree === 3 ? '3rd' : '';
+            const subtitle = [l.jobTitle || '', deg].filter(Boolean).join(' · ');
+            return { leadId: id, name: fullName(l.firstName, l.lastName), subtitle, message: clip(sig[id].content, 240), at: sig[id].at };
+        })
+        .filter((x): x is WaitingReplyItem => x !== null);
 }
 
 // One lead in depth — for per-lead reasoning (e.g. drafting a reply in the

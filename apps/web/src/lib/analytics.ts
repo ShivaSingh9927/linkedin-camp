@@ -24,7 +24,8 @@ export type AnalyticsEvent =
   | 'copilot_search_run'
   | 'copilot_template_selected'
   | 'copilot_quickprompt'
-  | 'copilot_rotate_angle';
+  | 'copilot_rotate_angle'
+  | 'copilot_reply_sent';
 
 export function track(event: AnalyticsEvent, properties?: Record<string, any>) {
   if (!analyticsEnabled()) return;

@@ -19,6 +19,7 @@ import {
     generateActivationSearchRecs,
     generateActivationTemplatePicks,
     generateSearchQuery,
+    generateReplySuggestions,
     routeCopilotMessage,
     type ActivationGrounding,
 } from '../campaign-engine/ai-service';
@@ -26,7 +27,7 @@ import { TEMPLATES, type TemplateDefinition } from '../campaign-templates';
 import { checkSearchQuota } from '../campaign-engine/safety/quota';
 import { checkQuota } from '../campaign-engine/safety/quota';
 import { renderCapabilityContract, COPILOT_INTENTS, type CopilotContext, type CopilotIntent } from '../copilot/capabilities';
-import { runIntentQuery, getAudienceSummary, findLeadByName, getCampaignStatus, getLastCompletedCampaign, type QueryToolData, type AudienceSummaryData, type LeadMatch } from '../copilot/query-tools';
+import { runIntentQuery, getAudienceSummary, findLeadByName, getCampaignStatus, getLastCompletedCampaign, getWaitingReplies, type QueryToolData, type AudienceSummaryData, type LeadMatch } from '../copilot/query-tools';
 import { getTriedAngles, getSearchCoverage } from '../services/search-memory.service';
 
 // Build the grounding object from the user's businessProfile. Both self-* fields
@@ -237,6 +238,16 @@ export const copilotMessage = async (req: AuthRequest, res: Response) => {
             reply = leadLookupReply(q, matches);
             toolData = { ...(toolData || {}), leads: matches };
         }
+        // handle_replies: pull the unanswered inbound conversations so the client
+        // can draft each in-chat. Deterministic, honest reply (Qampi drafts; the
+        // human sends) — never an auto-send.
+        if (intent === 'handle_replies') {
+            const waitingReplies = await getWaitingReplies(userId).catch(() => []);
+            toolData = { ...(toolData || {}), waitingReplies };
+            reply = waitingReplies.length
+                ? `You’ve got ${waitingReplies.length} ${waitingReplies.length === 1 ? 'reply' : 'replies'} waiting — here’s a draft for the first. Review and send, or ask me to warm it up. I never send on my own.`
+                : 'You’re all caught up — no replies are waiting right now.';
+        }
         // find_leads: don't search yet — REASON a strong boolean query from the
         // phrase + profile + audience and hand it back for the user to approve/edit
         // (searches are budget-scarce, so we show before we spend).
@@ -274,6 +285,41 @@ export const copilotMessage = async (req: AuthRequest, res: Response) => {
     } catch (error: any) {
         console.error('[COPILOT] message error:', error.message);
         res.status(502).json({ error: 'copilot_failed', message: 'I had trouble processing that — try again in a moment.' });
+    }
+};
+
+// Draft ONE reply to a lead who responded — loads their thread + the user's
+// profile and returns a ready draft + a one-line rationale (recommendedNext).
+// Read-only compose: SENDING stays on the guarded inbox send path (the human
+// clicks send). `tone` lets the client ask for a warmer take ("Try warmer").
+export const copilotDraftReply = async (req: AuthRequest, res: Response) => {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+    const { leadId, tone } = req.body || {};
+    if (!leadId || typeof leadId !== 'string') return res.status(400).json({ error: 'lead_required' });
+    try {
+        const [lead, bp, msgs] = await Promise.all([
+            prisma.lead.findFirst({ where: { id: leadId, userId }, select: { firstName: true, lastName: true, headline: true, jobTitle: true, company: true } }),
+            prisma.businessProfile.findUnique({ where: { userId } }).catch(() => null),
+            prisma.message.findMany({ where: { userId, leadId }, orderBy: { sentAt: 'asc' }, take: 20, select: { direction: true, content: true } }),
+        ]);
+        if (!lead) return res.status(404).json({ error: 'lead_not_found' });
+        const them = (lead.firstName || '').trim() || 'Them';
+        const threadHistory = msgs.map((m) => ({ sender: m.direction === 'RECEIVED' ? them : 'You', text: m.content }));
+        const result = await generateReplySuggestions({
+            threadHistory,
+            tone: typeof tone === 'string' && tone ? tone : 'professional',
+            persona: bp?.persona || undefined,
+            valueProposition: bp?.valueProp || undefined,
+            aiStrategy: bp?.aiStrategy || undefined,
+            profileName: `${lead.firstName || ''} ${lead.lastName || ''}`.trim() || undefined,
+            profileHeadline: lead.headline || lead.jobTitle || undefined,
+            company: lead.company || undefined,
+        });
+        res.json({ text: result.variations?.[0]?.text || '', rationale: result.recommendedNext || '', situation: result.situation });
+    } catch (error: any) {
+        console.error('[COPILOT] draft-reply error:', error.message);
+        res.status(502).json({ error: 'draft_failed', message: 'Could not draft a reply right now. Try again in a moment.' });
     }
 };
 

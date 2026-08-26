@@ -23,6 +23,7 @@ export const EXTENSION_URL = 'https://chromewebstore.google.com/detail/qampi-%E2
 export type CopilotIntent =
     | 'find_leads'          // run a LinkedIn people-search (read; consumes monthly search budget)
     | 'lookup_lead'         // read-only: details about a person ALREADY in their lead list (no search)
+    | 'handle_replies'      // draft replies to leads who have responded (user reviews + sends)
     | 'recommend_campaign'  // suggest 2–3 starter templates
     | 'launch_campaign'     // launch a chosen TEMPLATE on imported leads (side-effect → confirm)
     | 'check_status'        // read-only: campaign progress, remaining budgets
@@ -31,7 +32,7 @@ export type CopilotIntent =
     | 'off_topic';          // not about Qampi outreach → polite redirect
 
 export const COPILOT_INTENTS: CopilotIntent[] = [
-    'find_leads', 'lookup_lead', 'recommend_campaign', 'launch_campaign',
+    'find_leads', 'lookup_lead', 'handle_replies', 'recommend_campaign', 'launch_campaign',
     'check_status', 'explain', 'unsupported', 'off_topic',
 ];
 
@@ -44,6 +45,7 @@ export interface CapabilitySpec {
 export const CAPABILITIES: CapabilitySpec[] = [
     { intent: 'find_leads', summary: 'The user wants to find/search for NEW leads or people on LinkedIn. Extract search keywords/filters into params.', sideEffect: false },
     { intent: 'lookup_lead', summary: 'The user wants details (LinkedIn URL, company, title, status) about a specific person ALREADY in their lead list / imported leads — NOT a new LinkedIn search. Extract the person\'s name into params.keywords.', sideEffect: false },
+    { intent: 'handle_replies', summary: 'The user wants to handle/answer/deal with replies from leads who responded ("handle the reply", "answer my messages", "reply to them", "draft a response"). Qampi drafts a reply for each; the USER reviews and sends — Qampi never sends automatically.', sideEffect: false },
     { intent: 'recommend_campaign', summary: 'The user wants campaign/sequence suggestions, or asks "what campaign should I run".', sideEffect: false },
     { intent: 'launch_campaign', summary: 'The user wants to start/launch/run a campaign on their leads. params.templateId if they named one.', sideEffect: true },
     { intent: 'check_status', summary: 'The user asks about progress, how many leads/searches/invites are left, or the state of their campaign.', sideEffect: false },

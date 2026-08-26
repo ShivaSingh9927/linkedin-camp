@@ -158,19 +158,43 @@ export type CopilotIntent =
     | 'find_leads' | 'recommend_campaign' | 'launch_campaign'
     | 'check_status' | 'explain' | 'unsupported' | 'off_topic';
 
-// Structured tool results the backend pre-fetched for this intent. Only
-// searchDraft is consumed by the UI today (the reasoned query to show before a
-// search is spent); other tool outputs currently arrive folded into `reply`.
+// A lead whose latest message is inbound (they replied, awaiting the user).
+export interface WaitingReply {
+    leadId: string;
+    name: string;
+    subtitle: string;
+    message: string;
+    at: string;
+}
+
+// Structured tool results the backend pre-fetched for this intent. searchDraft =
+// the reasoned query to show before a search is spent; waitingReplies = the
+// unanswered conversations to draft in-chat.
 export interface RoutedToolData {
     searchDraft?: SearchRecommendation;
+    waitingReplies?: WaitingReply[];
 }
 
 export interface RoutedMessage {
-    intent: CopilotIntent | 'lookup_lead';
+    intent: CopilotIntent | 'lookup_lead' | 'handle_replies';
     params: { keywords: string; templateId: string };
     reply: string;
     needsConfirm: boolean;
     toolData?: RoutedToolData | null;
+}
+
+// Draft a reply to one lead (loads their thread server-side). `tone` → warmer
+// takes on "Try warmer". Rationale is the model's recommended-next line.
+export interface ReplyDraftResult { text: string; rationale: string }
+export async function draftReply(leadId: string, tone?: string): Promise<ReplyDraftResult> {
+    const { data } = await api.post('/ai/copilot/draft-reply', { leadId, ...(tone ? { tone } : {}) });
+    return { text: data?.text || '', rationale: data?.rationale || '' };
+}
+
+// Queue a human-authored reply on the guarded inbox send path (Qampi never
+// auto-sends — this only fires from an explicit Send click).
+export async function sendReply(leadId: string, content: string): Promise<void> {
+    await api.post(`/inbox/conversations/${encodeURIComponent(leadId)}/messages`, { content });
 }
 
 export interface HistoryMsg { sender: 'you' | 'qampi'; text: string }

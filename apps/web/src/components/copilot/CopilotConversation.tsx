@@ -9,13 +9,14 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Search, Loader2, ArrowUp, Check, Plus, MapPin, Clock, ArrowRight, Rocket, LinkIcon, Sparkles, PenSquare, Trash2 } from 'lucide-react';
+import { Search, Loader2, ArrowUp, Check, Plus, MapPin, Clock, ArrowRight, Rocket, LinkIcon, Sparkles, PenSquare, Trash2, MessageSquare, Send } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { track } from '@/lib/analytics';
 import {
     fetchUnderstand, fetchSearchRecommendations, runSearch, importPeople, fetchTemplateRecommendations,
     routeMessage, launchFromTemplate, fetchAvailableLeads, fetchTemplateHint, fetchProactiveContext,
-    type Understand, type SearchRecommendation, type SearchPerson, type TemplatePick, type HistoryMsg, type LaunchOverrides, type TemplateHint, type ProactiveContext,
+    draftReply, sendReply,
+    type Understand, type SearchRecommendation, type SearchPerson, type TemplatePick, type HistoryMsg, type LaunchOverrides, type TemplateHint, type ProactiveContext, type WaitingReply,
 } from './copilotApi';
 import { type Msg, nextId } from './copilotTypes';
 import { useCopilot, type ThreadMeta } from './CopilotProvider';
@@ -26,8 +27,8 @@ import { useCopilot, type ThreadMeta } from './CopilotProvider';
 const QUICK_PROMPTS: { label: string; icon: typeof Search; action: 'search' | 'campaign' | 'status'; send: string }[] = [
     { label: 'Suggest searches', icon: Search, action: 'search', send: '' },
     { label: 'What campaign should I run?', icon: Rocket, action: 'campaign', send: '' },
+    { label: 'Handle my replies', icon: MessageSquare, action: 'status', send: 'Handle the replies waiting on me.' },
     { label: 'How’s my campaign?', icon: ArrowRight, action: 'status', send: 'How is my campaign doing?' },
-    { label: 'Suggest boolean keywords', icon: Search, action: 'status', send: 'Suggest some boolean search keywords for my best-fit leads.' },
 ];
 
 export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen' | 'panel'; onClose?: () => void }) {
@@ -51,6 +52,9 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
     messagesRef.current = messages;
     // Lets doSearch (defined earlier) trigger a rotation without a forward ref cycle.
     const rotateAngleRef = useRef<(() => void) | null>(null);
+    // The unanswered-reply queue for handle_replies — draft one card at a time.
+    const repliesQueueRef = useRef<WaitingReply[]>([]);
+    const replyIdxRef = useRef(0);
 
     // Compact history for the router (last several text turns only).
     const historyForRouter = useCallback((): HistoryMsg[] => {
@@ -186,6 +190,71 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
     }, [push, historyForRouter]);
     rotateAngleRef.current = rotateAngle;
 
+    // ── reply-in-chat (handle_replies) ───────────────────────────────────────
+    // Draft the NEXT unanswered reply in the queue as an in-chat card. One at a
+    // time (each draft is an LLM call), so the thread stays calm.
+    const draftNextReply = useCallback(async () => {
+        const q = repliesQueueRef.current;
+        const i = replyIdxRef.current;
+        if (i >= q.length) {
+            push({ id: nextId(), role: 'qampi', kind: 'text', text: 'That’s every reply handled. Want to get back to prospecting?' });
+            return;
+        }
+        const wr = q[i];
+        replyIdxRef.current = i + 1;
+        const cardId = nextId();
+        push({ id: cardId, role: 'qampi', kind: 'replyDraft', leadId: wr.leadId, name: wr.name, subtitle: wr.subtitle, theirMessage: wr.message, draft: '', rationale: '', tone: 'professional', remaining: q.length - i - 1, state: 'drafting' });
+        try {
+            const d = await draftReply(wr.leadId);
+            patch(cardId, { draft: d.text, rationale: d.rationale, state: 'ready' } as Partial<Msg>);
+        } catch {
+            patch(cardId, { state: 'error', error: 'I couldn’t draft this one — open it in the inbox.' } as Partial<Msg>);
+        }
+    }, [push, patch]);
+
+    const handleReplies = useCallback((list: WaitingReply[]) => {
+        repliesQueueRef.current = list || [];
+        replyIdxRef.current = 0;
+        if (!list || !list.length) return; // the routed reply already said "all caught up"
+        draftNextReply();
+    }, [draftNextReply]);
+
+    // Queue a human-reviewed reply on the guarded send path (never auto-send).
+    const sendReplyDraft = useCallback(async (msgId: string) => {
+        const m = messagesRef.current.find((x) => x.id === msgId);
+        if (!m || m.kind !== 'replyDraft' || !m.draft.trim()) return;
+        patch(msgId, { state: 'sending' } as Partial<Msg>);
+        try {
+            await sendReply(m.leadId, m.draft.trim());
+            track('copilot_reply_sent', {});
+            patch(msgId, { state: 'sent' } as Partial<Msg>);
+        } catch {
+            patch(msgId, { state: 'error', error: 'Couldn’t queue that reply. Try again in a moment.' } as Partial<Msg>);
+        }
+    }, [patch]);
+
+    // Regenerate the current draft in a warmer tone.
+    const tryWarmerReply = useCallback(async (msgId: string) => {
+        const m = messagesRef.current.find((x) => x.id === msgId);
+        if (!m || m.kind !== 'replyDraft') return;
+        patch(msgId, { state: 'drafting' } as Partial<Msg>);
+        try {
+            const d = await draftReply(m.leadId, 'warm');
+            patch(msgId, { draft: d.text, rationale: d.rationale, tone: 'warm', state: 'ready' } as Partial<Msg>);
+        } catch {
+            patch(msgId, { state: 'error', error: 'Couldn’t re-draft that. Try again.' } as Partial<Msg>);
+        }
+    }, [patch]);
+
+    const editReplyDraft = useCallback((msgId: string, text: string) => {
+        patch(msgId, { draft: text } as Partial<Msg>);
+    }, [patch]);
+
+    const backToProspecting = useCallback(() => {
+        if (!started) setStarted(true);
+        loadSearchChips();
+    }, [started, loadSearchChips]);
+
     const recommendCampaigns = useCallback(async () => {
         const tId = nextId();
         push({ id: tId, role: 'qampi', kind: 'templates', loading: true });
@@ -274,13 +343,15 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
             } else if (routed.intent === 'launch_campaign') {
                 if (routed.params.templateId) offerLaunch(routed.params.templateId, routed.params.templateId);
                 else recommendCampaigns();
+            } else if (routed.intent === 'handle_replies') {
+                handleReplies(routed.toolData?.waitingReplies || []);
             }
             // lookup_lead / check_status / explain / unsupported / off_topic → the reply already said it.
         } catch {
             setMessages((prev) => prev.filter((m) => m.id !== thinkId));
             push({ id: nextId(), role: 'qampi', kind: 'text', text: 'I had trouble with that — try rephrasing, or tell me the kind of people you want to reach.' });
         }
-    }, [started, push, doSearch, recommendCampaigns, offerLaunch, historyForRouter]);
+    }, [started, push, doSearch, recommendCampaigns, offerLaunch, handleReplies, historyForRouter]);
 
     const submitInput = useCallback(() => {
         const q = input.trim();
@@ -337,6 +408,11 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
                         onImported={afterImport}
                         onPickTemplate={offerLaunch}
                         onLaunch={runLaunch}
+                        onSendReply={sendReplyDraft}
+                        onTryWarmer={tryWarmerReply}
+                        onEditReply={editReplyDraft}
+                        onDraftNext={draftNextReply}
+                        onBackToProspecting={backToProspecting}
                     />
                 ))}
             </div>
@@ -499,7 +575,7 @@ function PanelResting({ onSuggestSearches, onRecommendCampaign, onCheckStatus }:
     );
 }
 
-function MessageRow({ m, onPickSearch, onRunDraft, onShowMore, onTryDifferent, onImported, onPickTemplate, onLaunch }: {
+function MessageRow({ m, onPickSearch, onRunDraft, onShowMore, onTryDifferent, onImported, onPickTemplate, onLaunch, onSendReply, onTryWarmer, onEditReply, onDraftNext, onBackToProspecting }: {
     m: Msg;
     onPickSearch: (label: string, keywords: string, filters?: SearchRecommendation['filters']) => void;
     onRunDraft: (msgId: string, label: string, keywords: string, filters?: SearchRecommendation['filters']) => void;
@@ -508,6 +584,11 @@ function MessageRow({ m, onPickSearch, onRunDraft, onShowMore, onTryDifferent, o
     onImported: (count: number, leadIds: string[]) => void;
     onPickTemplate: (templateId: string, label: string) => void;
     onLaunch: (msgId: string, overrides?: LaunchOverrides) => void;
+    onSendReply: (msgId: string) => void;
+    onTryWarmer: (msgId: string) => void;
+    onEditReply: (msgId: string, text: string) => void;
+    onDraftNext: () => void;
+    onBackToProspecting: () => void;
 }) {
     if (m.kind === 'text') {
         return m.role === 'user'
@@ -521,6 +602,7 @@ function MessageRow({ m, onPickSearch, onRunDraft, onShowMore, onTryDifferent, o
     if (m.kind === 'results') return <div className="pl-8"><ResultsBlock m={m} onImported={onImported} onShowMore={onShowMore} onTryDifferent={onTryDifferent} /></div>;
     if (m.kind === 'templates') return <div className="pl-8"><TemplatePicks loading={m.loading} picks={m.picks} onPick={onPickTemplate} /></div>;
     if (m.kind === 'launchConfirm') return <div className="pl-8"><LaunchConfirm m={m} onLaunch={onLaunch} /></div>;
+    if (m.kind === 'replyDraft') return <div className="pl-8"><ReplyDraftCard m={m} onSend={onSendReply} onTryWarmer={onTryWarmer} onEdit={onEditReply} onDraftNext={onDraftNext} onBackToProspecting={onBackToProspecting} /></div>;
     if (m.kind === 'reconnect') return <QBubble><ReconnectNotice /></QBubble>;
     return null;
 }
@@ -630,6 +712,77 @@ function LaunchConfirm({ m, onLaunch }: { m: Extract<Msg, { kind: 'launchConfirm
                     ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Launching…</>
                     : <><Rocket className="w-3.5 h-3.5" /> Launch campaign</>}
             </button>
+        </div>
+    );
+}
+
+// An in-chat reply card: the lead's message + a Qampi draft. The user reviews
+// (edit / warm it up), then Send queues it on the human-controlled send path —
+// Qampi never sends on its own. After sending, offer the next waiting reply.
+function ReplyDraftCard({ m, onSend, onTryWarmer, onEdit, onDraftNext, onBackToProspecting }: {
+    m: Extract<Msg, { kind: 'replyDraft' }>;
+    onSend: (id: string) => void;
+    onTryWarmer: (id: string) => void;
+    onEdit: (id: string, text: string) => void;
+    onDraftNext: () => void;
+    onBackToProspecting: () => void;
+}) {
+    const [editing, setEditing] = useState(false);
+    const initials = m.name.split(/\s+/).map((s) => s[0]).filter(Boolean).slice(0, 2).join('');
+    const drafting = m.state === 'drafting';
+    const sending = m.state === 'sending';
+    const sent = m.state === 'sent';
+
+    return (
+        <div className="bg-card border border-line rounded-card p-3 space-y-2.5 max-w-[92%]">
+            <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-full bg-brand-50 text-brand grid place-items-center text-[11px] font-medium shrink-0">{initials || '?'}</div>
+                <div className="min-w-0">
+                    <p className="text-[13px] font-medium text-foreground truncate">{m.name}</p>
+                    {m.subtitle && <p className="text-[11px] text-ink-500 truncate">{m.subtitle}</p>}
+                </div>
+            </div>
+            <p className="text-[12.5px] text-ink-700 italic border-l-2 border-line pl-3">“{m.theirMessage}”</p>
+
+            {drafting ? (
+                <div className="inline-flex items-center gap-2 text-ink-500 text-[13px]"><Loader2 className="w-3.5 h-3.5 animate-spin text-brand" /> Drafting a reply…</div>
+            ) : m.state === 'error' ? (
+                <div className="text-[13px] text-ink-700">{m.error}<Link href="/inbox" className="block mt-1 text-[12px] text-brand hover:underline">Open inbox →</Link></div>
+            ) : (
+                <div className="space-y-2">
+                    <div className="flex items-center gap-1.5">
+                        <span className="label !text-[10px] !text-brand-600">Draft reply</span>
+                        {m.tone === 'warm' && <span className="text-[10px] text-ink-400">· warmer</span>}
+                    </div>
+                    {m.rationale && <p className="text-[11px] text-ink-500">{m.rationale}</p>}
+                    {editing && !sent ? (
+                        <textarea rows={4} value={m.draft} onChange={(e) => onEdit(m.id, e.target.value)} className="w-full bg-surface border border-line rounded-control px-2.5 py-2 text-[13px] text-foreground outline-none focus:border-brand-200 resize-none leading-relaxed" />
+                    ) : (
+                        <div className="text-[13px] leading-relaxed text-foreground bg-surface rounded-control px-3 py-2.5 whitespace-pre-wrap">{m.draft}</div>
+                    )}
+
+                    {sent ? (
+                        <div className="space-y-2">
+                            <p className="inline-flex items-center gap-1.5 text-emerald-600 text-[13px] font-medium"><Check className="w-4 h-4" /> Reply queued to send</p>
+                            <div className="flex gap-2 flex-wrap">
+                                {m.remaining > 0
+                                    ? <button onClick={onDraftNext} className="inline-flex items-center gap-1.5 text-[13px] font-medium bg-brand text-white rounded-chip px-3.5 py-2 hover:bg-brand-600 transition-colors"><MessageSquare className="w-3.5 h-3.5" /> Draft the next ({m.remaining} left)</button>
+                                    : <span className="text-[12px] text-ink-500">That’s the last one.</span>}
+                                <button onClick={onBackToProspecting} className="text-[13px] font-medium text-ink-700 bg-card border border-line rounded-chip px-3 py-2 hover:border-brand-200 transition-colors">Back to prospecting</button>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="flex items-center gap-2 flex-wrap">
+                            <button onClick={() => onSend(m.id)} disabled={sending || !m.draft.trim()} className="inline-flex items-center gap-2 text-[13px] font-medium bg-brand text-white rounded-chip px-3.5 py-2 disabled:opacity-60 hover:bg-brand-600 transition-colors">
+                                {sending ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Sending…</> : <><Send className="w-3.5 h-3.5" /> Send reply</>}
+                            </button>
+                            <button onClick={() => setEditing((e) => !e)} disabled={sending} className="text-[13px] font-medium text-ink-700 bg-card border border-line rounded-chip px-3 py-2 hover:border-brand-200 transition-colors">{editing ? 'Done' : 'Edit'}</button>
+                            <button onClick={() => onTryWarmer(m.id)} disabled={sending} className="text-[13px] font-medium text-ink-700 bg-card border border-line rounded-chip px-3 py-2 hover:border-brand-200 transition-colors">Try warmer</button>
+                            {m.remaining > 0 && <span className="ml-auto text-[11px] text-ink-400">{m.remaining} more waiting</span>}
+                        </div>
+                    )}
+                </div>
+            )}
         </div>
     );
 }
