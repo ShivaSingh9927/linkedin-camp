@@ -20,6 +20,16 @@ import {
 import { type Msg, nextId } from './copilotTypes';
 import { useCopilot } from './CopilotProvider';
 
+// Ready-to-use prompts pinned above the composer, always reachable (not just on
+// an empty thread). `send` is the text run through the router for free-text
+// intents; 'search'/'campaign' short-circuit to the deterministic flows.
+const QUICK_PROMPTS: { label: string; icon: typeof Search; action: 'search' | 'campaign' | 'status'; send: string }[] = [
+    { label: 'Suggest searches', icon: Search, action: 'search', send: '' },
+    { label: 'What campaign should I run?', icon: Rocket, action: 'campaign', send: '' },
+    { label: 'How’s my campaign?', icon: ArrowRight, action: 'status', send: 'How is my campaign doing?' },
+    { label: 'Suggest boolean keywords', icon: Search, action: 'status', send: 'Suggest some boolean search keywords for my best-fit leads.' },
+];
+
 export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen' | 'panel'; onClose?: () => void }) {
     // Conversation state is owned by the layout-level provider so it survives
     // route navigation and (via localStorage) reloads. This component is a view.
@@ -293,7 +303,23 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
             </div>
 
             {/* composer */}
-            <div className="shrink-0 px-3 py-3 border-t border-line">
+            <div className="shrink-0 px-3 pt-2 pb-3 border-t border-line">
+                {/* Persistent quick prompts — always reachable, not just on an empty thread. */}
+                <div className="flex gap-1.5 overflow-x-auto pb-2 -mx-0.5 px-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                    {QUICK_PROMPTS.map((qp) => (
+                        <button
+                            key={qp.label}
+                            onClick={() => {
+                                if (qp.action === 'search') { setStarted(true); track('copilot_quickprompt', { action: 'search' }); loadSearchChips(); }
+                                else if (qp.action === 'campaign') { setStarted(true); track('copilot_quickprompt', { action: 'campaign' }); recommendCampaigns(); }
+                                else { track('copilot_quickprompt', { action: 'status' }); runMessage(qp.send); }
+                            }}
+                            className="inline-flex items-center gap-1.5 shrink-0 text-[12px] font-medium bg-surface border border-line rounded-chip px-2.5 py-1.5 text-ink-700 hover:border-brand-200 hover:bg-brand-50 hover:text-brand transition-colors whitespace-nowrap"
+                        >
+                            <qp.icon className="w-3 h-3 text-brand" /> {qp.label}
+                        </button>
+                    ))}
+                </div>
                 <div className="flex items-end gap-2 bg-card border border-line rounded-card px-3 py-2 focus-within:border-brand-200 transition-colors">
                     <textarea
                         ref={taRef}

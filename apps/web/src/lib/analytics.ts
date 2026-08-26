@@ -22,7 +22,8 @@ export type AnalyticsEvent =
   // Activation copilot funnel
   | 'copilot_opened'
   | 'copilot_search_run'
-  | 'copilot_template_selected';
+  | 'copilot_template_selected'
+  | 'copilot_quickprompt';
 
 export function track(event: AnalyticsEvent, properties?: Record<string, any>) {
   if (!analyticsEnabled()) return;
