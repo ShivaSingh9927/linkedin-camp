@@ -59,7 +59,7 @@ export function SidebarWrapper({ children }: { children: React.ReactNode }) {
         <AppHeader onMenuClick={() => setMobileNavOpen(true)} />
         <AccountHealthBanner />
         <main className="flex-1 overflow-y-auto">
-          <div className="px-4 sm:px-6 lg:px-8 2xl:px-12 py-5 sm:py-6 lg:py-8">
+          <div className="px-4 sm:px-6 lg:px-8 2xl:px-12 pt-3 pb-5 sm:pt-4 sm:pb-6 lg:pt-4 lg:pb-6">
             {children}
           </div>
         </main>

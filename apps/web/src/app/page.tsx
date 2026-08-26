@@ -116,7 +116,7 @@ export default function DashboardPage() {
           each pane scrolls internally). Falls back to natural stacked scroll on
           mobile. */}
       {setup?.requiredDone && (
-        <div className="flex flex-col gap-4 lg:h-[calc(100dvh-8.5rem)] lg:min-h-0">
+        <div className="flex flex-col gap-4 lg:h-[calc(100dvh-6.5rem)] lg:min-h-0">
           <div className="flex items-end justify-between gap-4 shrink-0">
             <div className="min-w-0">
               <h1 className="text-[26px] font-bold tracking-tight leading-none text-foreground truncate">
