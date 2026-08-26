@@ -76,6 +76,18 @@ export interface CopilotContext {
         bestFitBuyer?: string;
         goal?: string;
     };
+    // Recent-campaign snapshot — part of the always-on GLOBAL memory (with the
+    // profile above), so EVERY thread starts grounded on what's running / what
+    // last finished, even a brand-new one. Compact + re-read per message → flat
+    // token cost. Null when the user has never run a campaign.
+    recentCampaign?: {
+        name: string;
+        status: string;    // 'ACTIVE' | 'COMPLETED'
+        processed: number;
+        total: number;
+        connected: number;
+        replied: number;
+    } | null;
 }
 
 // Hard rules — stated to the LLM AND independently enforced server-side. The
@@ -99,9 +111,16 @@ export function hardRules(): string[] {
 export function renderCapabilityContract(ctx: CopilotContext): string {
     const actions = CAPABILITIES.map((c) => `- ${c.intent}: ${c.summary}${c.sideEffect ? ' (side-effect — the user must confirm)' : ''}`).join('\n');
     const rules = hardRules().map((r) => `- ${r}`).join('\n');
+    const rc = ctx.recentCampaign;
+    const campaignLine = rc
+        ? (rc.status === 'ACTIVE'
+            ? `Active campaign: "${rc.name}" — ${rc.processed}/${rc.total} leads processed, ${rc.connected} connected, ${rc.replied} replied.`
+            : `Most recent campaign: "${rc.name}" (finished) — ${rc.total} leads, ${rc.connected} connected, ${rc.replied} replied.`)
+        : 'No campaigns run yet.';
     const status = [
         `LinkedIn connected: ${ctx.linkedinConnected ? 'yes' : 'no'}`,
         `Active campaigns right now: ${ctx.activeCampaignCount}`,
+        campaignLine,
         `Leads in their account: ${ctx.leadCount} (${ctx.importedThisSession} imported this session)`,
         `Searches left this month: ${ctx.searchesRemaining} of ${ctx.searchesCap}`,
         `Connection requests left today: ${ctx.dailyConnectRemaining} of ${DAILY_CAPS['connect']}`,

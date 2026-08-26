@@ -9,16 +9,16 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Search, Loader2, ArrowUp, Check, Plus, MapPin, Clock, ArrowRight, Rocket, LinkIcon, Sparkles } from 'lucide-react';
+import { Search, Loader2, ArrowUp, Check, Plus, MapPin, Clock, ArrowRight, Rocket, LinkIcon, Sparkles, PenSquare, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { track } from '@/lib/analytics';
 import {
     fetchUnderstand, fetchSearchRecommendations, runSearch, importPeople, fetchTemplateRecommendations,
-    routeMessage, launchFromTemplate, fetchAvailableLeads, fetchTemplateHint,
-    type Understand, type SearchRecommendation, type SearchPerson, type TemplatePick, type HistoryMsg, type LaunchOverrides, type TemplateHint,
+    routeMessage, launchFromTemplate, fetchAvailableLeads, fetchTemplateHint, fetchProactiveContext,
+    type Understand, type SearchRecommendation, type SearchPerson, type TemplatePick, type HistoryMsg, type LaunchOverrides, type TemplateHint, type ProactiveContext,
 } from './copilotApi';
 import { type Msg, nextId } from './copilotTypes';
-import { useCopilot } from './CopilotProvider';
+import { useCopilot, type ThreadMeta } from './CopilotProvider';
 
 // Ready-to-use prompts pinned above the composer, always reachable (not just on
 // an empty thread). `send` is the text run through the router for free-text
@@ -33,8 +33,10 @@ const QUICK_PROMPTS: { label: string; icon: typeof Search; action: 'search' | 'c
 export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen' | 'panel'; onClose?: () => void }) {
     // Conversation state is owned by the layout-level provider so it survives
     // route navigation and (via localStorage) reloads. This component is a view.
-    const { messages, setMessages, importedLeadIds, setImportedLeadIds, hydrated } = useCopilot();
+    const { messages, setMessages, importedLeadIds, setImportedLeadIds, hydrated,
+        threads, activeThreadId, newThread, switchThread, deleteThread } = useCopilot();
     const [input, setInput] = useState('');
+    const [threadMenuOpen, setThreadMenuOpen] = useState(false);
     // Guards a single mount from kicking off the opening flow twice (e.g. React
     // strict-mode double-invoke); the durable "have we started" signal is whether
     // the restored thread already has messages.
@@ -296,6 +298,17 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
                     <p className="text-sm font-semibold text-foreground leading-tight">Qampi</p>
                     <p className="text-[11px] text-ink-500 leading-tight">{variant === 'fullscreen' ? 'Setting up your first campaign' : 'Your outreach copilot'}</p>
                 </div>
+                {variant === 'panel' && (
+                    <ThreadControls
+                        threads={threads}
+                        activeThreadId={activeThreadId}
+                        open={threadMenuOpen}
+                        setOpen={setThreadMenuOpen}
+                        onSwitch={(id) => { switchThread(id); setThreadMenuOpen(false); }}
+                        onNew={() => { newThread(); setThreadMenuOpen(false); }}
+                        onDelete={deleteThread}
+                    />
+                )}
                 {onClose && (
                     <button onClick={onClose} className="ml-auto text-[12px] text-ink-500 hover:text-ink-900 font-medium">
                         Skip for now
@@ -370,11 +383,97 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
     );
 }
 
+// Relative age of a thread (from an epoch-ms timestamp) for the recent-threads list.
+function relThread(ts: number, now: number): string {
+    const d = now - ts;
+    if (d < 60_000) return 'now';
+    const m = Math.floor(d / 60_000); if (m < 60) return `${m}m`;
+    const h = Math.floor(m / 60); if (h < 24) return `${h}h`;
+    const days = Math.floor(h / 24); if (days < 7) return `${days}d`;
+    return `${Math.floor(days / 7)}w`;
+}
+
+// Chatbox header controls: a clock (recent threads) + a new-chat button. The
+// clock opens a right-aligned dropdown to switch/delete; new-chat starts fresh.
+function ThreadControls({ threads, activeThreadId, open, setOpen, onSwitch, onNew, onDelete }: {
+    threads: ThreadMeta[];
+    activeThreadId: string;
+    open: boolean;
+    setOpen: (b: boolean) => void;
+    onSwitch: (id: string) => void;
+    onNew: () => void;
+    onDelete: (id: string) => void;
+}) {
+    const ref = useRef<HTMLDivElement | null>(null);
+    const [now] = useState(() => Date.now());
+    useEffect(() => {
+        if (!open) return;
+        const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+        document.addEventListener('mousedown', h);
+        return () => document.removeEventListener('mousedown', h);
+    }, [open, setOpen]);
+    const sorted = [...threads].sort((a, b) => b.updatedAt - a.updatedAt);
+    const iconBtn = 'w-8 h-8 rounded-control grid place-items-center text-ink-500 hover:text-brand hover:bg-brand-50 transition-colors';
+    return (
+        <div className="ml-auto relative" ref={ref}>
+            <div className="flex items-center gap-1">
+                <button onClick={() => setOpen(!open)} title="Recent threads" aria-label="Recent threads" className={iconBtn}><Clock className="w-4 h-4" /></button>
+                <button onClick={onNew} title="New chat" aria-label="New chat" className={iconBtn}><PenSquare className="w-4 h-4" /></button>
+            </div>
+            {open && (
+                <div className="absolute right-0 top-9 w-60 bg-card border border-line rounded-card shadow-lift p-1.5 z-30">
+                    <p className="label !text-[10px] px-2 py-1.5">Recent threads</p>
+                    <div className="max-h-64 overflow-y-auto">
+                        {sorted.map((t) => (
+                            <div
+                                key={t.id}
+                                onClick={() => onSwitch(t.id)}
+                                className={cn('group flex items-center gap-2 px-2 py-1.5 rounded-control cursor-pointer', t.id === activeThreadId ? 'bg-brand-50' : 'hover:bg-surface')}
+                            >
+                                <span className={cn('flex-1 min-w-0 truncate text-[13px]', t.id === activeThreadId ? 'text-brand-600 font-medium' : 'text-foreground')}>{t.title}</span>
+                                <span className="text-[10px] text-ink-400 shrink-0">{relThread(t.updatedAt, now)}</span>
+                                {sorted.length > 1 && (
+                                    <button onClick={(e) => { e.stopPropagation(); onDelete(t.id); }} title="Delete thread" aria-label="Delete thread" className="opacity-0 group-hover:opacity-100 text-ink-400 hover:text-red-500 shrink-0">
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                    <button onClick={onNew} className="mt-1 w-full flex items-center gap-2 px-2 py-2 rounded-control text-[13px] font-medium text-brand-600 border-t border-line hover:bg-brand-50 transition-colors">
+                        <Plus className="w-3.5 h-3.5" /> New thread
+                    </button>
+                </div>
+            )}
+        </div>
+    );
+}
+
+// A proactive opening grounded in real state: what's running + what needs the
+// user, so a fresh thread never opens with a hollow "how can I help?".
+function buildGreeting(ctx: ProactiveContext | null): string {
+    if (!ctx) return 'Hi — I can find leads, suggest a campaign, or check how things are going. Where do you want to start?';
+    const name = ctx.firstName ? ` ${ctx.firstName}` : '';
+    const lead = ctx.campaign
+        ? `your ${ctx.campaign.name} campaign is running (${ctx.campaign.processed}/${ctx.campaign.total} leads)`
+        : 'no campaign is running right now';
+    let s = `Hi${name} — ${lead}.`;
+    if (ctx.repliesWaiting > 0) s += ` You’ve got ${ctx.repliesWaiting} ${ctx.repliesWaiting === 1 ? 'reply' : 'replies'} waiting.`;
+    s += ' Where do you want to start?';
+    return s;
+}
+
 function PanelResting({ onSuggestSearches, onRecommendCampaign, onCheckStatus }: {
     onSuggestSearches: () => void;
     onRecommendCampaign: () => void;
     onCheckStatus: () => void;
 }) {
+    const [ctx, setCtx] = useState<ProactiveContext | null>(null);
+    useEffect(() => {
+        let cancelled = false;
+        fetchProactiveContext().then((d) => { if (!cancelled) setCtx(d); }).catch(() => { /* plain greeting */ });
+        return () => { cancelled = true; };
+    }, []);
     const chips: { icon: typeof Search; label: string; onClick: () => void }[] = [
         { icon: Search, label: 'Suggest some searches', onClick: onSuggestSearches },
         { icon: Rocket, label: 'What campaign should I run?', onClick: onRecommendCampaign },
@@ -383,7 +482,7 @@ function PanelResting({ onSuggestSearches, onRecommendCampaign, onCheckStatus }:
     return (
         <div className="space-y-3">
             <QBubble>
-                <p>Hi — I can find leads, suggest a campaign, or check how things are going. Where do you want to start?</p>
+                <p>{buildGreeting(ctx)}</p>
             </QBubble>
             <div className="pl-8 flex flex-col gap-2 items-start">
                 {chips.map((c) => (

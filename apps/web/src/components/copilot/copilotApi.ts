@@ -128,6 +128,30 @@ export async function fetchAvailableLeads(): Promise<{ count: number; leadIds: s
     return { count: data?.count || 0, leadIds: data?.leadIds || [] };
 }
 
+// Real state for a proactive opening line — so a fresh thread greets the user
+// with what actually needs attention (active campaign + replies waiting), never
+// a hollow "how can I help". Reuses existing endpoints; fails soft to a plain hi.
+export interface ProactiveContext {
+    firstName: string;
+    campaign: { name: string; processed: number; total: number } | null;
+    repliesWaiting: number;
+}
+
+export async function fetchProactiveContext(): Promise<ProactiveContext> {
+    let firstName = '';
+    try { const u = JSON.parse(localStorage.getItem('user') || '{}'); firstName = (u?.name || '').split(/\s+/)[0] || ''; } catch { /* ignore */ }
+    const [statsRes, followRes] = await Promise.allSettled([api.get('/stats'), api.get('/leads/follow-ups')]);
+    let campaign: ProactiveContext['campaign'] = null;
+    if (statsRes.status === 'fulfilled') {
+        const cps = (statsRes.value.data?.campaignPerformance || []) as Array<{ status?: string; name?: string; totalLeads?: number; pending?: number }>;
+        const a = cps.find((c) => c.status === 'ACTIVE');
+        if (a) campaign = { name: a.name || 'your campaign', processed: Math.max(0, (a.totalLeads || 0) - (a.pending || 0)), total: a.totalLeads || 0 };
+    }
+    let repliesWaiting = 0;
+    if (followRes.status === 'fulfilled') repliesWaiting = followRes.value.data?.counts?.replied || 0;
+    return { firstName, campaign, repliesWaiting };
+}
+
 // ---- intent router ----
 
 export type CopilotIntent =

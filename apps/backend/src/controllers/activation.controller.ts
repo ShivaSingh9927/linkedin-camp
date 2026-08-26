@@ -26,7 +26,7 @@ import { TEMPLATES, type TemplateDefinition } from '../campaign-templates';
 import { checkSearchQuota } from '../campaign-engine/safety/quota';
 import { checkQuota } from '../campaign-engine/safety/quota';
 import { renderCapabilityContract, COPILOT_INTENTS, type CopilotContext, type CopilotIntent } from '../copilot/capabilities';
-import { runIntentQuery, getAudienceSummary, findLeadByName, type QueryToolData, type AudienceSummaryData, type LeadMatch } from '../copilot/query-tools';
+import { runIntentQuery, getAudienceSummary, findLeadByName, getCampaignStatus, getLastCompletedCampaign, type QueryToolData, type AudienceSummaryData, type LeadMatch } from '../copilot/query-tools';
 import { getTriedAngles, getSearchCoverage } from '../services/search-memory.service';
 
 // Build the grounding object from the user's businessProfile. Both self-* fields
@@ -175,7 +175,7 @@ export const copilotMessage = async (req: AuthRequest, res: Response) => {
         // (counts + a distilled profile) — never raw rows. grounding is one indexed
         // lookup by userId; it's what finally gives the CHAT (not just the opening
         // cards) knowledge of who the user is.
-        const [activeCampaignCount, leadCount, searchQ, connectQ, msgQ, user, grounding] = await Promise.all([
+        const [activeCampaignCount, leadCount, searchQ, connectQ, msgQ, user, grounding, recentCampaign] = await Promise.all([
             prisma.campaign.count({ where: { userId, status: 'ACTIVE' } }).catch(() => 0),
             prisma.lead.count({ where: { userId } }).catch(() => 0),
             checkSearchQuota(userId),
@@ -183,6 +183,15 @@ export const copilotMessage = async (req: AuthRequest, res: Response) => {
             checkQuota(userId, 'send-message'),
             prisma.user.findUnique({ where: { id: userId }, select: { linkedinCookie: true } }).catch(() => null),
             loadGrounding(userId).catch(() => ({} as ActivationGrounding)),
+            // Always-on recent-campaign snapshot (global memory): the active
+            // campaign if one runs, else the most recent finished one. Null if none.
+            (async (): Promise<CopilotContext['recentCampaign']> => {
+                const active = await getCampaignStatus(userId).catch(() => null);
+                if (active) return { name: active.name, status: 'ACTIVE', processed: active.processed, total: active.total, connected: active.connected, replied: active.replied };
+                const done = await getLastCompletedCampaign(userId).catch(() => null);
+                if (done) return { name: done.name, status: 'COMPLETED', processed: done.processed, total: done.total, connected: done.connected, replied: done.replied };
+                return null;
+            })(),
         ]);
 
         const ctx: CopilotContext = {
@@ -196,6 +205,7 @@ export const copilotMessage = async (req: AuthRequest, res: Response) => {
             dailyMessageRemaining: msgQ.remaining,
             profileComplete: isProfileComplete(grounding),
             profile: distillProfile(grounding),
+            recentCampaign,
         };
 
         const routed = await routeCopilotMessage({

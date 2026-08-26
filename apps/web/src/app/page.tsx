@@ -11,7 +11,6 @@ import { ActivationCopilot, ACTIVATION_DISMISSED_KEY } from '@/components/copilo
 import { QampiDashboardPanel } from '@/components/copilot/QampiDashboardPanel';
 import { DynamicStatusPanel, type StatusCampaign, type StatusLog } from '@/components/dashboard/DynamicStatusPanel';
 import { Skeleton, Button } from '@/components/ui';
-import { cn } from '@/lib/utils';
 
 function greeting() {
   const h = new Date().getHours();
@@ -139,7 +138,7 @@ export default function DashboardPage() {
           </div>
 
           <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-3 gap-5">
-            {/* Left: KPIs + dynamic status panel + usage strip */}
+            {/* Left: KPIs + the Qampi conversation as the MAIN surface */}
             <div className="lg:col-span-2 flex flex-col gap-4 min-h-0">
               {/* KPI row */}
               <div className="grid grid-cols-3 gap-3 shrink-0">
@@ -160,32 +159,15 @@ export default function DashboardPage() {
                 ))}
               </div>
 
-              {/* Dynamic status panel — the star of the dashboard */}
+              {/* The copilot — the big conversation surface */}
               <div className="flex-1 min-h-[360px] lg:min-h-0">
-                <DynamicStatusPanel campaigns={campaigns} logs={recentLogs} setup={setup} loading={loading} />
-              </div>
-
-              {/* Today's limits — slim strip */}
-              <div className="bg-card border border-line rounded-card px-4 py-3 shrink-0 flex items-center gap-5">
-                <span className="label shrink-0">Today&rsquo;s limits</span>
-                {quotas.map((q) => (
-                  <div key={q.label} className="flex-1 min-w-0">
-                    <div className="flex justify-between mb-1.5">
-                      <span className="text-[11px] text-ink-500">{q.label}</span>
-                      <span className="num text-[11px] text-ink-500">{q.value}/{q.total}</span>
-                    </div>
-                    <div className="h-1.5 bg-surface rounded-full overflow-hidden">
-                      <div className={cn('h-full rounded-full transition-all duration-700', q.bar)} style={{ width: `${Math.min(100, (q.value / q.total) * 100)}%` }} />
-                    </div>
-                  </div>
-                ))}
-                <Link href="/campaigns/queue" className="label !text-brand hover:underline shrink-0">Queue →</Link>
+                <QampiDashboardPanel />
               </div>
             </div>
 
-            {/* Right: Qampi copilot — full-height rail */}
+            {/* Right: status → replies → today's limits → recent activity */}
             <div className="min-h-0">
-              <QampiDashboardPanel />
+              <DynamicStatusPanel campaigns={campaigns} logs={recentLogs} setup={setup} loading={loading} quotas={quotas} />
             </div>
           </div>
         </div>

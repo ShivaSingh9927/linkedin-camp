@@ -73,11 +73,12 @@ interface Nudge {
     tone: 'brand' | 'success';
 }
 
-export function DynamicStatusPanel({ campaigns, logs, setup, loading }: {
+export function DynamicStatusPanel({ campaigns, logs, setup, loading, quotas }: {
     campaigns: StatusCampaign[];
     logs: StatusLog[];
     setup: SetupStatus | null;
     loading: boolean;
+    quotas?: { label: string; value: number; total: number }[];
 }) {
     const [repliesWaiting, setRepliesWaiting] = useState(0);
     // Capture "now" once (lazy init) — reading Date.now() directly in the render
@@ -186,6 +187,29 @@ export function DynamicStatusPanel({ campaigns, logs, setup, loading }: {
                                 {nudge.cta}
                             </Link>
                         )}
+                    </div>
+                </div>
+            )}
+
+            {/* Today's limits — the daily budget, in the rail before activity */}
+            {quotas && quotas.length > 0 && (
+                <div className="px-4 pt-3 shrink-0">
+                    <div className="flex items-center justify-between mb-2">
+                        <p className="label !text-[10px]">Today&rsquo;s limits</p>
+                        <Link href="/campaigns/queue" className="label !text-[10px] !text-brand hover:underline">Queue →</Link>
+                    </div>
+                    <div className="space-y-2">
+                        {quotas.map((q) => (
+                            <div key={q.label}>
+                                <div className="flex justify-between mb-1">
+                                    <span className="text-[11px] text-ink-500">{q.label}</span>
+                                    <span className="num text-[11px] text-ink-500">{q.value}/{q.total}</span>
+                                </div>
+                                <div className="h-1.5 bg-surface rounded-full overflow-hidden">
+                                    <div className="h-full rounded-full bg-brand transition-all duration-700" style={{ width: `${Math.min(100, q.total ? (q.value / q.total) * 100 : 0)}%` }} />
+                                </div>
+                            </div>
+                        ))}
                     </div>
                 </div>
             )}
