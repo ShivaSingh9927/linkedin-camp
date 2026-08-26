@@ -176,7 +176,7 @@ export interface RoutedToolData {
 }
 
 export interface RoutedMessage {
-    intent: CopilotIntent | 'lookup_lead' | 'handle_replies';
+    intent: CopilotIntent | 'lookup_lead' | 'handle_replies' | 'advise';
     params: { keywords: string; templateId: string };
     reply: string;
     needsConfirm: boolean;

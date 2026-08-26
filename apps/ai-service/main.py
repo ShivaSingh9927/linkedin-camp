@@ -1529,6 +1529,85 @@ Rules: use `unsupported` for a real outreach ask Qampi can't do (custom sequence
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ─── Copilot advisor: grounded analysis/opinion about THEIR outreach ───────────
+
+class AdviseRequest(BaseModel):
+    # A grounded answer to a strategy/profile/ICP/results question. The backend
+    # assembles the real-data snapshot (never raw rows) and passes it in.
+    message: str
+    history: Optional[List[ThreadMessage]] = None
+    profile_you_are: Optional[str] = None
+    profile_you_sell: Optional[str] = None
+    profile_best_fit: Optional[str] = None
+    profile_goal: Optional[str] = None
+    profile_complete: bool = True
+    audience: Optional[str] = None     # who they actually imported (formatted summary)
+    campaign: Optional[str] = None     # recent campaign + outcome, one line
+    coverage: Optional[str] = None     # search coverage, one line
+    limits: Optional[str] = None       # remaining budgets, one line
+
+
+@app.post("/ai/copilot/advise")
+def copilot_advise(req: AdviseRequest):
+    """Answer a strategy/profile/ICP/results question using ONLY the user's real
+    data. Read + reason only — it never executes anything; if an action is the
+    right next step it SUGGESTS it for the user to confirm."""
+    msg = (req.message or "").strip()
+    if not msg:
+        raise HTTPException(status_code=400, detail="message required")
+
+    profile_lines = []
+    if req.profile_you_are:
+        profile_lines.append(f"They are: {req.profile_you_are}")
+    if req.profile_you_sell:
+        profile_lines.append(f"They offer: {req.profile_you_sell}")
+    if req.profile_best_fit:
+        profile_lines.append(f"Their stated best-fit buyer / ICP: {req.profile_best_fit}")
+    if req.profile_goal:
+        profile_lines.append(f"Their goal: {req.profile_goal}")
+    profile_block = "\n".join(profile_lines) or "Their AI profile is mostly empty."
+
+    hist = ""
+    if req.history:
+        lines = []
+        for m in req.history[-6:]:
+            who = "USER" if (m.sender or "").strip().lower() in ("you", "user", "me") else "QAMPI"
+            lines.append(f"- {who}: {m.text}")
+        hist = "\nRecent conversation:\n" + "\n".join(lines)
+
+    system = (
+        "You are Qampi, a sharp, candid LinkedIn-outreach advisor embedded in the app. "
+        "Answer the user's question using ONLY the real data provided below — never invent "
+        "numbers or facts. Be specific and honest: if their stated ICP/target doesn't match "
+        "who they've actually imported, say so plainly and explain the gap. If the best next "
+        "step is something Qampi can do (find leads, launch a campaign, handle replies, edit "
+        "their AI profile), SUGGEST it and tell them to confirm — never claim you already did "
+        "it, and never claim a capability you don't have. If their AI profile is thin, note "
+        "that finishing it (Settings → AI Profile) will sharpen your advice. Keep it to 2–5 "
+        "sentences of plain text — no markdown headers, no bullet spam."
+    )
+    user = f"""Their AI profile:
+{profile_block}
+(Profile complete: {"yes" if req.profile_complete else "no — it's thin"})
+
+Who they've ACTUALLY imported (their real audience):
+{req.audience or "No leads imported yet."}
+
+Recent campaign: {req.campaign or "none yet"}
+Search coverage: {req.coverage or "no searches run yet"}
+Budgets: {req.limits or "n/a"}{hist}
+
+Their question: "{msg}"
+
+Answer it directly and honestly using the data above."""
+
+    try:
+        raw = call_llm(system, user, temperature=0.5, max_tokens=400)
+        return {"reply": (raw or "").strip()}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ─── Reflect-back: "here's what I understand about your business" ──────────────
 
 class UnderstandBusinessRequest(BaseModel):

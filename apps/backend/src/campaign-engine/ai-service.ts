@@ -479,6 +479,45 @@ export async function routeCopilotMessage(opts: {
     }
 }
 
+// Grounded advisor answer — strategy / AI-profile / ICP / results questions.
+// Read + reason only; the caller passes a real-data snapshot (never raw rows).
+export interface CopilotAdviceInput {
+    message: string;
+    history?: ThreadMessage[];
+    profile?: { youAre?: string; youSell?: string; bestFitBuyer?: string; goal?: string };
+    profileComplete?: boolean;
+    audience?: string;
+    campaign?: string;
+    coverage?: string;
+    limits?: string;
+}
+
+export async function generateCopilotAdvice(input: CopilotAdviceInput): Promise<string> {
+    if (isMockAI()) {
+        await mockAiWait();
+        return '[MOCK] Your stated ICP is B2B buyers, but most of your imported leads are students/founders — tighten your searches or your ICP. Want me to suggest a sharper search?';
+    }
+    try {
+        const response = await axios.post(`${AI_SERVICE_URL}/ai/copilot/advise`, {
+            message: input.message,
+            history: input.history,
+            profile_you_are: input.profile?.youAre,
+            profile_you_sell: input.profile?.youSell,
+            profile_best_fit: input.profile?.bestFitBuyer,
+            profile_goal: input.profile?.goal,
+            profile_complete: input.profileComplete !== false,
+            audience: input.audience,
+            campaign: input.campaign,
+            coverage: input.coverage,
+            limits: input.limits,
+        }, { timeout: 30000 });
+        return (response.data?.reply as string) || '';
+    } catch (error: any) {
+        console.error('[AI-SERVICE] Error generating copilot advice:', error.message);
+        throw new Error('Failed to generate copilot advice');
+    }
+}
+
 // 2-3 recommended LinkedIn people-searches for the copilot to offer as chips.
 export async function generateActivationSearchRecs(g: ActivationGrounding): Promise<{ recommendations: SearchRecommendation[] }> {
     if (isMockAI()) {

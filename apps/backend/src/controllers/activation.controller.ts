@@ -20,6 +20,7 @@ import {
     generateActivationTemplatePicks,
     generateSearchQuery,
     generateReplySuggestions,
+    generateCopilotAdvice,
     routeCopilotMessage,
     type ActivationGrounding,
 } from '../campaign-engine/ai-service';
@@ -247,6 +248,35 @@ export const copilotMessage = async (req: AuthRequest, res: Response) => {
             reply = waitingReplies.length
                 ? `You’ve got ${waitingReplies.length} ${waitingReplies.length === 1 ? 'reply' : 'replies'} waiting — here’s a draft for the first. Review and send, or ask me to warm it up. I never send on my own.`
                 : 'You’re all caught up — no replies are waiting right now.';
+        }
+        // advise: a grounded analysis/opinion about THEIR outreach (strategy, AI
+        // profile, ICP, results). Pull the real-data snapshot and compose an honest
+        // answer — read-only; any action it suggests still routes through a confirmed
+        // intent. This is the catch-all for on-topic questions that aren't an action.
+        if (intent === 'advise') {
+            const [audienceStr, coverage] = await Promise.all([
+                getAudienceSummary(userId).then(formatAudience).catch(() => ''),
+                getSearchCoverage(userId).catch(() => null),
+            ]);
+            const rc = recentCampaign;
+            const campaignStr = rc
+                ? `${rc.status === 'ACTIVE' ? 'Active' : 'Last'}: "${rc.name}" — ${rc.total} leads, ${rc.connected} connected, ${rc.replied} replied`
+                : '';
+            const coverageStr = coverage && coverage.totalQueries > 0
+                ? `${coverage.totalQueries} searches, ${coverage.totalSeen} people seen, ${coverage.totalImported} imported (${Math.round(coverage.importRate * 100)}% kept)${coverage.exhausted.length ? `; mined-out angles: ${coverage.exhausted.slice(0, 3).join('; ')}` : ''}`
+                : '';
+            const limitsStr = `${searchQ.remaining}/${searchQ.cap} searches left this month; ${connectQ.remaining} invites left today`;
+            const advice = await generateCopilotAdvice({
+                message: message.trim(),
+                history: Array.isArray(history) ? history : undefined,
+                profile: distillProfile(grounding),
+                profileComplete: isProfileComplete(grounding),
+                audience: audienceStr,
+                campaign: campaignStr,
+                coverage: coverageStr,
+                limits: limitsStr,
+            }).catch(() => '');
+            if (advice) reply = advice;
         }
         // find_leads: don't search yet — REASON a strong boolean query from the
         // phrase + profile + audience and hand it back for the user to approve/edit
