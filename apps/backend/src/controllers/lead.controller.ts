@@ -7,6 +7,7 @@ import { cleanPersonField } from '../campaign-engine/scrape/sanitize';
 import { captureEvent } from '../services/analytics.service';
 import { searchPeople, SessionExpiredError, type SearchFilters } from '../services/people-search.service';
 import { checkSearchQuota, logSearchAction } from '../campaign-engine/safety/quota';
+import { recordSearchPage, markImported } from '../services/search-memory.service';
 
 // Helper to get team user ids
 const getTeamUserIds = async (userId: string) => {
@@ -165,11 +166,16 @@ const bulkImportLeads = async (userId: string, incomingLeads: any[], teamUserIds
         }
     }
 
-    // Return the processed leads 
+    // Return the processed leads
     const allProcessedUrls = [...leadsToCreate.map(l => l.linkedinUrl), ...Array.from(userExistingLeadsMap.keys())];
     const successful = await prisma.lead.findMany({
         where: { userId, linkedinUrl: { in: allProcessedUrls } }
     });
+
+    // Discovery engine: flag these profiles as imported (permanent dedup) and
+    // credit the search that surfaced them (import-rate). Best-effort — an import
+    // must never fail because the memory write did.
+    markImported(userId, allProcessedUrls).catch((e) => console.error('[search-memory] markImported failed:', e?.message || e));
 
     return { successful, duplicatesSkipped };
 };
@@ -295,13 +301,31 @@ export const searchLeads = async (req: any, res: Response) => {
         await logSearchAction(userId);
         const after = await checkSearchQuota(userId);
 
-        captureEvent(userId, 'people_search', { count: result.people.length, via: result.via });
+        // Discovery engine: dedup this page against everyone the user has already
+        // seen (30-day window) or imported (permanent), record the fresh faces +
+        // this query's depth, and get back a saturation read so the client knows
+        // whether to keep paging or rotate to a different angle.
+        const { fresh, saturation } = await recordSearchPage(userId, {
+            keywords: keywords.trim(),
+            label: typeof req.body?.label === 'string' ? req.body.label : undefined,
+            filters: (filters || undefined) as SearchFilters | undefined,
+            page: pageNum,
+            people: result.people,
+        }).catch((e) => {
+            // Never let a memory hiccup swallow a paid search — fall back to the
+            // raw page with an "active" signal.
+            console.error('[people-search] recordSearchPage failed:', e?.message || e);
+            return { fresh: result.people, saturation: { state: 'active' as const, newRatio: 1, page: pageNum, freshCount: result.people.length, pageCount: result.people.length } };
+        });
+
+        captureEvent(userId, 'people_search', { count: fresh.length, raw: result.people.length, via: result.via, saturation: saturation.state });
 
         res.json({
-            people: result.people,
+            people: fresh,
             via: result.via,
             remaining: after.remaining,
             cap: after.cap,
+            saturation,
         });
     } catch (error) {
         if (error instanceof SessionExpiredError) {

@@ -1119,8 +1119,13 @@ class BuildSearchRequest(ActivationRequest):
     # The user's free-text phrase ("founders", "heads of growth in fintech") to
     # turn into ONE strong LinkedIn boolean query, grounded on their profile +
     # the audience they've already imported.
-    phrase: str
+    phrase: str = ""
     audience: Optional[str] = None
+    # Discovery engine: boolean angles the user has ALREADY run (label/keywords/
+    # state) so the builder rotates to something genuinely new instead of a
+    # near-duplicate. `rotate` asks for a deliberate pivot to a fresh segment.
+    tried_angles: List[Dict[str, Any]] = []
+    rotate: bool = False
 
 
 _GOAL_PHRASING = {
@@ -1378,10 +1383,28 @@ def activation_build_search(req: BuildSearchRequest):
     boolean people-search, grounded on their profile + imported audience. The
     copilot shows this to the user to approve/edit BEFORE spending a search."""
     phrase = (req.phrase or "").strip()
-    if not phrase:
+    rotate = bool(req.rotate)
+    # A rotation ("find me something different") needs no explicit phrase — the
+    # tried-angles + profile carry the intent. A normal build still requires one.
+    if not phrase and not rotate:
         raise HTTPException(status_code=400, detail="phrase required")
     grounding = _activation_grounding(req)
     audience = (req.audience or "").strip() or "No leads imported yet."
+
+    # Tried-angles block — what NOT to repeat, and which veins are mined out.
+    tried = req.tried_angles or []
+    if tried:
+        lines = []
+        for a in tried[:12]:
+            kw = (a.get("keywords") or "").strip()[:120]
+            st = (a.get("state") or "").strip()
+            tag = " [MINED OUT]" if st == "exhausted" else (" [drying up]" if st == "saturating" else "")
+            if kw:
+                lines.append(f"- {kw}{tag}")
+        tried_block = "\n".join(lines) if lines else "(none)"
+    else:
+        tried_block = "(none)"
+
     system = (
         "You are Qampi, an expert at LinkedIn people-search. LinkedIn's keyword box "
         "supports boolean: AND, OR, NOT, \"quoted phrases\", and (parentheses). Best "
@@ -1389,13 +1412,26 @@ def activation_build_search(req: BuildSearchRequest):
         "noise (freelance, recruiter, intern, student, assistant) — precise targeting "
         "beats a vague keyword. Return ONLY valid JSON."
     )
+    # ICP-first grounding: use the user's stated target audience/ICP if present;
+    # otherwise infer one from their profile + who they've actually imported.
+    ask = (
+        'Propose a GENUINELY DIFFERENT search from the ones already run below — a '
+        'fresh segment (adjacent roles, a new industry, seniority, or geography) '
+        'that fits their ICP but opens a new vein. Do NOT repeat or lightly reword '
+        'a mined-out angle.'
+        if rotate else
+        f'The user asked to find: "{phrase}"'
+    )
     user = f"""What I know about this user:
 {grounding}
 
 Who they've already imported (bias toward this audience):
 {audience}
 
-The user asked to find: "{phrase}"
+Searches they've ALREADY run (do not repeat these; prefer a new angle):
+{tried_block}
+
+{ask}
 
 Build ONE strong LinkedIn boolean search. Return EXACTLY:
 {{
@@ -1405,9 +1441,11 @@ Build ONE strong LinkedIn boolean search. Return EXACTLY:
   "rationale": "<one short sentence: why this finds good leads for them>"
 }}
 RULES:
+- Grounding priority for WHO to target: (1) their stated target audience/ICP if given; (2) else infer an ICP from their profile + imported audience; (3) never invent facts.
 - `keywords` MUST use boolean operators, e.g. ("founder" OR "co-founder" OR "founding member" OR CEO) NOT (freelance OR recruiter OR intern).
 - If the user already typed a valid boolean query, keep it (just tidy it) — don't dumb it down.
 - Ground titles/industry/location in their profile + audience when the phrase is vague.
+- When rotating, the new search must differ MEANINGFULLY from every angle listed above.
 - Default degree to 2nd (warmer than cold 3rd). Keep `keywords` under ~200 characters, `rationale` under ~15 words.
 - Output ONLY the JSON, no code fences, no trailing commas."""
     try:

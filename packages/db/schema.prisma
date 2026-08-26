@@ -475,8 +475,53 @@ model User {
   Proxy                   Proxy?            @relation(fields: [proxyId], references: [id])
   WorkerLog               WorkerLog[]
   EmailAccount            EmailAccount?
+  SeenProfile             SeenProfile[]
+  SearchQuery             SearchQuery[]
 
   @@index([updatedAt])
+}
+
+// Durable people-search memory. Every profile ever SURFACED to the user in a
+// copilot search (imported or skipped) — the cross-session dedup + saturation
+// substrate that `seenUrlsRef` (session-only) could never provide. Skipped
+// profiles roll off a 30-day window at read time (people change roles);
+// imported profiles are deduped permanently via the Lead table, and `imported`
+// here is just a fast local flag for import-rate math.
+model SeenProfile {
+  id          String   @id @default(cuid())
+  userId      String
+  linkedinUrl String // normalized (matches Lead.linkedinUrl canonicalization)
+  imported    Boolean  @default(false)
+  queryKey    String? // the SearchQuery that first surfaced this profile
+  seenAt      DateTime @default(now())
+  User        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, linkedinUrl])
+  @@index([userId, seenAt])
+}
+
+// One row per distinct boolean query a user has run — the "what have I tried,
+// how deep, is it mined out" memory the discovery engine rotates against. Lives
+// in the DB (not the chat) because the transcript is summarized and forgets.
+// `queryKey` is a canonical hash of keywords+filters so the same search across
+// sessions maps to one row; `state` walks active → saturating → exhausted.
+model SearchQuery {
+  id             String   @id @default(cuid())
+  userId         String
+  queryKey       String
+  label          String
+  keywords       String
+  filters        Json?
+  maxPageReached Int      @default(1)
+  seenCount      Int      @default(0)
+  importedCount  Int      @default(0)
+  state          String   @default("active") // active | saturating | exhausted
+  lastRunAt      DateTime @default(now())
+  createdAt      DateTime @default(now())
+  User           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, queryKey])
+  @@index([userId, lastRunAt])
 }
 
 model WorkerLog {

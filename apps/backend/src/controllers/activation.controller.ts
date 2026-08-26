@@ -27,6 +27,7 @@ import { checkSearchQuota } from '../campaign-engine/safety/quota';
 import { checkQuota } from '../campaign-engine/safety/quota';
 import { renderCapabilityContract, COPILOT_INTENTS, type CopilotContext, type CopilotIntent } from '../copilot/capabilities';
 import { runIntentQuery, getAudienceSummary, findLeadByName, type QueryToolData, type AudienceSummaryData, type LeadMatch } from '../copilot/query-tools';
+import { getTriedAngles, getSearchCoverage } from '../services/search-memory.service';
 
 // Build the grounding object from the user's businessProfile. Both self-* fields
 // (read from their real LinkedIn after connect) and the onboarding-provided
@@ -81,7 +82,7 @@ function isProfileComplete(g: ActivationGrounding): boolean {
 // Compose the authoritative "here's where things stand" line from the read-only
 // tools. The model writes the warm intro; THIS provides the numbers, so status
 // answers are always exact (the model never invents figures).
-function statusFacts(td: QueryToolData, ctx: CopilotContext): string {
+function statusFacts(td: QueryToolData, ctx: CopilotContext, coverage?: import('../services/search-memory.service').SearchCoverageData | null): string {
     const parts: string[] = [];
     if (td.campaign) {
         const c = td.campaign;
@@ -103,6 +104,15 @@ function statusFacts(td: QueryToolData, ctx: CopilotContext): string {
         parts.push(`${n} conversation${n === 1 ? '' : 's'} awaiting your reply${who ? ` (e.g. ${who})` : ''}.`);
     }
     parts.push(`Searches left this month: ${ctx.searchesRemaining}/${ctx.searchesCap}. Invites left today: ${ctx.dailyConnectRemaining}.`);
+    // Search coverage — what's been mined, and whether veins are drying up (so
+    // the copilot can nudge toward a fresh angle before searches are wasted).
+    if (coverage && coverage.totalQueries > 0) {
+        const rate = Math.round(coverage.importRate * 100);
+        parts.push(`You've run ${coverage.totalQueries} search${coverage.totalQueries === 1 ? '' : 'es'} — ${coverage.totalSeen} people seen, ${coverage.totalImported} imported (${rate}% kept).`);
+        if (coverage.exhausted.length) {
+            parts.push(`These angles are mined out: ${coverage.exhausted.slice(0, 3).join('; ')}. Try a different segment for fresh leads.`);
+        }
+    }
     return parts.join(' ');
 }
 
@@ -205,7 +215,8 @@ export const copilotMessage = async (req: AuthRequest, res: Response) => {
 
         let reply = routed.reply;
         if (intent === 'check_status' && toolData) {
-            const facts = statusFacts(toolData, ctx);
+            const coverage = await getSearchCoverage(userId).catch(() => null);
+            const facts = statusFacts(toolData, ctx, coverage);
             reply = [reply, facts].filter(Boolean).join('\n\n');
         }
         // lookup_lead: read the person straight from the user's own lead list
@@ -222,8 +233,13 @@ export const copilotMessage = async (req: AuthRequest, res: Response) => {
         if (intent === 'find_leads') {
             const phrase = (routed.params?.keywords || message).trim();
             const audienceStr = toolData?.audience ? formatAudience(toolData.audience) : '';
+            // Rotation grounding: give the builder the angles already run so it
+            // won't repeat, and flag an explicit pivot when the user asks for
+            // "something different" (the "Try a different angle" button sends this).
+            const rotate = /\b(different|another|something else|fresh|more variety|new angle|other)\b/i.test(phrase) || !phrase;
+            const triedAngles = await getTriedAngles(userId).catch(() => []);
             try {
-                const draft = await generateSearchQuery(phrase, grounding, audienceStr);
+                const draft = await generateSearchQuery(phrase, grounding, audienceStr, { triedAngles, rotate });
                 toolData = { ...(toolData || {}), searchDraft: { label: draft.label, keywords: draft.keywords, filters: draft.filters, rationale: draft.rationale } };
             } catch { /* frontend falls back to searching the raw phrase */ }
         }

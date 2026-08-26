@@ -9,7 +9,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Search, Loader2, ArrowUp, Check, Plus, MapPin, Clock, ArrowRight, Rocket, LinkIcon } from 'lucide-react';
+import { Search, Loader2, ArrowUp, Check, Plus, MapPin, Clock, ArrowRight, Rocket, LinkIcon, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { track } from '@/lib/analytics';
 import {
@@ -47,10 +47,8 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
     importedLeadIdsRef.current = importedLeadIds;
     const messagesRef = useRef<Msg[]>([]);
     messagesRef.current = messages;
-    // LinkedIn URLs already shown this session — so "Show 10 more" and repeat
-    // searches never re-surface the same people. Session-only for now; the
-    // durable cross-session coverage engine comes later.
-    const seenUrlsRef = useRef<Set<string>>(new Set());
+    // Lets doSearch (defined earlier) trigger a rotation without a forward ref cycle.
+    const rotateAngleRef = useRef<(() => void) | null>(null);
 
     // Compact history for the router (last several text turns only).
     const historyForRouter = useCallback((): HistoryMsg[] => {
@@ -119,23 +117,26 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
         const sId = nextId();
         push({ id: sId, role: 'qampi', kind: 'searching', label });
         try {
-            const res = await runSearch(keywords, filters, page);
-            track('copilot_search_run', { via: res.via, count: res.people.length, page });
+            // Dedup + saturation are now server-side (durable search memory), so the
+            // returned people are already fresh and we get a mined-out signal back.
+            const res = await runSearch(keywords, filters, page, label);
+            track('copilot_search_run', { via: res.via, count: res.people.length, page, saturation: res.saturation?.state });
             setMessages((prev) => prev.filter((m) => m.id !== sId));
-            // Drop anyone already shown this session so pages never repeat.
-            const fresh = res.people.filter((p) => p.linkedinUrl && !seenUrlsRef.current.has(p.linkedinUrl));
-            fresh.forEach((p) => p.linkedinUrl && seenUrlsRef.current.add(p.linkedinUrl));
-            if (!fresh.length) {
+            const people = res.people;
+            if (!people.length) {
+                // Everything on this page was already seen/imported, or the vein is dry —
+                // proactively propose a fresh angle (grounded on the tried-angles memory).
                 push({
                     id: nextId(), role: 'qampi', kind: 'text',
                     text: page > 1
-                        ? 'That’s everyone I can find for this search. Try a different angle, or use the Qampi extension to import a bigger batch.'
-                        : 'I couldn’t pull results for that one. Try another search or rephrase it.',
+                        ? 'That’s everyone fresh for this angle — you’ve already seen the rest. Here’s a different angle to try:'
+                        : 'You’ve already seen everyone this search turns up. Let me suggest a different angle:',
                 });
+                rotateAngleRef.current?.();
                 return;
             }
-            push({ id: nextId(), role: 'qampi', kind: 'text', text: page > 1 ? `Found ${fresh.length} more.` : `Found ${fresh.length} people. Pick the ones you want and I’ll import them.` });
-            push({ id: nextId(), role: 'qampi', kind: 'results', people: fresh, via: res.via, remaining: res.remaining, cap: res.cap, keywords, filters, page });
+            push({ id: nextId(), role: 'qampi', kind: 'text', text: page > 1 ? `Found ${people.length} more.` : `Found ${people.length} people. Pick the ones you want and I’ll import them.` });
+            push({ id: nextId(), role: 'qampi', kind: 'results', people, via: res.via, remaining: res.remaining, cap: res.cap, keywords, filters, page, saturation: res.saturation });
         } catch (e) {
             setMessages((prev) => prev.filter((m) => m.id !== sId));
             const err = e as { response?: { status?: number; data?: { error?: string; message?: string } } };
@@ -158,6 +159,30 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
         setMessages((prev) => prev.filter((m) => m.id !== msgId));
         doSearch(label, keywords, filters, 1);
     }, [doSearch, setMessages]);
+
+    // A vein is mined out — ask the backend for a GENUINELY different angle
+    // (it grounds on the durable tried-angles memory) and show it as a draft to
+    // approve, WITHOUT a fake user bubble. Used by the "Try a different angle"
+    // button and auto-offered when a search returns nobody fresh.
+    const rotateAngle = useCallback(async () => {
+        track('copilot_rotate_angle', {});
+        const thinkId = nextId();
+        push({ id: thinkId, role: 'qampi', kind: 'searching', label: '…' });
+        try {
+            const routed = await routeMessage('Suggest a different search angle for fresh leads', historyForRouter(), importedLeadIdsRef.current.length);
+            setMessages((prev) => prev.filter((m) => m.id !== thinkId));
+            if (routed.toolData?.searchDraft) {
+                const d = routed.toolData.searchDraft;
+                push({ id: nextId(), role: 'qampi', kind: 'searchDraft', label: d.label, keywords: d.keywords, filters: d.filters, rationale: d.rationale });
+            } else {
+                push({ id: nextId(), role: 'qampi', kind: 'text', text: routed.reply || 'Tell me a different type of person to look for and I’ll build a search.' });
+            }
+        } catch {
+            setMessages((prev) => prev.filter((m) => m.id !== thinkId));
+            push({ id: nextId(), role: 'qampi', kind: 'text', text: 'Tell me a different type of person to look for and I’ll build a search.' });
+        }
+    }, [push, historyForRouter]);
+    rotateAngleRef.current = rotateAngle;
 
     const recommendCampaigns = useCallback(async () => {
         const tId = nextId();
@@ -295,6 +320,7 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
                         onPickSearch={doSearch}
                         onRunDraft={runDraft}
                         onShowMore={showMore}
+                        onTryDifferent={rotateAngle}
                         onImported={afterImport}
                         onPickTemplate={offerLaunch}
                         onLaunch={runLaunch}
@@ -374,11 +400,12 @@ function PanelResting({ onSuggestSearches, onRecommendCampaign, onCheckStatus }:
     );
 }
 
-function MessageRow({ m, onPickSearch, onRunDraft, onShowMore, onImported, onPickTemplate, onLaunch }: {
+function MessageRow({ m, onPickSearch, onRunDraft, onShowMore, onTryDifferent, onImported, onPickTemplate, onLaunch }: {
     m: Msg;
     onPickSearch: (label: string, keywords: string, filters?: SearchRecommendation['filters']) => void;
     onRunDraft: (msgId: string, label: string, keywords: string, filters?: SearchRecommendation['filters']) => void;
     onShowMore: (keywords: string, filters: SearchRecommendation['filters'] | undefined, nextPage: number) => void;
+    onTryDifferent: () => void;
     onImported: (count: number, leadIds: string[]) => void;
     onPickTemplate: (templateId: string, label: string) => void;
     onLaunch: (msgId: string, overrides?: LaunchOverrides) => void;
@@ -392,7 +419,7 @@ function MessageRow({ m, onPickSearch, onRunDraft, onShowMore, onImported, onPic
     if (m.kind === 'searchChips') return <div className="pl-8"><SearchChips loading={m.loading} recs={m.recs} onPick={onPickSearch} /></div>;
     if (m.kind === 'searchDraft') return <div className="pl-8"><SearchDraftCard m={m} onRun={onRunDraft} /></div>;
     if (m.kind === 'searching') return <QBubble><span className="inline-flex items-center gap-2 text-ink-500"><Loader2 className="w-3.5 h-3.5 animate-spin text-brand" /> {m.label === '…' ? 'Thinking…' : `Searching LinkedIn for “${m.label}”…`}</span></QBubble>;
-    if (m.kind === 'results') return <div className="pl-8"><ResultsBlock m={m} onImported={onImported} onShowMore={onShowMore} /></div>;
+    if (m.kind === 'results') return <div className="pl-8"><ResultsBlock m={m} onImported={onImported} onShowMore={onShowMore} onTryDifferent={onTryDifferent} /></div>;
     if (m.kind === 'templates') return <div className="pl-8"><TemplatePicks loading={m.loading} picks={m.picks} onPick={onPickTemplate} /></div>;
     if (m.kind === 'launchConfirm') return <div className="pl-8"><LaunchConfirm m={m} onLaunch={onLaunch} /></div>;
     if (m.kind === 'reconnect') return <QBubble><ReconnectNotice /></QBubble>;
@@ -578,10 +605,11 @@ function SearchChips({ loading, recs, onPick }: { loading: boolean; recs?: Searc
     );
 }
 
-function ResultsBlock({ m, onImported, onShowMore }: {
+function ResultsBlock({ m, onImported, onShowMore, onTryDifferent }: {
     m: Extract<Msg, { kind: 'results' }>;
     onImported: (count: number, leadIds: string[]) => void;
     onShowMore: (keywords: string, filters: SearchRecommendation['filters'] | undefined, nextPage: number) => void;
+    onTryDifferent: () => void;
 }) {
     const people = m.people;
     const [selected, setSelected] = useState<Set<number>>(() => new Set(people.map((_, i) => i)));
@@ -646,15 +674,37 @@ function ResultsBlock({ m, onImported, onShowMore }: {
             ) : (
                 <p className="text-center text-[12px] text-emerald-600 font-medium py-1.5 inline-flex items-center justify-center gap-1.5 w-full"><Check className="w-3.5 h-3.5" /> {done} imported</p>
             )}
-            {/* Continue the SAME query at the next page — dedup handled upstream.
-                Shows remaining monthly budget so the cost of another page is clear. */}
-            {m.remaining > 0 && (
+            {/* Next step depends on the durable saturation signal:
+                • exhausted  → this vein is mined out; offer a fresh angle instead.
+                • budget out → no monthly searches left; point to the extension.
+                • otherwise  → keep paging the SAME query (dedup handled server-side),
+                  and if it's drying up, also offer a pivot.  */}
+            {m.saturation?.state === 'exhausted' ? (
                 <button
-                    onClick={() => onShowMore(m.keywords, m.filters, m.page + 1)}
+                    onClick={onTryDifferent}
                     className="w-full mt-0.5 text-[12px] font-medium text-brand rounded-chip py-1.5 hover:bg-brand-50 transition-colors inline-flex items-center justify-center gap-1.5"
                 >
-                    <Plus className="w-3.5 h-3.5" /> Show 10 more <span className="text-ink-400 font-normal">· {m.remaining} searches left</span>
+                    <Sparkles className="w-3.5 h-3.5" /> This angle’s mined out — try a different one
                 </button>
+            ) : m.remaining <= 0 ? (
+                <p className="text-center text-[11px] text-ink-400 py-1.5">No searches left this month — use the Qampi extension to import more.</p>
+            ) : (
+                <>
+                    <button
+                        onClick={() => onShowMore(m.keywords, m.filters, m.page + 1)}
+                        className="w-full mt-0.5 text-[12px] font-medium text-brand rounded-chip py-1.5 hover:bg-brand-50 transition-colors inline-flex items-center justify-center gap-1.5"
+                    >
+                        <Plus className="w-3.5 h-3.5" /> Show 10 more <span className="text-ink-400 font-normal">· {m.remaining} searches left</span>
+                    </button>
+                    {m.saturation?.state === 'saturating' && (
+                        <button
+                            onClick={onTryDifferent}
+                            className="w-full text-[11px] font-medium text-ink-500 rounded-chip py-1 hover:text-brand transition-colors inline-flex items-center justify-center gap-1.5"
+                        >
+                            <Sparkles className="w-3 h-3" /> running low on fresh matches — try a different angle
+                        </button>
+                    )}
+                </>
             )}
         </div>
     );

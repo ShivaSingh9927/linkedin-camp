@@ -36,11 +36,20 @@ export interface SearchPerson {
     linkedinUrl: string;
 }
 
+export interface SaturationSignal {
+    state: 'active' | 'saturating' | 'exhausted';
+    newRatio: number;
+    page: number;
+    freshCount: number;
+    pageCount: number;
+}
+
 export interface SearchResponse {
     people: SearchPerson[];
     via: 'browserless' | 'dom';
     remaining: number;
     cap: number;
+    saturation?: SaturationSignal;
 }
 
 export interface TemplatePick {
@@ -78,7 +87,7 @@ function degreeToNumbers(degree?: string): Array<1 | 2 | 3> | undefined {
     return undefined;
 }
 
-export async function runSearch(keywords: string, filters?: SearchFilters, page?: number): Promise<SearchResponse> {
+export async function runSearch(keywords: string, filters?: SearchFilters, page?: number, label?: string): Promise<SearchResponse> {
     const degrees = degreeToNumbers(filters?.degree);
     const { data } = await api.post('/leads/search', {
         keywords,
@@ -86,6 +95,7 @@ export async function runSearch(keywords: string, filters?: SearchFilters, page?
             ? { title: filters.title, location: filters.location, industry: filters.industry, ...(degrees ? { degrees } : {}) }
             : undefined,
         ...(page && page > 1 ? { page } : {}),
+        ...(label ? { label } : {}),
     });
     return data;
 }

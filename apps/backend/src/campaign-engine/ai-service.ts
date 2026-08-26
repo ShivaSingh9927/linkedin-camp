@@ -506,18 +506,39 @@ export interface TemplateCandidate {
     needsEmail?: boolean;
 }
 
+// A boolean angle the user has already run — passed to the builder so rotation
+// proposes something genuinely different instead of a near-duplicate.
+export interface TriedAngleInput {
+    label: string;
+    keywords: string;
+    state: string; // active | saturating | exhausted
+}
+
 // Turn a free-text phrase into ONE strong LinkedIn boolean search, grounded on
 // the profile + imported audience. Shown to the user to approve/edit BEFORE a
-// search is spent (searches are budget-scarce).
-export async function generateSearchQuery(phrase: string, g: ActivationGrounding, audience: string): Promise<SearchRecommendation> {
+// search is spent (searches are budget-scarce). `triedAngles` lets the builder
+// avoid repeats; `rotate` asks it to deliberately pivot to a fresh segment when
+// the current vein is mined out.
+export async function generateSearchQuery(
+    phrase: string,
+    g: ActivationGrounding,
+    audience: string,
+    opts?: { triedAngles?: TriedAngleInput[]; rotate?: boolean },
+): Promise<SearchRecommendation> {
     if (isMockAI()) {
         await mockAiWait();
-        return { label: phrase, keywords: `("${phrase}")`, filters: { title: '', location: '', industry: '', degree: '2nd' }, rationale: '[MOCK] Grounded boolean query.' };
+        return { label: phrase || 'Different angle', keywords: `("${phrase || 'founder'}")`, filters: { title: '', location: '', industry: '', degree: '2nd' }, rationale: '[MOCK] Grounded boolean query.' };
     }
     try {
         const response = await axios.post(
             `${AI_SERVICE_URL}/ai/activation/build-search`,
-            { ...activationPayload(g), phrase, audience },
+            {
+                ...activationPayload(g),
+                phrase,
+                audience,
+                tried_angles: opts?.triedAngles?.slice(0, 12) || [],
+                rotate: !!opts?.rotate,
+            },
             { timeout: 30000 },
         );
         return response.data as SearchRecommendation;
