@@ -1583,8 +1583,10 @@ def copilot_advise(req: AdviseRequest):
         "step is something Qampi can do (find leads, launch a campaign, handle replies, edit "
         "their AI profile), SUGGEST it and tell them to confirm — never claim you already did "
         "it, and never claim a capability you don't have. If their AI profile is thin, note "
-        "that finishing it (Settings → AI Profile) will sharpen your advice. Keep it to 2–5 "
-        "sentences of plain text — no markdown headers, no bullet spam."
+        "that finishing it (Settings → AI Profile) will sharpen your advice. Keep it tight "
+        "(2–5 sentences, or a short list). You MAY use **bold** for the one or two most "
+        "important terms and a short dash-bullet list (\"- point\") when it genuinely helps "
+        "readability — but NO headings and no long bullet walls."
     )
     user = f"""Their AI profile:
 {profile_block}

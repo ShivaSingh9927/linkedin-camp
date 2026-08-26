@@ -592,8 +592,8 @@ function MessageRow({ m, onPickSearch, onRunDraft, onShowMore, onTryDifferent, o
 }) {
     if (m.kind === 'text') {
         return m.role === 'user'
-            ? <div className="flex justify-end"><div className="max-w-[80%] bg-brand text-white text-[13px] px-3.5 py-2 rounded-card rounded-tr-chip">{m.text}</div></div>
-            : <QBubble>{m.text}</QBubble>;
+            ? <div className="flex justify-end"><div className="max-w-[80%] bg-brand text-white text-[13px] px-3.5 py-2 rounded-card rounded-tr-chip whitespace-pre-wrap">{m.text}</div></div>
+            : <QBubble><RichText text={m.text} /></QBubble>;
     }
     if (m.kind === 'understand') return <QBubble><UnderstandCard loading={m.loading} data={m.data} /></QBubble>;
     if (m.kind === 'searchChips') return <div className="pl-8"><SearchChips loading={m.loading} recs={m.recs} onPick={onPickSearch} /></div>;
@@ -794,6 +794,53 @@ function ReconnectNotice() {
             <Link href="/settings?tab=linkedin" className="inline-flex items-center gap-1.5 text-[12px] font-medium text-brand hover:underline">
                 <LinkIcon className="w-3.5 h-3.5" /> Reconnect LinkedIn
             </Link>
+        </div>
+    );
+}
+
+// Inline markdown-lite: **bold**, *italic*, `code`. Built from React nodes (no
+// dangerouslySetInnerHTML) so lead/AI text can never inject markup.
+function renderInline(s: string): React.ReactNode[] {
+    const nodes: React.ReactNode[] = [];
+    const re = /(\*\*([^*]+)\*\*|`([^`]+)`|\*([^*\n]+)\*)/g;
+    let last = 0; let m: RegExpExecArray | null; let k = 0;
+    while ((m = re.exec(s)) !== null) {
+        if (m.index > last) nodes.push(s.slice(last, m.index));
+        if (m[2] !== undefined) nodes.push(<strong key={k++} className="font-semibold text-foreground">{m[2]}</strong>);
+        else if (m[3] !== undefined) nodes.push(<code key={k++} className="text-[12px] font-mono bg-surface text-ink-700 px-1 py-0.5 rounded">{m[3]}</code>);
+        else if (m[4] !== undefined) nodes.push(<em key={k++}>{m[4]}</em>);
+        last = m.index + m[0].length;
+    }
+    if (last < s.length) nodes.push(s.slice(last));
+    return nodes;
+}
+
+// Render an assistant reply as structured text: blank-line paragraphs, soft line
+// breaks, and dash/bullet lists — so multi-part answers (advise, status) read
+// cleanly instead of as one flat run.
+function RichText({ text }: { text: string }) {
+    const blocks = (text || '').trim().split(/\n{2,}/).filter(Boolean);
+    if (blocks.length === 0) return null;
+    return (
+        <div className="space-y-2">
+            {blocks.map((block, bi) => {
+                const lines = block.split('\n');
+                const isList = lines.length > 0 && lines.every((l) => /^\s*[-•]\s+/.test(l));
+                if (isList) {
+                    return (
+                        <ul key={bi} className="list-disc pl-4 space-y-1 marker:text-brand">
+                            {lines.map((l, li) => <li key={li}>{renderInline(l.replace(/^\s*[-•]\s+/, ''))}</li>)}
+                        </ul>
+                    );
+                }
+                return (
+                    <p key={bi}>
+                        {lines.map((l, li) => (
+                            <span key={li}>{renderInline(l)}{li < lines.length - 1 && <br />}</span>
+                        ))}
+                    </p>
+                );
+            })}
         </div>
     );
 }

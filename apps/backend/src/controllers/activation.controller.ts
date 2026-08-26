@@ -88,7 +88,7 @@ function statusFacts(td: QueryToolData, ctx: CopilotContext, coverage?: import('
     const parts: string[] = [];
     if (td.campaign) {
         const c = td.campaign;
-        parts.push(`Your campaign “${c.name}” is ${c.pct}% done — ${c.processed}/${c.total} leads processed, ${c.connected} connected, ${c.replied} replied.`);
+        parts.push(`**“${c.name}”** is **${c.pct}% done** — ${c.processed}/${c.total} leads processed, **${c.connected} connected**, **${c.replied} replied**.`);
     } else if (td.lastCompleted && td.lastCompleted.total > 0) {
         // Retrospective on the most recent finished campaign, with a light judgment.
         const c = td.lastCompleted;
@@ -96,26 +96,28 @@ function statusFacts(td: QueryToolData, ctx: CopilotContext, coverage?: import('
         const assess = connectPct >= 30
             ? 'Solid connect rate.'
             : 'Connect rate is on the low side — a tighter ICP or a warmer invite note could lift it.';
-        parts.push(`No campaign running now. Your last one, “${c.name}”, finished: ${c.total} leads, ${c.connected} connected (${connectPct}%), ${c.replied} replied. ${assess}`);
+        parts.push(`No campaign running now. Your last one, **“${c.name}”**, finished: ${c.total} leads, **${c.connected} connected** (${connectPct}%), **${c.replied} replied**. ${assess}`);
     } else {
         parts.push('No campaign is running right now.');
     }
     if (td.repliesWaiting && td.repliesWaiting.count > 0) {
         const n = td.repliesWaiting.count;
         const who = td.repliesWaiting.names.slice(0, 2).filter(Boolean).join(', ');
-        parts.push(`${n} conversation${n === 1 ? '' : 's'} awaiting your reply${who ? ` (e.g. ${who})` : ''}.`);
+        parts.push(`**${n} conversation${n === 1 ? '' : 's'} awaiting your reply**${who ? ` (e.g. ${who})` : ''}.`);
     }
-    parts.push(`Searches left this month: ${ctx.searchesRemaining}/${ctx.searchesCap}. Invites left today: ${ctx.dailyConnectRemaining}.`);
+    parts.push(`Searches left this month: **${ctx.searchesRemaining}/${ctx.searchesCap}**. Invites left today: **${ctx.dailyConnectRemaining}**.`);
     // Search coverage — what's been mined, and whether veins are drying up (so
     // the copilot can nudge toward a fresh angle before searches are wasted).
     if (coverage && coverage.totalQueries > 0) {
         const rate = Math.round(coverage.importRate * 100);
-        parts.push(`You've run ${coverage.totalQueries} search${coverage.totalQueries === 1 ? '' : 'es'} — ${coverage.totalSeen} people seen, ${coverage.totalImported} imported (${rate}% kept).`);
+        parts.push(`You've run **${coverage.totalQueries} search${coverage.totalQueries === 1 ? '' : 'es'}** — ${coverage.totalSeen} people seen, **${coverage.totalImported} imported** (${rate}% kept).`);
         if (coverage.exhausted.length) {
-            parts.push(`These angles are mined out: ${coverage.exhausted.slice(0, 3).join('; ')}. Try a different segment for fresh leads.`);
+            parts.push(`Mined-out angles: ${coverage.exhausted.slice(0, 3).join('; ')}. Try a different segment for fresh leads.`);
         }
     }
-    return parts.join(' ');
+    // One fact per line (rendered with soft line breaks); the warm intro sits in
+    // its own paragraph above.
+    return parts.join('\n');
 }
 
 // Answer a "look up X in my leads" request from the user's OWN imported leads.
