@@ -163,6 +163,11 @@ export function renderCapabilityContract(ctx: CopilotContext): string {
         ? `\n\nNOTE: ${noCrm ? 'No CRM is connected' : 'A CRM is connected'}; ${ctx.emailConnected ? 'an email account is connected' : 'no email account is connected'}. If the user asks about syncing leads/replies to a CRM, or about adding email outreach, answer from this real state and point them to Settings → Integrations (CRM) or Settings → Email to set it up — never claim something is connected when it isn't.`
         : '';
 
+    // How campaigns actually execute — so status answers reflect the step-by-step
+    // node graph, not a binary done/not-done. Prevents the bot from calling a
+    // running campaign "finished" or claiming "0 done" when steps have run.
+    const campaignModelGuidance = `\n\nHOW CAMPAIGNS RUN (so you explain status correctly): a campaign is a step-by-step sequence per lead — typically visit profile → send connection request → wait a set time → check if they accepted → (if connected) send a message. Steps are paced by DAILY LIMITS (${DAILY_CAPS['connect']} invites/day, ${DAILY_CAPS['send-message']} messages/day); when a limit is hit, remaining leads PAUSE and resume automatically on a later run. A connection request only turns into a "connection" if the person ACCEPTS — many invites sit "awaiting acceptance", and if not accepted in time that lead's sequence simply ends (this is normal, not a failure). So a lead can have real work done (visited + invited) while still counting as "in progress", and a low connected-count usually means invites are pending acceptance or the daily cap throttled sending — NOT that nothing happened. When the user asks about a campaign, use the detailed status facts provided; never call an active campaign "finished" or say "0 done" just because leads haven't converted yet.`;
+
     // When in-app searches run low, point users to the budget-free escape valve.
     const lowSearch = ctx.searchesRemaining <= 20;
     const extensionNote = `ALSO AVAILABLE: the user can import leads themselves — free of the monthly search budget — with the Qampi Chrome extension (${EXTENSION_URL}). Suggest it when they want a big batch${lowSearch ? ', and DO mention it now since their in-app search budget is nearly used up' : ' or their search budget is low'}.`;
@@ -180,5 +185,5 @@ ${profileBlock}
 ${extensionNote}
 
 CURRENT ACCOUNT STATE (use these real numbers; do not invent others):
-${status}${profileGuidance}${integrationsGuidance}`;
+${status}${campaignModelGuidance}${profileGuidance}${integrationsGuidance}`;
 }

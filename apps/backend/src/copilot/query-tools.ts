@@ -14,6 +14,7 @@
 
 import { prisma } from '@repo/db';
 import type { CopilotIntent } from './capabilities';
+import { flattenDagToFlow, type WorkflowGraph } from '../campaign-engine/workflow-graph';
 
 export interface CampaignStatusData {
     name: string;
@@ -22,6 +23,41 @@ export interface CampaignStatusData {
     pct: number;
     connected: number;
     replied: number;
+}
+
+// Node-graph-aware view of a campaign. Unlike CampaignStatusData (which reads only
+// the coarse CampaignLead.status and calls a lead "processed" only once it flips
+// out of PENDING), this reads the EXECUTION model the engine actually drives:
+// CampaignLeadProgress (per-lead node position, run status, stall reason,
+// connection outcome, next retry) + the workflow graph (the ordered steps) +
+// ActionLog (what actually ran). This is what lets the copilot say "20 visited,
+// 20 invited, 6 paused on the daily cap" instead of a misleading "0% done".
+export interface CampaignProgressData {
+    name: string;
+    campaignStatus: string;          // Campaign.status (ACTIVE / COMPLETED / PAUSED / ...)
+    total: number;                   // CampaignLead rows
+    steps: string[];                 // ordered, human-readable workflow steps
+    actions: {                       // what actually executed (ActionLog, SUCCESS only)
+        visited: number; invited: number; messaged: number;
+        liked: number; commented: number; emailed: number; followed: number;
+    };
+    run: {                           // CampaignLeadProgress.status distribution
+        pending: number; inProgress: number; deferred: number;
+        replied: number; completed: number; stalled: number; failed: number;
+    };
+    connected: number;               // connectionStatus === 'connected'
+    inviteAwaiting: number;          // connectionStatus === 'pending' (invite out, not yet accepted)
+    // statusReason distributions split by whether the lead can still move.
+    // pausedReasons: DEFERRED leads — will resume automatically. stoppedReasons:
+    // STALLED/FAILED — terminal, need the user to act. endedReasons: COMPLETED —
+    // finished naturally (e.g. invite never accepted). Keeping them apart is what
+    // lets the copilot say "will resume" vs "won't resume on its own" truthfully.
+    pausedReasons: Record<string, number>;
+    stoppedReasons: Record<string, number>;
+    endedReasons: Record<string, number>;
+    activeLeads: number;             // non-terminal (pending + inProgress + deferred)
+    effectivelyDone: boolean;        // every lead has reached a terminal run status
+    nextActionAt: string | null;     // earliest scheduled resume (ISO) among deferred leads
 }
 
 export interface RepliesWaitingData {
@@ -82,6 +118,7 @@ export interface WaitingReplyItem {
 
 export interface QueryToolData {
     campaign?: CampaignStatusData | null;
+    campaignProgress?: CampaignProgressData | null;
     lastCompleted?: CampaignStatusData | null;
     repliesWaiting?: RepliesWaitingData;
     available?: { count: number };
@@ -141,6 +178,148 @@ export async function getLastCompletedCampaign(userId: string): Promise<Campaign
     const connected = (by['CONNECTED'] || 0) + (by['REPLIED'] || 0);
     const replied = by['REPLIED'] || 0;
     return { name: done.name, total, processed: total, pct: 100, connected, replied };
+}
+
+// Engine node name (lowercase, as written to ActionLog / emitted by
+// flattenDagToFlow) → a human step label for the workflow summary. Kept here (not
+// imported) so the copilot's phrasing can differ from the engine's internal names.
+const ENGINE_NODE_LABEL: Record<string, string> = {
+    'profile-visit': 'Visit profile',
+    'profile-visit-voyager': 'Visit profile',
+    'connect': 'Send connection request',
+    'send-message': 'Send message',
+    'like-nth-post': 'Like a post',
+    'comment-nth-post': 'Comment on a post',
+    'email': 'Send email',
+    'email-finder': 'Find email',
+    'follow': 'Follow',
+    'check-connection': 'Check if connected',
+    'check-connection-voyager': 'Check if connected',
+    'inbox-sync': 'Sync inbox',
+    'inbox-sync-voyager': 'Sync inbox',
+    'delay': 'Wait',
+    'if-else': 'Branch on connection',
+};
+
+// Turn one flattened flow node into a human label. Delays get their duration
+// inlined ("Wait 1 day") when the node carries it; if-else appends its branches.
+function labelFlowNode(n: any): string {
+    const node = String(n?.node || '');
+    if (node === 'delay') {
+        const d = n || {};
+        const days = Number(d.delayDays ?? d.days ?? (d.data && (d.data.delayDays ?? d.data.days)) ?? 0);
+        const hours = Number(d.delayHours ?? d.hours ?? (d.data && (d.data.delayHours ?? d.data.hours)) ?? 0);
+        if (days > 0) return `Wait ${days} day${days === 1 ? '' : 's'}`;
+        if (hours > 0) return `Wait ${hours} hour${hours === 1 ? '' : 's'}`;
+        return 'Wait';
+    }
+    if (node === 'if-else') {
+        const branch = (arr: any[]): string => (arr || []).map(labelFlowNode).filter(Boolean).join(' → ');
+        const t = branch(n.trueBranch);
+        return t ? `If connected: ${t}` : 'Branch on connection';
+    }
+    return ENGINE_NODE_LABEL[node] || '';
+}
+
+// Ordered, human-readable step list for a campaign's workflow. Reuses the engine's
+// own flattener so the copilot describes the SAME graph the engine executes (not a
+// second, drifting interpretation). Capped so a long sequence stays a glance.
+function summarizeWorkflowSteps(workflow: unknown): string[] {
+    try {
+        const wf = workflow as WorkflowGraph;
+        if (!wf?.nodes?.length) return [];
+        const flow = flattenDagToFlow(wf);
+        const labels = flow.map(labelFlowNode).filter(Boolean);
+        return labels.slice(0, 12);
+    } catch {
+        return [];
+    }
+}
+
+// The node-graph-aware campaign read. Prefers the ACTIVE campaign; falls back to
+// the most recently created one (so "what happened to my campaign?" still answers
+// after it finishes). Everything comes from the execution model, so the answer is
+// correct even when the coarse Campaign.status / CampaignLead.status are stale
+// (e.g. all leads terminal but the campaign not yet flipped to COMPLETED).
+export async function getCampaignProgress(userId: string): Promise<CampaignProgressData | null> {
+    const campaign =
+        (await prisma.campaign.findFirst({ where: { userId, status: 'ACTIVE' }, orderBy: { createdAt: 'desc' }, select: { id: true, name: true, status: true, workflow: true, workflowJson: true } }))
+        || (await prisma.campaign.findFirst({ where: { userId }, orderBy: { createdAt: 'desc' }, select: { id: true, name: true, status: true, workflow: true, workflowJson: true } }));
+    if (!campaign) return null;
+
+    const [total, progressRows, actionRows] = await Promise.all([
+        prisma.campaignLead.count({ where: { campaignId: campaign.id } }),
+        prisma.campaignLeadProgress.findMany({
+            where: { campaignId: campaign.id },
+            select: { status: true, statusReason: true, connectionStatus: true, needsRetry: true, nextRetryAt: true },
+        }),
+        prisma.actionLog.groupBy({
+            by: ['actionType'],
+            where: { campaignId: campaign.id, status: 'SUCCESS' },
+            _count: { _all: true },
+        }),
+    ]);
+
+    const act: Record<string, number> = {};
+    for (const a of actionRows) act[a.actionType] = a._count._all;
+    const actions = {
+        visited: (act['profile-visit'] || 0) + (act['profile-visit-voyager'] || 0),
+        invited: act['connect'] || 0,
+        messaged: act['send-message'] || 0,
+        liked: act['like-nth-post'] || 0,
+        commented: act['comment-nth-post'] || 0,
+        emailed: act['email'] || 0,
+        followed: act['follow'] || 0,
+    };
+
+    const run = { pending: 0, inProgress: 0, deferred: 0, replied: 0, completed: 0, stalled: 0, failed: 0 };
+    const pausedReasons: Record<string, number> = {};
+    const stoppedReasons: Record<string, number> = {};
+    const endedReasons: Record<string, number> = {};
+    const bump = (m: Record<string, number>, k: string) => { m[k] = (m[k] || 0) + 1; };
+    let connected = 0;
+    let inviteAwaiting = 0;
+    let nextRetry: number | null = null;
+    for (const p of progressRows) {
+        switch (p.status) {
+            case 'PENDING': run.pending++; break;
+            case 'IN_PROGRESS': run.inProgress++; break;
+            case 'DEFERRED': run.deferred++; break;
+            case 'REPLIED': run.replied++; break;
+            case 'COMPLETED': run.completed++; break;
+            case 'STALLED': run.stalled++; break;
+            case 'FAILED': run.failed++; break;
+        }
+        if (p.statusReason) {
+            if (p.status === 'DEFERRED') bump(pausedReasons, p.statusReason);
+            else if (p.status === 'STALLED' || p.status === 'FAILED') bump(stoppedReasons, p.statusReason);
+            else if (p.status === 'COMPLETED') bump(endedReasons, p.statusReason);
+        }
+        if (p.connectionStatus === 'connected') connected++;
+        else if (p.connectionStatus === 'pending') inviteAwaiting++;
+        if (p.status === 'DEFERRED' && p.nextRetryAt) {
+            const t = new Date(p.nextRetryAt).getTime();
+            nextRetry = nextRetry == null ? t : Math.min(nextRetry, t);
+        }
+    }
+    const activeLeads = run.pending + run.inProgress + run.deferred;
+
+    return {
+        name: campaign.name,
+        campaignStatus: campaign.status,
+        total,
+        steps: summarizeWorkflowSteps(campaign.workflowJson ?? campaign.workflow),
+        actions,
+        run,
+        connected,
+        inviteAwaiting,
+        pausedReasons,
+        stoppedReasons,
+        endedReasons,
+        activeLeads,
+        effectivelyDone: progressRows.length > 0 && activeLeads === 0,
+        nextActionAt: nextRetry != null ? new Date(nextRetry).toISOString() : null,
+    };
 }
 
 // Uncampaigned leads. Scalar-only set-diff (userId + leadId) — no relation
@@ -344,6 +523,93 @@ export async function getLeadInfo(userId: string, leadId: string): Promise<LeadI
     };
 }
 
+// statusReason (free-form engine strings) → a bare plain-English phrase. The
+// formatter adds the paused/stopped/ended framing, so these stay unframed. Falls
+// back to a tidied version of the raw reason for anything unseen.
+const REASON_LABELS: Record<string, string> = {
+    daily_cap: 'daily invite limit reached',
+    off_hours: 'outside sending hours',
+    delay_node: 'waiting out a scheduled delay',
+    lead_replied: 'replied 🎉',
+    connection_not_accepted: 'invite not accepted in time — sequence ended',
+    connection_not_confirmed: 'invite not accepted in time — sequence ended',
+    acceptance_seed_failed: 'couldn’t verify acceptance — sequence ended',
+    sequence_finished: 'finished the full sequence',
+    account_session_expired: 'your LinkedIn session needs reconnecting',
+    account_otp_required: 'LinkedIn asked for a verification code',
+};
+function reasonLabel(raw: string): string {
+    if (REASON_LABELS[raw]) return REASON_LABELS[raw];
+    if (raw.startsWith('account_')) return 'your LinkedIn account needs attention';
+    return raw.replace(/_/g, ' ');
+}
+
+function relativeWhen(iso: string, now: number): string {
+    const diff = new Date(iso).getTime() - now;
+    if (diff <= 0) return 'shortly';
+    const h = Math.round(diff / 3_600_000);
+    if (h < 1) return 'within the hour';
+    if (h < 24) return `in ~${h}h`;
+    const d = Math.round(h / 24);
+    return `in ~${d} day${d === 1 ? '' : 's'}`;
+}
+
+// Compose the truthful, node-graph-aware status lines. This is the authoritative
+// text the copilot shows for "what's happening with my campaign?" — grounded in
+// the execution model, so it reports real work done (visits/invites/messages),
+// where leads actually ended up (connected / awaiting / stalled + WHY), and what
+// happens next — never the misleading "0% done" the coarse status produced.
+export function describeCampaignProgress(p: CampaignProgressData, now: number): string {
+    const lines: string[] = [];
+    const doneNote = p.effectivelyDone && p.campaignStatus === 'ACTIVE'
+        ? ' (every lead has finished its sequence — this campaign is effectively complete)'
+        : '';
+    lines.push(`**“${p.name}”** — ${p.campaignStatus.toLowerCase()}, ${p.total} lead${p.total === 1 ? '' : 's'}${doneNote}.`);
+
+    if (p.steps.length) lines.push(`Sequence: ${p.steps.join(' → ')}.`);
+
+    // What actually ran (only surface the steps that fired).
+    const did: string[] = [];
+    if (p.actions.visited) did.push(`${p.actions.visited} profile${p.actions.visited === 1 ? '' : 's'} visited`);
+    if (p.actions.invited) did.push(`${p.actions.invited} connection request${p.actions.invited === 1 ? '' : 's'} sent`);
+    if (p.actions.messaged) did.push(`${p.actions.messaged} message${p.actions.messaged === 1 ? '' : 's'} sent`);
+    if (p.actions.liked) did.push(`${p.actions.liked} post${p.actions.liked === 1 ? '' : 's'} liked`);
+    if (p.actions.commented) did.push(`${p.actions.commented} comment${p.actions.commented === 1 ? '' : 's'}`);
+    if (p.actions.emailed) did.push(`${p.actions.emailed} email${p.actions.emailed === 1 ? '' : 's'} sent`);
+    if (p.actions.followed) did.push(`${p.actions.followed} followed`);
+    lines.push(did.length ? `Done so far: ${did.join(', ')}.` : 'No steps have run yet.');
+
+    // Outcomes: connections + replies first (the wins), then where the rest sit.
+    const outcomes: string[] = [];
+    if (p.connected) outcomes.push(`**${p.connected} connected**`);
+    if (p.run.replied) outcomes.push(`**${p.run.replied} replied**`);
+    if (p.inviteAwaiting) outcomes.push(`${p.inviteAwaiting} invite${p.inviteAwaiting === 1 ? '' : 's'} awaiting acceptance`);
+    if (outcomes.length) lines.push(`Outcomes: ${outcomes.join(', ')}.`);
+
+    // WHY leads stopped — split by whether they can still move, biggest first. This
+    // is the piece the old status was blind to. Paused = will resume; stopped =
+    // terminal, needs the user; ended = finished naturally (e.g. invite not taken).
+    const top = (m: Record<string, number>) => Object.entries(m)
+        .filter(([r]) => r !== 'sequence_finished' && r !== 'lead_replied')
+        .sort((a, b) => b[1] - a[1]);
+    for (const [raw, n] of top(p.pausedReasons).slice(0, 3)) {
+        lines.push(`• ${n} lead${n === 1 ? '' : 's'} paused — ${reasonLabel(raw)}; will resume automatically.`);
+    }
+    for (const [raw, n] of top(p.stoppedReasons).slice(0, 3)) {
+        const extra = raw === 'daily_cap' ? ' — hit the daily invite cap too many times; won’t resume on their own (relaunch to retry them)' : ` — ${reasonLabel(raw)}; won’t resume on their own`;
+        lines.push(`• ${n} lead${n === 1 ? '' : 's'} stopped${extra}.`);
+    }
+    for (const [raw, n] of top(p.endedReasons).slice(0, 2)) {
+        lines.push(`• ${n} lead${n === 1 ? '' : 's'}: ${reasonLabel(raw)}.`);
+    }
+
+    // What happens next.
+    if (p.nextActionAt) {
+        lines.push(`Next action ${relativeWhen(p.nextActionAt, now)} (paused leads resume automatically).`);
+    }
+    return lines.join('\n');
+}
+
 // ── intent → query dispatcher (deterministic pre-fetch) ──────────────────────
 
 // Given the routed intent, run the read tool(s) that intent needs. Each tool is
@@ -353,8 +619,16 @@ export async function runIntentQuery(intent: CopilotIntent, userId: string): Pro
     const safe = async <T>(p: Promise<T>, fallback: T): Promise<T> => p.catch(() => fallback);
     switch (intent) {
         case 'check_status': {
-            const campaign = await safe(getCampaignStatus(userId), null);
+            // Node-graph-aware progress is the authoritative source (reads the
+            // execution model, so it's right even when Campaign.status is stale).
+            // Keep the coarse getCampaignStatus/lastCompleted as a fallback for
+            // when there's no progress data yet (brand-new campaign).
+            const [campaignProgress, campaign] = await Promise.all([
+                safe(getCampaignProgress(userId), null),
+                safe(getCampaignStatus(userId), null),
+            ]);
             return {
+                campaignProgress,
                 campaign,
                 // Only bother with the retrospective when nothing's running now.
                 lastCompleted: campaign ? null : await safe(getLastCompletedCampaign(userId), null),

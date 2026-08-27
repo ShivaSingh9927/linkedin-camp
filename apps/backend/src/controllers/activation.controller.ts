@@ -28,7 +28,7 @@ import { TEMPLATES, type TemplateDefinition } from '../campaign-templates';
 import { checkSearchQuota } from '../campaign-engine/safety/quota';
 import { checkQuota } from '../campaign-engine/safety/quota';
 import { renderCapabilityContract, COPILOT_INTENTS, type CopilotContext, type CopilotIntent } from '../copilot/capabilities';
-import { runIntentQuery, getAudienceSummary, findLeadByName, getCampaignStatus, getLastCompletedCampaign, getWaitingReplies, type QueryToolData, type AudienceSummaryData, type LeadMatch } from '../copilot/query-tools';
+import { runIntentQuery, getAudienceSummary, findLeadByName, getCampaignStatus, getLastCompletedCampaign, getCampaignProgress, describeCampaignProgress, getWaitingReplies, type QueryToolData, type AudienceSummaryData, type LeadMatch } from '../copilot/query-tools';
 import { getTriedAngles, getSearchCoverage } from '../services/search-memory.service';
 
 // Build the grounding object from the user's businessProfile. Both self-* fields
@@ -86,7 +86,11 @@ function isProfileComplete(g: ActivationGrounding): boolean {
 // answers are always exact (the model never invents figures).
 function statusFacts(td: QueryToolData, ctx: CopilotContext, coverage?: import('../services/search-memory.service').SearchCoverageData | null): string {
     const parts: string[] = [];
-    if (td.campaign) {
+    if (td.campaignProgress) {
+        // Node-graph-aware status: real work done + where each lead sits + why +
+        // what's next. Grounded in the execution model (see describeCampaignProgress).
+        parts.push(describeCampaignProgress(td.campaignProgress, Date.now()));
+    } else if (td.campaign) {
         const c = td.campaign;
         parts.push(`**“${c.name}”** is **${c.pct}% done** — ${c.processed}/${c.total} leads processed, **${c.connected} connected**, **${c.replied} replied**.`);
     } else if (td.lastCompleted && td.lastCompleted.total > 0) {
@@ -195,9 +199,25 @@ export const copilotMessage = async (req: AuthRequest, res: Response) => {
             prisma.user.findUnique({ where: { id: userId }, select: { linkedinCookie: true, hubspotToken: true, pipedriveToken: true, notionToken: true } }).catch(() => null),
             prisma.emailAccount.findUnique({ where: { userId }, select: { id: true } }).catch(() => null),
             loadGrounding(userId).catch(() => ({} as ActivationGrounding)),
-            // Always-on recent-campaign snapshot (global memory): the active
-            // campaign if one runs, else the most recent finished one. Null if none.
+            // Always-on recent-campaign snapshot (global memory). Built from the
+            // node-graph progress model (not the coarse CampaignLead.status), so the
+            // numbers the LLM sees match reality: connected counts real acceptances,
+            // "processed" counts leads that reached a terminal run state, and a
+            // campaign whose leads are all terminal reads as COMPLETED even if the
+            // Campaign row hasn't flipped yet. Falls back to the coarse read.
             (async (): Promise<CopilotContext['recentCampaign']> => {
+                const p = await getCampaignProgress(userId).catch(() => null);
+                if (p) {
+                    const done = p.effectivelyDone || p.campaignStatus === 'COMPLETED';
+                    return {
+                        name: p.name,
+                        status: done ? 'COMPLETED' : 'ACTIVE',
+                        processed: p.total - p.activeLeads,
+                        total: p.total,
+                        connected: p.connected,
+                        replied: p.run.replied,
+                    };
+                }
                 const active = await getCampaignStatus(userId).catch(() => null);
                 if (active) return { name: active.name, status: 'ACTIVE', processed: active.processed, total: active.total, connected: active.connected, replied: active.replied };
                 const done = await getLastCompletedCampaign(userId).catch(() => null);
