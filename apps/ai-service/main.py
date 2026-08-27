@@ -385,7 +385,7 @@ CF_BYOK_ALIAS_DEEPSEEK = os.environ.get("CF_BYOK_ALIAS_DEEPSEEK", "qampi-deepsee
 CF_BYOK_ALIAS_GROQ = os.environ.get("CF_BYOK_ALIAS_GROQ", "")  # unset = skip
 
 
-def call_llm(system: str, user: str, temperature: float = 0.7, model: str = "deepseek/deepseek-chat", max_tokens: int = 600) -> str:
+def call_llm(system: str, user: str, temperature: float = 0.7, model: str = "deepseek/deepseek-chat", max_tokens: int = 600, reasoning_effort: Optional[str] = None) -> str:
     model_name = model
 
     extra_headers = {}
@@ -399,16 +399,36 @@ def call_llm(system: str, user: str, temperature: float = 0.7, model: str = "dee
 
     resolved = _resolve_model(model_name)
 
-    response = ai_client.chat.completions.create(
-        model=resolved,
-        messages=[
-            {"role": "system", "content": system},
-            {"role": "user", "content": user}
-        ],
-        temperature=temperature,
-        max_tokens=max_tokens,
-        extra_headers=extra_headers if extra_headers else None,
-    )
+    def _create(with_reasoning: bool):
+        kwargs = dict(
+            model=resolved,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            max_tokens=max_tokens,
+            extra_headers=extra_headers if extra_headers else None,
+        )
+        if with_reasoning:
+            # DeepSeek thinking mode (OpenAI format). Temperature is ignored in
+            # thinking mode, so we omit it. reasoning_content comes back in a
+            # separate field; we only read the final `content` (our callers parse
+            # single-shot JSON — no tool-use turn to feed reasoning back into).
+            kwargs["reasoning_effort"] = reasoning_effort
+        else:
+            kwargs["temperature"] = temperature
+        return ai_client.chat.completions.create(**kwargs)
+
+    # Thinking is opt-in per call and fail-safe: if the provider/model rejects
+    # reasoning_effort, fall back to a normal completion rather than 500ing.
+    if reasoning_effort:
+        try:
+            response = _create(True)
+        except Exception as e:
+            print(f"[llm] reasoning_effort={reasoning_effort} rejected ({e}); retrying without thinking")
+            response = _create(False)
+    else:
+        response = _create(False)
     return response.choices[0].message.content
 
 
@@ -1458,7 +1478,13 @@ def activation_build_search(req: BuildSearchRequest):
         'Propose a GENUINELY DIFFERENT search from the ones already run below — a '
         'fresh segment (adjacent roles, a new industry, seniority, or geography) '
         'that fits their ICP but opens a new vein. Do NOT repeat or lightly reword '
-        'a mined-out angle.'
+        'a mined-out angle. IMPORTANT: if the angles below are mined out or returned '
+        'nobody, the previous searches were almost certainly TOO NARROW for this '
+        "user's network — so BROADEN, don't just re-theme: relax the connection "
+        'degree (2nd → 3rd), drop the most restrictive filter (e.g. a niche '
+        'industry), and widen the title OR-group to adjacent/related roles. First '
+        'reason briefly about WHY the prior angles likely returned nobody, then '
+        'build a broader search that will actually surface people.'
         if rotate else
         f'The user asked to find: "{phrase}"'
     )
@@ -1488,8 +1514,15 @@ RULES:
 - When rotating, the new search must differ MEANINGFULLY from every angle listed above.
 - Default degree to 2nd (warmer than cold 3rd). Keep `keywords` under ~200 characters, `rationale` under ~15 words.
 - Output ONLY the JSON, no code fences, no trailing commas."""
+    # Low-effort DeepSeek thinking sharpens the query and lets the model reason
+    # about WHY prior angles failed before it builds the next one. Env kill-switch
+    # (COPILOT_SEARCH_REASONING=off) disables it without a redeploy; call_llm also
+    # fails safe if the model rejects the param. Give it more room so reasoning +
+    # the JSON answer don't truncate.
+    _effort = (os.environ.get("COPILOT_SEARCH_REASONING", "low") or "").strip().lower()
+    _effort = _effort if _effort in ("low", "high", "max") else None
     try:
-        raw = call_llm(system, user, temperature=0.5, max_tokens=500)
+        raw = call_llm(system, user, temperature=0.5, max_tokens=1500 if _effort else 500, reasoning_effort=_effort)
         data = _tolerant_json(raw)
         kw = (data.get("keywords") or "").strip() or phrase
         f = data.get("filters") or {}
