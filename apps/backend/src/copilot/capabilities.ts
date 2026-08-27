@@ -80,6 +80,14 @@ export interface CopilotContext {
         bestFitBuyer?: string;
         goal?: string;
     };
+    // Configurable integrations, surfaced so the copilot can honestly answer
+    // "what's connected?" and nudge accurately instead of guessing. The
+    // email-finder is a GLOBAL service (env), not a per-user integration, so it
+    // is intentionally not here — the user can't connect it.
+    hasHubspot: boolean;
+    hasPipedrive: boolean;
+    hasNotion: boolean;
+    emailConnected: boolean;
     // Recent-campaign snapshot — part of the always-on GLOBAL memory (with the
     // profile above), so EVERY thread starts grounded on what's running / what
     // last finished, even a brand-new one. Compact + re-read per message → flat
@@ -130,6 +138,8 @@ export function renderCapabilityContract(ctx: CopilotContext): string {
         `Searches left this month: ${ctx.searchesRemaining} of ${ctx.searchesCap}`,
         `Connection requests left today: ${ctx.dailyConnectRemaining} of ${DAILY_CAPS['connect']}`,
         `Messages left today: ${ctx.dailyMessageRemaining} of ${DAILY_CAPS['send-message']}`,
+        `CRM connected: HubSpot=${ctx.hasHubspot ? 'yes' : 'no'}, Pipedrive=${ctx.hasPipedrive ? 'yes' : 'no'}, Notion=${ctx.hasNotion ? 'yes' : 'no'}`,
+        `Email account connected: ${ctx.emailConnected ? 'yes' : 'no'}`,
     ].join('\n');
 
     const p = ctx.profile || {};
@@ -144,6 +154,14 @@ export function renderCapabilityContract(ctx: CopilotContext): string {
     // When the profile is thin the bot is flying blind, so instruct it to nudge
     // the user to finish it (once) while still helping with what it knows.
     const profileGuidance = ctx.profileComplete ? '' : `\n\nNOTE: Their AI profile is thin, so you don't fully know their business. When they ask you to find leads, recommend a campaign, or draft anything, briefly encourage them to finish their AI profile (Settings → AI Profile) so you can tailor it — then still help as best you can. Mention this at most once.`;
+
+    // Config-awareness: answer "is my CRM/email connected?" from the real state
+    // above, and — only when relevant — point to the settings page rather than
+    // pretending it's set up. No hard nudge; the dashboard already handles that.
+    const noCrm = !ctx.hasHubspot && !ctx.hasPipedrive && !ctx.hasNotion;
+    const integrationsGuidance = (noCrm || !ctx.emailConnected)
+        ? `\n\nNOTE: ${noCrm ? 'No CRM is connected' : 'A CRM is connected'}; ${ctx.emailConnected ? 'an email account is connected' : 'no email account is connected'}. If the user asks about syncing leads/replies to a CRM, or about adding email outreach, answer from this real state and point them to Settings → Integrations (CRM) or Settings → Email to set it up — never claim something is connected when it isn't.`
+        : '';
 
     // When in-app searches run low, point users to the budget-free escape valve.
     const lowSearch = ctx.searchesRemaining <= 20;
@@ -162,5 +180,5 @@ ${profileBlock}
 ${extensionNote}
 
 CURRENT ACCOUNT STATE (use these real numbers; do not invent others):
-${status}${profileGuidance}`;
+${status}${profileGuidance}${integrationsGuidance}`;
 }

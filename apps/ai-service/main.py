@@ -1169,6 +1169,38 @@ def _activation_grounding(req: "ActivationRequest") -> str:
     return "\n".join(f"- {b}" for b in bits)
 
 
+def _profile_memoize(key_material: str, prefix: str, compute):
+    """Redis-memoize a copilot result that is a pure function of the user's
+    profile (the 'understand' card + the opening search chips). Same pattern as
+    understand_business: key = md5(grounding), 24h TTL, fail-open — a cache miss
+    or any Redis error just recomputes. These fire on every NEW chat thread with
+    identical profile input, so caching removes 2 LLM calls from most opens.
+    `compute` is called (and may raise) only on a miss; only successful results
+    are cached."""
+    import hashlib as _hashlib, json as _json2
+    try:
+        from orchestrator import _get_redis
+        _r = _get_redis()
+    except Exception:
+        _r = None
+    ckey = f"{prefix}:" + _hashlib.md5(key_material.encode()).hexdigest()
+    if _r is not None:
+        try:
+            hit = _r.get(ckey)
+            if hit:
+                print(f"[cache] {prefix} hit {ckey[-8:]}")
+                return _json2.loads(hit)
+        except Exception as e:
+            print(f"[cache] {prefix} read failed: {e}")
+    result = compute()
+    if _r is not None:
+        try:
+            _r.set(ckey, _json2.dumps(result), ex=86400)  # 24h, matches strategy/understand TTL
+        except Exception as e:
+            print(f"[cache] {prefix} write failed: {e}")
+    return result
+
+
 def _repair_json(s: str) -> str:
     """Best-effort structural repair for LLM JSON: inserts missing closing
     braces/brackets in the right place. Handles the common failure where the
@@ -1231,14 +1263,16 @@ def activation_understand(req: ActivationRequest):
     safe sequence instead of a bespoke plan."""
     grounding = _activation_grounding(req)
     strategy_ctx = get_strategy_context(req.ai_strategy)
-    system = (
-        "You are Qampi, an outreach copilot introducing yourself to a new user. "
-        "From the facts provided, reflect back a short, confident, PLAIN-LANGUAGE picture "
-        "of who they are, what they want, and who they should reach. Ground every claim in "
-        "the facts — if something wasn't provided, don't invent it, and lower your confidence. "
-        "Speak in second person ('You...'). Return ONLY valid JSON."
-    )
-    user = f"""What I know about this user:
+
+    def _compute():
+        system = (
+            "You are Qampi, an outreach copilot introducing yourself to a new user. "
+            "From the facts provided, reflect back a short, confident, PLAIN-LANGUAGE picture "
+            "of who they are, what they want, and who they should reach. Ground every claim in "
+            "the facts — if something wasn't provided, don't invent it, and lower your confidence. "
+            "Speak in second person ('You...'). Return ONLY valid JSON."
+        )
+        user = f"""What I know about this user:
 {grounding}{strategy_ctx}
 
 Return EXACTLY this JSON:
@@ -1249,7 +1283,6 @@ Return EXACTLY this JSON:
   "confidence": "<high | medium | low — low if the facts above are thin/generic>"
 }}
 Output ONLY the JSON."""
-    try:
         raw = call_llm(system, user, temperature=0.4, max_tokens=400)
         data = _tolerant_json(raw)
         conf = (data.get("confidence") or "low").strip().lower()
@@ -1261,6 +1294,9 @@ Output ONLY the JSON."""
             "bestFitBuyer": (data.get("bestFitBuyer") or "").strip(),
             "confidence": conf,
         }
+
+    try:
+        return _profile_memoize(grounding + "\n--strategy--\n" + strategy_ctx, "copilot_understand", _compute)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1271,14 +1307,16 @@ def activation_recommend_search(req: ActivationRequest):
     ready-to-run boolean keyword string plus display-friendly filter hints. The
     copilot shows these as tappable chips; the chosen one is sent to /leads/search."""
     grounding = _activation_grounding(req)
-    system = (
-        "You are Qampi, an outreach copilot that writes effective LinkedIn people-search "
-        "queries. LinkedIn search supports boolean operators (AND, OR, NOT, quotes for exact "
-        "phrases, parentheses for grouping). Best practice is precise TITLE + INDUSTRY + "
-        "LOCATION targeting over vague keyword soup. Propose searches that find the user's "
-        "best-fit buyer. Return ONLY valid JSON."
-    )
-    user = f"""What I know about this user:
+
+    def _compute():
+        system = (
+            "You are Qampi, an outreach copilot that writes effective LinkedIn people-search "
+            "queries. LinkedIn search supports boolean operators (AND, OR, NOT, quotes for exact "
+            "phrases, parentheses for grouping). Best practice is precise TITLE + INDUSTRY + "
+            "LOCATION targeting over vague keyword soup. Propose searches that find the user's "
+            "best-fit buyer. Return ONLY valid JSON."
+        )
+        user = f"""What I know about this user:
 {grounding}
 
 Propose 2-3 DISTINCT people-searches (different angles, not rephrasings). Return EXACTLY:
@@ -1297,7 +1335,6 @@ RULES:
 - Prefer 2nd-degree by default (warmer than cold 3rd).
 - Keep each `label` human and specific. Keep `keywords` under ~120 characters and each `rationale` under ~15 words.
 - Output ONLY the JSON, no code fences, no trailing commas."""
-    try:
         raw = call_llm(system, user, temperature=0.6, max_tokens=1200)
         data = _tolerant_json(raw)
         recs = []
@@ -1318,6 +1355,9 @@ RULES:
                 "rationale": (r.get("rationale") or "").strip(),
             })
         return {"recommendations": recs}
+
+    try:
+        return _profile_memoize(grounding, "copilot_recsearch", _compute)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

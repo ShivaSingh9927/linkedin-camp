@@ -199,8 +199,11 @@ export async function sendReply(leadId: string, content: string): Promise<void> 
 
 export interface HistoryMsg { sender: 'you' | 'qampi'; text: string }
 
-export async function routeMessage(message: string, history: HistoryMsg[], importedThisSession: number): Promise<RoutedMessage> {
-    const { data } = await api.post('/ai/copilot/message', { message, history, importedThisSession });
+// `intentHint` lets a caller that already KNOWS the intent (a quick-prompt
+// button, the "different angle" action) skip the backend's classifier LLM call.
+// The backend only honors it for safe, non-side-effecting intents.
+export async function routeMessage(message: string, history: HistoryMsg[], importedThisSession: number, intentHint?: RoutedMessage['intent']): Promise<RoutedMessage> {
+    const { data } = await api.post('/ai/copilot/message', { message, history, importedThisSession, intentHint });
     return data as RoutedMessage;
 }
 

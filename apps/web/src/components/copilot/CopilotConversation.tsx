@@ -24,11 +24,11 @@ import { useCopilot, type ThreadMeta } from './CopilotProvider';
 // Ready-to-use prompts pinned above the composer, always reachable (not just on
 // an empty thread). `send` is the text run through the router for free-text
 // intents; 'search'/'campaign' short-circuit to the deterministic flows.
-const QUICK_PROMPTS: { label: string; icon: typeof Search; action: 'search' | 'campaign' | 'status'; send: string }[] = [
+const QUICK_PROMPTS: { label: string; icon: typeof Search; action: 'search' | 'campaign' | 'status'; send: string; intent?: 'check_status' | 'handle_replies' }[] = [
     { label: 'Suggest searches', icon: Search, action: 'search', send: '' },
     { label: 'What campaign should I run?', icon: Rocket, action: 'campaign', send: '' },
-    { label: 'Handle my replies', icon: MessageSquare, action: 'status', send: 'Handle the replies waiting on me.' },
-    { label: 'How’s my campaign?', icon: ArrowRight, action: 'status', send: 'How is my campaign doing?' },
+    { label: 'Handle my replies', icon: MessageSquare, action: 'status', send: 'Handle the replies waiting on me.', intent: 'handle_replies' },
+    { label: 'How’s my campaign?', icon: ArrowRight, action: 'status', send: 'How is my campaign doing?', intent: 'check_status' },
 ];
 
 export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen' | 'panel'; onClose?: () => void }) {
@@ -175,7 +175,7 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
         const thinkId = nextId();
         push({ id: thinkId, role: 'qampi', kind: 'searching', label: '…' });
         try {
-            const routed = await routeMessage('Suggest a different search angle for fresh leads', historyForRouter(), importedLeadIdsRef.current.length);
+            const routed = await routeMessage('Suggest a different search angle for fresh leads', historyForRouter(), importedLeadIdsRef.current.length, 'find_leads');
             setMessages((prev) => prev.filter((m) => m.id !== thinkId));
             if (routed.toolData?.searchDraft) {
                 const d = routed.toolData.searchDraft;
@@ -318,14 +318,14 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
 
     // Free-text (or a quick-action chip) → intent router → the right closed
     // action (or an honest reply).
-    const runMessage = useCallback(async (q: string) => {
+    const runMessage = useCallback(async (q: string, intentHint?: 'check_status' | 'handle_replies' | 'find_leads') => {
         if (!q.trim()) return;
         if (!started) setStarted(true);
         push({ id: nextId(), role: 'user', kind: 'text', text: q });
         const thinkId = nextId();
         push({ id: thinkId, role: 'qampi', kind: 'searching', label: '…' });
         try {
-            const routed = await routeMessage(q, historyForRouter(), importedLeadIdsRef.current.length);
+            const routed = await routeMessage(q, historyForRouter(), importedLeadIdsRef.current.length, intentHint);
             setMessages((prev) => prev.filter((m) => m.id !== thinkId));
             if (routed.reply) push({ id: nextId(), role: 'qampi', kind: 'text', text: routed.reply });
             if (routed.intent === 'find_leads') {
@@ -427,7 +427,7 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
                             onClick={() => {
                                 if (qp.action === 'search') { setStarted(true); track('copilot_quickprompt', { action: 'search' }); loadSearchChips(); }
                                 else if (qp.action === 'campaign') { setStarted(true); track('copilot_quickprompt', { action: 'campaign' }); recommendCampaigns(); }
-                                else { track('copilot_quickprompt', { action: 'status' }); runMessage(qp.send); }
+                                else { track('copilot_quickprompt', { action: 'status' }); runMessage(qp.send, qp.intent); }
                             }}
                             className="inline-flex items-center gap-1.5 shrink-0 text-[12px] font-medium bg-surface border border-line rounded-chip px-2.5 py-1.5 text-ink-700 hover:border-brand-200 hover:bg-brand-50 hover:text-brand transition-colors whitespace-nowrap"
                         >

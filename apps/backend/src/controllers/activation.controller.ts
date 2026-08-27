@@ -169,23 +169,31 @@ export const activationRecommendSearch = async (req: AuthRequest, res: Response)
 export const copilotMessage = async (req: AuthRequest, res: Response) => {
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-    const { message, history, importedThisSession } = req.body || {};
+    const { message, history, importedThisSession, intentHint } = req.body || {};
     if (!message || typeof message !== 'string' || !message.trim()) {
         return res.status(400).json({ error: 'message_required' });
     }
+    // When the client already KNOWS the intent (a quick-prompt button, the
+    // "different angle" action), it passes intentHint so we skip the classifier
+    // LLM call entirely. Only trusted for the deterministic, non-side-effecting
+    // intents — never launch_campaign (that must go through confirm) — and only
+    // when it's a real member of the vocabulary.
+    const HINTABLE_INTENTS = new Set<string>(['find_leads', 'check_status', 'handle_replies', 'recommend_campaign', 'lookup_lead']);
+    const validHint = typeof intentHint === 'string' && HINTABLE_INTENTS.has(intentHint) && (COPILOT_INTENTS as string[]).includes(intentHint);
 
     try {
         // All fetched fresh per message and summarized into a fixed-size snapshot
         // (counts + a distilled profile) — never raw rows. grounding is one indexed
         // lookup by userId; it's what finally gives the CHAT (not just the opening
         // cards) knowledge of who the user is.
-        const [activeCampaignCount, leadCount, searchQ, connectQ, msgQ, user, grounding, recentCampaign] = await Promise.all([
+        const [activeCampaignCount, leadCount, searchQ, connectQ, msgQ, user, emailAccount, grounding, recentCampaign] = await Promise.all([
             prisma.campaign.count({ where: { userId, status: 'ACTIVE' } }).catch(() => 0),
             prisma.lead.count({ where: { userId } }).catch(() => 0),
             checkSearchQuota(userId),
             checkQuota(userId, 'connect'),
             checkQuota(userId, 'send-message'),
-            prisma.user.findUnique({ where: { id: userId }, select: { linkedinCookie: true } }).catch(() => null),
+            prisma.user.findUnique({ where: { id: userId }, select: { linkedinCookie: true, hubspotToken: true, pipedriveToken: true, notionToken: true } }).catch(() => null),
+            prisma.emailAccount.findUnique({ where: { userId }, select: { id: true } }).catch(() => null),
             loadGrounding(userId).catch(() => ({} as ActivationGrounding)),
             // Always-on recent-campaign snapshot (global memory): the active
             // campaign if one runs, else the most recent finished one. Null if none.
@@ -210,14 +218,20 @@ export const copilotMessage = async (req: AuthRequest, res: Response) => {
             profileComplete: isProfileComplete(grounding),
             profile: distillProfile(grounding),
             recentCampaign,
+            hasHubspot: !!user?.hubspotToken,
+            hasPipedrive: !!user?.pipedriveToken,
+            hasNotion: !!user?.notionToken,
+            emailConnected: !!emailAccount,
         };
 
-        const routed = await routeCopilotMessage({
-            message: message.trim(),
-            systemContext: renderCapabilityContract(ctx),
-            allowedIntents: COPILOT_INTENTS,
-            history: Array.isArray(history) ? history : undefined,
-        });
+        const routed = validHint
+            ? { intent: intentHint as CopilotIntent, params: { keywords: '', templateId: '' }, reply: '', needsConfirm: false }
+            : await routeCopilotMessage({
+                message: message.trim(),
+                systemContext: renderCapabilityContract(ctx),
+                allowedIntents: COPILOT_INTENTS,
+                history: Array.isArray(history) ? history : undefined,
+            });
 
         // Safety net: never let an unknown intent through even if the model/ai
         // layer misbehaves — coerce to off_topic.
@@ -232,6 +246,12 @@ export const copilotMessage = async (req: AuthRequest, res: Response) => {
             const coverage = await getSearchCoverage(userId).catch(() => null);
             const facts = statusFacts(toolData, ctx, coverage);
             reply = [reply, facts].filter(Boolean).join('\n\n');
+        } else if (intent === 'check_status' && !reply) {
+            // Hinted check_status (no classifier reply) with no live campaign data —
+            // answer deterministically from the recent-campaign snapshot we already have.
+            reply = recentCampaign
+                ? `Here's where "${recentCampaign.name}" stands: ${recentCampaign.connected} connected and ${recentCampaign.replied} replied out of ${recentCampaign.total} leads.`
+                : `You don't have a campaign running yet. Want me to recommend one to launch?`;
         }
         // lookup_lead: read the person straight from the user's own lead list
         // (never a LinkedIn search) and answer with their real fields.
