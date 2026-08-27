@@ -185,13 +185,29 @@ export default function CampaignBuilderPage({ params }: { params: Promise<{ id: 
                     if (meta && meta.skippedCount > 0) {
                         message += `\n\nNotification: ${meta.skippedCount} leads were skipped securely because they are already active in another campaign!`;
                     }
+                    const warnings: { message: string }[] = meta?.warnings || [];
+                    if (warnings.length > 0) {
+                        message += `\n\nHeads up:\n` + warnings.map((w) => `• ${w.message}`).join('\n');
+                    }
                     alert(message);
                     setIsLaunchModalOpen(false);
                 } else if (!silent) {
                     alert('Campaign Saved Successfully!');
                 }
             }
-        } catch (error) {
+        } catch (error: any) {
+            // A missing prerequisite (e.g. no email account for a "Send Email"
+            // step) is a user-fixable block, not a save failure — surface the
+            // reason and offer to jump to the settings page that fixes it.
+            const data = error?.response?.data;
+            if (error?.response?.status === 400 && data?.error === 'PREREQUISITES_NOT_MET') {
+                const fixUrl = data.issues?.[0]?.fixUrl;
+                const go = fixUrl
+                    ? confirm(`${data.message}\n\nGo to settings to fix this now?`)
+                    : (alert(data.message), false);
+                if (go && fixUrl) router.push(fixUrl);
+                return; // handled — don't rethrow as a generic save error
+            }
             console.error('Failed to save campaign:', error);
             if (!silent) alert('Error saving campaign.');
             throw error; // let the panel's Save button surface the failure too

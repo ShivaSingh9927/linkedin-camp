@@ -568,33 +568,14 @@ export const createManualLead = async (req: any, res: Response) => {
 export const getLeads = async (req: any, res: Response) => {
     const userId = req.user?.id;
 
-    console.log('getLeads called, userId:', userId);
-    console.log('req.user:', req.user);
-
     if (!userId) {
-        console.log('No userId - returning 401');
         return res.status(401).json({ error: 'Unauthorized - no user' });
     }
 
     try {
-        console.log('Querying leads for userId:', userId);
         const leads = await prisma.lead.findMany({
             where: { userId }
         });
-        console.log('Found leads:', leads.length);
-        
-        // Try with CampaignLead include
-        try {
-            console.log('Trying with CampaignLead include...');
-            const leadsWithCampaign = await prisma.lead.findMany({
-                where: { userId },
-                include: { CampaignLead: true }
-            });
-            console.log('With CampaignLead success:', leadsWithCampaign.length);
-        } catch (innerError: any) {
-            console.log('CampaignLead include failed:', innerError.message);
-        }
-        
         res.json(leads);
     } catch (error: any) {
         console.error('getLeads error:', error);

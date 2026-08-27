@@ -322,6 +322,18 @@ export default function CampaignsPage() {
                 toast.error(`Too many leads (${provided}/${cap}). Remove some leads or upgrade your plan.`);
                 return;
             }
+            // 400 PREREQUISITES_NOT_MET — a node needs config the user hasn't set
+            // up (e.g. a "Send Email" step with no connected email account).
+            if (error?.response?.status === 400 && error.response.data?.error === 'PREREQUISITES_NOT_MET') {
+                const data = error.response.data;
+                const fixUrl = data.issues?.[0]?.fixUrl;
+                if (fixUrl && confirm(`${data.message}\n\nGo to settings to fix this now?`)) {
+                    router.push(fixUrl);
+                } else if (!fixUrl) {
+                    toast.error(data.message);
+                }
+                return;
+            }
             console.error('Failed to toggle campaign status:', error);
             toast.error('Failed to update campaign');
         }

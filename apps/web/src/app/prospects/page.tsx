@@ -401,7 +401,17 @@ export default function LeadsPage() {
             alert(message);
             setSelectedLeads(new Set());
             setShowAssignModal(false);
-        } catch (error) {
+        } catch (error: any) {
+            const data = error?.response?.data;
+            if (error?.response?.status === 400 && data?.error === 'PREREQUISITES_NOT_MET') {
+                const fixUrl = data.issues?.[0]?.fixUrl;
+                if (fixUrl && confirm(`${data.message}\n\nGo to settings to fix this now?`)) {
+                    router.push(fixUrl);
+                } else if (!fixUrl) {
+                    alert(data.message);
+                }
+                return;
+            }
             console.error('Failed to assign leads:', error);
             alert('Error assigning leads.');
         }

@@ -208,7 +208,7 @@ export async function routeMessage(message: string, history: HistoryMsg[], impor
 
 export type LaunchResult =
     | { ok: true; campaignId: string; templateName: string }
-    | { ok: false; reason: 'active_exists' | 'lead_cap' | 'no_leads' | 'error'; message: string };
+    | { ok: false; reason: 'active_exists' | 'lead_cap' | 'no_leads' | 'prerequisites' | 'error'; message: string };
 
 // The template's default AI strategy — used to PREFILL the launch-setup step so
 // the user confirms/tweaks real values rather than a blank form.
@@ -269,6 +269,7 @@ export async function launchFromTemplate(templateId: string, leadIds: string[], 
         const msg = err?.response?.data?.message || '';
         if (code === 'ACTIVE_CAMPAIGN_EXISTS') return { ok: false, reason: 'active_exists', message: msg || 'You already have an active campaign. Pause it or wait for it to finish before starting another.' };
         if (code === 'LEAD_CAP_EXCEEDED') return { ok: false, reason: 'lead_cap', message: msg || 'That is more leads than your plan allows for one campaign.' };
+        if (code === 'PREREQUISITES_NOT_MET') return { ok: false, reason: 'prerequisites', message: msg || 'This campaign needs a tool set up first (like a connected email account) before it can start.' };
         return { ok: false, reason: 'error', message: 'Could not launch the campaign right now. Try again in a moment.' };
     }
 }

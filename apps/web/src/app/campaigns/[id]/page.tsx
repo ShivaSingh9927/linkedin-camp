@@ -127,6 +127,14 @@ export default function CampaignOverviewPage() {
             } else if (err?.response?.status === 400 && err.response.data?.error === 'LEAD_CAP_EXCEEDED') {
                 const { cap, provided } = err.response.data;
                 toast.error(`Too many leads (${provided}/${cap}). Reduce or upgrade.`);
+            } else if (err?.response?.status === 400 && err.response.data?.error === 'PREREQUISITES_NOT_MET') {
+                const data = err.response.data;
+                const fixUrl = data.issues?.[0]?.fixUrl;
+                if (fixUrl && confirm(`${data.message}\n\nGo to settings to fix this now?`)) {
+                    router.push(fixUrl);
+                } else if (!fixUrl) {
+                    toast.error(data.message);
+                }
             } else {
                 toast.error('Failed to update campaign');
             }

@@ -7,6 +7,7 @@ import { queueCampaign as queueCampaignSvc, unqueueCampaign as unqueueCampaignSv
 import { estimateCampaignEta } from '../campaign-engine/safety/eta';
 import { syncLeadToCRMs } from '../services/crmService';
 import { emitCrmEvent, ensureCampaignCrmPolicy } from '../services/crm-events';
+import { preflightCampaign } from '../campaign-engine/launch-preflight';
 
 export const createCampaign = async (req: any, res: Response) => {
     const { name, workflow, workflowJson, leads, objective, description, cta, toneOverride } = req.body;
@@ -136,6 +137,21 @@ export const startCampaign = async (req: any, res: Response) => {
 
         console.log('Campaign found:', campaign ? 'yes' : 'no');
         if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+
+        // Prerequisite gate: refuse to start when a node needs external config
+        // the user hasn't set up (e.g. a "Send Email" step with no connected
+        // email account). Warnings (e.g. finder box unavailable) don't block —
+        // they ride along in the success meta so the UI can surface them.
+        const preflight = await preflightCampaign(campaign.workflowJson, userId);
+        const blockers = preflight.filter((p) => p.severity === 'block');
+        const warnings = preflight.filter((p) => p.severity === 'warn');
+        if (blockers.length > 0) {
+            return res.status(400).json({
+                error: 'PREREQUISITES_NOT_MET',
+                message: blockers[0].message,
+                issues: blockers,
+            });
+        }
 
         // Resolve the effective lead set up front so caps + queue decisions
         // can be made before any DB write.
@@ -305,7 +321,7 @@ export const startCampaign = async (req: any, res: Response) => {
 
         res.json({
             ...updatedCampaign,
-            meta: { startedCount, skippedCount }
+            meta: { startedCount, skippedCount, warnings }
         });
     } catch (error: any) {
         console.error('Start campaign error:', error);
