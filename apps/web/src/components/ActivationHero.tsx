@@ -14,6 +14,30 @@ export interface SetupStatus {
   linkedinDone: boolean;
   crmDone: boolean;
   emailDone: boolean;
+  /** 0..1 — share of the core business-profile fields that are filled in.
+   *  Distinct from profileDone (which only needs ONE field) so the dashboard
+   *  can nudge a barely-filled profile toward "Qampi understands you". */
+  profileStrength: number;
+  /** Whether Qampi has an AI strategy and whether the user reviewed it. */
+  strategyState: 'none' | 'unconfirmed' | 'confirmed';
+}
+
+// The business-profile fields that actually make Qampi's AI messaging good.
+const CORE_PROFILE_FIELDS = [
+  'company', 'companyDescription', 'products', 'differentiators',
+  'targetAudience', 'industry', 'mainPainPoint', 'keywords',
+] as const;
+
+function fieldFilled(v: unknown): boolean {
+  if (Array.isArray(v)) return v.length > 0;
+  if (typeof v === 'string') return v.trim().length > 0;
+  return v != null && v !== '';
+}
+
+export function computeProfileStrength(bp: Record<string, unknown> | null): number {
+  if (!bp) return 0;
+  const filled = CORE_PROFILE_FIELDS.filter((k) => fieldFilled(bp[k])).length;
+  return filled / CORE_PROFILE_FIELDS.length;
 }
 
 /**
@@ -51,7 +75,12 @@ export function ActivationHero({ onResolved }: { onResolved?: (status: SetupStat
       const crmDone = !!(me?.hasHubspot || me?.hasPipedrive || me?.hasNotion);
       const emailDone = emailRes.status === 'fulfilled' ? !!emailRes.value.data?.account : false;
 
-      const s: SetupStatus = { profileDone, linkedinDone, crmDone, emailDone, requiredDone: profileDone && linkedinDone };
+      const profileStrength = computeProfileStrength(bp);
+      const strategyState: SetupStatus['strategyState'] = !bp?.aiStrategy
+        ? 'none'
+        : bp?.strategyConfirmedAt ? 'confirmed' : 'unconfirmed';
+
+      const s: SetupStatus = { profileDone, linkedinDone, crmDone, emailDone, profileStrength, strategyState, requiredDone: profileDone && linkedinDone };
       if (!cancelled) {
         setStatus(s);
         setLoading(false);

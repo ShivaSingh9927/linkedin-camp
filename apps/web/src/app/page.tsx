@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { WelcomeReveal } from '@/components/WelcomeReveal';
 import { ActivationHero, type SetupStatus } from '@/components/ActivationHero';
 import { OptionalSetupReminder } from '@/components/OptionalSetupReminder';
+import { ProfileCompletionNudge } from '@/components/ProfileCompletionNudge';
 import { ActivationCopilot, ACTIVATION_DISMISSED_KEY } from '@/components/copilot/ActivationCopilot';
 import { QampiDashboardPanel } from '@/components/copilot/QampiDashboardPanel';
 import { DynamicStatusPanel, type StatusCampaign, type StatusLog } from '@/components/dashboard/DynamicStatusPanel';
@@ -132,8 +133,10 @@ export default function DashboardPage() {
             </Link>
           </div>
 
-          {/* Optional setup reminder — dismissible top strip */}
-          <div className="shrink-0">
+          {/* Complete-your-AI-profile nudge (profile/strategy quality) then the
+              optional CRM/email reminder — both dismissible top strips. */}
+          <div className="shrink-0 space-y-3">
+            <ProfileCompletionNudge status={setup} />
             <OptionalSetupReminder status={setup} variant="strip" />
           </div>
 
