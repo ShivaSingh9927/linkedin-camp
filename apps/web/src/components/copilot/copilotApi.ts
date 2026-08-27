@@ -22,6 +22,9 @@ export interface SearchRecommendation {
     keywords: string;
     filters: SearchFilters;
     rationale: string;
+    // The model's chain-of-thought for this query (build-search / find_leads only).
+    // Shown in a collapsible "how I chose this" block; empty when thinking is off.
+    reasoning?: string;
 }
 
 export interface SearchPerson {

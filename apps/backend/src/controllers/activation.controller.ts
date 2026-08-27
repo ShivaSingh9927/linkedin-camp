@@ -313,7 +313,7 @@ export const copilotMessage = async (req: AuthRequest, res: Response) => {
             const triedAngles = await getTriedAngles(userId).catch(() => []);
             try {
                 const draft = await generateSearchQuery(phrase, grounding, audienceStr, { triedAngles, rotate });
-                toolData = { ...(toolData || {}), searchDraft: { label: draft.label, keywords: draft.keywords, filters: draft.filters, rationale: draft.rationale } };
+                toolData = { ...(toolData || {}), searchDraft: { label: draft.label, keywords: draft.keywords, filters: draft.filters, rationale: draft.rationale, reasoning: draft.reasoning || '' } };
             } catch { /* frontend falls back to searching the raw phrase */ }
         }
 

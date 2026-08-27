@@ -406,6 +406,9 @@ export interface SearchRecommendation {
     keywords: string;
     filters: { title: string; location: string; industry: string; degree: string };
     rationale: string;
+    // DeepSeek's chain-of-thought for this query (build-search only; "" otherwise).
+    // Surfaced to the user as a collapsible "how I chose this" block.
+    reasoning?: string;
 }
 
 // Map the camelCase grounding to the ai-service snake_case request body.

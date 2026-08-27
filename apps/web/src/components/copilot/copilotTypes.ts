@@ -9,7 +9,7 @@ export type Msg =
     | { id: string; role: 'qampi'; kind: 'understand'; loading: boolean; data?: Understand }
     | { id: string; role: 'qampi'; kind: 'searchChips'; loading: boolean; recs?: SearchRecommendation[] }
     // A reasoned query shown BEFORE a search is spent — the user approves/edits it.
-    | { id: string; role: 'qampi'; kind: 'searchDraft'; label: string; keywords: string; filters?: SearchFilters; rationale?: string }
+    | { id: string; role: 'qampi'; kind: 'searchDraft'; label: string; keywords: string; filters?: SearchFilters; rationale?: string; reasoning?: string }
     | { id: string; role: 'qampi'; kind: 'searching'; label: string }
     | { id: string; role: 'qampi'; kind: 'results'; people: SearchPerson[]; via: string; remaining: number; cap: number; keywords: string; filters?: SearchFilters; page: number; saturation?: SaturationSignal }
     | { id: string; role: 'qampi'; kind: 'templates'; loading: boolean; picks?: TemplatePick[] }

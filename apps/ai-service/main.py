@@ -432,6 +432,53 @@ def call_llm(system: str, user: str, temperature: float = 0.7, model: str = "dee
     return response.choices[0].message.content
 
 
+def call_llm_with_reasoning(system: str, user: str, temperature: float = 0.7, model: str = "deepseek/deepseek-chat", max_tokens: int = 600, reasoning_effort: Optional[str] = None) -> tuple[str, str]:
+    """Like call_llm but also returns DeepSeek's `reasoning_content` (the chain of
+    thought) so a caller can surface it to the user. Returns (content, reasoning);
+    reasoning is "" when thinking was off/unsupported. Same fail-safe as call_llm."""
+    model_name = model
+
+    extra_headers = {}
+    if USE_CLOUDFLARE_GATEWAY:
+        if model_name.startswith("openrouter/") and CF_BYOK_ALIAS_OPENROUTER:
+            extra_headers["cf-aig-byok-alias"] = CF_BYOK_ALIAS_OPENROUTER
+        elif model_name.startswith("deepseek/") and CF_BYOK_ALIAS_DEEPSEEK:
+            extra_headers["cf-aig-byok-alias"] = CF_BYOK_ALIAS_DEEPSEEK
+        elif model_name.startswith("groq/") and CF_BYOK_ALIAS_GROQ:
+            extra_headers["cf-aig-byok-alias"] = CF_BYOK_ALIAS_GROQ
+
+    resolved = _resolve_model(model_name)
+
+    def _create(with_reasoning: bool):
+        kwargs = dict(
+            model=resolved,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            max_tokens=max_tokens,
+            extra_headers=extra_headers if extra_headers else None,
+        )
+        if with_reasoning:
+            kwargs["reasoning_effort"] = reasoning_effort
+        else:
+            kwargs["temperature"] = temperature
+        return ai_client.chat.completions.create(**kwargs)
+
+    if reasoning_effort:
+        try:
+            response = _create(True)
+        except Exception as e:
+            print(f"[llm] reasoning_effort={reasoning_effort} rejected ({e}); retrying without thinking")
+            response = _create(False)
+    else:
+        response = _create(False)
+    msg = response.choices[0].message
+    # reasoning_content is DeepSeek-specific and only present on thinking turns.
+    reasoning = (getattr(msg, "reasoning_content", None) or "")
+    return (msg.content, reasoning)
+
+
 # ─── Strategy Endpoints ───────────────────────────────────────────────────────
 
 @app.post("/ai/generate-strategy")
@@ -1275,6 +1322,20 @@ def _tolerant_json(raw: str) -> Dict[str, Any]:
         return _json.loads(_repair_json(txt))  # repair missing/mismatched closers
 
 
+def _clean_reasoning(reasoning: str, cap: int = 1200) -> str:
+    """Tidy DeepSeek's raw chain-of-thought for display: collapse blank runs and
+    cap the length so the copilot's 'how I chose this' block stays a glance, not a
+    wall. Returns "" when there's nothing (thinking off / unsupported)."""
+    import re as _re
+    txt = (reasoning or "").strip()
+    if not txt:
+        return ""
+    txt = _re.sub(r"\n{3,}", "\n\n", txt)
+    if len(txt) > cap:
+        txt = txt[:cap].rstrip() + "…"
+    return txt
+
+
 @app.post("/ai/activation/understand")
 def activation_understand(req: ActivationRequest):
     """The copilot's opening "here's how I understand you" card. Grounded ONLY in
@@ -1525,7 +1586,7 @@ RULES:
     _effort = (os.environ.get("COPILOT_SEARCH_REASONING", "low") or "").strip().lower()
     _effort = _effort if _effort in ("low", "high", "max") else None
     try:
-        raw = call_llm(system, user, temperature=0.5, max_tokens=1500 if _effort else 500, reasoning_effort=_effort)
+        raw, reasoning = call_llm_with_reasoning(system, user, temperature=0.5, max_tokens=1500 if _effort else 500, reasoning_effort=_effort)
         data = _tolerant_json(raw)
         kw = (data.get("keywords") or "").strip() or phrase
         f = data.get("filters") or {}
@@ -1539,6 +1600,9 @@ RULES:
                 "degree": (f.get("degree") or "any").strip().lower(),
             },
             "rationale": (data.get("rationale") or "").strip(),
+            # DeepSeek's chain-of-thought for THIS query — the copilot shows it in a
+            # collapsible "how I chose this" block. "" when thinking is off/rejected.
+            "reasoning": _clean_reasoning(reasoning),
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

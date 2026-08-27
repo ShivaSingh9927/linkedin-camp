@@ -185,7 +185,7 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
             setMessages((prev) => prev.filter((m) => m.id !== thinkId));
             if (routed.toolData?.searchDraft) {
                 const d = routed.toolData.searchDraft;
-                push({ id: nextId(), role: 'qampi', kind: 'searchDraft', label: d.label, keywords: d.keywords, filters: d.filters, rationale: d.rationale });
+                push({ id: nextId(), role: 'qampi', kind: 'searchDraft', label: d.label, keywords: d.keywords, filters: d.filters, rationale: d.rationale, reasoning: d.reasoning });
             } else {
                 push({ id: nextId(), role: 'qampi', kind: 'text', text: routed.reply || 'Tell me a different type of person to look for and I’ll build a search.' });
             }
@@ -339,7 +339,7 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
                 // fall back to a raw-phrase search if the builder didn't return one.
                 if (routed.toolData?.searchDraft) {
                     const d = routed.toolData.searchDraft;
-                    push({ id: nextId(), role: 'qampi', kind: 'searchDraft', label: d.label, keywords: d.keywords, filters: d.filters, rationale: d.rationale });
+                    push({ id: nextId(), role: 'qampi', kind: 'searchDraft', label: d.label, keywords: d.keywords, filters: d.filters, rationale: d.rationale, reasoning: d.reasoning });
                 } else {
                     const kw = routed.params.keywords || q;
                     doSearch(kw, kw);
@@ -627,6 +627,16 @@ function SearchDraftCard({ m, onRun }: { m: Extract<Msg, { kind: 'searchDraft' }
                 <span className="text-[13px] font-medium text-foreground">{m.label}</span>
             </div>
             {m.rationale && <p className="text-[11px] text-ink-500">{m.rationale}</p>}
+            {m.reasoning && (
+                <details className="group">
+                    <summary className="flex items-center gap-1 cursor-pointer list-none text-[11px] text-ink-400 hover:text-ink-600 transition-colors select-none">
+                        <Sparkles className="w-3 h-3 text-brand shrink-0" />
+                        <span>How I chose this</span>
+                        <ArrowRight className="w-3 h-3 shrink-0 transition-transform group-open:rotate-90" />
+                    </summary>
+                    <p className="mt-1.5 text-[11px] leading-relaxed text-ink-500 whitespace-pre-wrap border-l-2 border-line pl-2.5">{m.reasoning}</p>
+                </details>
+            )}
             <div>
                 <label className="label !text-[10px] mb-1 block">Search query (editable)</label>
                 <textarea rows={2} value={keywords} onChange={(e) => setKeywords(e.target.value)} className={cn(fieldCls, 'resize-none leading-snug')} />

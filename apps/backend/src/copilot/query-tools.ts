@@ -68,6 +68,8 @@ export interface SearchDraft {
     keywords: string;
     filters: { title?: string; location?: string; industry?: string; degree?: string };
     rationale: string;
+    // The model's chain-of-thought for this query (build-search only; "" otherwise).
+    reasoning?: string;
 }
 
 export interface WaitingReplyItem {
