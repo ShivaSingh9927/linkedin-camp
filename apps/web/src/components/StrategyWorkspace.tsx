@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Sparkles, Clock, RotateCcw, Loader2, AlertCircle, Check, Zap,
   Target, Users, MessageCircle, Crosshair, Shield, Swords, MessageSquare,
-  CheckCircle2,
+  CheckCircle2, ArrowRight, X,
 } from 'lucide-react';
 import { io as socketIO, Socket } from 'socket.io-client';
 import { GenerationProgress } from '@/components/GenerationProgress';
@@ -37,9 +37,8 @@ export function StrategyWorkspace({ embedded = false, goalType: goalTypeProp }: 
   // we fall back to the goal fetched alongside the strategy.
   const [fetchedGoalType, setFetchedGoalType] = useState<string>('sell');
   const goalType = goalTypeProp ?? fetchedGoalType;
-  // Master-detail: which section the right panel shows. 'summary' is the
-  // read-only at-a-glance overview; the rest map to editable strategy keys.
-  const [activeSection, setActiveSection] = useState<string>('summary');
+  // Card gallery: which section's editor drawer is open (null = gallery only).
+  const [openKey, setOpenKey] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [regenerating, setRegenerating] = useState(false);
   const [generatedAt, setGeneratedAt] = useState<string | null>(null);
@@ -52,7 +51,6 @@ export function StrategyWorkspace({ embedded = false, goalType: goalTypeProp }: 
   // Confirmation (soft).
   const [confirmedAt, setConfirmedAt] = useState<string | null>(null);
   const [confirmedSections, setConfirmedSections] = useState<Record<string, boolean>>({});
-  const [nudgeDismissed, setNudgeDismissed] = useState(false);
 
   // Comment strategy sub-editor.
   const [pillarSaving, setPillarSaving] = useState(false);
@@ -146,7 +144,6 @@ export function StrategyWorkspace({ embedded = false, goalType: goalTypeProp }: 
         setIsCached(false);
         setConfirmedAt(null);
         setConfirmedSections({});
-        setNudgeDismissed(false);
       } else if (payload?.status === 'rate_limited') {
         setRateLimitError(payload.error || 'Rate limit exceeded.');
       } else {
@@ -298,13 +295,9 @@ export function StrategyWorkspace({ embedded = false, goalType: goalTypeProp }: 
     );
   }
 
-  // ── Derived summary ("at a glance") data ──────────────────────────────────
+  // ── Derived "at a glance" data (the positioning band) ─────────────────────
   const positioning: string | undefined = strategy?.gtm?.positioning;
-  const icp = strategy?.icp?.primary || {};
-  const icpTitle: string | undefined = icp?.title;
-  const pains: string[] = Array.isArray(icp?.painPoints) ? icp.painPoints.slice(0, 3) : [];
   const advantages: string[] = Array.isArray(strategy?.competitiveLandscape?.ourAdvantages) ? strategy.competitiveLandscape.ourAdvantages.slice(0, 3) : [];
-  const pillars: any[] = Array.isArray(strategy?.messagingPillars) ? strategy.messagingPillars.slice(0, 3) : [];
 
   // Visible labels are resolved per goal; the section keys/icons never change.
   const labels = getStrategyLabels(goalType);
@@ -323,61 +316,101 @@ export function StrategyWorkspace({ embedded = false, goalType: goalTypeProp }: 
   const confirmedCount = SECTIONS.filter((s) => confirmedSections[s.key]).length;
   const allConfirmed = !!confirmedAt || confirmedCount === SECTIONS.length;
 
-  // Left-rail items: a read-only "Summary" first, then the editable sections.
-  const NAV = [{ key: 'summary', label: 'Summary', icon: Sparkles, color: 'text-primary', bg: 'bg-primary/10' }, ...SECTIONS] as const;
-  const active = NAV.find((n) => n.key === activeSection) || NAV[0];
-  const ActiveIcon = active.icon;
+  // The section whose editor drawer is open, and its icon.
+  const openMeta = openKey ? SECTIONS.find((s) => s.key === openKey) || null : null;
+  const OpenIcon = openMeta?.icon || Sparkles;
+
+  // A short, human-readable preview of each section for its gallery card.
+  const snippetFor = (key: string): string => {
+    // strategy is `any`; keep v permissive so each section's varied shape reads cleanly.
+    const v: any = strategy?.[key]; // eslint-disable-line @typescript-eslint/no-explicit-any
+    if (!v || (typeof v === 'object' && Object.keys(v).length === 0)) return 'Not generated yet — open to add detail.';
+    switch (key) {
+      case 'gtm':
+        return v.positioning || [v.salesMotion, v.primaryChannel].filter(Boolean).join(' · ') || 'Your go-to-market motion and positioning.';
+      case 'icp': {
+        const p = v.primary || {};
+        const pains = Array.isArray(p.painPoints) ? p.painPoints.slice(0, 2).join(', ') : '';
+        const head = [p.title, p.companySize].filter(Boolean).join(' · ');
+        return [head, pains].filter(Boolean).join(' — ') || 'Your ideal customer profile.';
+      }
+      case 'messagingPillars': {
+        const arr = Array.isArray(v) ? v : [];
+        return arr.map((p) => p?.pillar || p?.name).filter(Boolean).slice(0, 3).join(' · ') || 'Your core messaging pillars.';
+      }
+      case 'outreachAngles': {
+        const entries = v && typeof v === 'object' ? Object.entries(v) : [];
+        const first = entries[0]?.[1] as { hook?: string } | undefined;
+        const personas = entries.map(([k]) => k.replace(/([A-Z])/g, ' $1').trim()).slice(0, 3).join(', ');
+        return first?.hook || personas || 'Persona-specific outreach hooks.';
+      }
+      case 'objections': {
+        const entries = v && typeof v === 'object' ? Object.entries(v) : [];
+        const first = entries[0]?.[1] as { response?: string } | undefined;
+        return first?.response || (entries.length ? `${entries.length} common objections handled.` : 'How to handle pushback.');
+      }
+      case 'competitiveLandscape': {
+        const adv = Array.isArray(v.ourAdvantages) ? v.ourAdvantages.slice(0, 3).join(', ') : '';
+        const comp = Array.isArray(v.directCompetitors) ? v.directCompetitors.slice(0, 3).join(', ') : '';
+        return adv || (comp ? `Vs. ${comp}` : '') || 'Where you win and how to position.';
+      }
+      case 'commentStrategy':
+        return v.goal || v.approach || 'How Aigeon comments on prospects’ posts.';
+      default:
+        return 'Open to review this section.';
+    }
+  };
 
   return (
     <div className={embedded ? '' : 'min-h-screen bg-slate-50'}>
-      <div className={embedded ? '' : 'max-w-[1760px] mx-auto px-6 lg:px-10 py-12'}>
-        {/* Header — title/info on the left, the confirm nudge fills the middle,
-            and the Regenerate/Confirm actions sit on the right, all in one row. */}
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-9">
-          <div className="flex-shrink-0">
-            {!embedded && <h1 className="text-4xl lg:text-[2.75rem] font-black text-slate-900 tracking-tight leading-none">AI Strategy</h1>}
-            {!embedded && <p className="mt-3.5 text-[17px] text-slate-600 font-medium max-w-2xl leading-relaxed">Your marketing playbook. Aigeon writes every message from this — review &amp; confirm so it sounds like you.</p>}
-            {generatedAt && (
-              <div className={cn('flex items-center gap-2 text-[13px] font-bold text-slate-400', !embedded && 'mt-3.5')}>
-                <Clock className="w-4 h-4" /> Generated {new Date(generatedAt).toLocaleDateString()} at {new Date(generatedAt).toLocaleTimeString()}
-                {savedFlash && <span className="ml-2 inline-flex items-center gap-1 text-emerald-600"><Check className="w-4 h-4" /> Saved</span>}
-                {saving && <Loader2 className="w-4 h-4 animate-spin text-slate-400" />}
-              </div>
-            )}
+      <div className={embedded ? '' : 'max-w-[1240px] mx-auto px-6 lg:px-10 py-12'}>
+        {/* Action bar — progress ring + generated info on the left,
+            Regenerate / Confirm strategy on the right. */}
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div className="flex items-center gap-3.5 min-w-0">
+            <div
+              className="w-[46px] h-[46px] rounded-full grid place-items-center shrink-0"
+              style={{ background: `conic-gradient(#8b5cf6 ${Math.round((confirmedCount / Math.max(SECTIONS.length, 1)) * 100)}%, #e9e7f7 0)` }}
+            >
+              <div className="w-9 h-9 rounded-full bg-white grid place-items-center text-[12px] font-black text-slate-700">{confirmedCount}/{SECTIONS.length}</div>
+            </div>
+            <div className="min-w-0">
+              {embedded
+                ? <div className="text-[15px] font-black text-slate-900 tracking-tight leading-none">Your strategy playbook</div>
+                : <h1 className="text-[22px] font-black text-slate-900 tracking-tight leading-none">AI Strategy</h1>}
+              {generatedAt && (
+                <div className="flex items-center gap-1.5 text-[12.5px] font-semibold text-slate-500 mt-1.5">
+                  <Clock className="w-3.5 h-3.5" /> Generated {new Date(generatedAt).toLocaleDateString()} · review each card below
+                  {savedFlash && <span className="ml-1.5 inline-flex items-center gap-1 text-emerald-600"><Check className="w-3.5 h-3.5" /> Saved</span>}
+                  {saving && <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-400" />}
+                </div>
+              )}
+            </div>
           </div>
 
-          {/* Confirm nudge — inline in the header row */}
-          {!allConfirmed && !nudgeDismissed && !isFallback && (
-            <div className="flex-1 min-w-0 flex items-center gap-3 rounded-2xl border border-primary/15 bg-gradient-to-br from-primary/[0.06] to-fuchsia-50/60 px-4 py-2.5">
-              <span className="w-7 h-7 rounded-lg bg-white shadow-[0_0_0_1px_rgba(124,92,252,.12)] grid place-items-center flex-shrink-0"><Sparkles className="w-4 h-4 text-primary" /></span>
-              <p className="text-[13px] font-semibold text-slate-700 leading-snug min-w-0">Review each section and mark it <span className="text-primary font-extrabold">Looks good</span>. <span className="font-black whitespace-nowrap">{confirmedCount}/{SECTIONS.length} done.</span></p>
-              <button onClick={() => setNudgeDismissed(true)} className="ml-auto text-[10px] font-black uppercase tracking-wider text-slate-400 hover:text-slate-600 flex-shrink-0">Dismiss</button>
-            </div>
-          )}
-
-          <div className="flex items-center gap-3 flex-shrink-0">
-            {isCached && <div className="flex items-center gap-1.5 text-xs font-bold text-slate-500 bg-slate-100 px-3 py-2 rounded-xl"><Zap className="w-3.5 h-3.5" /> Cached</div>}
-            <button onClick={() => handleRegenerate(false)} className="flex items-center gap-2 px-5 py-3 bg-white text-slate-700 rounded-[16px] text-[14px] font-extrabold shadow-[0_1px_0_rgba(15,23,42,.04),0_0_0_1px_rgb(226,232,240)] hover:bg-slate-50 transition-colors whitespace-nowrap" title="Regenerate">
-              <RotateCcw className="w-[18px] h-[18px]" /> Regenerate
+          <div className="flex items-center gap-2.5 shrink-0">
+            {isCached && <div className="flex items-center gap-1.5 text-xs font-bold text-slate-500 bg-slate-100 px-3 py-2 rounded-control"><Zap className="w-3.5 h-3.5" /> Cached</div>}
+            <button onClick={() => handleRegenerate(false)} className="flex items-center gap-2 px-4 py-2.5 bg-white text-slate-700 rounded-control text-[14px] font-extrabold border border-slate-200 shadow-[0_1px_0_rgba(15,23,42,.03)] hover:bg-slate-50 transition-colors whitespace-nowrap" title="Regenerate">
+              <RotateCcw className="w-[17px] h-[17px]" /> Regenerate
             </button>
             <button
               onClick={confirmAll}
-              className={cn('flex items-center gap-2 px-5 py-3 rounded-[16px] text-[14px] font-black transition-all whitespace-nowrap',
+              className={cn('flex items-center gap-2 px-4 py-2.5 rounded-control text-[14px] font-black transition-all whitespace-nowrap',
                 allConfirmed ? 'bg-emerald-500 text-white shadow-[0_10px_24px_-8px_rgba(16,185,129,.6)]' : 'bg-gradient-to-br from-primary to-primary/90 text-white shadow-[0_10px_24px_-8px_rgba(124,92,252,.6)] hover:brightness-105')}
             >
-              {allConfirmed ? <><CheckCircle2 className="w-[18px] h-[18px]" /> Confirmed</> : <><Check className="w-[18px] h-[18px]" /> Confirm strategy</>}
+              {allConfirmed ? <><CheckCircle2 className="w-[17px] h-[17px]" /> Confirmed</> : <><Check className="w-[17px] h-[17px]" /> Confirm strategy</>}
             </button>
           </div>
         </div>
 
         {isFallback && (
-          <div className="mb-5 flex items-center gap-2 text-sm font-semibold text-amber-600 bg-amber-50 px-4 py-3 rounded-xl"><AlertCircle className="w-4 h-4" /> This is a fallback strategy. Complete your AI Profile for a personalized one.</div>
+          <div className="mt-5 flex items-center gap-2 text-sm font-semibold text-amber-600 bg-amber-50 px-4 py-3 rounded-xl"><AlertCircle className="w-4 h-4" /> This is a fallback strategy. Complete your AI Profile for a personalized one.</div>
         )}
         {rateLimitError && (
-          <div className="mb-5 flex items-center gap-2 text-sm font-semibold text-amber-600 bg-amber-50 px-4 py-3 rounded-xl"><Clock className="w-4 h-4" /> {rateLimitError}</div>
+          <div className="mt-5 flex items-center gap-2 text-sm font-semibold text-amber-600 bg-amber-50 px-4 py-3 rounded-xl"><Clock className="w-4 h-4" /> {rateLimitError}</div>
         )}
         {isStaleGoal && (
-          <div className="mb-5 flex flex-col sm:flex-row sm:items-center gap-3 bg-amber-50 border border-amber-200 px-4 py-3 rounded-xl">
+          <div className="mt-5 flex flex-col sm:flex-row sm:items-center gap-3 bg-amber-50 border border-amber-200 px-4 py-3 rounded-xl">
             <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
             <p className="text-sm font-semibold text-amber-800 flex-1">
               This strategy was built for <span className="font-black">{GOAL_LABELS[strategyGoal] || strategyGoal}</span>. You’ve switched to <span className="font-black">{GOAL_LABELS[goalType] || goalType}</span> — review your inputs and regenerate to refresh it.
@@ -388,67 +421,88 @@ export function StrategyWorkspace({ embedded = false, goalType: goalTypeProp }: 
           </div>
         )}
 
-        {/* Master-detail: left rail + single-section panel (no scroll) */}
-        <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-10 items-start">
-          {/* LEFT RAIL */}
-          <aside className="lg:sticky lg:top-8">
-            <nav className="bg-white rounded-[28px] p-[18px] shadow-[0_1px_0_rgba(15,23,42,.04),0_0_0_1px_rgb(226,232,240)]">
-              <p className="text-[11px] font-black text-slate-400 uppercase tracking-[0.16em] px-3.5 pt-2.5 pb-3.5">Sections</p>
-              {NAV.map((item) => {
-                const Icon = item.icon;
-                const isActive = activeSection === item.key;
-                const isConfirmed = item.key !== 'summary' && !!confirmedSections[item.key];
-                return (
-                  <button key={item.key} onClick={() => setActiveSection(item.key)}
-                    className={cn('group flex items-center gap-3.5 w-full text-left px-4 py-4 rounded-2xl text-[16px] font-bold transition-all',
-                      isActive ? 'bg-gradient-to-br from-primary/10 to-fuchsia-50 text-primary' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900')}>
-                    <span className={cn('w-[34px] h-[34px] rounded-xl grid place-items-center flex-shrink-0 transition-colors',
-                      isActive ? 'bg-primary text-white' : 'bg-slate-100 text-slate-500 group-hover:text-primary')}>
-                      <Icon className="w-[18px] h-[18px]" />
-                    </span>
-                    <span className="truncate">{item.label}</span>
-                    {item.key !== 'summary' && (
-                      <span className={cn('ml-auto w-5 h-5 rounded-full grid place-items-center flex-shrink-0 border-2 transition-colors',
-                        isConfirmed ? 'border-emerald-500 bg-emerald-500' : isActive ? 'border-primary/40' : 'border-slate-300')}>
-                        {isConfirmed && <Check className="w-3 h-3 text-white stroke-[3.5]" />}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </nav>
-          </aside>
+        {/* Positioning band — the one-line "at a glance" hook. */}
+        {positioning && !isFallback && (
+          <div className="mt-4 flex items-center gap-3.5 rounded-2xl border border-slate-200 bg-gradient-to-r from-primary/[0.07] to-fuchsia-50/50 px-5 py-3.5">
+            <span className="w-9 h-9 rounded-xl bg-white shadow-[0_0_0_1px_rgba(124,92,252,.14)] grid place-items-center shrink-0"><Sparkles className="w-[18px] h-[18px] text-primary" /></span>
+            <div className="min-w-0">
+              <p className="text-[10.5px] font-black text-primary uppercase tracking-[0.14em]">Positioning</p>
+              <p className="text-[16px] font-extrabold text-slate-900 leading-snug mt-0.5">{positioning}</p>
+            </div>
+            {advantages.length > 0 && (
+              <div className="ml-auto hidden md:flex items-center gap-2 shrink-0">
+                {advantages.map((a, i) => <span key={i} className="text-[12.5px] font-bold text-amber-700 bg-amber-50 border border-amber-100 px-2.5 py-1.5 rounded-lg whitespace-nowrap">{a}</span>)}
+              </div>
+            )}
+          </div>
+        )}
 
-          {/* DETAIL PANEL */}
-          <div className="min-w-0">
-            <AnimatePresence mode="wait">
-              <motion.div key={activeSection}
-                initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.2 }}
-                className="bg-white rounded-[32px] shadow-[0_1px_0_rgba(15,23,42,.04),0_0_0_1px_rgb(226,232,240)] px-8 lg:px-12 py-10 lg:py-12 min-h-[600px]">
-                {/* Panel header — icon is a hanging marker so the title left-aligns
-                    with the body content below it (one clean left edge). */}
-                <div className="flex items-start gap-4 mb-9">
-                  <span className={cn('w-12 h-12 rounded-[16px] grid place-items-center flex-shrink-0',
-                    activeSection === 'summary' ? 'bg-gradient-to-br from-primary/10 to-fuchsia-50 text-primary' : cn(active.bg, active.color))}>
-                    <ActiveIcon className="w-6 h-6" />
+        {/* Section gallery — click a card to open its editor drawer. */}
+        <p className="text-[11.5px] font-black text-slate-400 uppercase tracking-[0.14em] mt-6 mb-3">{SECTIONS.length} sections · click any card to review &amp; edit</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {SECTIONS.map((s) => {
+            const Icon = s.icon;
+            const done = !!confirmedSections[s.key];
+            return (
+              <button
+                key={s.key}
+                onClick={() => setOpenKey(s.key)}
+                className={cn('group relative flex flex-col text-left rounded-card border p-[18px] min-h-[168px] transition-all hover:-translate-y-0.5',
+                  done ? 'border-emerald-500/40 bg-gradient-to-b from-emerald-500/[0.045] to-transparent' : 'border-slate-200 bg-white hover:border-slate-300 hover:shadow-[0_14px_30px_-18px_rgba(15,23,42,.35)]')}
+              >
+                <div className="flex items-center gap-3">
+                  <span className="w-10 h-10 rounded-xl grid place-items-center shrink-0 bg-slate-100 text-slate-500 group-hover:text-primary transition-colors"><Icon className="w-5 h-5" /></span>
+                  <h3 className="text-[15.5px] font-extrabold text-slate-900 tracking-tight flex-1 min-w-0 truncate">{s.label}</h3>
+                  <span className={cn('w-6 h-6 rounded-full grid place-items-center shrink-0 border-2 transition-colors', done ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-slate-200 text-transparent')}>
+                    <Check className="w-3.5 h-3.5 stroke-[3]" />
                   </span>
-                  <h2 className="text-3xl font-black text-slate-900 tracking-tight pt-1.5 min-w-0">{active.label}</h2>
-                  {activeSection !== 'summary' && (
-                    <button onClick={() => toggleConfirm(activeSection)}
-                      className={cn('ml-auto flex items-center gap-2 px-5 py-3 rounded-2xl text-sm font-black transition-all flex-shrink-0',
-                        confirmedSections[activeSection] ? 'bg-emerald-500/10 text-emerald-600' : 'bg-slate-100 text-slate-500 hover:bg-slate-200')}>
-                      {confirmedSections[activeSection] ? <><CheckCircle2 className="w-4 h-4" /> Looks good</> : <><Check className="w-4 h-4" /> Mark good</>}
-                    </button>
-                  )}
                 </div>
+                <p className="mt-3.5 text-[13.5px] leading-relaxed text-slate-600 font-medium line-clamp-3">{snippetFor(s.key)}</p>
+                <div className="mt-auto pt-4 flex items-center justify-between">
+                  <span className={cn('text-[12px] font-bold inline-flex items-center gap-1.5', done ? 'text-emerald-600' : 'text-slate-400')}>
+                    {done ? <><CheckCircle2 className="w-3.5 h-3.5" /> Looks good</> : <><AlertCircle className="w-3.5 h-3.5" /> Needs review</>}
+                  </span>
+                  <span className="text-[12.5px] font-bold text-primary inline-flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">Review <ArrowRight className="w-3 h-3" /></span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
-                {/* Panel body — indented to align under the title (icon width + gap). */}
-                <div className="lg:pl-16">
-                {activeSection === 'summary' ? (
-                  <SummaryView positioning={positioning} icpTitle={icpTitle} pains={pains} advantages={advantages} pillars={pillars} isFallback={isFallback} />
-                ) : activeSection === 'messagingPillars' ? (
+      {/* Section editor drawer — hosts the existing per-section editors. */}
+      <AnimatePresence>
+        {openMeta && (
+          <>
+            <motion.div
+              key="scrim"
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              onClick={() => setOpenKey(null)}
+              className="fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-[2px]"
+            />
+            <motion.aside
+              key="drawer"
+              initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}
+              transition={{ type: 'tween', duration: 0.24, ease: [0.4, 0, 0.2, 1] }}
+              className="fixed top-0 right-0 z-50 h-full w-[min(560px,94vw)] bg-white shadow-2xl flex flex-col"
+            >
+              <div className="flex items-center gap-3 px-6 py-4 border-b border-slate-200 shrink-0">
+                <span className="w-10 h-10 rounded-xl bg-slate-100 text-slate-500 grid place-items-center shrink-0"><OpenIcon className="w-5 h-5" /></span>
+                <h3 className="text-[18px] font-black text-slate-900 tracking-tight flex-1 min-w-0 truncate">{openMeta.label}</h3>
+                <button
+                  onClick={() => toggleConfirm(openMeta.key)}
+                  className={cn('flex items-center gap-1.5 px-3.5 py-2 rounded-control text-[13px] font-black transition-all',
+                    confirmedSections[openMeta.key] ? 'bg-emerald-500/10 text-emerald-600' : 'bg-slate-100 text-slate-500 hover:bg-slate-200')}
+                >
+                  {confirmedSections[openMeta.key] ? <><CheckCircle2 className="w-4 h-4" /> Looks good</> : <><Check className="w-4 h-4" /> Mark good</>}
+                </button>
+                <button onClick={() => setOpenKey(null)} aria-label="Close" className="w-9 h-9 rounded-control border border-slate-200 grid place-items-center text-slate-500 hover:bg-slate-50 shrink-0"><X className="w-[18px] h-[18px]" /></button>
+              </div>
+
+              <div className="flex-1 overflow-auto px-6 py-5 min-h-0">
+                {openMeta.key === 'messagingPillars' ? (
                   <PillarEditor pillars={Array.isArray(strategy.messagingPillars) ? strategy.messagingPillars : []} onSave={handlePillarSave} saving={pillarSaving} />
-                ) : activeSection === 'commentStrategy' ? (
+                ) : openMeta.key === 'commentStrategy' ? (
                   <CommentStrategyEditor
                     value={strategy.commentStrategy}
                     commentInstruction={commentInstruction}
@@ -462,57 +516,20 @@ export function StrategyWorkspace({ embedded = false, goalType: goalTypeProp }: 
                     onAccept={handleAcceptCommentInstruction}
                   />
                 ) : (
-                  <StrategySectionEditor sectionKey={activeSection} value={strategy[activeSection]} goalType={goalType} onChange={(next) => patchSection(activeSection, next)} />
+                  <StrategySectionEditor sectionKey={openMeta.key} value={strategy[openMeta.key]} goalType={goalType} onChange={(next) => patchSection(openMeta.key, next)} />
                 )}
-                </div>
-              </motion.div>
-            </AnimatePresence>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Summary ("at a glance") — read-only overview derived from the strategy ──
-function SummaryView({ positioning, icpTitle, pains, advantages, pillars, isFallback }: {
-  positioning?: string; icpTitle?: string; pains: string[]; advantages: string[]; pillars: any[]; isFallback: boolean;
-}) {
-  if (isFallback || (!positioning && !icpTitle && pillars.length === 0)) {
-    return <p className="text-base text-slate-400 italic">Your overview will appear here once a personalized strategy is generated.</p>;
-  }
-  return (
-    <div>
-      {positioning && <p className="text-2xl font-extrabold tracking-tight text-slate-900 leading-[1.5] mb-10">{positioning}</p>}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {icpTitle && (
-          <div className="rounded-3xl bg-slate-50 border border-slate-100 p-7">
-            <p className="text-xs font-black text-slate-400 uppercase tracking-[0.13em] mb-4">You target</p>
-            <p className="text-lg font-black text-slate-900 mb-4">{icpTitle}</p>
-            {pains.length > 0 && (
-              <div className="flex flex-col gap-2.5">
-                {pains.map((p, i) => <span key={i} className="flex items-start gap-2 text-[15px] font-semibold text-slate-600"><span className="w-1.5 h-1.5 rounded-full bg-rose-400 mt-2 flex-shrink-0" /> {p}</span>)}
               </div>
-            )}
-          </div>
+
+              <div className="flex items-center gap-2 px-6 py-4 border-t border-slate-200 shrink-0">
+                <span className="text-[12.5px] font-bold text-slate-400 mr-auto inline-flex items-center gap-1.5">
+                  {saving ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving…</> : savedFlash ? <><Check className="w-3.5 h-3.5 text-emerald-600" /> Saved</> : 'Edits save automatically'}
+                </span>
+                <button onClick={() => setOpenKey(null)} className="px-4 py-2.5 rounded-control text-[13.5px] font-bold text-slate-700 bg-slate-100 hover:bg-slate-200">Close</button>
+              </div>
+            </motion.aside>
+          </>
         )}
-        {advantages.length > 0 && (
-          <div className="rounded-3xl bg-slate-50 border border-slate-100 p-7">
-            <p className="text-xs font-black text-slate-400 uppercase tracking-[0.13em] mb-4">Your edge</p>
-            <div className="flex flex-col gap-3 items-start">
-              {advantages.map((a, i) => <span key={i} className="text-[15px] font-bold text-amber-700 bg-amber-50 border border-amber-100 px-4 py-2 rounded-xl">{a}</span>)}
-            </div>
-          </div>
-        )}
-        {pillars.length > 0 && (
-          <div className="rounded-3xl bg-slate-50 border border-slate-100 p-7">
-            <p className="text-xs font-black text-slate-400 uppercase tracking-[0.13em] mb-4">How you&apos;ll show up</p>
-            <div className="flex flex-col gap-2.5">
-              {pillars.map((p, i) => <span key={i} className="flex items-start gap-2 text-[15px] font-semibold text-slate-600"><span className="w-1.5 h-1.5 rounded-full bg-primary mt-2 flex-shrink-0" /> {p?.pillar || p?.name || `Pillar ${i + 1}`}</span>)}
-            </div>
-          </div>
-        )}
-      </div>
+      </AnimatePresence>
     </div>
   );
 }
