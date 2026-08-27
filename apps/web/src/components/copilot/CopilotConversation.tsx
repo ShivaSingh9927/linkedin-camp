@@ -130,13 +130,19 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
             setMessages((prev) => prev.filter((m) => m.id !== sId));
             const people = res.people;
             if (!people.length) {
-                // Everything on this page was already seen/imported, or the vein is dry —
-                // proactively propose a fresh angle (grounded on the tried-angles memory).
+                // Two very different reasons a page comes back empty — don't conflate them:
+                //   • pageCount === 0 → LinkedIn matched NOBODY for this query (usually too
+                //     narrow). Saying "you've already seen everyone" here is just wrong when
+                //     the user has never searched.
+                //   • pageCount > 0 but all deduped → they genuinely saw these already.
+                const noMatches = (res.saturation?.pageCount ?? 0) === 0;
                 push({
                     id: nextId(), role: 'qampi', kind: 'text',
                     text: page > 1
                         ? 'That’s everyone fresh for this angle — you’ve already seen the rest. Here’s a different angle to try:'
-                        : 'You’ve already seen everyone this search turns up. Let me suggest a different angle:',
+                        : noMatches
+                            ? 'That search didn’t match anyone on LinkedIn — the filters are probably too narrow. Let me try a broader angle:'
+                            : 'You’ve already seen everyone this search turns up. Let me suggest a different angle:',
                 });
                 rotateAngleRef.current?.();
                 return;
