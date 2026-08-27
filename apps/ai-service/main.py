@@ -1352,7 +1352,9 @@ Propose 2-3 DISTINCT people-searches (different angles, not rephrasings). Return
 }}
 RULES:
 - `keywords` must be a real query using boolean operators and quoted phrases, e.g. ("head of data" OR "VP analytics") AND SaaS.
-- Prefer 2nd-degree by default (warmer than cold 3rd).
+- Default degree to "any" (widest net). A narrow 2nd-degree search often returns NOBODY for a user with a small or early network — breadth beats warmth when the alternative is an empty list. Only narrow to 2nd when the user clearly has a large, relevant network.
+- If the user's goal is finding a JOB (not selling), target the HIRING side — recruiters, "talent acquisition", "technical recruiter", hiring managers, and team leads in the user's OWN field/role at companies they'd want to join. Do NOT target businesses they'd sell to; ignore any sales-style "target audience" in that case.
+- Ground titles + industry in the user's OWN field and location (from their headline/industry above) — never invent an unrelated vertical.
 - Keep each `label` human and specific. Keep `keywords` under ~120 characters and each `rationale` under ~15 words.
 - Output ONLY the JSON, no code fences, no trailing commas."""
         raw = call_llm(system, user, temperature=0.6, max_tokens=1200)
@@ -1377,7 +1379,7 @@ RULES:
         return {"recommendations": recs}
 
     try:
-        return _profile_memoize(grounding, "copilot_recsearch", _compute)
+        return _profile_memoize(grounding, "copilot_recsearch_v2", _compute)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1510,9 +1512,10 @@ RULES:
 - Grounding priority for WHO to target: (1) their stated target audience/ICP if given; (2) else infer an ICP from their profile + imported audience; (3) never invent facts.
 - `keywords` MUST use boolean operators, e.g. ("founder" OR "co-founder" OR "founding member" OR CEO) NOT (freelance OR recruiter OR intern).
 - If the user already typed a valid boolean query, keep it (just tidy it) — don't dumb it down.
-- Ground titles/industry/location in their profile + audience when the phrase is vague.
+- Ground titles/industry/location in their profile + audience when the phrase is vague — use the user's OWN field and location; never invent an unrelated vertical.
+- If the user's goal is finding a JOB, target the HIRING side (recruiters, "talent acquisition", "technical recruiter", hiring managers, team leads in the user's OWN field) — NOT businesses they'd sell to; ignore a sales-style target audience in that case.
 - When rotating, the new search must differ MEANINGFULLY from every angle listed above.
-- Default degree to 2nd (warmer than cold 3rd). Keep `keywords` under ~200 characters, `rationale` under ~15 words.
+- Default degree to "any" (widest net). A narrow 2nd-degree search often returns NOBODY for a small/early network — only use 2nd when the user clearly has a large, relevant network. Keep `keywords` under ~200 characters, `rationale` under ~15 words.
 - Output ONLY the JSON, no code fences, no trailing commas."""
     # Low-effort DeepSeek thinking sharpens the query and lets the model reason
     # about WHY prior angles failed before it builds the next one. Env kill-switch
