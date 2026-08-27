@@ -297,7 +297,6 @@ export function StrategyWorkspace({ embedded = false, goalType: goalTypeProp }: 
 
   // ── Derived "at a glance" data (the positioning band) ─────────────────────
   const positioning: string | undefined = strategy?.gtm?.positioning;
-  const advantages: string[] = Array.isArray(strategy?.competitiveLandscape?.ourAdvantages) ? strategy.competitiveLandscape.ourAdvantages.slice(0, 3) : [];
 
   // Visible labels are resolved per goal; the section keys/icons never change.
   const labels = getStrategyLabels(goalType);
@@ -425,15 +424,10 @@ export function StrategyWorkspace({ embedded = false, goalType: goalTypeProp }: 
         {positioning && !isFallback && (
           <div className="mt-4 flex items-center gap-3.5 rounded-2xl border border-slate-200 bg-gradient-to-r from-primary/[0.07] to-fuchsia-50/50 px-5 py-3.5">
             <span className="w-9 h-9 rounded-xl bg-white shadow-[0_0_0_1px_rgba(124,92,252,.14)] grid place-items-center shrink-0"><Sparkles className="w-[18px] h-[18px] text-primary" /></span>
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <p className="text-[10.5px] font-black text-primary uppercase tracking-[0.14em]">Positioning</p>
               <p className="text-[16px] font-extrabold text-slate-900 leading-snug mt-0.5">{positioning}</p>
             </div>
-            {advantages.length > 0 && (
-              <div className="ml-auto hidden md:flex items-center gap-2 shrink-0">
-                {advantages.map((a, i) => <span key={i} className="text-[12.5px] font-bold text-amber-700 bg-amber-50 border border-amber-100 px-2.5 py-1.5 rounded-lg whitespace-nowrap">{a}</span>)}
-              </div>
-            )}
           </div>
         )}
 
