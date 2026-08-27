@@ -19,6 +19,14 @@ model ActionLog {
   Campaign     Campaign? @relation(fields: [campaignId], references: [id])
   Lead         Lead?     @relation(fields: [leadId], references: [id])
   User         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // ActionLog is the fastest-growing table (one row per action) and is scanned
+  // by every dashboard/stats/campaign-detail query. Without these it was doing
+  // full-table scans on each cold recompute.
+  @@index([userId, executedAt])            // recent logs, N-day activity windows
+  @@index([userId, actionType, status])    // quota + KPI tallies (per-type/status counts)
+  @@index([campaignId, actionType])        // per-campaign groupBy/tallies
+  @@index([leadId])                        // leadId IN (...) lookups (campaign status)
 }
 
 model BusinessProfile {
@@ -281,6 +289,10 @@ model Message {
 
   @@index([userId, channel, sentAt])
   @@index([userId, deliveryStatus])
+  // Thread fetch (getMessages, ordered) + conversation list join by lead, and
+  // per-campaign message reads. leadId/campaignId were previously unindexed.
+  @@index([leadId, sentAt])
+  @@index([campaignId])
 }
 
 // SMTP credentials for sending email from a campaign EMAIL node. One
