@@ -4,10 +4,12 @@
 // frontend's `seenUrlsRef` Set died with the tab). This module gives it a real
 // memory, in the DB (NOT the chat transcript, which is summarized and forgets):
 //
-//   • SeenProfile — every profile ever surfaced to the user. Cross-session dedup
-//     so the same faces never burn a second search. Skipped profiles roll off a
-//     30-day window (people change roles); imported profiles are deduped forever
-//     (they're already Leads).
+//   • SeenProfile — every profile ever surfaced to the user. Used as a SOFT
+//     freshness signal for saturation/rotation (has this vein been mined?), NOT
+//     to hide people: a profile seen but never imported is still an actionable
+//     lead and is shown again rather than dead-ending the search. Only IMPORTED
+//     profiles (Lead) are hard-deduped forever. Seen rows roll off a 30-day
+//     window (people change roles).
 //   • SearchQuery — one row per distinct boolean query: how deep it's been paged,
 //     how many results it surfaced, how many converted to imports, and whether
 //     it's mined out. This is what saturation detection + rotation read.
@@ -92,8 +94,14 @@ export async function recordSearchPage(
         .filter((x) => x.url.length > 0);
     const urls = withUrl.map((x) => x.url);
 
-    // Already-imported (Lead) → permanent dedup. Already-seen within the window
-    // (SeenProfile) → time-boxed dedup. Union of the two is what we drop.
+    // Already-imported (Lead) → permanent HARD dedup: never re-surface a lead the
+    // user already has. Already-seen (SeenProfile, 30-day window) → SOFT signal
+    // only: used to measure a vein's freshness for the saturation/rotation nudge,
+    // but NOT to hide people. A profile the user merely glanced past in an earlier
+    // (often overlapping) search is still an actionable lead — hiding it forever
+    // dead-ends the search with "you've already seen everyone" and nothing to
+    // import, even when the user has imported no one. So we RETURN seen-but-not-
+    // imported people; we only drop the ones already in their lead list.
     const [leadRows, seenRows] = urls.length
         ? await Promise.all([
             prisma.lead.findMany({ where: { userId, linkedinUrl: { in: urls } }, select: { linkedinUrl: true } }),
@@ -103,19 +111,20 @@ export async function recordSearchPage(
             }),
         ])
         : [[], []];
-    const blocked = new Set<string>([
-        ...leadRows.map((r) => r.linkedinUrl),
-        ...seenRows.map((r) => r.linkedinUrl),
-    ]);
+    const importedSet = new Set<string>(leadRows.map((r) => r.linkedinUrl));
+    const seenSet = new Set<string>(seenRows.map((r) => r.linkedinUrl));
 
-    const freshPairs = withUrl.filter((x) => !blocked.has(x.url));
-    const fresh = freshPairs.map((x) => x.p);
-    const freshCount = fresh.length;
+    // What we SHOW: everything except leads already imported.
+    const returnablePairs = withUrl.filter((x) => !importedSet.has(x.url));
+    const fresh = returnablePairs.map((x) => x.p);
+    // trulyFresh (not imported AND not seen) drives the saturation math only.
+    const freshCount = returnablePairs.filter((x) => !seenSet.has(x.url)).length;
 
-    // Record the freshly-shown profiles (upsert so a stale >30-day row gets its
-    // seenAt bumped — showing it now restarts its window).
-    if (freshPairs.length) {
-        await Promise.all(freshPairs.map((x) =>
+    // Record every profile we're showing (upsert so a stale >30-day row gets its
+    // seenAt bumped — showing it now restarts its window). Recording all shown
+    // (not just brand-new) keeps coverage + freshness accurate on re-shows.
+    if (returnablePairs.length) {
+        await Promise.all(returnablePairs.map((x) =>
             prisma.seenProfile.upsert({
                 where: { userId_linkedinUrl: { userId, linkedinUrl: x.url } },
                 create: { userId, linkedinUrl: x.url, queryKey, seenAt: now },

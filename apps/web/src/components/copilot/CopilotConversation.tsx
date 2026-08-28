@@ -145,7 +145,7 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
                         ? 'That’s everyone fresh for this angle — you’ve already seen the rest. Here’s a different angle to try:'
                         : noMatches
                             ? 'That search didn’t match anyone on LinkedIn — the filters are probably too narrow. Let me broaden it:'
-                            : 'You’ve already seen everyone this search turns up. Let me suggest a different angle:',
+                            : 'Everyone this search finds is already in your leads. Let me suggest a different angle:',
                 });
                 // Zero matches on the first page = too narrow → BROADEN the SAME
                 // search (keep founders/fintech, relax filters). "Already seen

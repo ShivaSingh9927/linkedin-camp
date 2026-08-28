@@ -429,7 +429,16 @@ def call_llm(system: str, user: str, temperature: float = 0.7, model: str = "dee
             response = _create(False)
     else:
         response = _create(False)
-    return response.choices[0].message.content
+    content = response.choices[0].message.content
+    # Thinking mode can return the answer only in reasoning_content, leaving
+    # content empty — retry once without thinking so callers get a real answer.
+    if reasoning_effort and not ((content or "").strip()):
+        print("[llm] empty content under thinking; retrying without thinking")
+        try:
+            content = _create(False).choices[0].message.content
+        except Exception as e:
+            print(f"[llm] no-thinking retry failed ({e})")
+    return content
 
 
 def call_llm_with_reasoning(system: str, user: str, temperature: float = 0.7, model: str = "deepseek/deepseek-chat", max_tokens: int = 600, reasoning_effort: Optional[str] = None) -> tuple[str, str]:
@@ -476,6 +485,17 @@ def call_llm_with_reasoning(system: str, user: str, temperature: float = 0.7, mo
     msg = response.choices[0].message
     # reasoning_content is DeepSeek-specific and only present on thinking turns.
     reasoning = (getattr(msg, "reasoning_content", None) or "")
+    # In thinking mode the model OCCASIONALLY spends the whole turn in
+    # reasoning_content and returns empty `content` — which breaks JSON callers
+    # (Expecting value: line 1 column 1). Retry once WITHOUT thinking to force the
+    # answer into content; keep the reasoning we already captured for display.
+    if reasoning_effort and not ((msg.content or "").strip()):
+        print("[llm] empty content under thinking; retrying without thinking")
+        try:
+            response = _create(False)
+            msg = response.choices[0].message
+        except Exception as e:
+            print(f"[llm] no-thinking retry failed ({e})")
     return (msg.content, reasoning)
 
 
