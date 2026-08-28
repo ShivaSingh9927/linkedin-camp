@@ -22,6 +22,7 @@ import { NodeHandler, NodeResult, CheckConnectionOutput } from '../types';
 import { prisma } from '@repo/db';
 import { checkFirstDegree, getAllConnections } from '../../services/voyager-api.service';
 import { checkConnection } from './check-connection';
+import { markLeadConnected } from '../safety/lifecycle';
 
 export const checkConnectionVoyager: NodeHandler = async (ctx, config): Promise<NodeResult> => {
     const { page, apiRequest, lead, userId, campaignId } = ctx;
@@ -120,6 +121,10 @@ export const checkConnectionVoyager: NodeHandler = async (ctx, config): Promise<
                 },
             }).catch(() => {});
         }
+
+        // Sync the per-campaign coarse status too (the Lead.status write above only
+        // covers the global KPI; per-campaign "connected" reads CampaignLead.status).
+        if (is1st === true && campaignId && lead.id) await markLeadConnected(campaignId, lead.id);
 
         // Keep the in-flight context in step (see check-connection.ts).
         ctx.connectionStatus = output.connectionStatus;

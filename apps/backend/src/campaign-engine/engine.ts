@@ -41,7 +41,7 @@ import { follow } from './nodes/follow';
 import { profileVisitDispatch, inboxSyncDispatch, profileVisitNeedsDom, postsCoveredLater } from './nodes/read-backend';
 import { readNodeOutputs, writeNodeOutput, updateLeadEnrichment } from './storage';
 import { checkQuota, nextDayRetryAt, DAILY_CAPS, GovernedAction, isWithinWorkingHours, nextWorkingHourAt } from './safety/quota';
-import { transitionLead, recomputeCampaignStatus } from './safety/lifecycle';
+import { transitionLead, recomputeCampaignStatus, markLeadConnected } from './safety/lifecycle';
 import { classifyPage, handleCheckpoint, isCheckpoint, pauseCampaignForSessionExpiry } from './safety/checkpoint';
 import { uploadScreenshotToS3 } from '../services/s3-upload.service';
 import { isFirstDegree, getAllConnections, getBrowserlessVoyagerContext } from '../services/voyager-api.service';
@@ -1009,6 +1009,10 @@ export async function runCampaign(
                 continue;
             }
             console.log(`[CAMPAIGN] Lead ${leadData.firstName}: invite accepted — resuming stage at node ${startIndex}.`);
+            // The acceptance gate is the authoritative "they connected" moment for
+            // leads that accept during the post-invite wait — sync the coarse status
+            // the dashboard/copilot count so it reflects the acceptance.
+            await markLeadConnected(campaignId, cl.leadId).catch(() => {});
         }
 
         console.log(`\n[CAMPAIGN] Processing lead: ${leadData.firstName || leadData.linkedinUrl} (from node ${startIndex})`);

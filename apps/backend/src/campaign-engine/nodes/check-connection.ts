@@ -1,6 +1,7 @@
 import { NodeHandler, NodeResult, CheckConnectionOutput } from '../types';
 import { prisma } from '@repo/db';
 import { detectConnectionState } from '../connection-state';
+import { markLeadConnected } from '../safety/lifecycle';
 
 const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
 const randomRange = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1) + min);
@@ -121,6 +122,10 @@ export const checkConnection: NodeHandler = async (ctx): Promise<NodeResult> => 
                 console.log(`[CHECK-CONNECTION] Could not update Lead row: ${err}`);
             }
         }
+
+        // Sync the per-campaign coarse status too (Lead.status above only covers
+        // the global KPI; the per-campaign "connected" reads CampaignLead.status).
+        if (output.connected && campaignId && lead.id) await markLeadConnected(campaignId, lead.id);
 
         return { success: true, output };
 

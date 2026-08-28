@@ -230,3 +230,34 @@ export async function recomputeCampaignStatus(campaignId: string): Promise<void>
         console.error(`[lifecycle] promotion failed for user ${completed.userId}:`, err.message);
     }
 }
+
+/**
+ * Sync the COARSE connection status the dashboard + copilot count from
+ * (CampaignLead.status and Lead.status) to CONNECTED, whenever the engine has
+ * confirmed a lead is connected.
+ *
+ * The engine's live truth for a connection is CampaignLeadProgress.connectionStatus
+ * ('connected'), but that column is invisible to the dashboard's connected counters,
+ * which read Lead.status (global "connected leads" KPI) and CampaignLead.status
+ * (per-campaign performance). Before this, an accepted invite updated only the
+ * progress row (and, on the check-connection nodes, Lead.status) — so per-campaign
+ * "connected" stayed 0 and the copilot under-reported. Call this at every point the
+ * engine determines a lead is connected.
+ *
+ * UPGRADE-ONLY and race-free: the `notIn` guard lives in the WHERE clause, so a
+ * lead already CONNECTED or REPLIED is never touched (a reply must not be
+ * downgraded to a mere connection). Owns only the coarse status — connectionStatus
+ * and connectionDegree stay with their existing write-only-when-confident callers.
+ */
+export async function markLeadConnected(campaignId: string, leadId: string): Promise<void> {
+    await Promise.all([
+        prisma.campaignLead.updateMany({
+            where: { campaignId, leadId, status: { notIn: ['CONNECTED', 'REPLIED'] } },
+            data: { status: 'CONNECTED' },
+        }).catch(() => {}),
+        prisma.lead.updateMany({
+            where: { id: leadId, status: { notIn: ['CONNECTED', 'REPLIED'] } },
+            data: { status: 'CONNECTED' },
+        }).catch(() => {}),
+    ]);
+}
