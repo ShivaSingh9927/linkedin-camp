@@ -1,7 +1,7 @@
 import { NodeHandler, NodeResult, ConnectOutput } from '../types';
 import { prisma } from '@repo/db';
 import { detectConnectionState, extractSlug, isOnLeadProfile } from '../connection-state';
-import { markLeadConnected } from '../safety/lifecycle';
+import { syncLeadStatus } from '../safety/lifecycle';
 
 const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
 const randomRange = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1) + min);
@@ -190,8 +190,9 @@ async function updateConnectionStatus(campaignId: string, leadId: string, status
                 updatedAt: new Date()
             }
         });
-        // Keep the coarse dashboard/copilot counters in step with the live truth.
-        if (status === 'connected') await markLeadConnected(campaignId, leadId);
+        // Re-project the coarse dashboard/copilot status from this new connection
+        // truth (single writer). 'pending' → PENDING, 'connected' → CONNECTED.
+        await syncLeadStatus(campaignId, leadId);
         console.log(`[CONNECT] Updated connection status to: ${status}`);
     } catch (err) {
         console.log(`[CONNECT] Could not update progress: ${err}`);

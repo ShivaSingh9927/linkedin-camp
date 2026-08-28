@@ -126,37 +126,5 @@ export async function persistDiscoveredPost(
     }
 }
 
-/**
- * Updates CampaignLead status after node execution.
- */
-export async function updateCampaignLeadProgress(
-    campaignId: string,
-    leadId: string,
-    data: {
-        currentStepId?: string | null;
-        nextActionDate?: Date;
-        isCompleted?: boolean;
-        status?: 'IMPORTED' | 'PENDING' | 'CONNECTED' | 'REPLIED' | 'BOUNCED';
-    }
-): Promise<void> {
-    await prisma.campaignLead.update({
-        where: { campaignId_leadId: { campaignId, leadId } },
-        data: {
-            ...data,
-            lastActionAt: new Date()
-        }
-    });
-}
-
-/**
- * Updates the Lead status.
- */
-export async function updateLeadStatus(
-    leadId: string,
-    status: 'IMPORTED' | 'PENDING' | 'CONNECTED' | 'REPLIED' | 'BOUNCED'
-): Promise<void> {
-    await prisma.lead.update({
-        where: { id: leadId },
-        data: { status }
-    });
-}
+// (removed dead writers updateCampaignLeadProgress / updateLeadStatus — the coarse
+// Lead/CampaignLead status is now written ONLY by syncLeadStatus in safety/lifecycle.ts)

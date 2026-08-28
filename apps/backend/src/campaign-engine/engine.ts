@@ -41,7 +41,7 @@ import { follow } from './nodes/follow';
 import { profileVisitDispatch, inboxSyncDispatch, profileVisitNeedsDom, postsCoveredLater } from './nodes/read-backend';
 import { readNodeOutputs, writeNodeOutput, updateLeadEnrichment } from './storage';
 import { checkQuota, nextDayRetryAt, DAILY_CAPS, GovernedAction, isWithinWorkingHours, nextWorkingHourAt } from './safety/quota';
-import { transitionLead, recomputeCampaignStatus, markLeadConnected } from './safety/lifecycle';
+import { transitionLead, recomputeCampaignStatus, syncLeadStatus } from './safety/lifecycle';
 import { classifyPage, handleCheckpoint, isCheckpoint, pauseCampaignForSessionExpiry } from './safety/checkpoint';
 import { uploadScreenshotToS3 } from '../services/s3-upload.service';
 import { isFirstDegree, getAllConnections, getBrowserlessVoyagerContext } from '../services/voyager-api.service';
@@ -419,18 +419,17 @@ async function runLead(
             // most once per node.
             if (await hasLeadReplied(campaignId, lead.id)) {
                 console.log(`[ENGINE] Lead ${lead.firstName}: reply detected — pausing campaign for this lead.`);
-                await prisma.campaignLead.updateMany({
-                    where: { campaignId, leadId: lead.id },
-                    data: { status: 'REPLIED', isCompleted: true },
-                }).catch(err => console.error(`[ENGINE] CampaignLead REPLIED update failed: ${err.message}`));
-                await prisma.lead.update({
-                    where: { id: lead.id },
-                    data: { status: 'REPLIED' },
-                }).catch(() => {});
+                // transitionLead sets the run status REPLIED and projects the coarse
+                // Lead/CampaignLead status via syncLeadStatus (single writer). We only
+                // add the CampaignLead completion flag here (not owned by the projection).
                 await transitionLead(campaignId, lead.id, 'REPLIED', {
                     reason: 'lead_replied',
                     currentNodeIndex: i,
                 }).catch(err => console.error(`[ENGINE] transitionLead REPLIED failed: ${err.message}`));
+                await prisma.campaignLead.updateMany({
+                    where: { campaignId, leadId: lead.id },
+                    data: { isCompleted: true },
+                }).catch(err => console.error(`[ENGINE] CampaignLead isCompleted update failed: ${err.message}`));
                 execResult.status = 'paused';
                 execResult.pausedReason = 'lead_replied';
                 return execResult;
@@ -714,12 +713,11 @@ async function runLead(
                     await updateLeadEnrichment(lead.id, result.output);
                 }
 
-                // If connect sent, update lead status
+                // If connect sent, project the coarse status (the connect node already
+                // wrote connectionStatus='pending' → syncLeadStatus derives PENDING).
+                // Single writer; no direct Lead.status poke here anymore.
                 if (nodeType === 'connect' && result.output?.status === 'sent') {
-                    await prisma.lead.update({
-                        where: { id: lead.id },
-                        data: { status: 'PENDING' },
-                    }).catch(() => {});
+                    await syncLeadStatus(campaignId, lead.id).catch(() => {});
                 }
 
             } else {
@@ -1010,9 +1008,13 @@ export async function runCampaign(
             }
             console.log(`[CAMPAIGN] Lead ${leadData.firstName}: invite accepted — resuming stage at node ${startIndex}.`);
             // The acceptance gate is the authoritative "they connected" moment for
-            // leads that accept during the post-invite wait — sync the coarse status
-            // the dashboard/copilot count so it reflects the acceptance.
-            await markLeadConnected(campaignId, cl.leadId).catch(() => {});
+            // leads that accept during the post-invite wait. Write the connection
+            // truth, then project the coarse status through the single writer.
+            await prisma.campaignLeadProgress.update({
+                where: { campaignId_leadId: { campaignId, leadId: cl.leadId } },
+                data: { connectionStatus: 'connected', lastConnectionCheck: new Date() },
+            }).catch(() => {});
+            await syncLeadStatus(campaignId, cl.leadId).catch(() => {});
         }
 
         console.log(`\n[CAMPAIGN] Processing lead: ${leadData.firstName || leadData.linkedinUrl} (from node ${startIndex})`);

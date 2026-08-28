@@ -329,19 +329,24 @@ export const syncInbox = async (userId: string) => {
 
             if (hasNewReply) {
                 totalNewReplies++;
-                await prisma.lead.update({
-                    where: { id: lead.id },
-                    data: { status: 'REPLIED' }
-                });
-                await prisma.campaignLead.updateMany({
-                    where: { leadId: lead.id, isCompleted: false },
-                    data: { status: 'REPLIED' }
-                });
-
                 const activeLinks = await prisma.campaignLead.findMany({
                     where: { leadId: lead.id, isCompleted: false },
                     select: { campaignId: true },
                 });
+                // Project the coarse REPLIED status through the single writer (it
+                // derives REPLIED from the inbound message we just persisted, and
+                // rolls up Lead.status). Replaces the old direct Lead/CampaignLead
+                // writes so the coarse view can't drift from the message truth.
+                const { syncLeadStatus } = await import('../campaign-engine/safety/lifecycle');
+                for (const link of activeLinks) await syncLeadStatus(link.campaignId, lead.id).catch(() => {});
+                // Fallback for a lead in no (active) campaign — still mark them
+                // replied globally (monotonic guard).
+                if (!activeLinks.length) {
+                    await prisma.lead.updateMany({
+                        where: { id: lead.id, status: { notIn: ['REPLIED'] } },
+                        data: { status: 'REPLIED' },
+                    }).catch(() => {});
+                }
                 const lastInbound = [...chatHistory].reverse().find(msg => msg.direction === 'RECEIVED');
                 for (const link of activeLinks) {
                     import('../services/crm-events').then(({ emitCrmEvent }) =>

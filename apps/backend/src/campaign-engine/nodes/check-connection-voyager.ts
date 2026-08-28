@@ -22,7 +22,7 @@ import { NodeHandler, NodeResult, CheckConnectionOutput } from '../types';
 import { prisma } from '@repo/db';
 import { checkFirstDegree, getAllConnections } from '../../services/voyager-api.service';
 import { checkConnection } from './check-connection';
-import { markLeadConnected } from '../safety/lifecycle';
+import { syncLeadStatus } from '../safety/lifecycle';
 
 export const checkConnectionVoyager: NodeHandler = async (ctx, config): Promise<NodeResult> => {
     const { page, apiRequest, lead, userId, campaignId } = ctx;
@@ -74,12 +74,11 @@ export const checkConnectionVoyager: NodeHandler = async (ctx, config): Promise<
         // Persist Lead.connectionDegree as 1 when we know it; null otherwise
         // (write-only-when-confident so a previous known value isn't wiped).
         if (is1st === true && lead.id) {
+            // Degree only — the coarse status is projected by syncLeadStatus below
+            // from the connectionStatus we're about to write (single writer).
             await prisma.lead.update({
                 where: { id: lead.id },
-                data: {
-                    connectionDegree: 1,
-                    status: 'CONNECTED',
-                },
+                data: { connectionDegree: 1 },
             }).catch(() => {});
         } else if (is1st === false && lead.id) {
             // CONFIRMED not 1st-degree — wipe the binary guess from the row
@@ -122,9 +121,9 @@ export const checkConnectionVoyager: NodeHandler = async (ctx, config): Promise<
             }).catch(() => {});
         }
 
-        // Sync the per-campaign coarse status too (the Lead.status write above only
-        // covers the global KPI; per-campaign "connected" reads CampaignLead.status).
-        if (is1st === true && campaignId && lead.id) await markLeadConnected(campaignId, lead.id);
+        // Single-writer projection of the coarse status from the connectionStatus
+        // just written (covers Lead.status AND CampaignLead.status).
+        if (campaignId && lead.id) await syncLeadStatus(campaignId, lead.id);
 
         // Keep the in-flight context in step (see check-connection.ts).
         ctx.connectionStatus = output.connectionStatus;

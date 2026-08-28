@@ -136,6 +136,11 @@ export async function transitionLead(
         update: data,
     });
 
+    // Project the new execution state onto the coarse enums (the single writer).
+    // Awaited so dashboards/copilot never read a stale coarse status right after a
+    // transition; monotonic + idempotent so this is always safe.
+    await syncLeadStatus(campaignId, leadId).catch(() => {});
+
     if (isNowTerminal) {
         // Fire-and-forget — campaign-level rollup shouldn't block the engine.
         recomputeCampaignStatus(campaignId).catch(err =>
@@ -231,33 +236,92 @@ export async function recomputeCampaignStatus(campaignId: string): Promise<void>
     }
 }
 
+// ─── Coarse-status projection (single source of truth) ───────────────────────
+//
+// The two coarse enums the dashboard + copilot count from — CampaignLead.status
+// (per-campaign) and Lead.status (global) — are DERIVED from the execution truth,
+// never written independently. Execution truth per (campaign, lead) is:
+//   • CampaignLeadProgress.status === 'REPLIED'      → REPLIED   (via transitionLead)
+//   • CampaignLeadProgress.connectionStatus==='connected' → CONNECTED (via the connect/check nodes)
+//   • otherwise                                      → PENDING   (in a campaign, not yet connected)
+// syncLeadStatus() is the ONLY writer of both coarse fields. Every place that used
+// to poke Lead.status / CampaignLead.status directly now calls this instead, so the
+// coarse view can never drift from the execution view again.
+
+export type CoarseStatus = 'IMPORTED' | 'PENDING' | 'CONNECTED' | 'REPLIED' | 'BOUNCED';
+
+// Monotonic rank: a lead only ever moves FORWARD (a reply must never be downgraded
+// to a mere connection, etc.). IMPORTED/BOUNCED share rank 0 (pre-outreach).
+const COARSE_RANK: Record<CoarseStatus, number> = { IMPORTED: 0, BOUNCED: 0, PENDING: 1, CONNECTED: 2, REPLIED: 3 };
+
+// PURE: the coarse status implied by one campaign-lead's execution signals.
+export function coarseLeadStatus(sig: { replied: boolean; connected: boolean }): CoarseStatus {
+    if (sig.replied) return 'REPLIED';
+    if (sig.connected) return 'CONNECTED';
+    return 'PENDING';
+}
+
+// PURE: the highest-rank status across a lead's campaign rows (the global rollup).
+export function rollupLeadStatus(statuses: CoarseStatus[]): CoarseStatus {
+    let best: CoarseStatus = 'IMPORTED';
+    for (const s of statuses) if ((COARSE_RANK[s] ?? 0) > COARSE_RANK[best]) best = s;
+    return best;
+}
+
+// Statuses strictly below `target` by rank — the WHERE guard that makes every
+// write monotonic (and race-free: the guard is in the query, not a read-modify-write).
+function statusesBelow(target: CoarseStatus): CoarseStatus[] {
+    const r = COARSE_RANK[target];
+    return (Object.keys(COARSE_RANK) as CoarseStatus[]).filter((s) => COARSE_RANK[s] < r);
+}
+
 /**
- * Sync the COARSE connection status the dashboard + copilot count from
- * (CampaignLead.status and Lead.status) to CONNECTED, whenever the engine has
- * confirmed a lead is connected.
- *
- * The engine's live truth for a connection is CampaignLeadProgress.connectionStatus
- * ('connected'), but that column is invisible to the dashboard's connected counters,
- * which read Lead.status (global "connected leads" KPI) and CampaignLead.status
- * (per-campaign performance). Before this, an accepted invite updated only the
- * progress row (and, on the check-connection nodes, Lead.status) — so per-campaign
- * "connected" stayed 0 and the copilot under-reported. Call this at every point the
- * engine determines a lead is connected.
- *
- * UPGRADE-ONLY and race-free: the `notIn` guard lives in the WHERE clause, so a
- * lead already CONNECTED or REPLIED is never touched (a reply must not be
- * downgraded to a mere connection). Owns only the coarse status — connectionStatus
- * and connectionDegree stay with their existing write-only-when-confident callers.
+ * Project the execution truth onto the coarse enums for one (campaign, lead).
+ * The SINGLE writer of CampaignLead.status and Lead.status. Monotonic (upgrade
+ * only) and idempotent, so it's safe to call after any execution-state change
+ * (a transition, a connection check, a reply). connectionStatus / connectionDegree
+ * remain owned by their write-only-when-confident callers — this reads them, never
+ * writes them.
+ */
+export async function syncLeadStatus(campaignId: string, leadId: string): Promise<void> {
+    // Reply truth = an inbound message exists (lead-global: they replied to the
+    // user). This is robust to leads that reply AFTER their sequence went terminal,
+    // which the run-state machine can't represent. Connection truth = the progress
+    // row's connectionStatus.
+    const [prog, repliedMsg] = await Promise.all([
+        prisma.campaignLeadProgress.findUnique({
+            where: { campaignId_leadId: { campaignId, leadId } },
+            select: { status: true, connectionStatus: true },
+        }).catch(() => null),
+        prisma.message.findFirst({ where: { leadId, direction: 'RECEIVED' }, select: { id: true } }).catch(() => null),
+    ]);
+
+    const target = coarseLeadStatus({
+        replied: prog?.status === 'REPLIED' || !!repliedMsg,
+        connected: prog?.connectionStatus === 'connected',
+    });
+
+    // Per-campaign: upgrade this campaign-lead toward the target (never downgrade).
+    await prisma.campaignLead.updateMany({
+        where: { campaignId, leadId, status: { in: statusesBelow(target) } },
+        data: { status: target },
+    }).catch(() => {});
+
+    // Global rollup: Lead.status = the furthest-along status across ALL the lead's
+    // campaigns (a lead can be in many). Upgrade-only, same guard.
+    const rows = await prisma.campaignLead.findMany({ where: { leadId }, select: { status: true } }).catch(() => [] as { status: string }[]);
+    const rolled = rollupLeadStatus(rows.map((r) => r.status as CoarseStatus));
+    await prisma.lead.updateMany({
+        where: { id: leadId, status: { in: statusesBelow(rolled) } },
+        data: { status: rolled },
+    }).catch(() => {});
+}
+
+/**
+ * @deprecated Thin alias for {@link syncLeadStatus}. Kept so existing call sites
+ * ("this lead just connected") read naturally; the projection derives CONNECTED
+ * from the connectionStatus the caller already wrote. Prefer syncLeadStatus.
  */
 export async function markLeadConnected(campaignId: string, leadId: string): Promise<void> {
-    await Promise.all([
-        prisma.campaignLead.updateMany({
-            where: { campaignId, leadId, status: { notIn: ['CONNECTED', 'REPLIED'] } },
-            data: { status: 'CONNECTED' },
-        }).catch(() => {}),
-        prisma.lead.updateMany({
-            where: { id: leadId, status: { notIn: ['CONNECTED', 'REPLIED'] } },
-            data: { status: 'CONNECTED' },
-        }).catch(() => {}),
-    ]);
+    await syncLeadStatus(campaignId, leadId);
 }

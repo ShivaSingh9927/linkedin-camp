@@ -42,6 +42,7 @@
  */
 import { NodeHandler, NodeResult, ProfileVisitOutput } from '../types';
 import { prisma } from '@repo/db';
+import { syncLeadStatus } from '../safety/lifecycle';
 import {
     getProfileByFsd,
     getProfilePositions,
@@ -211,13 +212,17 @@ export const profileVisitVoyager: NodeHandler = async (ctx, config): Promise<Nod
         // the gate skip messages to real 1st-degree leads.
         const is1st = await checkFirstDegree(userId, vanity, page, apiRequest).catch(() => null);
         output.connected = is1st;
-        if (is1st === true) {
-            // Set the binary "is 1st-degree" hint on Lead row. Don't write
-            // connectionDegree as a specific 1/2/3 number — we don't know.
-            await prisma.lead.update({
-                where: { id: lead.id },
-                data: { status: 'CONNECTED' },
+        if (is1st === true && campaignId && lead.id) {
+            // Record the connection on the progress row (the truth) and let the
+            // single projection writer set the coarse Lead/CampaignLead status —
+            // no more unguarded direct Lead.status='CONNECTED' write (which could
+            // silently downgrade a REPLIED lead and never synced CampaignLead).
+            await prisma.campaignLeadProgress.upsert({
+                where: { campaignId_leadId: { campaignId, leadId: lead.id } },
+                create: { campaignId, leadId: lead.id, connectionStatus: 'connected', lastConnectionCheck: new Date(), needsRetry: false },
+                update: { connectionStatus: 'connected', lastConnectionCheck: new Date(), needsRetry: false, updatedAt: new Date() },
             }).catch(() => {});
+            await syncLeadStatus(campaignId, lead.id);
         }
 
         // ---- Step 5: 1st-degree contact info (DOM) — only when requested ----

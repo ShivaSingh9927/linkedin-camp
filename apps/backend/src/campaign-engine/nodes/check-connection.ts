@@ -1,7 +1,7 @@
 import { NodeHandler, NodeResult, CheckConnectionOutput } from '../types';
 import { prisma } from '@repo/db';
 import { detectConnectionState } from '../connection-state';
-import { markLeadConnected } from '../safety/lifecycle';
+import { syncLeadStatus } from '../safety/lifecycle';
 
 const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
 const randomRange = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1) + min);
@@ -99,33 +99,23 @@ export const checkConnection: NodeHandler = async (ctx): Promise<NodeResult> => 
             }
         }
 
-        // Mirror to Lead.status so IF_ELSE source='connectionState' reads
-        // ground truth. Without this, a downstream IF_ELSE(connected) right
-        // after CHECK_CONNECTION would still see the stale status set by
-        // the upstream CONNECT (e.g. 'PENDING' even though the lead just
-        // accepted). Only upgrade to CONNECTED — never downgrade past
-        // CONNECTED (a previously-accepted lead who LinkedIn now hides
-        // shouldn't lose their CONNECTED state silently).
-        const leadUpdate: any = {};
-        if (output.connected) leadUpdate.status = 'CONNECTED';
-        // Same write-only-when-confident discipline for degree: don't wipe
-        // a previously-known value with null if today's probe failed to
-        // read the badge.
-        if (output.connectionDegree != null) leadUpdate.connectionDegree = output.connectionDegree;
-        if (Object.keys(leadUpdate).length > 0) {
+        // Persist the degree only (write-only-when-confident: don't wipe a known
+        // value with null if today's probe couldn't read the badge). The coarse
+        // status (Lead.status / CampaignLead.status) is NO LONGER written here —
+        // the connectionStatus upsert above is the truth, and syncLeadStatus below
+        // projects it, so IF_ELSE(connectionState) and the dashboards stay in step
+        // without a second, drift-prone write.
+        if (output.connectionDegree != null) {
             try {
-                await prisma.lead.update({
-                    where: { id: lead.id },
-                    data: leadUpdate,
-                });
+                await prisma.lead.update({ where: { id: lead.id }, data: { connectionDegree: output.connectionDegree } });
             } catch (err) {
-                console.log(`[CHECK-CONNECTION] Could not update Lead row: ${err}`);
+                console.log(`[CHECK-CONNECTION] Could not update Lead degree: ${err}`);
             }
         }
 
-        // Sync the per-campaign coarse status too (Lead.status above only covers
-        // the global KPI; the per-campaign "connected" reads CampaignLead.status).
-        if (output.connected && campaignId && lead.id) await markLeadConnected(campaignId, lead.id);
+        // Single-writer projection of the coarse status from the connectionStatus
+        // we just wrote (covers both Lead.status and CampaignLead.status).
+        if (campaignId && lead.id) await syncLeadStatus(campaignId, lead.id);
 
         return { success: true, output };
 
