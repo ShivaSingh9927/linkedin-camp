@@ -205,8 +205,16 @@ export interface HistoryMsg { sender: 'you' | 'qampi'; text: string }
 // `intentHint` lets a caller that already KNOWS the intent (a quick-prompt
 // button, the "different angle" action) skip the backend's classifier LLM call.
 // The backend only honors it for safe, non-side-effecting intents.
-export async function routeMessage(message: string, history: HistoryMsg[], importedThisSession: number, intentHint?: RoutedMessage['intent']): Promise<RoutedMessage> {
-    const { data } = await api.post('/ai/copilot/message', { message, history, importedThisSession, intentHint });
+// `broadenOf` (find_leads only) carries a search that returned NOBODY so the
+// backend widens THAT same query instead of pivoting to a different segment.
+export async function routeMessage(
+    message: string,
+    history: HistoryMsg[],
+    importedThisSession: number,
+    intentHint?: RoutedMessage['intent'],
+    broadenOf?: { keywords: string; filters?: SearchFilters },
+): Promise<RoutedMessage> {
+    const { data } = await api.post('/ai/copilot/message', { message, history, importedThisSession, intentHint, broadenOf });
     return data as RoutedMessage;
 }
 

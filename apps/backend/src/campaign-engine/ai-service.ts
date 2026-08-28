@@ -565,7 +565,7 @@ export async function generateSearchQuery(
     phrase: string,
     g: ActivationGrounding,
     audience: string,
-    opts?: { triedAngles?: TriedAngleInput[]; rotate?: boolean },
+    opts?: { triedAngles?: TriedAngleInput[]; rotate?: boolean; broaden?: boolean; baseFilters?: { title?: string; location?: string; industry?: string; degree?: string } },
 ): Promise<SearchRecommendation> {
     if (isMockAI()) {
         await mockAiWait();
@@ -580,6 +580,8 @@ export async function generateSearchQuery(
                 audience,
                 tried_angles: opts?.triedAngles?.slice(0, 12) || [],
                 rotate: !!opts?.rotate,
+                broaden: !!opts?.broaden,
+                base_filters: opts?.baseFilters || null,
             },
             { timeout: 30000 },
         );

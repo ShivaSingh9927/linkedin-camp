@@ -52,6 +52,9 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
     messagesRef.current = messages;
     // Lets doSearch (defined earlier) trigger a rotation without a forward ref cycle.
     const rotateAngleRef = useRef<(() => void) | null>(null);
+    // Same trick for "broaden THIS failed search" (distinct from rotate — keeps the
+    // subject the user asked for instead of pivoting to a different segment).
+    const broadenSearchRef = useRef<((label: string, keywords: string, filters?: SearchRecommendation['filters']) => void) | null>(null);
     // The unanswered-reply queue for handle_replies — draft one card at a time.
     const repliesQueueRef = useRef<WaitingReply[]>([]);
     const replyIdxRef = useRef(0);
@@ -141,10 +144,14 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
                     text: page > 1
                         ? 'That’s everyone fresh for this angle — you’ve already seen the rest. Here’s a different angle to try:'
                         : noMatches
-                            ? 'That search didn’t match anyone on LinkedIn — the filters are probably too narrow. Let me try a broader angle:'
+                            ? 'That search didn’t match anyone on LinkedIn — the filters are probably too narrow. Let me broaden it:'
                             : 'You’ve already seen everyone this search turns up. Let me suggest a different angle:',
                 });
-                rotateAngleRef.current?.();
+                // Zero matches on the first page = too narrow → BROADEN the SAME
+                // search (keep founders/fintech, relax filters). "Already seen
+                // everyone" (deduped) or a later page → rotate to a different angle.
+                if (noMatches && page === 1) broadenSearchRef.current?.(label, keywords, filters);
+                else rotateAngleRef.current?.();
                 return;
             }
             push({ id: nextId(), role: 'qampi', kind: 'text', text: page > 1 ? `Found ${people.length} more.` : `Found ${people.length} people. Pick the ones you want and I’ll import them.` });
@@ -195,6 +202,33 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
         }
     }, [push, historyForRouter]);
     rotateAngleRef.current = rotateAngle;
+
+    // Broaden a search that returned NOBODY: re-ask the builder with the SAME
+    // query as `broadenOf`, so it keeps the user's subject (e.g. founders in
+    // fintech) and just widens the net — never pivots to a different segment.
+    const broadenSearch = useCallback(async (label: string, keywords: string, filters?: SearchRecommendation['filters']) => {
+        track('copilot_broaden_search', {});
+        const thinkId = nextId();
+        push({ id: thinkId, role: 'qampi', kind: 'searching', label: '…' });
+        try {
+            const routed = await routeMessage(
+                `Broaden this search — it returned nobody: ${keywords}`,
+                historyForRouter(), importedLeadIdsRef.current.length, 'find_leads',
+                { keywords, filters },
+            );
+            setMessages((prev) => prev.filter((m) => m.id !== thinkId));
+            if (routed.toolData?.searchDraft) {
+                const d = routed.toolData.searchDraft;
+                push({ id: nextId(), role: 'qampi', kind: 'searchDraft', label: d.label, keywords: d.keywords, filters: d.filters, rationale: d.rationale, reasoning: d.reasoning });
+            } else {
+                push({ id: nextId(), role: 'qampi', kind: 'text', text: routed.reply || 'Tell me a different type of person to look for and I’ll build a search.' });
+            }
+        } catch {
+            setMessages((prev) => prev.filter((m) => m.id !== thinkId));
+            push({ id: nextId(), role: 'qampi', kind: 'text', text: 'Tell me a different type of person to look for and I’ll build a search.' });
+        }
+    }, [push, historyForRouter]);
+    broadenSearchRef.current = broadenSearch;
 
     // ── reply-in-chat (handle_replies) ───────────────────────────────────────
     // Draft the NEXT unanswered reply in the queue as an in-chat card. One at a

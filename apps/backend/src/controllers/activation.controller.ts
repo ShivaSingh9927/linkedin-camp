@@ -173,7 +173,7 @@ export const activationRecommendSearch = async (req: AuthRequest, res: Response)
 export const copilotMessage = async (req: AuthRequest, res: Response) => {
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-    const { message, history, importedThisSession, intentHint } = req.body || {};
+    const { message, history, importedThisSession, intentHint, broadenOf } = req.body || {};
     if (!message || typeof message !== 'string' || !message.trim()) {
         return res.status(400).json({ error: 'message_required' });
     }
@@ -324,15 +324,22 @@ export const copilotMessage = async (req: AuthRequest, res: Response) => {
         // phrase + profile + audience and hand it back for the user to approve/edit
         // (searches are budget-scarce, so we show before we spend).
         if (intent === 'find_leads') {
-            const phrase = (routed.params?.keywords || message).trim();
             const audienceStr = toolData?.audience ? formatAudience(toolData.audience) : '';
+            const triedAngles = await getTriedAngles(userId).catch(() => []);
+            // Broaden path: a specific search returned NOBODY, so the client sends the
+            // failed query as `broadenOf`. Keep that SAME subject and widen it — never
+            // rotate to a different segment (that's what dropped "founders in fintech"
+            // and re-grounded on the profile ICP). Takes precedence over rotate.
+            const bo = broadenOf && typeof broadenOf.keywords === 'string' && broadenOf.keywords.trim()
+                ? { keywords: broadenOf.keywords.trim(), filters: broadenOf.filters || undefined }
+                : null;
+            const phrase = bo ? bo.keywords : (routed.params?.keywords || message).trim();
             // Rotation grounding: give the builder the angles already run so it
             // won't repeat, and flag an explicit pivot when the user asks for
             // "something different" (the "Try a different angle" button sends this).
-            const rotate = /\b(different|another|something else|fresh|more variety|new angle|other)\b/i.test(phrase) || !phrase;
-            const triedAngles = await getTriedAngles(userId).catch(() => []);
+            const rotate = !bo && (/\b(different|another|something else|fresh|more variety|new angle|other)\b/i.test(phrase) || !phrase);
             try {
-                const draft = await generateSearchQuery(phrase, grounding, audienceStr, { triedAngles, rotate });
+                const draft = await generateSearchQuery(phrase, grounding, audienceStr, { triedAngles, rotate, broaden: !!bo, baseFilters: bo?.filters });
                 toolData = { ...(toolData || {}), searchDraft: { label: draft.label, keywords: draft.keywords, filters: draft.filters, rationale: draft.rationale, reasoning: draft.reasoning || '' } };
             } catch { /* frontend falls back to searching the raw phrase */ }
         }

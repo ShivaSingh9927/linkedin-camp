@@ -25,6 +25,7 @@ export type AnalyticsEvent =
   | 'copilot_template_selected'
   | 'copilot_quickprompt'
   | 'copilot_rotate_angle'
+  | 'copilot_broaden_search'
   | 'copilot_reply_sent';
 
 export function track(event: AnalyticsEvent, properties?: Record<string, any>) {

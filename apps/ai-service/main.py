@@ -1193,6 +1193,12 @@ class BuildSearchRequest(ActivationRequest):
     # near-duplicate. `rotate` asks for a deliberate pivot to a fresh segment.
     tried_angles: List[Dict[str, Any]] = []
     rotate: bool = False
+    # `broaden` is the OPPOSITE of rotate: a search returned NOBODY, so keep the
+    # SAME subject the user asked for (carried in `phrase` = the failed query) and
+    # widen the net — never pivot to a different audience. base_filters is the
+    # failed query's facets so the builder knows which one to relax first.
+    broaden: bool = False
+    base_filters: Optional[Dict[str, Any]] = None
 
 
 _GOAL_PHRASING = {
@@ -1507,10 +1513,20 @@ def activation_build_search(req: BuildSearchRequest):
     copilot shows this to the user to approve/edit BEFORE spending a search."""
     phrase = (req.phrase or "").strip()
     rotate = bool(req.rotate)
+    broaden = bool(req.broaden)
     # A rotation ("find me something different") needs no explicit phrase — the
     # tried-angles + profile carry the intent. A normal build still requires one.
     if not phrase and not rotate:
         raise HTTPException(status_code=400, detail="phrase required")
+    # base_filters = the facets of the query that just returned nobody, so a
+    # broaden knows which constraint to relax first (usually a niche industry).
+    bf = req.base_filters or {}
+    base_filter_bits = ", ".join(
+        f"{k}={v}" for k, v in (
+            ("title", bf.get("title")), ("industry", bf.get("industry")),
+            ("location", bf.get("location")), ("degree", bf.get("degree")),
+        ) if v
+    ) or "(none)"
     grounding = _activation_grounding(req)
     audience = (req.audience or "").strip() or "No leads imported yet."
 
@@ -1537,20 +1553,40 @@ def activation_build_search(req: BuildSearchRequest):
     )
     # ICP-first grounding: use the user's stated target audience/ICP if present;
     # otherwise infer one from their profile + who they've actually imported.
-    ask = (
-        'Propose a GENUINELY DIFFERENT search from the ones already run below — a '
-        'fresh segment (adjacent roles, a new industry, seniority, or geography) '
-        'that fits their ICP but opens a new vein. Do NOT repeat or lightly reword '
-        'a mined-out angle. IMPORTANT: if the angles below are mined out or returned '
-        'nobody, the previous searches were almost certainly TOO NARROW for this '
-        "user's network — so BROADEN, don't just re-theme: relax the connection "
-        'degree (2nd → 3rd), drop the most restrictive filter (e.g. a niche '
-        'industry), and widen the title OR-group to adjacent/related roles. First '
-        'reason briefly about WHY the prior angles likely returned nobody, then '
-        'build a broader search that will actually surface people.'
-        if rotate else
-        f'The user asked to find: "{phrase}"'
-    )
+    if broaden:
+        # A search returned NOBODY. Keep the user's SAME intent — do NOT switch to a
+        # different audience or re-ground in the profile ICP — just cast a wider net.
+        ask = (
+            f'This exact search returned ZERO people, so it was TOO NARROW:\n'
+            f'    {phrase}\n'
+            f'Its filters were: {base_filter_bits}.\n'
+            'Rebuild it BROADER while keeping the SAME kind of person the user asked '
+            'for — do NOT pivot to a different role, seniority, or industry, and do '
+            'NOT substitute the profile\'s target audience for what they asked. To '
+            'widen: (1) set degree to "any"; (2) DROP the most restrictive filter — '
+            'usually a niche industry (e.g. remove a "fintech" industry facet and '
+            'fold it into keywords at most, or drop it entirely); (3) expand the '
+            'title OR-group with more synonyms and adjacent titles for the same role '
+            '(e.g. founder → "founder" OR "co-founder" OR "founding" OR CEO OR '
+            '"managing director" OR owner); (4) remove any location filter unless the '
+            'user explicitly asked for one. First reason briefly about WHY it likely '
+            'returned nobody, then output the broader query for the SAME target.'
+        )
+    elif rotate:
+        ask = (
+            'Propose a GENUINELY DIFFERENT search from the ones already run below — a '
+            'fresh segment (adjacent roles, a new industry, seniority, or geography) '
+            'that fits their ICP but opens a new vein. Do NOT repeat or lightly reword '
+            'a mined-out angle. IMPORTANT: if the angles below are mined out or returned '
+            'nobody, the previous searches were almost certainly TOO NARROW for this '
+            "user's network — so BROADEN, don't just re-theme: relax the connection "
+            'degree (2nd → 3rd), drop the most restrictive filter (e.g. a niche '
+            'industry), and widen the title OR-group to adjacent/related roles. First '
+            'reason briefly about WHY the prior angles likely returned nobody, then '
+            'build a broader search that will actually surface people.'
+        )
+    else:
+        ask = f'The user asked to find: "{phrase}"'
     user = f"""What I know about this user:
 {grounding}
 
