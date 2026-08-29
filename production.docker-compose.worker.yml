@@ -26,6 +26,10 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3001
+      # This process launches Chromium only for the login flow (rare, one-per-
+      # account). Bound it so a burst of concurrent logins can't stack browsers
+      # on top of the worker's and push the box into swap. See worker notes below.
+      BROWSER_LAUNCH_LIMIT: "4"
       DATABASE_URL: ${DATABASE_URL}
       REDIS_URL: ${REDIS_URL}
       JWT_SECRET: ${JWT_SECRET}
@@ -104,6 +108,16 @@ services:
     command: ["sh", "-c", "xvfb-run -a node apps/backend/dist/worker-entry.js"]
     environment:
       NODE_ENV: production
+      # Concurrency tuning, pinned for this box (8GB RAM / 4 vCPU).
+      #  WORKER_CONCURRENCY  = campaign JOB slots. Parked jobs (waiting on pacing
+      #    delays) are cheap, so 24 is safe — it does NOT mean 24 live browsers.
+      #  BROWSER_LAUNCH_LIMIT = max SIMULTANEOUS Chromium windows (the real RAM/CPU
+      #    governor; read-only jobs never take a permit). Code default is 16, but
+      #    16 x ~300MB ~= 4.8GB overflows this box's free RAM into swap and pegs
+      #    4 cores. 12 x ~300MB ~= 3.6GB fits with headroom. Raise toward 16 only
+      #    after watching `docker stats` show sustained RAM+swap headroom.
+      WORKER_CONCURRENCY: "24"
+      BROWSER_LAUNCH_LIMIT: "12"
       DATABASE_URL: ${DATABASE_URL}
       REDIS_URL: ${REDIS_URL}
       JWT_SECRET: ${JWT_SECRET}
