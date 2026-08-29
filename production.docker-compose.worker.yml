@@ -5,12 +5,23 @@
 # Fronted by:   Hetzner LB11 -> 10.0.0.2:3001
 # =============================================================================
 
+# Cap container stdout/stderr logs so a chatty run can never fill the disk.
+# Root cause of two prior 100%-disk outages: the default json-file driver has
+# NO size limit, so backend-worker's log grew to 14GB and wedged the box.
+# 50m x 5 files = 250MB max per container.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "5"
+
 services:
   backend-api:
     build: .
     image: linkedin-camp-backend:latest
     container_name: backend-api
     restart: unless-stopped
+    logging: *default-logging
     command: ["sh", "-c", "xvfb-run -a node apps/backend/dist/server.js"]
     environment:
       NODE_ENV: production
@@ -86,6 +97,7 @@ services:
     image: linkedin-camp-backend:latest
     container_name: backend-worker
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       - backend-api
     # xvfb-run gives Playwright a virtual display so headed-mode stealth works.
