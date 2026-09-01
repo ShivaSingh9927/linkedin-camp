@@ -242,7 +242,8 @@ export async function recomputeCampaignStatus(campaignId: string): Promise<void>
 // (per-campaign) and Lead.status (global) — are DERIVED from the execution truth,
 // never written independently. Execution truth per (campaign, lead) is:
 //   • CampaignLeadProgress.status === 'REPLIED'      → REPLIED   (via transitionLead)
-//   • CampaignLeadProgress.connectionStatus==='connected' → CONNECTED (via the connect/check nodes)
+//   • Lead.connectionDegree === 1 (genuine 1st-degree) → CONNECTED. NOT connectionStatus
+//     ='connected', which also means "Open-Profile, messageable but not connected".
 //   • otherwise                                      → PENDING   (in a campaign, not yet connected)
 // syncLeadStatus() is the ONLY writer of both coarse fields. Every place that used
 // to poke Lead.status / CampaignLead.status directly now calls this instead, so the
@@ -288,17 +289,24 @@ export async function syncLeadStatus(campaignId: string, leadId: string): Promis
     // user). This is robust to leads that reply AFTER their sequence went terminal,
     // which the run-state machine can't represent. Connection truth = the progress
     // row's connectionStatus.
-    const [prog, repliedMsg] = await Promise.all([
+    const [prog, repliedMsg, lead] = await Promise.all([
         prisma.campaignLeadProgress.findUnique({
             where: { campaignId_leadId: { campaignId, leadId } },
-            select: { status: true, connectionStatus: true },
+            select: { status: true },
         }).catch(() => null),
         prisma.message.findFirst({ where: { leadId, direction: 'RECEIVED' }, select: { id: true } }).catch(() => null),
+        prisma.lead.findUnique({ where: { id: leadId }, select: { connectionDegree: true } }).catch(() => null),
     ]);
 
     const target = coarseLeadStatus({
         replied: prog?.status === 'REPLIED' || !!repliedMsg,
-        connected: prog?.connectionStatus === 'connected',
+        // Real acceptance ONLY. connectionStatus='connected' is the engine's
+        // "can I DM them?" routing signal — it also covers Open-Profile leads
+        // (2nd-degree but messageable), so counting it as "connected" overstated
+        // real connections. connectionDegree===1 is the genuine 1st-degree truth
+        // the check/connect/profile-visit nodes persist. This is the single line
+        // that separates "messageable" from "actually connected".
+        connected: lead?.connectionDegree === 1,
     });
 
     // Per-campaign: upgrade this campaign-lead toward the target (never downgrade).

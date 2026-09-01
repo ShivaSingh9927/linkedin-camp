@@ -72,6 +72,13 @@ export const connect: NodeHandler = async (ctx): Promise<NodeResult> => {
             console.log('[CONNECT] Already DMable (1st-degree or Open Profile).');
             output.status = 'already_connected';
             if (campaignId) await updateConnectionStatus(campaignId, lead.id, 'connected');
+            // Record REAL acceptance for reporting only when they're genuinely
+            // 1st-degree. Open Profile is DMable but 2nd-degree — messageable, NOT
+            // a connection — so leave its degree untouched. syncLeadStatus counts
+            // CONNECTED off connectionDegree===1, so this keeps the count honest.
+            if (state.connectionDegree === 1) {
+                await prisma.lead.update({ where: { id: lead.id }, data: { connectionDegree: 1 } }).catch(() => {});
+            }
             return { success: true, output };
         }
 

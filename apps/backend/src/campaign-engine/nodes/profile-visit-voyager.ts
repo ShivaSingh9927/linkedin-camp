@@ -222,6 +222,9 @@ export const profileVisitVoyager: NodeHandler = async (ctx, config): Promise<Nod
                 create: { campaignId, leadId: lead.id, connectionStatus: 'connected', lastConnectionCheck: new Date(), needsRetry: false },
                 update: { connectionStatus: 'connected', lastConnectionCheck: new Date(), needsRetry: false, updatedAt: new Date() },
             }).catch(() => {});
+            // Persist the genuine 1st-degree so the coarse CONNECTED count (now
+            // derived from connectionDegree===1, not connectionStatus) sees it.
+            await prisma.lead.update({ where: { id: lead.id }, data: { connectionDegree: 1 } }).catch(() => {});
             await syncLeadStatus(campaignId, lead.id);
         }
 

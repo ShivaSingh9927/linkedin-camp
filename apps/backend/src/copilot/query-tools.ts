@@ -45,7 +45,7 @@ export interface CampaignProgressData {
         pending: number; inProgress: number; deferred: number;
         replied: number; completed: number; stalled: number; failed: number;
     };
-    connected: number;               // connectionStatus === 'connected'
+    connected: number;               // genuine 1st-degree (connectionDegree === 1) — real acceptances, NOT Open-Profile messability
     inviteAwaiting: number;          // connectionStatus === 'pending' (invite out, not yet accepted)
     // statusReason distributions split by whether the lead can still move.
     // pausedReasons: DEFERRED leads — will resume automatically. stoppedReasons:
@@ -251,7 +251,7 @@ export async function getCampaignProgress(userId: string): Promise<CampaignProgr
         prisma.campaignLead.count({ where: { campaignId: campaign.id } }),
         prisma.campaignLeadProgress.findMany({
             where: { campaignId: campaign.id },
-            select: { status: true, statusReason: true, connectionStatus: true, needsRetry: true, nextRetryAt: true },
+            select: { leadId: true, status: true, statusReason: true, connectionStatus: true, needsRetry: true, nextRetryAt: true },
         }),
         prisma.actionLog.groupBy({
             by: ['actionType'],
@@ -295,14 +295,29 @@ export async function getCampaignProgress(userId: string): Promise<CampaignProgr
             else if (p.status === 'STALLED' || p.status === 'FAILED') bump(stoppedReasons, p.statusReason);
             else if (p.status === 'COMPLETED') bump(endedReasons, p.statusReason);
         }
-        if (p.connectionStatus === 'connected') connected++;
-        else if (p.connectionStatus === 'pending') inviteAwaiting++;
+        // inviteAwaiting = invite out, not yet accepted (messability signal is fine
+        // here). `connected` (real acceptances) is counted separately below off
+        // connectionDegree===1, since connectionStatus='connected' also covers
+        // Open-Profile (messageable, not connected) and would overstate it.
+        if (p.connectionStatus === 'pending') inviteAwaiting++;
         if (p.status === 'DEFERRED' && p.nextRetryAt) {
             const t = new Date(p.nextRetryAt).getTime();
             nextRetry = nextRetry == null ? t : Math.min(nextRetry, t);
         }
     }
     const activeLeads = run.pending + run.inProgress + run.deferred;
+
+    // Real acceptances = genuine 1st-degree connections (connectionDegree===1),
+    // NOT connectionStatus='connected' (which also counts Open-Profile leads that
+    // are merely messageable). Counted off the Lead rows so the figure matches
+    // the coarse CONNECTED status the dashboard/campaign page show.
+    if (progressRows.length > 0) {
+        const degreeRows = await prisma.lead.findMany({
+            where: { id: { in: progressRows.map((p) => p.leadId) } },
+            select: { connectionDegree: true },
+        }).catch(() => [] as { connectionDegree: number | null }[]);
+        connected = degreeRows.filter((l) => l.connectionDegree === 1).length;
+    }
 
     return {
         name: campaign.name,

@@ -1034,7 +1034,11 @@ export async function runCampaign(
                 select: { connectionStatus: true },
             }).catch(() => null);
             const alreadyDmable = progConn?.connectionStatus === 'connected';
-            const accepted = alreadyDmable || (vanity ? await isFirstDegree(userId, vanity).catch(() => false) : false);
+            // Only probe 1st-degree when we don't already know they're messageable
+            // (an Open-Profile lead already carries connectionStatus='connected' and
+            // had its degree recorded at connect time — no need to re-probe).
+            const isFirst = alreadyDmable ? false : (vanity ? await isFirstDegree(userId, vanity).catch(() => false) : false);
+            const accepted = alreadyDmable || isFirst;
             if (!accepted) {
                 console.log(`[CAMPAIGN] Lead ${leadData.firstName}: invite not accepted by stage deadline — giving up (soft terminal).`);
                 await prisma.campaignLead.update({
@@ -1054,6 +1058,13 @@ export async function runCampaign(
                 where: { campaignId_leadId: { campaignId, leadId: cl.leadId } },
                 data: { connectionStatus: 'connected', lastConnectionCheck: new Date() },
             }).catch(() => {});
+            // A genuine acceptance during the wait is a real connection — record
+            // the degree so reporting (connectionDegree===1) counts it. Open-Profile
+            // (alreadyDmable, not 1st-degree) proceeds to messaging but is NOT a
+            // connection, so its degree is left untouched.
+            if (isFirst) {
+                await prisma.lead.update({ where: { id: cl.leadId }, data: { connectionDegree: 1 } }).catch(() => {});
+            }
             await syncLeadStatus(campaignId, cl.leadId).catch(() => {});
         }
 
