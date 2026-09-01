@@ -516,6 +516,30 @@ async function runLead(
                 needsWarmup = false;
             }
 
+            // No-invite-needed short-circuit for CONNECT. If an earlier pass
+            // already sent the invite (→ 'pending') or found the lead directly
+            // messageable — 1st-degree OR Open Profile (→ 'connected') — then
+            // re-running connect is a pure no-op: it re-navigates the profile and
+            // STILL logs a 'connect' SUCCESS that counts against the 18/day invite
+            // cap (getDailyCount counts status='SUCCESS'). That is precisely how an
+            // Open-Profile or already-invited lead loops here for days — burning the
+            // cap on no-ops, starving real invites, until it STALLS. Skip the node
+            // and advance; audit as SKIPPED so it never touches the quota. This is
+            // template-agnostic: it protects every campaign with a connect node.
+            if (nodeType === 'connect' && (seedConnectionStatus === 'connected' || seedConnectionStatus === 'pending')) {
+                console.log(`[ENGINE] Lead ${lead.firstName}: connect skipped — already ${seedConnectionStatus}, no invite needed.`);
+                execResult.nodesExecuted.push({
+                    node: nodeType,
+                    status: 'success',
+                    at: new Date().toISOString(),
+                    output: { status: seedConnectionStatus === 'connected' ? 'already_connected' : 'pending' },
+                } as NodeExecution);
+                await prisma.actionLog.create({
+                    data: { userId, campaignId, leadId: lead.id, actionType: 'connect', status: 'SKIPPED' },
+                }).catch(() => {});
+                continue;
+            }
+
             // Daily-cap gate. LinkedIn rate-limits per account, not per
             // campaign, so caps are scoped to userId across all of their work
             // and counted from ActionLog (status=SUCCESS) for today. If we're
@@ -756,9 +780,14 @@ async function runLead(
                     const vanity = vanityFromUrl(lead.linkedinUrl);
                     // Browser-free when no page is open (lazy launch) — uses the
                     // saved-session apiRequest. Skipped entirely in mock mode.
-                    const already = (vanity && !isMockLinkedIn())
+                    // Open-Profile leads (2nd-degree but DMable) carry
+                    // connectionStatus='connected' from the connect node — they
+                    // need no acceptance, so skip the wait too, not just confirmed
+                    // 1st-degree. Otherwise they'd wait pointlessly and then be
+                    // discarded as "not accepted".
+                    const already = seedConnectionStatus === 'connected' || ((vanity && !isMockLinkedIn())
                         ? await isFirstDegree(userId, vanity, page || undefined, apiRequest).catch(() => false)
-                        : false;
+                        : false);
                     if (already) {
                         console.log(`[ENGINE] Lead ${lead.firstName}: already 1st-degree — skipping ${hours}h acceptance wait.`);
                         needsWarmup = true;
@@ -994,7 +1023,18 @@ export async function runCampaign(
                 continue;
             }
             const vanity = vanityFromUrl(leadData.linkedinUrl);
-            const accepted = vanity ? await isFirstDegree(userId, vanity).catch(() => false) : false;
+            // "Can we message them?" is the real gate — not "did they accept an
+            // invite?". A confirmed 1st-degree qualifies, and so does an Open-
+            // Profile lead the connect node already marked messageable
+            // (connectionStatus='connected'). Requiring strictly 1st-degree here
+            // is what silently discarded messageable Open-Profile leads as "not
+            // accepted" and sent them 0 messages. Template-agnostic.
+            const progConn = await prisma.campaignLeadProgress.findUnique({
+                where: { campaignId_leadId: { campaignId, leadId: cl.leadId } },
+                select: { connectionStatus: true },
+            }).catch(() => null);
+            const alreadyDmable = progConn?.connectionStatus === 'connected';
+            const accepted = alreadyDmable || (vanity ? await isFirstDegree(userId, vanity).catch(() => false) : false);
             if (!accepted) {
                 console.log(`[CAMPAIGN] Lead ${leadData.firstName}: invite not accepted by stage deadline — giving up (soft terminal).`);
                 await prisma.campaignLead.update({
