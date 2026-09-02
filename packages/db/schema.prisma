@@ -23,66 +23,66 @@ model ActionLog {
   // ActionLog is the fastest-growing table (one row per action) and is scanned
   // by every dashboard/stats/campaign-detail query. Without these it was doing
   // full-table scans on each cold recompute.
-  @@index([userId, executedAt])            // recent logs, N-day activity windows
-  @@index([userId, actionType, status])    // quota + KPI tallies (per-type/status counts)
-  @@index([campaignId, actionType])        // per-campaign groupBy/tallies
-  @@index([leadId])                        // leadId IN (...) lookups (campaign status)
+  @@index([userId, executedAt]) // recent logs, N-day activity windows
+  @@index([userId, actionType, status]) // quota + KPI tallies (per-type/status counts)
+  @@index([campaignId, actionType]) // per-campaign groupBy/tallies
+  @@index([leadId]) // leadId IN (...) lookups (campaign status)
 }
 
 model BusinessProfile {
-  id                    String    @id @default(cuid())
-  userId                String    @unique
-  name                  String?
-  company               String?
-  persona               String?
-  valueProp             String?
-  style                 String?
-  keywords              String[]  @default([])
-  targetAudience        String?
-  industry              String?
-  website               String?
-  heardFrom             String?
+  id                        String    @id @default(cuid())
+  userId                    String    @unique
+  name                      String?
+  company                   String?
+  persona                   String?
+  valueProp                 String?
+  style                     String?
+  keywords                  String[]  @default([])
+  targetAudience            String?
+  industry                  String?
+  website                   String?
+  heardFrom                 String?
   // What the user is on LinkedIn to do. Selects the AI strategy prompt set.
   // "sell" (default, B2B outreach) | "job_seeking" | future: "fundraising" | "networking".
-  goalType              String?   @default("sell")
-  mainPainPoint         String?
-  usp                   String?
-  companyDescription    String?
-  products              String?
-  differentiators       String?
-  caseStudies           String?
-  communicationStyle    String?
-  writingSamples        Json?
-  tonePreferences       String[]  @default([])
-  aiStrategy            Json?
-  aiStrategyGeneratedAt DateTime?
+  goalType                  String?   @default("sell")
+  mainPainPoint             String?
+  usp                       String?
+  companyDescription        String?
+  products                  String?
+  differentiators           String?
+  caseStudies               String?
+  communicationStyle        String?
+  writingSamples            Json?
+  tonePreferences           String[]  @default([])
+  aiStrategy                Json?
+  aiStrategyGeneratedAt     DateTime?
   // Soft confirmation of the generated strategy. strategyConfirmedAt is set
   // once the user reviews & confirms the whole strategy; strategyConfirmedSections
   // tracks per-section "looks good" state (e.g. { gtm: true, icp: true }). Both
   // reset to null on regenerate so a fresh strategy is reviewed afresh. Non-blocking.
-  strategyConfirmedAt   DateTime?
+  strategyConfirmedAt       DateTime?
   strategyConfirmedSections Json?
-  aiPreferences         Json?     // { commentInstruction: string }
-  websiteScrapedAt      DateTime?
+  aiPreferences             Json? // { commentInstruction: string }
+  websiteScrapedAt          DateTime?
   // Self-profile enrichment: scraped from the user's OWN LinkedIn profile after
   // they complete login through Qampi. Populated once by the enrichment job.
   // Voyager API fields (faster, richer data)
-  selfHeadline          String?
-  selfAbout             String?
-  selfRecentPosts       Json?     // [{ url, content, date }]
-  selfProfileSummary    String?
-  selfProfileEnrichedAt DateTime?
+  selfHeadline              String?
+  selfAbout                 String?
+  selfRecentPosts           Json? // [{ url, content, date }]
+  selfProfileSummary        String?
+  selfProfileEnrichedAt     DateTime?
   // Extended fields from Voyager FullProfile-76 (not available via DOM scraper)
-  selfIndustry          String?   // "Computer Software"
-  selfGeoLocation       String?   // "Kanpur, Uttar Pradesh, India"
-  selfPremium           Boolean?  // false
-  selfPronouns          String?   // "HE_HIM"
-  selfVanity            String?   // "shiva-singh-genai-llm"
-  selfMemberId          String?   // "660119273"
-  selfProfilePictureUrl String?   // full URL to profile picture
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
-  User                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  selfIndustry              String? // "Computer Software"
+  selfGeoLocation           String? // "Kanpur, Uttar Pradesh, India"
+  selfPremium               Boolean? // false
+  selfPronouns              String? // "HE_HIM"
+  selfVanity                String? // "shiva-singh-genai-llm"
+  selfMemberId              String? // "660119273"
+  selfProfilePictureUrl     String? // full URL to profile picture
+  createdAt                 DateTime  @default(now())
+  updatedAt                 DateTime  @updatedAt
+  User                      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model StrategyHistory {
@@ -254,23 +254,23 @@ model Lead {
 }
 
 model Message {
-  id         String   @id @default(cuid())
-  userId     String
-  leadId     String
-  campaignId String?
-  templateId String?
-  direction  String
+  id             String   @id @default(cuid())
+  userId         String
+  leadId         String
+  campaignId     String?
+  templateId     String?
+  direction      String
   // Distinguishes LinkedIn DMs from email sends so the inbox UI can
   // filter by channel and the engine knows which write-path created
   // the row (audit, replay, reply-pause scope).
-  channel    String   @default("linkedin")
+  channel        String   @default("linkedin")
   // Email-only metadata. Subject is null for LinkedIn messages.
   // messageId is the RFC-2822 Message-Id we emit, so replies can be
   // threaded back when we add IMAP/Gmail-inbox sync.
-  subject    String?
-  messageId  String?
-  content    String
-  source     String   @default("MANUAL")
+  subject        String?
+  messageId      String?
+  content        String
+  source         String   @default("MANUAL")
   // Delivery lifecycle for outbound messages the USER sends from the inbox.
   // null    = already delivered (campaign sends + legacy rows — no queueing)
   // PENDING = queued, awaiting the coalescing inbox-reply flush worker
@@ -282,10 +282,10 @@ model Message {
   // pillar, ICP pain, sequence step). Assembled deterministically at send
   // time, surfaced in the campaign Messages tab so the user sees the AI did
   // its homework. Null for manual/template sends.
-  rationale  String?
-  sentAt     DateTime @default(now())
-  Lead       Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
-  User       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rationale      String?
+  sentAt         DateTime @default(now())
+  Lead           Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  User           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, channel, sentAt])
   @@index([userId, deliveryStatus])
@@ -303,24 +303,24 @@ model Message {
 // 'microsoft-oauth' when those land. OAuth flow will add
 // oauthRefreshToken/oauthAccessToken and zero out smtpPass.
 model EmailAccount {
-  id                String   @id @default(cuid())
-  userId            String   @unique
-  provider          String   @default("smtp")
+  id                String    @id @default(cuid())
+  userId            String    @unique
+  provider          String    @default("smtp")
   fromEmail         String
   fromName          String?
   smtpHost          String?
   smtpPort          Int?
   smtpUser          String?
   smtpPass          String?
-  smtpSecure        Boolean  @default(false)
+  smtpSecure        Boolean   @default(false)
   oauthRefreshToken String?
   oauthAccessToken  String?
   oauthExpiresAt    DateTime?
   lastSendAt        DateTime?
   lastError         String?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-  User              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  User              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model MessageTemplate {
@@ -432,6 +432,7 @@ model User {
   registrationStep        String            @default("STARTED")
   tier                    SubscriptionTier  @default(FREE)
   trialEndsAt             DateTime?
+  razorpayCustomerId      String? // Razorpay customer handle, reused across resubscribes
   dailyInviteLimit        Int               @default(20)
   proxyIp                 String?
   linkedinPlan            LinkedinPlan      @default(BASIC)
@@ -475,6 +476,7 @@ model User {
   accountHealthAt         DateTime?
   ActionLog               ActionLog[]
   BusinessProfile         BusinessProfile?
+  Subscription            Subscription?
   StrategyHistory         StrategyHistory[]
   Campaign                Campaign[]
   Integration             Integration[]
@@ -575,7 +577,7 @@ model CampaignCrmPolicy {
 // trawling stdout. One row per (event, provider) — a single lead.replied
 // event with both HubSpot and Pipedrive connected produces two rows.
 model CrmSyncEvent {
-  id         String    @id @default(cuid())
+  id         String   @id @default(cuid())
   userId     String
   campaignId String
   leadId     String
@@ -585,8 +587,8 @@ model CrmSyncEvent {
   externalId String? // CRM-side ID returned on success
   error      String?
   meta       Json?
-  createdAt  DateTime  @default(now())
-  Campaign   Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+  Campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
 
   @@index([campaignId, createdAt])
   @@index([leadId, event])
@@ -625,6 +627,43 @@ enum InviteStatus {
   CANCELLED
 }
 
+// One subscription row per user (the billing owner). Seats > 1 covers team /
+// agency plans later. tier here is the PAID entitlement; User.tier is kept in
+// sync by the billing webhook (the single writer) so all existing read paths
+// keep working. Never set by the client.
+model Subscription {
+  id                 String             @id @default(cuid())
+  userId             String             @unique
+  provider           String             @default("razorpay")
+  providerCustomerId String?
+  providerSubId      String?            @unique // razorpay subscription_id
+  tier               SubscriptionTier
+  cycle              BillingCycle       @default(MONTHLY)
+  status             SubscriptionStatus @default(TRIALING)
+  seats              Int                @default(1)
+  currentPeriodEnd   DateTime?
+  cancelAtPeriodEnd  Boolean            @default(false)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  User               User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+}
+
+// Idempotency ledger for provider webhooks — every event id is recorded once so
+// retries/replays are no-ops. eventId is the provider's event identifier
+// (Razorpay: the x-razorpay-event-id header).
+model WebhookEvent {
+  id          String   @id @default(cuid())
+  provider    String   @default("razorpay")
+  eventId     String   @unique
+  eventType   String
+  payload     Json?
+  processedAt DateTime @default(now())
+
+  @@index([provider, eventType])
+}
+
 enum LeadStatus {
   IMPORTED
   PENDING
@@ -652,6 +691,21 @@ enum SubscriptionTier {
   PLUS
   EXPERT
   ULTIMATE
+  BUSINESS
+}
+
+enum BillingCycle {
+  MONTHLY
+  ANNUAL
+}
+
+// Normalized subscription state (mapped from provider-specific statuses).
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  PAUSED
 }
 
 enum TeamRole {
