@@ -3,6 +3,7 @@ import { prisma } from '@repo/db';
 import { getOrAssignProxy } from '../services/proxy.service';
 import { enqueueCampaign } from '../workers/campaign-worker';
 import { leadCapForTier } from '../config/plans';
+import { featureAllowed } from '../campaign-engine/safety/quota';
 import { queueCampaign as queueCampaignSvc, unqueueCampaign as unqueueCampaignSvc, reorderQueue } from '../services/campaign-queue.service';
 import { estimateCampaignEta } from '../campaign-engine/safety/eta';
 import { syncLeadToCRMs } from '../services/crmService';
@@ -172,6 +173,23 @@ export const startCampaign = async (req: any, res: Response) => {
                 message: `Your plan allows ${leadCap} leads per campaign (got ${effectiveLeadCount}). Reduce the lead count or upgrade your plan.`,
                 cap: leadCap,
                 provided: effectiveLeadCount,
+            });
+        }
+
+        // Multichannel gate: campaigns that send email (EMAIL / EMAIL_FINDER
+        // nodes) are a Business-tier feature. No-op unless ENFORCE_TIER_QUOTAS=1.
+        const wfNodes: any[] = Array.isArray((campaign.workflowJson as any)?.nodes)
+            ? (campaign.workflowJson as any).nodes
+            : [];
+        const hasEmailNode = wfNodes.some((n) => {
+            const d = n?.data || n;
+            const raw = String(d?.subType || n?.subType || n?.type || '').toUpperCase();
+            return raw === 'EMAIL' || raw === 'EMAIL_FINDER';
+        });
+        if (hasEmailNode && !(await featureAllowed(userId, 'multichannel'))) {
+            return res.status(403).json({
+                error: 'UPGRADE_REQUIRED',
+                message: 'Email + multichannel campaigns are available on the Business plan.',
             });
         }
 

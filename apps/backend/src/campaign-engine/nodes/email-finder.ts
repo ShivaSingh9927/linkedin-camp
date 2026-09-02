@@ -2,6 +2,7 @@ import { NodeHandler, NodeResult } from '../types';
 import { prisma } from '@repo/db';
 import { findEmail } from '../../services/email-finder.service';
 import { getEmailFinderHealth } from '../../services/email-finder-health';
+import { checkEmailFinderQuota, logEmailFinderAction } from '../safety/quota';
 
 /**
  * EMAIL_FINDER — resolves a sendable email for the lead.
@@ -61,6 +62,13 @@ export const emailFinder: NodeHandler = async (ctx): Promise<NodeResult> => {
     const firstName = (storedOutputs['profile-visit']?.firstName as string | undefined) || lead.firstName || '';
     const lastName = (storedOutputs['profile-visit']?.lastName as string | undefined) || lead.lastName || '';
 
+    // Tier credit budget (real box cost). No-op unless ENFORCE_TIER_QUOTAS=1.
+    const credits = await checkEmailFinderQuota(ctx.userId);
+    if (!credits.allowed) {
+        console.log(`[EMAIL-FINDER] Credits exhausted (${credits.used}/${credits.cap}) for user ${ctx.userId} — skipping lookup.`);
+        return { success: true, output: { email: null, source: null, found: false, reason: 'credits_exhausted' } };
+    }
+
     console.log(`[EMAIL-FINDER] No email on file — searching for ${firstName} ${lastName} @ ${company}`);
     const result = await findEmail({
         firstName,
@@ -68,6 +76,8 @@ export const emailFinder: NodeHandler = async (ctx): Promise<NodeResult> => {
         company,
         jobTitle: (storedOutputs['profile-visit']?.jobTitle as string | undefined) || lead.jobTitle || undefined,
     });
+    // One lookup consumed (the box did work regardless of hit/miss).
+    await logEmailFinderAction(ctx.userId);
 
     if (!result || !result.email) {
         console.log(`[EMAIL-FINDER] No email found for ${lead.firstName}.`);

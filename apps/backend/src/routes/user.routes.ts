@@ -3,6 +3,7 @@ import { authMiddleware, AuthRequest } from '../middleware/auth.middleware';
 import { prisma } from '@repo/db';
 import { mailService } from '../services/mail.service';
 import { encrypt, decrypt } from '../utils/crypto';
+import { featureAllowed } from '../campaign-engine/safety/quota';
 
 const router = Router();
 router.use(authMiddleware);
@@ -228,6 +229,18 @@ router.post('/parse-document', async (req: AuthRequest, res) => {
 router.put('/crm-tokens', async (req: AuthRequest, res) => {
     try {
         const { hubspotToken, pipedriveToken, notionToken, notionDatabaseId } = req.body;
+
+        // CRM sync is a paid feature (Core+). Only gate CONNECTING (a truthy
+        // token) — clearing tokens is always allowed. No-op unless
+        // ENFORCE_TIER_QUOTAS=1.
+        const connecting = !!(hubspotToken || pipedriveToken || notionToken);
+        if (connecting && !(await featureAllowed(req.user!.id, 'crmSync'))) {
+            return res.status(403).json({
+                error: 'UPGRADE_REQUIRED',
+                message: 'CRM sync is available on Core and above. Upgrade to connect HubSpot, Pipedrive, or Notion.',
+            });
+        }
+
         const updateData: any = {};
 
         if (hubspotToken !== undefined) {

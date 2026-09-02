@@ -1,5 +1,5 @@
 import { prisma } from '@repo/db';
-import { planFor } from '../../config/plans';
+import { planFor, tierAllows, type PlanFeatures } from '../../config/plans';
 
 // Per-user daily caps on LinkedIn write actions.
 //
@@ -92,6 +92,48 @@ export async function checkInviteQuota(userId: string): Promise<QuotaCheck> {
     const used = await getMonthlyInviteCount(userId);
     const remaining = Math.max(0, cap - used);
     return { allowed: used < cap, used, cap, remaining };
+}
+
+// ---- Feature gates (subscription tier) ----
+// Boolean plan features (crmSync / multichannel / team). Flag-gated like the
+// invite entitlement: returns allowed when ENFORCE_TIER_QUOTAS is off, so
+// current behaviour is unchanged until billing assigns paid tiers.
+export async function featureAllowed(userId: string, feature: keyof PlanFeatures): Promise<boolean> {
+    if (!tierQuotasEnforced()) return true;
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { tier: true } }).catch(() => null);
+    return tierAllows(user?.tier, feature);
+}
+
+// ---- Email-finder credit budget (subscription tier) ----
+// Real marginal cost (the finder box), so it's a hard cap — but still gated by
+// ENFORCE_TIER_QUOTAS. Paid tiers refill monthly; Free is a one-time grant
+// (counted all-time). One credit = one finder LOOKUP (logEmailFinderAction).
+export async function getEmailFinderCount(userId: string, sinceMonth: boolean): Promise<number> {
+    return prisma.actionLog.count({
+        where: {
+            userId,
+            actionType: 'email-finder',
+            status: 'SUCCESS',
+            ...(sinceMonth ? { executedAt: { gte: startOfMonthUTC() } } : {}),
+        },
+    }).catch(() => 0);
+}
+
+export async function checkEmailFinderQuota(userId: string): Promise<QuotaCheck> {
+    if (!tierQuotasEnforced()) return { allowed: true, used: 0, cap: Infinity, remaining: Infinity };
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { tier: true } }).catch(() => null);
+    const plan = planFor(user?.tier);
+    const cap = plan.emailFinderCredits;
+    const used = await getEmailFinderCount(userId, plan.emailFinderRecurring);
+    const remaining = Math.max(0, cap - used);
+    return { allowed: used < cap, used, cap, remaining };
+}
+
+// Record one consumed finder lookup against the budget. Best-effort.
+export async function logEmailFinderAction(userId: string): Promise<void> {
+    await prisma.actionLog.create({
+        data: { userId, actionType: 'email-finder', status: 'SUCCESS' },
+    }).catch(() => {});
 }
 
 // ---- Monthly people-search budget (LinkedIn Commercial Use Limit) ----

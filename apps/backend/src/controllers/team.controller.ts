@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { prisma } from '@repo/db';
 import crypto from 'crypto';
+import { featureAllowed } from '../campaign-engine/safety/quota';
 
 // Get current user's team
 export const getMyTeam = async (req: any, res: Response) => {
@@ -95,6 +96,14 @@ export const createTeam = async (req: any, res: Response) => {
     const { name } = req.body;
 
     if (!name) return res.status(400).json({ error: 'Team name is required' });
+
+    // Team collaboration is a Pro+ feature. No-op unless ENFORCE_TIER_QUOTAS=1.
+    if (!(await featureAllowed(userId, 'team'))) {
+        return res.status(403).json({
+            error: 'UPGRADE_REQUIRED',
+            message: 'Team collaboration is available on the Pro and Business plans.',
+        });
+    }
 
     try {
         // Check if user already has a team
