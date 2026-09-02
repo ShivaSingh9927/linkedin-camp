@@ -15,6 +15,9 @@ import {
     KeyRound,
     Copy,
     Trash2,
+    Webhook,
+    Send,
+    ExternalLink,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
@@ -25,7 +28,10 @@ import { PageHeader, Card, Button, Badge } from '@/components/ui';
 import { cn } from '@/lib/utils';
 import api from '@/lib/api';
 
-type SectionKey = 'account' | 'safety' | 'linkedin' | 'email' | 'integrations' | 'billing' | 'api';
+// API docs (Redoc) are served by the backend on the API domain, not the app.
+const DOCS_URL = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/v1\/?$/, '').replace(/\/$/, '') + '/api/public/v1/docs';
+
+type SectionKey = 'account' | 'safety' | 'linkedin' | 'email' | 'integrations' | 'billing' | 'api' | 'webhooks';
 
 const NAV_GROUPS: { label: string; items: { key: SectionKey; label: string; icon: any; href?: string }[] }[] = [
     {
@@ -49,7 +55,10 @@ const NAV_GROUPS: { label: string; items: { key: SectionKey; label: string; icon
     },
     {
         label: 'Developer',
-        items: [{ key: 'api', label: 'API keys', icon: KeyRound }],
+        items: [
+            { key: 'api', label: 'API keys', icon: KeyRound },
+            { key: 'webhooks', label: 'Webhooks', icon: Webhook },
+        ],
     },
 ];
 
@@ -129,6 +138,7 @@ export default function SettingsPage() {
                     {activeSection === 'integrations' && <IntegrationsSettings />}
                     {activeSection === 'billing' && <BillingSection />}
                     {activeSection === 'api' && <ApiKeysSection />}
+                    {activeSection === 'webhooks' && <WebhooksSection />}
                 </div>
             </div>
         </div>
@@ -478,6 +488,9 @@ function ApiKeysSection() {
             <p className="text-[13px] text-ink-500 font-medium mb-5">
                 Use these to connect Qampi to n8n, Zapier, Make, or your own scripts. Send the key as
                 <code className="mx-1 px-1.5 py-0.5 bg-surface rounded text-[12px]">Authorization: Bearer &lt;key&gt;</code>.
+                <a href={DOCS_URL} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 ml-1 text-brand-600 font-semibold hover:underline">
+                    View API docs <ExternalLink className="w-3 h-3" />
+                </a>
             </p>
 
             {/* Freshly created key — shown once */}
@@ -523,6 +536,169 @@ function ApiKeysSection() {
                             <Button variant="outline" size="sm" onClick={() => revoke(k.id)}>
                                 <Trash2 className="w-3.5 h-3.5 mr-1" />Revoke
                             </Button>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </Card>
+    );
+}
+
+interface WebhookRow {
+    id: string;
+    url: string;
+    events: string[];
+    active: boolean;
+    failureCount: number;
+    lastError: string | null;
+    lastDeliveryAt: string | null;
+}
+
+function WebhooksSection() {
+    const [hooks, setHooks] = useState<WebhookRow[]>([]);
+    const [allEvents, setAllEvents] = useState<string[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [url, setUrl] = useState('');
+    const [selected, setSelected] = useState<string[]>([]);
+    const [creating, setCreating] = useState(false);
+    const [freshSecret, setFreshSecret] = useState<string | null>(null);
+    const [testingId, setTestingId] = useState<string | null>(null);
+
+    const load = useCallback(() => {
+        setLoading(true);
+        Promise.all([api.get('/webhooks'), api.get('/webhooks/events')])
+            .then(([h, e]) => {
+                setHooks(h.data?.data || []);
+                const evs: string[] = e.data?.events || [];
+                setAllEvents(evs);
+                setSelected((s) => (s.length ? s : evs));
+            })
+            .catch(() => setHooks([]))
+            .finally(() => setLoading(false));
+    }, []);
+    useEffect(() => { load(); }, [load]);
+
+    function toggleEvent(ev: string) {
+        setSelected((s) => (s.includes(ev) ? s.filter((x) => x !== ev) : [...s, ev]));
+    }
+
+    async function create() {
+        if (!/^https?:\/\//i.test(url)) { toast.error('Enter a valid http(s) URL'); return; }
+        if (!selected.length) { toast.error('Pick at least one event'); return; }
+        setCreating(true);
+        try {
+            const { data } = await api.post('/webhooks', { url: url.trim(), events: selected });
+            setFreshSecret(data.webhook.secret);
+            setUrl('');
+            load();
+        } catch (e: any) {
+            toast.error(e?.response?.data?.message || e?.response?.data?.error || 'Could not create webhook');
+        } finally {
+            setCreating(false);
+        }
+    }
+
+    async function test(id: string) {
+        setTestingId(id);
+        try {
+            const { data } = await api.post(`/webhooks/${id}/test`);
+            data?.ok ? toast.success('Test event delivered ✓') : toast.error(`Test failed: ${data?.error || 'no response'}`);
+        } catch {
+            toast.error('Test failed');
+        } finally {
+            setTestingId(null);
+        }
+    }
+
+    async function remove(id: string) {
+        if (!window.confirm('Remove this webhook? The integration using it will stop receiving events.')) return;
+        try {
+            await api.delete(`/webhooks/${id}`);
+            toast.success('Webhook removed');
+            load();
+        } catch {
+            toast.error('Could not remove webhook');
+        }
+    }
+
+    function copySecret() {
+        if (freshSecret) { navigator.clipboard?.writeText(freshSecret); toast.success('Copied to clipboard'); }
+    }
+
+    return (
+        <Card className="p-6">
+            <div className="flex items-center gap-2 mb-1">
+                <h3 className="text-[15px] font-bold text-ink-900">Webhooks</h3>
+            </div>
+            <p className="text-[13px] text-ink-500 font-medium mb-5">
+                Get notified in n8n, Zapier, Make, or your own server when things happen — a lead replies, connects, and more.
+                <a href={DOCS_URL} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 ml-1 text-brand-600 font-semibold hover:underline">
+                    View API docs <ExternalLink className="w-3 h-3" />
+                </a>
+            </p>
+
+            {freshSecret && (
+                <div className="mb-5 p-4 rounded-control border border-brand-200 bg-brand-50">
+                    <div className="text-[12px] font-bold text-brand-700 mb-2">Copy your signing secret now — you won't see it again. Use it to verify the <code>X-Qampi-Signature</code> header.</div>
+                    <div className="flex items-center gap-2">
+                        <code className="flex-1 min-w-0 truncate text-[12px] bg-white rounded-control px-3 py-2 border border-line">{freshSecret}</code>
+                        <Button variant="outline" size="sm" onClick={copySecret}><Copy className="w-3.5 h-3.5 mr-1" />Copy</Button>
+                        <Button variant="outline" size="sm" onClick={() => setFreshSecret(null)}>Done</Button>
+                    </div>
+                </div>
+            )}
+
+            {/* Create */}
+            <div className="p-4 bg-surface rounded-control mb-5">
+                <input
+                    value={url}
+                    onChange={(e) => setUrl(e.target.value)}
+                    placeholder="https://your-tool.com/webhook/…"
+                    className="w-full px-3 py-2 rounded-control border border-line text-[13px] outline-none focus:border-brand-400 mb-3"
+                />
+                <div className="flex flex-wrap gap-2 mb-3">
+                    {allEvents.map((ev) => (
+                        <button
+                            key={ev}
+                            onClick={() => toggleEvent(ev)}
+                            className={cn(
+                                'px-2.5 py-1 rounded-chip text-[12px] font-semibold border transition',
+                                selected.includes(ev) ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-ink-500 border-line hover:border-brand-300'
+                            )}
+                        >
+                            {ev}
+                        </button>
+                    ))}
+                </div>
+                <Button size="sm" onClick={create} disabled={creating}>
+                    {creating ? 'Creating…' : 'Add webhook'}
+                </Button>
+            </div>
+
+            {/* List */}
+            {loading ? (
+                <div className="text-[13px] text-ink-400 flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />Loading…</div>
+            ) : hooks.length === 0 ? (
+                <div className="text-[13px] text-ink-400">No webhooks yet.</div>
+            ) : (
+                <div className="space-y-2">
+                    {hooks.map((h) => (
+                        <div key={h.id} className="flex items-center justify-between p-3 bg-surface rounded-control gap-3">
+                            <div className="min-w-0">
+                                <div className="font-semibold text-[13px] text-ink-900 truncate">{h.url}</div>
+                                <div className="text-[12px] text-ink-400 truncate">
+                                    {h.events.join(', ')}
+                                    {h.failureCount > 0 && <span className="text-rose-500"> · {h.failureCount} recent failures</span>}
+                                </div>
+                            </div>
+                            <div className="flex gap-2 shrink-0">
+                                <Button variant="outline" size="sm" onClick={() => test(h.id)} disabled={testingId === h.id}>
+                                    <Send className="w-3.5 h-3.5 mr-1" />{testingId === h.id ? 'Sending…' : 'Test'}
+                                </Button>
+                                <Button variant="outline" size="sm" onClick={() => remove(h.id)}>
+                                    <Trash2 className="w-3.5 h-3.5 mr-1" />Remove
+                                </Button>
+                            </div>
                         </div>
                     ))}
                 </div>

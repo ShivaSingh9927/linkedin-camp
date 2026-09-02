@@ -145,6 +145,7 @@ const httpServer = app.listen(serverPort, '0.0.0.0', () => {
             const apiKeyRoutes = (await import('./routes/api-key.routes')).default;
             const publicApiRoutes = (await import('./routes/public-api.routes')).default;
             const publicApiDocsRoutes = (await import('./routes/public-api-docs.routes')).default;
+            const webhookMgmtRoutes = (await import('./routes/webhook-mgmt.routes')).default;
             const { downgradeExpiredTrials } = await import('./services/trial.service');
             const { default: rateLimit } = await import('express-rate-limit');
 
@@ -186,6 +187,7 @@ const httpServer = app.listen(serverPort, '0.0.0.0', () => {
             app.use('/api/v1/voyager', voyagerRoutes);
             app.use('/api/v1/billing', billingRoutes);
             app.use('/api/v1/api-keys', apiKeyRoutes);
+            app.use('/api/v1/webhooks', webhookMgmtRoutes);
             // Public API for automation tools (n8n/Zapier/Make).
             // Docs (openapi.json + /docs) are unauthenticated and mounted FIRST
             // so the API-key gate on publicApiRoutes doesn't cover them.

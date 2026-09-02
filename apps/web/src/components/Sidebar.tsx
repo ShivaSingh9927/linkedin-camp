@@ -14,13 +14,17 @@ import {
   Sparkles,
   UsersRound,
   BellRing,
+  BookOpen,
   LogOut,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import api from '@/lib/api';
 import { resetAnalytics } from '@/lib/analytics';
 
-const menuItems = [
+// API docs (Redoc) live on the API domain, not the app — open in a new tab.
+const DOCS_URL = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/v1\/?$/, '').replace(/\/$/, '') + '/api/public/v1/docs';
+
+const menuItems: { label: string; icon: any; href: string; badgeKey?: string; external?: boolean }[] = [
   { label: 'Dashboard', icon: LayoutDashboard, href: '/' },
   { label: 'AI Profile', icon: Sparkles, href: '/settings/ai-profile' },
   { label: 'Campaigns', icon: Target, href: '/campaigns' },
@@ -30,6 +34,7 @@ const menuItems = [
   { label: 'Follow-ups', icon: BellRing, href: '/campaigns/queue', badgeKey: 'followups' },
   { label: 'Crew', icon: UsersRound, href: '/team' },
   { label: 'Pricing', icon: Sparkles, href: '/pricing' },
+  { label: 'API Docs', icon: BookOpen, href: DOCS_URL, external: true },
 ];
 
 export function Sidebar() {
@@ -91,16 +96,13 @@ export function Sidebar() {
       {/* Nav */}
       <nav className="px-3 mt-5 space-y-0.5 flex-1">
         {menuItems.map((item) => {
-          const active = item.href === '/' ? pathname === '/' : pathname.startsWith(item.href);
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                'flex items-center gap-3 px-3 py-2.5 rounded-control transition-all font-semibold text-[13px]',
-                active ? 'bg-brand text-white shadow-lift' : 'text-ink-500 hover:bg-surface hover:text-foreground',
-              )}
-            >
+          const active = !item.external && (item.href === '/' ? pathname === '/' : pathname.startsWith(item.href));
+          const className = cn(
+            'flex items-center gap-3 px-3 py-2.5 rounded-control transition-all font-semibold text-[13px]',
+            active ? 'bg-brand text-white shadow-lift' : 'text-ink-500 hover:bg-surface hover:text-foreground',
+          );
+          const inner = (
+            <>
               <item.icon className={cn('w-[18px] h-[18px]', active ? 'text-white' : 'text-ink-400')} />
               <span>{item.label}</span>
               {item.badgeKey === 'followups' && followUpCount > 0 && (
@@ -111,6 +113,15 @@ export function Sidebar() {
                   {followUpCount}
                 </span>
               )}
+            </>
+          );
+          return item.external ? (
+            <a key={item.href} href={item.href} target="_blank" rel="noreferrer" className={className}>
+              {inner}
+            </a>
+          ) : (
+            <Link key={item.href} href={item.href} className={className}>
+              {inner}
             </Link>
           );
         })}
