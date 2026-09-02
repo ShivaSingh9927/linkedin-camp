@@ -16,7 +16,21 @@ export interface Tier {
     icon: any;
 }
 
-export function PricingCard({ tier, isYearly }: { tier: Tier, isYearly: boolean }) {
+export function PricingCard({
+    tier,
+    isYearly,
+    onSelect,
+    busy = false,
+    ctaDisabled = false,
+    billedNote,
+}: {
+    tier: Tier;
+    isYearly: boolean;
+    onSelect?: () => void;
+    busy?: boolean;
+    ctaDisabled?: boolean;
+    billedNote?: string;
+}) {
     return (
         <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -55,9 +69,9 @@ export function PricingCard({ tier, isYearly }: { tier: Tier, isYearly: boolean 
                     </span>
                     <span className="text-sm font-bold text-slate-400">/mo</span>
                 </div>
-                {isYearly && tier.monthlyPrice !== "Free" && (
+                {isYearly && billedNote && tier.monthlyPrice !== "Free" && (
                     <p className="mt-1 text-[10px] font-black text-accent uppercase tracking-wider">
-                        Billed annually (Save 50%)
+                        {billedNote}
                     </p>
                 )}
             </div>
@@ -77,14 +91,17 @@ export function PricingCard({ tier, isYearly }: { tier: Tier, isYearly: boolean 
             </ul>
 
             <button
+                onClick={onSelect}
+                disabled={busy || ctaDisabled}
                 className={cn(
                     "w-full rounded-2xl py-3 text-[13px] font-black uppercase tracking-widest transition-all active:scale-95",
+                    "disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100",
                     tier.highlighted
                         ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20 hover:bg-primary/90 hover:shadow-xl"
                         : "bg-slate-900 text-white hover:bg-slate-800"
                 )}
             >
-                {tier.buttonText}
+                {busy ? "Starting…" : tier.buttonText}
             </button>
         </motion.div>
     );

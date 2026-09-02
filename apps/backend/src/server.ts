@@ -134,6 +134,7 @@ const httpServer = app.listen(serverPort, '0.0.0.0', () => {
             const emailAccountRoutes = (await import('./routes/email-account.routes')).default;
             const oauthRoutes = (await import('./routes/oauth.routes')).default;
             const voyagerRoutes = (await import('./routes/voyager.routes')).default;
+            const billingRoutes = (await import('./routes/billing.routes')).default;
             const { downgradeExpiredTrials } = await import('./services/trial.service');
             const { default: rateLimit } = await import('express-rate-limit');
 
@@ -173,6 +174,7 @@ const httpServer = app.listen(serverPort, '0.0.0.0', () => {
             app.use('/api/v1/email-account', emailAccountRoutes);
             app.use('/api/v1/oauth', oauthRoutes);
             app.use('/api/v1/voyager', voyagerRoutes);
+            app.use('/api/v1/billing', billingRoutes);
             app.use('/api/webhooks', webhookRoutes);
 
             // Sentry error handler must come after all routes
