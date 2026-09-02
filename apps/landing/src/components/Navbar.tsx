@@ -16,12 +16,13 @@ export function Navbar() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  const navLinks = [
+  const navLinks: { label: string; href: string; id: string; external?: boolean }[] = [
     { label: "LinkedIn", href: "#linkedin", id: "nav-linkedin" },
     { label: "Email", href: "#email", id: "nav-email" },
     { label: "Sequences", href: "#sequences", id: "nav-sequences" },
     { label: "CRM", href: "#crm", id: "nav-crm" },
     { label: "Blog", href: "/blog", id: "nav-blog" },
+    { label: "API Docs", href: "https://api.qampi.com/api/public/v1/docs", id: "nav-docs", external: true },
   ];
 
   return (
@@ -41,6 +42,8 @@ export function Navbar() {
                 key={link.label}
                 id={link.id}
                 href={link.href}
+                target={link.external ? "_blank" : undefined}
+                rel={link.external ? "noreferrer" : undefined}
                 className="text-sm font-medium text-slate-600 hover:text-primary transition-colors"
               >
                 {link.label}
@@ -89,6 +92,8 @@ export function Navbar() {
               <a
                 key={link.label}
                 href={link.href}
+                target={link.external ? "_blank" : undefined}
+                rel={link.external ? "noreferrer" : undefined}
                 className="text-base font-semibold text-slate-700 hover:text-primary transition-colors py-2"
                 onClick={() => setIsOpen(false)}
               >
