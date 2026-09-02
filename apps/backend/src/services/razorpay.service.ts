@@ -67,6 +67,17 @@ export async function createSubscription(opts: {
     return { id: data.id, short_url: data.short_url, status: data.status };
 }
 
+// Cancel a subscription. Default cancels at the end of the current billing
+// cycle (the customer keeps access they've paid for); pass atCycleEnd=false for
+// an immediate cancel. Razorpay emits subscription.cancelled, which the webhook
+// turns into the tier revocation.
+export async function cancelSubscription(subId: string, atCycleEnd = true): Promise<{ status: string }> {
+    const { data } = await client().post(`/subscriptions/${subId}/cancel`, {
+        cancel_at_cycle_end: atCycleEnd ? 1 : 0,
+    });
+    return { status: data.status };
+}
+
 // Razorpay subscription status → our normalized enum. Used at checkout (initial
 // row) and by the Phase 3 webhook (state sync).
 export function mapSubscriptionStatus(razorpayStatus: string): SubscriptionStatus {

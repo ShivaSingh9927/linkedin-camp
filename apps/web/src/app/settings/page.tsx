@@ -14,6 +14,7 @@ import {
     Loader2,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useRouter } from 'next/navigation';
 import LinkedInConnectivity from '@/components/LinkedInConnectivity';
 import IntegrationsSettings from '@/components/IntegrationsSettings';
 import EmailAccountSettings from '@/components/EmailAccountSettings';
@@ -321,34 +322,89 @@ function SafetySection() {
     );
 }
 
+interface BillingSub {
+    tier: string;
+    label: string;
+    status: string;
+    cycle: string;
+    currentPeriodEnd: string | null;
+    cancelAtPeriodEnd: boolean;
+}
+
 function BillingSection() {
+    const router = useRouter();
+    const [sub, setSub] = useState<BillingSub | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [canceling, setCanceling] = useState(false);
+
+    const load = useCallback(() => {
+        setLoading(true);
+        api.get('/billing/subscription')
+            .then((r) => setSub(r.data?.subscription || null))
+            .catch(() => setSub(null))
+            .finally(() => setLoading(false));
+    }, []);
+    useEffect(() => { load(); }, [load]);
+
+    const paid = !!sub && sub.tier !== 'FREE';
+    const active = paid && (sub!.status === 'ACTIVE' || sub!.status === 'TRIALING');
+    const renew = sub?.currentPeriodEnd ? new Date(sub.currentPeriodEnd).toLocaleDateString() : null;
+
+    async function cancel() {
+        if (!window.confirm('Cancel your plan? You keep access until the end of the current billing period.')) return;
+        setCanceling(true);
+        try {
+            await api.post('/billing/cancel');
+            toast.success('Your plan will end at the current period — access continues until then.');
+            load();
+        } catch (e: any) {
+            toast.error(e?.response?.data?.error || 'Could not cancel');
+        } finally {
+            setCanceling(false);
+        }
+    }
+
     return (
         <Card className="p-6">
             <div className="flex items-center gap-2 mb-1">
                 <h3 className="text-[15px] font-bold text-ink-900">Subscription</h3>
-                <Badge tone="brand">Advanced</Badge>
+                {paid && <Badge tone="brand">{sub!.label}</Badge>}
             </div>
             <p className="text-[13px] text-ink-500 font-medium mb-5">
-                You're on the Advanced plan. Billing is managed by our team.
+                {loading ? 'Loading your plan…'
+                    : paid ? `You're on the ${sub!.label} plan (${sub!.cycle === 'ANNUAL' ? 'annual' : 'monthly'}).`
+                        : "You're on the Free plan."}
             </p>
-            <div className="flex items-center justify-between p-4 bg-surface rounded-control">
-                <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 bg-white rounded-control shadow-soft grid place-items-center text-emerald-500">
-                        <CheckCircle2 className="w-4 h-4" />
+
+            {!loading && (
+                <div className="flex items-center justify-between p-4 bg-surface rounded-control gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-9 h-9 bg-white rounded-control shadow-soft grid place-items-center text-emerald-500 shrink-0">
+                            <CheckCircle2 className="w-4 h-4" />
+                        </div>
+                        <div className="min-w-0">
+                            <div className="font-semibold text-[13px] text-ink-900">
+                                {paid ? `${sub!.label} · ${sub!.status.toLowerCase()}` : 'Free plan'}
+                            </div>
+                            <div className="text-[12px] text-ink-400">
+                                {sub?.cancelAtPeriodEnd && renew ? `Ends on ${renew} — won't renew.`
+                                    : paid && renew ? `Renews on ${renew}.`
+                                        : 'Upgrade to unlock more invites, CRM sync, and email.'}
+                            </div>
+                        </div>
                     </div>
-                    <div>
-                        <div className="font-semibold text-[13px] text-ink-900">Advanced plan · active</div>
-                        <div className="text-[12px] text-ink-400">Full access to campaigns, AI, and integrations.</div>
+                    <div className="flex gap-2 shrink-0">
+                        <Button variant="outline" size="sm" onClick={() => router.push('/pricing')}>
+                            {paid ? 'Change plan' : 'Upgrade'}
+                        </Button>
+                        {active && !sub!.cancelAtPeriodEnd && (
+                            <Button variant="outline" size="sm" onClick={cancel} disabled={canceling}>
+                                {canceling ? 'Canceling…' : 'Cancel'}
+                            </Button>
+                        )}
                     </div>
                 </div>
-                <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => toast.info('Reach out to your account manager to change plans.')}
-                >
-                    Contact us
-                </Button>
-            </div>
+            )}
         </Card>
     );
 }

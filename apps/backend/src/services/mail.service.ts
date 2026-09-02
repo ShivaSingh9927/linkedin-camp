@@ -135,6 +135,36 @@ class MailService {
         });
     }
 
+    async sendPaymentFailedEmail(to: string, name: string) {
+        return this.send('Payment-failed email', {
+            to,
+            subject: 'Action needed: your Qampi payment didn\'t go through',
+            html: `
+                <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; rounded: 12px;">
+                    <h2 style="color: #0f172a;">Hi ${name || 'there'},</h2>
+                    <p style="color: #475569; line-height: 1.6;">We couldn't process the latest payment for your Qampi subscription. Your plan is still active for now, but it will pause if we can't collect payment.</p>
+                    <p style="color: #475569; line-height: 1.6;">Please update your payment method to keep your campaigns running without interruption.</p>
+                    <a href="${APP_URL}/settings" style="display: inline-block; margin-top: 20px; padding: 12px 24px; background-color: #7c3aed; color: white; text-decoration: none; border-radius: 8px; font-weight: bold;">Update payment method</a>
+                </div>
+            `,
+        });
+    }
+
+    async sendSubscriptionEndedEmail(to: string, name: string) {
+        return this.send('Subscription-ended email', {
+            to,
+            subject: 'Your Qampi plan has ended',
+            html: `
+                <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; rounded: 12px;">
+                    <h2 style="color: #0f172a;">Hi ${name || 'there'},</h2>
+                    <p style="color: #475569; line-height: 1.6;">Your Qampi subscription has ended and your account has moved to the Free plan. Your data and campaigns are safe.</p>
+                    <p style="color: #475569; line-height: 1.6;">Ready to pick up where you left off? Reactivate any time.</p>
+                    <a href="${APP_URL}/pricing" style="display: inline-block; margin-top: 20px; padding: 12px 24px; background-color: #7c3aed; color: white; text-decoration: none; border-radius: 8px; font-weight: bold;">Choose a plan</a>
+                </div>
+            `,
+        });
+    }
+
     // For testing purposes.
     async sendTestEmail(to: string) {
         return this.send('Test email', {

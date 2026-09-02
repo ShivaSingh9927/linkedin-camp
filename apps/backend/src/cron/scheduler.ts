@@ -6,6 +6,7 @@ import { enqueueInboxSync } from '../workers/inbox.worker';
 import { withdrawOldInvites } from '../workers/withdraw.worker';
 import { sessionValidator } from '../services/session-validator.service';
 import { getStepType } from '../campaign-engine/workflow-graph';
+import { mailService } from '../services/mail.service';
 
 let redisConnection: any;
 let actionQueue: any;
@@ -385,6 +386,37 @@ const isUserActive = redisPresence === 'ACTIVE' || (now - lastActivity < twoMins
       }
     } catch (error) {
       console.error('[Scheduler] Delayed leads retry check failed:', error);
+    }
+  });
+
+  // Grace-period downgrade (billing). A subscription whose payment failed goes
+  // PAST_DUE but keeps its tier until the paid period ends; after that we move
+  // the user to Free. Daily at 03:00. Real billing lifecycle — independent of
+  // ENFORCE_TIER_QUOTAS.
+  cron.schedule('0 3 * * *', async () => {
+    try {
+      const now = new Date();
+      const expired = await prisma.subscription.findMany({
+        where: { status: 'PAST_DUE', currentPeriodEnd: { lt: now } },
+        select: { id: true, userId: true },
+      });
+      if (!expired.length) return;
+      console.log(`[Scheduler] Grace downgrade: ${expired.length} past-due subscription(s) expired.`);
+      for (const sub of expired) {
+        await prisma.subscription.update({ where: { id: sub.id }, data: { status: 'CANCELED' } }).catch(() => {});
+        await prisma.user.update({ where: { id: sub.userId }, data: { tier: 'FREE' } }).catch(() => {});
+        const u = await prisma.user.findUnique({
+          where: { id: sub.userId }, select: { email: true, firstName: true },
+        }).catch(() => null);
+        if (u) {
+          await prisma.notification.create({
+            data: { userId: sub.userId, type: 'INFO', title: 'Your plan has ended', body: 'Your subscription lapsed after a failed payment. You\'re now on the Free plan.' },
+          }).catch(() => {});
+          await mailService.sendSubscriptionEndedEmail(u.email, u.firstName || '').catch(() => {});
+        }
+      }
+    } catch (error) {
+      console.error('[Scheduler] Grace downgrade check failed:', error);
     }
   });
 };

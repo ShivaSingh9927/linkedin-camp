@@ -7,8 +7,10 @@ import {
     razorpayKeyId,
     createCustomer,
     createSubscription,
+    cancelSubscription,
     mapSubscriptionStatus,
 } from '../services/razorpay.service';
+import { mailService } from '../services/mail.service';
 
 // GET /api/v1/billing/plans
 // The pricing page renders entirely from this, so plans live in ONE place
@@ -122,6 +124,47 @@ export async function createCheckout(req: any, res: Response) {
     }
 }
 
+// GET /api/v1/billing/subscription — the current plan for the settings/billing UI.
+export async function getSubscription(req: any, res: Response) {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const sub = await prisma.subscription.findUnique({ where: { userId } }).catch(() => null);
+    if (!sub) return res.json({ subscription: null, tier: 'FREE', label: 'Free' });
+
+    return res.json({
+        subscription: {
+            tier: sub.tier,
+            label: planFor(sub.tier).label,
+            status: sub.status,
+            cycle: sub.cycle,
+            currentPeriodEnd: sub.currentPeriodEnd,
+            cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
+        },
+    });
+}
+
+// POST /api/v1/billing/cancel — cancel at the end of the paid period (access
+// kept until then). The webhook's subscription.cancelled revokes the tier.
+export async function cancelBilling(req: any, res: Response) {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const sub = await prisma.subscription.findUnique({ where: { userId } }).catch(() => null);
+    if (!sub || !sub.providerSubId) return res.status(400).json({ error: 'No active subscription' });
+    if (sub.status === 'CANCELED') return res.json({ ok: true, alreadyCanceled: true });
+
+    try {
+        await cancelSubscription(sub.providerSubId, true);
+        await prisma.subscription.update({ where: { userId }, data: { cancelAtPeriodEnd: true } });
+        return res.json({ ok: true, cancelAtPeriodEnd: true, currentPeriodEnd: sub.currentPeriodEnd });
+    } catch (err: any) {
+        const detail = err?.response?.data?.error?.description || err?.message || 'cancel failed';
+        console.error('[BILLING] cancel error:', detail);
+        return res.status(502).json({ error: `Could not cancel: ${detail}` });
+    }
+}
+
 // POST /api/webhooks/razorpay  (NO auth — called by Razorpay servers)
 // The ONLY writer of User.tier. Verifies the HMAC signature over the raw body,
 // dedupes via the WebhookEvent ledger, then advances the local Subscription and
@@ -204,8 +247,36 @@ async function applyRazorpayEvent(event: any): Promise<void> {
         } else if (mapped === 'CANCELED') {
             await prisma.user.update({ where: { id: userId }, data: { tier: 'FREE' } });
         }
+
+        // Dunning: a charge failed (pending = will retry, halted = retries
+        // exhausted). Keep the tier for the grace window (until currentPeriodEnd;
+        // the grace cron downgrades after that) but nudge the user to fix payment.
+        if (type === 'subscription.pending' || type === 'subscription.halted') {
+            await notifyPaymentIssue(userId);
+        }
         return;
     }
 
-    // payment.failed → recorded only; dunning/grace handled in Phase 5.
+    // payment.failed carries no subscription entity; the subscription.pending/
+    // .halted events above are the ones we act on for dunning.
+}
+
+// In-app notification + email nudging the user to fix a failed payment.
+async function notifyPaymentIssue(userId: string): Promise<void> {
+    const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { email: true, firstName: true },
+    }).catch(() => null);
+    if (!user) return;
+
+    await prisma.notification.create({
+        data: {
+            userId,
+            type: 'INFO',
+            title: 'Payment issue on your subscription',
+            body: 'We couldn\'t collect your latest payment. Update your payment method to keep your plan active.',
+        },
+    }).catch(() => {});
+
+    await mailService.sendPaymentFailedEmail(user.email, user.firstName || '').catch(() => {});
 }
