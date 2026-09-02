@@ -38,7 +38,10 @@ export async function emitCrmEvent(payload: CrmEventPayload): Promise<void> {
         if (!crmQueue) {
             // No Redis / queue not initialized — fall back to inline sync so
             // dev environments still see CRM writes. Cheap because dev users
-            // typically have no provider tokens.
+            // typically have no provider tokens. Deliver webhooks here too so the
+            // no-Redis path has parity with the worker path.
+            const { deliverWebhookEvent } = await import('./webhook-dispatch.service');
+            await deliverWebhookEvent(payload).catch(() => {});
             const { handleCrmEvent } = await import('../workers/crm.worker');
             await handleCrmEvent(payload);
             return;

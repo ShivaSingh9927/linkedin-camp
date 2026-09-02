@@ -478,6 +478,7 @@ model User {
   BusinessProfile         BusinessProfile?
   Subscription            Subscription?
   ApiKey                  ApiKey[]
+  WebhookSubscription     WebhookSubscription[]
   StrategyHistory         StrategyHistory[]
   Campaign                Campaign[]
   Integration             Integration[]
@@ -664,6 +665,25 @@ model ApiKey {
   revokedAt  DateTime?
   createdAt  DateTime  @default(now())
   User       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// Outbound webhook subscriptions — a user registers an n8n/Zapier/Make URL and
+// the events they want. On each matching lifecycle event we POST a signed
+// payload (HMAC-SHA256 of the body with `secret`, in X-Qampi-Signature).
+model WebhookSubscription {
+  id             String    @id @default(cuid())
+  userId         String
+  url            String
+  events         String[]  @default([])
+  secret         String
+  active         Boolean   @default(true)
+  failureCount   Int       @default(0)
+  lastError      String?
+  lastDeliveryAt DateTime?
+  createdAt      DateTime  @default(now())
+  User           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
 }

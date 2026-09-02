@@ -5,6 +5,7 @@ import { startCampaign } from '../controllers/campaign.controller';
 import { searchPeople } from '../services/people-search.service';
 import { findEmail } from '../services/email-finder.service';
 import { planFor } from '../config/plans';
+import { WEBHOOK_EVENTS, isValidWebhookEvent, generateWebhookSecret, deliverTestEvent } from '../services/webhook-dispatch.service';
 import {
     checkQuota, checkInviteQuota, checkSearchQuota, checkEmailFinderQuota,
     logSearchAction, logEmailFinderAction,
@@ -330,6 +331,51 @@ export async function getMe(req: any, res: Response) {
         onboardingComplete: u.registrationStep === 'COMPLETED',
         linkedin: { connected: !!u.linkedinCookie && !u.sessionInvalid, health: u.accountHealth },
     });
+}
+
+// ── Webhooks (outbound triggers) ─────────────────────────────────────────────
+export async function listWebhookEvents(_req: any, res: Response) {
+    return res.json({ events: WEBHOOK_EVENTS });
+}
+
+export async function createWebhook(req: any, res: Response) {
+    const userId = req.user.id;
+    const { url, events } = req.body || {};
+    if (!url || !/^https?:\/\//i.test(String(url))) {
+        return apiError(res, 400, 'VALIDATION_ERROR', 'A valid http(s) url is required', { field: 'url' });
+    }
+    const evts: string[] = Array.isArray(events) && events.length ? events : [...WEBHOOK_EVENTS];
+    const bad = evts.filter((e) => !isValidWebhookEvent(e));
+    if (bad.length) {
+        return apiError(res, 400, 'VALIDATION_ERROR', `Unknown events: ${bad.join(', ')}`, { validEvents: WEBHOOK_EVENTS });
+    }
+    const sub = await prisma.webhookSubscription.create({
+        data: { userId, url, events: evts, secret: generateWebhookSecret() },
+        select: { id: true, url: true, events: true, active: true, secret: true, createdAt: true },
+    });
+    // `secret` is returned so the integrator can verify X-Qampi-Signature.
+    return res.status(201).json({ webhook: sub });
+}
+
+export async function listWebhooks(req: any, res: Response) {
+    const rows = await prisma.webhookSubscription.findMany({
+        where: { userId: req.user.id },
+        select: { id: true, url: true, events: true, active: true, failureCount: true, lastError: true, lastDeliveryAt: true, createdAt: true },
+        orderBy: { createdAt: 'desc' },
+    });
+    return res.json({ data: rows, total: rows.length });
+}
+
+export async function deleteWebhook(req: any, res: Response) {
+    const result = await prisma.webhookSubscription.deleteMany({ where: { id: req.params.id, userId: req.user.id } });
+    if (result.count === 0) return apiError(res, 404, 'NOT_FOUND', 'Webhook not found');
+    return res.json({ ok: true });
+}
+
+export async function testWebhook(req: any, res: Response) {
+    const r = await deliverTestEvent(req.params.id, req.user.id);
+    if (!r.ok && r.error === 'not_found') return apiError(res, 404, 'NOT_FOUND', 'Webhook not found');
+    return res.json(r);
 }
 
 export async function getUsage(req: any, res: Response) {

@@ -115,6 +115,17 @@ export const initCRMWorker = () => {
         if ((data as EventJob).kind === 'event') {
             const payload = (data as EventJob).payload;
             console.log(`[CRM-WORKER] event ${payload.event} lead=${payload.leadId} campaign=${payload.campaignId}`);
+            // Fan out to the user's outbound webhooks ONCE (first attempt only, so
+            // a CRM-sync retry below never re-delivers). Best-effort — never fails
+            // the job. Independent of CRM policy (webhooks ≠ CRM sync).
+            if (job.attemptsMade === 0) {
+                try {
+                    const { deliverWebhookEvent } = await import('../services/webhook-dispatch.service');
+                    await deliverWebhookEvent(payload);
+                } catch (e: any) {
+                    console.error(`[CRM-WORKER] webhook fan-out error: ${e?.message}`);
+                }
+            }
             await handleCrmEvent(payload);
             return;
         }

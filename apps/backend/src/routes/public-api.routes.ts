@@ -9,6 +9,7 @@ import {
     listCampaigns, getCampaign, listCampaignLeads, enrollLeads, launchCampaign, createFromTemplate,
     searchPeopleHandler, enrichEmailHandler,
     getMe, getUsage,
+    listWebhookEvents, createWebhook, listWebhooks, deleteWebhook, testWebhook,
 } from '../public-api/handlers';
 
 const router = Router();
@@ -51,5 +52,12 @@ router.post('/campaigns/:id/launch', launchCampaign);
 
 router.post('/search/people', searchPeopleHandler);
 router.post('/enrich/email', enrichEmailHandler);
+
+// Outbound webhooks (triggers) — register an n8n/Zapier/Make URL + events.
+router.get('/webhooks/events', listWebhookEvents);
+router.get('/webhooks', listWebhooks);
+router.post('/webhooks', createWebhook);
+router.delete('/webhooks/:id', deleteWebhook);
+router.post('/webhooks/:id/test', testWebhook);
 
 export default router;
