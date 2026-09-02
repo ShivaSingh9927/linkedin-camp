@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import crypto from 'crypto';
 import { prisma } from '@repo/db';
 import { ACTIVE_PLANS, planFor, razorpayPlanId, type BillingCycle } from '../config/plans';
 import {
@@ -119,4 +120,92 @@ export async function createCheckout(req: any, res: Response) {
         console.error('[BILLING] checkout error:', detail);
         return res.status(502).json({ error: `Could not start checkout: ${detail}` });
     }
+}
+
+// POST /api/webhooks/razorpay  (NO auth — called by Razorpay servers)
+// The ONLY writer of User.tier. Verifies the HMAC signature over the raw body,
+// dedupes via the WebhookEvent ledger, then advances the local Subscription and
+// grants/revokes the tier. Always 200s after a valid signature so Razorpay
+// doesn't retry-storm on an app-side bug — the event is recorded for replay.
+export async function razorpayWebhook(req: any, res: Response) {
+    const secret = process.env.RAZORPAY_WEBHOOK_SECRET;
+    if (!secret) return res.status(503).json({ error: 'webhook not configured' });
+
+    const signature = req.headers['x-razorpay-signature'] as string | undefined;
+    const raw: Buffer | undefined = req.rawBody;
+    if (!signature || !raw) return res.status(400).json({ error: 'missing signature or body' });
+
+    const expected = crypto.createHmac('sha256', secret).update(raw).digest('hex');
+    const a = Buffer.from(expected);
+    const b = Buffer.from(signature);
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+        console.warn('[BILLING] webhook signature mismatch');
+        return res.status(401).json({ error: 'invalid signature' });
+    }
+
+    let event: any;
+    try { event = JSON.parse(raw.toString('utf8')); } catch { return res.status(400).json({ error: 'bad json' }); }
+
+    // Idempotency: Razorpay's event id (header), else a hash of the body.
+    const eventId = (req.headers['x-razorpay-event-id'] as string) || crypto.createHash('sha256').update(raw).digest('hex');
+    try {
+        await prisma.webhookEvent.create({
+            data: { provider: 'razorpay', eventId, eventType: event?.event || 'unknown', payload: event },
+        });
+    } catch (e: any) {
+        if (e?.code === 'P2002') return res.status(200).json({ ok: true, deduped: true });
+        console.error('[BILLING] webhook ledger write failed:', e?.message);
+    }
+
+    try {
+        await applyRazorpayEvent(event);
+    } catch (e: any) {
+        console.error('[BILLING] webhook apply error:', e?.message);
+    }
+    return res.status(200).json({ ok: true });
+}
+
+// Advance local state from a verified Razorpay event. Subscription lifecycle +
+// payment failure only; everything else is recorded (ledger) and ignored.
+async function applyRazorpayEvent(event: any): Promise<void> {
+    const type: string = event?.event || '';
+    const entity = event?.payload?.subscription?.entity;
+
+    if (type.startsWith('subscription.') && entity) {
+        const subId: string = entity.id;
+        const mapped = mapSubscriptionStatus(entity.status);
+        const currentEnd = entity.current_end ? new Date(entity.current_end * 1000) : null;
+
+        const local = await prisma.subscription.findUnique({ where: { providerSubId: subId } });
+        const userId: string | undefined = local?.userId || entity?.notes?.userId;
+        if (!userId) { console.warn(`[BILLING] webhook: no user for subscription ${subId}`); return; }
+
+        // Type-safe tier resolution (planFor maps unknown → FREE).
+        const tier = planFor(local?.tier ?? entity?.notes?.tier).key;
+        const cancelled = type === 'subscription.cancelled';
+
+        await prisma.subscription.upsert({
+            where: { userId },
+            create: {
+                userId, provider: 'razorpay', providerSubId: subId, tier,
+                status: mapped, currentPeriodEnd: currentEnd, cancelAtPeriodEnd: cancelled,
+            },
+            update: {
+                providerSubId: subId, status: mapped, currentPeriodEnd: currentEnd,
+                ...(cancelled ? { cancelAtPeriodEnd: true } : {}),
+            },
+        });
+
+        // The single write of User.tier: grant on active, revoke on terminal.
+        // PAST_DUE / PAUSED / TRIALING keep the current tier (grace window) —
+        // Phase 5 dunning refines the downgrade timing.
+        if (mapped === 'ACTIVE') {
+            await prisma.user.update({ where: { id: userId }, data: { tier } });
+        } else if (mapped === 'CANCELED') {
+            await prisma.user.update({ where: { id: userId }, data: { tier: 'FREE' } });
+        }
+        return;
+    }
+
+    // payment.failed → recorded only; dunning/grace handled in Phase 5.
 }

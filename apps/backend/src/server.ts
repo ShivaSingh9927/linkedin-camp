@@ -77,7 +77,13 @@ app.use(cors({
     },
     credentials: true,
 }));
-app.use(express.json({ limit: '10mb' }));
+// Stash the raw request body so webhook handlers can verify provider HMAC
+// signatures (Razorpay signs the exact bytes; a re-stringified JSON body would
+// not match). Harmless for every other route.
+app.use(express.json({
+    limit: '10mb',
+    verify: (req: any, _res, buf) => { req.rawBody = buf; },
+}));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Fix doubled /api/v1/api/v1/ prefix from Chrome extension bug
@@ -135,6 +141,7 @@ const httpServer = app.listen(serverPort, '0.0.0.0', () => {
             const oauthRoutes = (await import('./routes/oauth.routes')).default;
             const voyagerRoutes = (await import('./routes/voyager.routes')).default;
             const billingRoutes = (await import('./routes/billing.routes')).default;
+            const billingWebhookRoutes = (await import('./routes/billing-webhook.routes')).default;
             const { downgradeExpiredTrials } = await import('./services/trial.service');
             const { default: rateLimit } = await import('express-rate-limit');
 
@@ -175,6 +182,9 @@ const httpServer = app.listen(serverPort, '0.0.0.0', () => {
             app.use('/api/v1/oauth', oauthRoutes);
             app.use('/api/v1/voyager', voyagerRoutes);
             app.use('/api/v1/billing', billingRoutes);
+            // Razorpay webhook — no auth (HMAC-verified), mounted BEFORE the
+            // auth'd /api/webhooks router so that prefix doesn't swallow it.
+            app.use('/api/webhooks/razorpay', billingWebhookRoutes);
             app.use('/api/webhooks', webhookRoutes);
 
             // Sentry error handler must come after all routes
