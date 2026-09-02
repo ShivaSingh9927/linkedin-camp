@@ -1,4 +1,5 @@
 import { prisma } from '@repo/db';
+import { planFor } from '../../config/plans';
 
 // Per-user daily caps on LinkedIn write actions.
 //
@@ -47,6 +48,48 @@ export async function checkQuota(userId: string, actionType: GovernedAction): Pr
         return { allowed: true, used: 0, cap: Infinity, remaining: Infinity };
     }
     const used = await getDailyCount(userId, actionType);
+    const remaining = Math.max(0, cap - used);
+    return { allowed: used < cap, used, cap, remaining };
+}
+
+// ---- Monthly INVITE entitlement (Qampi subscription tier) ----
+//
+// Distinct from the DAILY_CAPS above (which are LinkedIn ACCOUNT-SAFETY ceilings,
+// flat across tiers) and from the search budget below (LinkedIn's own limit).
+// This is the *product* lever: how many connection invites a paid tier grants
+// per calendar month (Free 80 / Core 300 / Pro & Business 500) — sourced from
+// config/plans (the single source of truth).
+//
+// GATED BY ENFORCE_TIER_QUOTAS: until billing exists to assign a paid tier,
+// every real user is FREE by default, so hard-enforcing would throttle live/
+// test accounts to 80/mo. The flag stays OFF in prod until billing lands; with
+// it off, checkInviteQuota always allows (the daily safety cap still applies).
+export function tierQuotasEnforced(): boolean {
+    return process.env.ENFORCE_TIER_QUOTAS === '1';
+}
+
+// Count this calendar month's successful connect invites for the user.
+export async function getMonthlyInviteCount(userId: string): Promise<number> {
+    return prisma.actionLog.count({
+        where: {
+            userId,
+            actionType: 'connect',
+            status: 'SUCCESS',
+            executedAt: { gte: startOfMonthUTC() },
+        },
+    }).catch(() => 0);
+}
+
+// Is the user within their tier's monthly invite entitlement? Returns allowed
+// unconditionally when the enforcement flag is off, so current behaviour is
+// unchanged until billing + the flag are switched on together.
+export async function checkInviteQuota(userId: string): Promise<QuotaCheck> {
+    if (!tierQuotasEnforced()) {
+        return { allowed: true, used: 0, cap: Infinity, remaining: Infinity };
+    }
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { tier: true } }).catch(() => null);
+    const cap = planFor(user?.tier).monthlyInvites;
+    const used = await getMonthlyInviteCount(userId);
     const remaining = Math.max(0, cap - used);
     return { allowed: used < cap, used, cap, remaining };
 }

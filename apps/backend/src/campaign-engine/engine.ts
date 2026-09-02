@@ -40,7 +40,7 @@ import { emailFinder } from './nodes/email-finder';
 import { follow } from './nodes/follow';
 import { profileVisitDispatch, inboxSyncDispatch, profileVisitNeedsDom, postsCoveredLater } from './nodes/read-backend';
 import { readNodeOutputs, writeNodeOutput, updateLeadEnrichment } from './storage';
-import { checkQuota, nextDayRetryAt, DAILY_CAPS, GovernedAction, isWithinWorkingHours, nextWorkingHourAt } from './safety/quota';
+import { checkQuota, checkInviteQuota, nextDayRetryAt, DAILY_CAPS, GovernedAction, isWithinWorkingHours, nextWorkingHourAt } from './safety/quota';
 import { transitionLead, recomputeCampaignStatus, syncLeadStatus } from './safety/lifecycle';
 import { classifyPage, handleCheckpoint, isCheckpoint, pauseCampaignForSessionExpiry } from './safety/checkpoint';
 import { uploadScreenshotToS3 } from '../services/s3-upload.service';
@@ -557,6 +557,30 @@ async function runLead(
                         currentNodeIndex: i,
                     }).catch(err => {
                         console.error(`[ENGINE] transitionLead DEFERRED failed: ${err.message}`);
+                        return null;
+                    });
+                    execResult.status = 'paused';
+                    execResult.pausedReason = t?.to === 'STALLED' ? 'stalled' : 'daily_cap';
+                    return execResult;
+                }
+            }
+
+            // Monthly invite entitlement gate (subscription tier). No-op unless
+            // ENFORCE_TIER_QUOTAS=1 — see checkInviteQuota. When a paid tier's
+            // monthly invite allowance is spent, defer like a daily-cap hit; it
+            // resumes when the calendar month rolls (or STALLs after repeated
+            // deferrals, which is the correct "you've hit your plan limit" signal).
+            if (nodeType === 'connect') {
+                const invite = await checkInviteQuota(userId);
+                if (!invite.allowed) {
+                    const retryAt = nextDayRetryAt();
+                    console.log(`[ENGINE] Lead ${lead.firstName}: monthly invite entitlement reached (${invite.used}/${invite.cap}). Rescheduling to ${retryAt.toISOString()}.`);
+                    const t = await transitionLead(campaignId, lead.id, 'DEFERRED', {
+                        reason: 'monthly_cap',
+                        nextRetryAt: retryAt,
+                        currentNodeIndex: i,
+                    }).catch(err => {
+                        console.error(`[ENGINE] transitionLead DEFERRED (monthly_cap) failed: ${err.message}`);
                         return null;
                     });
                     execResult.status = 'paused';

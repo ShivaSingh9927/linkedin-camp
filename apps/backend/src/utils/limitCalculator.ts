@@ -1,49 +1,33 @@
 import { SubscriptionTier, LinkedinPlan } from "@prisma/client";
+import { planFor } from "../config/plans";
 
 export interface LimitResult {
     safeDailyLimit: number;
     isThrottledByLinkedIn: boolean;
 }
 
+// LinkedIn-plan ceilings are a SEPARATE axis from our SaaS tier: a user's
+// LinkedIn account type (Basic/Premium/Sales Nav) caps how many invites/day is
+// safe regardless of what they paid us for. The effective limit is the smaller
+// of the two.
+const LINKEDIN_DAILY: Record<LinkedinPlan, number> = {
+    BASIC: 20,     // safe conservative average for free LinkedIn (15–25)
+    PREMIUM: 35,   // (20–40)
+    SALES_NAV: 40, // (40+)
+};
+
 export function getSafeDailyLimit(saasTier: SubscriptionTier, linkedinPlan: LinkedinPlan): LimitResult {
-    // 1. Determine the maximum allowed by their LinkedIn Plan
-    let maxLinkedInDaily = 0;
-    switch (linkedinPlan) {
-        case 'BASIC':
-            maxLinkedInDaily = 20; // safe conservative average for free tier (15-25)
-            break;
-        case 'PREMIUM':
-            maxLinkedInDaily = 35; // (20-40)
-            break;
-        case 'SALES_NAV':
-            maxLinkedInDaily = 40; // (40+)
-            break;
-    }
+    const maxLinkedInDaily = LINKEDIN_DAILY[linkedinPlan] ?? LINKEDIN_DAILY.BASIC;
 
-    // 2. Determine the maximum allowed by our SaaS Plan (assuming ~30 days avg a month)
-    let maxSaaSDaily = 0;
-    switch (saasTier) {
-        case 'FREE':
-            maxSaaSDaily = 5; // Trial
-            break;
-        case 'CORE':
-            maxSaaSDaily = 10; // 300 / 30
-            break;
-        case 'PLUS':
-        case 'EXPERT':
-        case 'ULTIMATE':
-            maxSaaSDaily = 27; // 800 / 30
-            break;
-    }
+    // SaaS-side daily cap comes from the single source of truth (config/plans),
+    // so PRO/ADVANCED/Business no longer fall through to 0 as they did when this
+    // lived in a hand-maintained switch.
+    const maxSaaSDaily = planFor(saasTier).dailyInviteCap;
 
-    // 3. Calculate the Absolute Minimum of the two
     const safeDailyLimit = Math.floor(Math.min(maxLinkedInDaily, maxSaaSDaily));
 
-    // 4. Check if LinkedIn is the bottleneck (e.g. ULTIMATE plan but BASIC LinkedIn)
+    // LinkedIn is the bottleneck when it forces us below what the SaaS tier grants.
     const isThrottledByLinkedIn = maxLinkedInDaily < maxSaaSDaily;
 
-    return {
-        safeDailyLimit,
-        isThrottledByLinkedIn
-    };
+    return { safeDailyLimit, isThrottledByLinkedIn };
 }

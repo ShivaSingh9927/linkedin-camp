@@ -54,10 +54,10 @@ export const processWorkflowStep = async (data: any, job: Job) => {
     //     return; // Re-queueing handled by BullMQ backoff or 1-hour delay
     // }
 
-    // 2. Safety Check: Plan Limits
-    const dailyLimit = user.tier === 'PRO' ? 100 : user.tier === 'ADVANCED' ? 200 : 20;
-    // In production, increment a daily counter in Redis or DB
-    // if (count >= dailyLimit) return;
+    // 2. Safety Check: Plan Limits — enforced centrally in the campaign engine
+    // via checkQuota()/checkInviteQuota() against config/plans (single source of
+    // truth). The old ad-hoc per-tier ternary here was dead (never enforced) and
+    // had drifted from the real caps, so it's removed.
 
     let browser: any;
     let context: any;
