@@ -143,6 +143,7 @@ const httpServer = app.listen(serverPort, '0.0.0.0', () => {
             const billingRoutes = (await import('./routes/billing.routes')).default;
             const billingWebhookRoutes = (await import('./routes/billing-webhook.routes')).default;
             const apiKeyRoutes = (await import('./routes/api-key.routes')).default;
+            const publicApiRoutes = (await import('./routes/public-api.routes')).default;
             const { downgradeExpiredTrials } = await import('./services/trial.service');
             const { default: rateLimit } = await import('express-rate-limit');
 
@@ -184,6 +185,8 @@ const httpServer = app.listen(serverPort, '0.0.0.0', () => {
             app.use('/api/v1/voyager', voyagerRoutes);
             app.use('/api/v1/billing', billingRoutes);
             app.use('/api/v1/api-keys', apiKeyRoutes);
+            // Public API for automation tools (n8n/Zapier/Make) — API-key authed.
+            app.use('/api/public/v1', publicApiRoutes);
             // Razorpay webhook — no auth (HMAC-verified), mounted BEFORE the
             // auth'd /api/webhooks router so that prefix doesn't swallow it.
             app.use('/api/webhooks/razorpay', billingWebhookRoutes);
