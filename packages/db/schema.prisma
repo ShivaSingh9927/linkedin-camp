@@ -477,6 +477,7 @@ model User {
   ActionLog               ActionLog[]
   BusinessProfile         BusinessProfile?
   Subscription            Subscription?
+  ApiKey                  ApiKey[]
   StrategyHistory         StrategyHistory[]
   Campaign                Campaign[]
   Integration             Integration[]
@@ -648,6 +649,23 @@ model Subscription {
   User               User               @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([status])
+}
+
+// Personal API keys for the public API (n8n / Zapier / Make / scripts). Only the
+// SHA-256 hash is stored; the plaintext key is shown once at creation. `prefix`
+// is a short non-secret slice for display in the UI ("qampi_live_ab12…").
+model ApiKey {
+  id         String    @id @default(cuid())
+  userId     String
+  name       String
+  keyHash    String    @unique
+  prefix     String
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+  User       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 // Idempotency ledger for provider webhooks — every event id is recorded once so

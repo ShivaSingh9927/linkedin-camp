@@ -30,6 +30,8 @@ export interface PlanFeatures {
     multichannel: boolean;
     /** Team workspace / shared leads / per-seat collaboration. */
     team: boolean;
+    /** Public API + webhooks (n8n / Zapier / Make). */
+    api: boolean;
     /** Copilot depth: 'limited' = lead-search only; 'full' = whole activation flow. */
     copilot: 'limited' | 'full';
     /** Template library: 'starter' = the 4–5 simple ones; 'all' = the full 43. */
@@ -81,7 +83,7 @@ const FREE: Plan = {
     leadsStored: 100,
     emailFinderCredits: 10,
     emailFinderRecurring: false, // one-time taste
-    features: { crmSync: false, multichannel: false, team: false, copilot: 'limited', templates: 'starter' },
+    features: { crmSync: false, multichannel: false, team: false, api: false, copilot: 'limited', templates: 'starter' },
     supportSla: 'community',
     pricing: { inr: { monthly: 0, annualPerMonth: 0, annualTotal: 0 }, usd: { monthly: 0, annualPerMonth: 0, annualTotal: 0 } },
 };
@@ -95,7 +97,7 @@ const CORE: Plan = {
     leadsStored: 1500,
     emailFinderCredits: 100,
     emailFinderRecurring: true,
-    features: { crmSync: true, multichannel: false, team: false, copilot: 'full', templates: 'all' },
+    features: { crmSync: true, multichannel: false, team: false, api: false, copilot: 'full', templates: 'all' },
     supportSla: 'email-48h',
     pricing: { inr: { monthly: 399, annualPerMonth: 333, annualTotal: 3990 }, usd: { monthly: 19, annualPerMonth: 16, annualTotal: 190 } },
 };
@@ -109,7 +111,7 @@ const PRO: Plan = {
     leadsStored: 2500,
     emailFinderCredits: 300,
     emailFinderRecurring: true,
-    features: { crmSync: true, multichannel: false, team: true, copilot: 'full', templates: 'all' },
+    features: { crmSync: true, multichannel: false, team: true, api: true, copilot: 'full', templates: 'all' },
     supportSla: 'priority-4h',
     pricing: { inr: { monthly: 1199, annualPerMonth: 999, annualTotal: 11990 }, usd: { monthly: 49, annualPerMonth: 41, annualTotal: 490 } },
 };
@@ -123,7 +125,7 @@ const BUSINESS: Plan = {
     leadsStored: 5000,
     emailFinderCredits: 500,
     emailFinderRecurring: true,
-    features: { crmSync: true, multichannel: true, team: true, copilot: 'full', templates: 'all' },
+    features: { crmSync: true, multichannel: true, team: true, api: true, copilot: 'full', templates: 'all' },
     supportSla: 'priority-4h',
     pricing: { inr: { monthly: 1699, annualPerMonth: 1416, annualTotal: 16990 }, usd: { monthly: 69, annualPerMonth: 58, annualTotal: 690 } },
 };

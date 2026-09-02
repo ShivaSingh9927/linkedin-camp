@@ -12,6 +12,9 @@ import {
     Lock,
     CheckCircle2,
     Loader2,
+    KeyRound,
+    Copy,
+    Trash2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
@@ -22,7 +25,7 @@ import { PageHeader, Card, Button, Badge } from '@/components/ui';
 import { cn } from '@/lib/utils';
 import api from '@/lib/api';
 
-type SectionKey = 'account' | 'safety' | 'linkedin' | 'email' | 'integrations' | 'billing';
+type SectionKey = 'account' | 'safety' | 'linkedin' | 'email' | 'integrations' | 'billing' | 'api';
 
 const NAV_GROUPS: { label: string; items: { key: SectionKey; label: string; icon: any; href?: string }[] }[] = [
     {
@@ -43,6 +46,10 @@ const NAV_GROUPS: { label: string; items: { key: SectionKey; label: string; icon
     {
         label: 'Billing',
         items: [{ key: 'billing', label: 'Subscription', icon: CreditCard }],
+    },
+    {
+        label: 'Developer',
+        items: [{ key: 'api', label: 'API keys', icon: KeyRound }],
     },
 ];
 
@@ -121,6 +128,7 @@ export default function SettingsPage() {
                     {activeSection === 'email' && <EmailAccountSettings />}
                     {activeSection === 'integrations' && <IntegrationsSettings />}
                     {activeSection === 'billing' && <BillingSection />}
+                    {activeSection === 'api' && <ApiKeysSection />}
                 </div>
             </div>
         </div>
@@ -403,6 +411,120 @@ function BillingSection() {
                             </Button>
                         )}
                     </div>
+                </div>
+            )}
+        </Card>
+    );
+}
+
+interface ApiKeyRow {
+    id: string;
+    name: string;
+    prefix: string;
+    lastUsedAt: string | null;
+    createdAt: string;
+}
+
+function ApiKeysSection() {
+    const [keys, setKeys] = useState<ApiKeyRow[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [name, setName] = useState('');
+    const [creating, setCreating] = useState(false);
+    const [freshKey, setFreshKey] = useState<string | null>(null);
+
+    const load = useCallback(() => {
+        setLoading(true);
+        api.get('/api-keys')
+            .then((r) => setKeys(r.data?.keys || []))
+            .catch(() => setKeys([]))
+            .finally(() => setLoading(false));
+    }, []);
+    useEffect(() => { load(); }, [load]);
+
+    async function create() {
+        setCreating(true);
+        try {
+            const { data } = await api.post('/api-keys', { name: name.trim() || 'Untitled key' });
+            setFreshKey(data.key);
+            setName('');
+            load();
+        } catch (e: any) {
+            toast.error(e?.response?.data?.message || e?.response?.data?.error || 'Could not create key');
+        } finally {
+            setCreating(false);
+        }
+    }
+
+    async function revoke(id: string) {
+        if (!window.confirm('Revoke this key? Any integration using it will stop working immediately.')) return;
+        try {
+            await api.delete(`/api-keys/${id}`);
+            toast.success('Key revoked');
+            load();
+        } catch {
+            toast.error('Could not revoke key');
+        }
+    }
+
+    function copyFresh() {
+        if (freshKey) { navigator.clipboard?.writeText(freshKey); toast.success('Copied to clipboard'); }
+    }
+
+    return (
+        <Card className="p-6">
+            <div className="flex items-center gap-2 mb-1">
+                <h3 className="text-[15px] font-bold text-ink-900">API keys</h3>
+            </div>
+            <p className="text-[13px] text-ink-500 font-medium mb-5">
+                Use these to connect Qampi to n8n, Zapier, Make, or your own scripts. Send the key as
+                <code className="mx-1 px-1.5 py-0.5 bg-surface rounded text-[12px]">Authorization: Bearer &lt;key&gt;</code>.
+            </p>
+
+            {/* Freshly created key — shown once */}
+            {freshKey && (
+                <div className="mb-5 p-4 rounded-control border border-brand-200 bg-brand-50">
+                    <div className="text-[12px] font-bold text-brand-700 mb-2">Copy your key now — you won't be able to see it again.</div>
+                    <div className="flex items-center gap-2">
+                        <code className="flex-1 min-w-0 truncate text-[12px] bg-white rounded-control px-3 py-2 border border-line">{freshKey}</code>
+                        <Button variant="outline" size="sm" onClick={copyFresh}><Copy className="w-3.5 h-3.5 mr-1" />Copy</Button>
+                        <Button variant="outline" size="sm" onClick={() => setFreshKey(null)}>Done</Button>
+                    </div>
+                </div>
+            )}
+
+            {/* Create */}
+            <div className="flex items-center gap-2 mb-5">
+                <input
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="Key name (e.g. n8n production)"
+                    className="flex-1 min-w-0 px-3 py-2 rounded-control border border-line text-[13px] outline-none focus:border-brand-400"
+                />
+                <Button size="sm" onClick={create} disabled={creating}>
+                    {creating ? 'Creating…' : 'Create key'}
+                </Button>
+            </div>
+
+            {/* List */}
+            {loading ? (
+                <div className="text-[13px] text-ink-400 flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />Loading…</div>
+            ) : keys.length === 0 ? (
+                <div className="text-[13px] text-ink-400">No API keys yet.</div>
+            ) : (
+                <div className="space-y-2">
+                    {keys.map((k) => (
+                        <div key={k.id} className="flex items-center justify-between p-3 bg-surface rounded-control gap-3">
+                            <div className="min-w-0">
+                                <div className="font-semibold text-[13px] text-ink-900 truncate">{k.name}</div>
+                                <div className="text-[12px] text-ink-400">
+                                    <code>{k.prefix}…</code> · {k.lastUsedAt ? `last used ${new Date(k.lastUsedAt).toLocaleDateString()}` : 'never used'}
+                                </div>
+                            </div>
+                            <Button variant="outline" size="sm" onClick={() => revoke(k.id)}>
+                                <Trash2 className="w-3.5 h-3.5 mr-1" />Revoke
+                            </Button>
+                        </div>
+                    ))}
                 </div>
             )}
         </Card>
