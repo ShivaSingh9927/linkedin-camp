@@ -307,6 +307,109 @@ export const joinTeam = async (req: any, res: Response) => {
     }
 };
 
+// Team performance analytics for the Crew page's Performance view.
+// Activity metrics (invites/messages/visits) are precise over a date range from
+// ActionLog; pipeline metrics (leads/connected/replied) are a current snapshot
+// from Lead.status (outcomes aren't timestamped). Returns team totals + one row
+// per member. Any team member may view (mirrors getMyTeam's shared visibility).
+const RANGE_DAYS: Record<string, number> = { '7d': 7, '30d': 30, '90d': 90 };
+
+export const getTeamAnalytics = async (req: any, res: Response) => {
+    const userId = req.user.id;
+    const range = RANGE_DAYS[String(req.query.range)] ? String(req.query.range) : '30d';
+    const since = new Date(Date.now() - RANGE_DAYS[range] * 24 * 60 * 60 * 1000);
+
+    try {
+        const membership = await prisma.teamMember.findFirst({
+            where: { userId },
+            include: {
+                Team: {
+                    include: {
+                        TeamMember: { include: { User: { select: { id: true, email: true } } } },
+                    },
+                },
+            },
+        });
+        if (!membership) return res.status(404).json({ error: 'You are not in a team' });
+
+        const roster = membership.Team.TeamMember;
+        const memberIds = roster.map((m) => m.userId);
+
+        // Activity over the range (precise), grouped in two queries not N×.
+        const [activityRows, pipelineRows] = await Promise.all([
+            prisma.actionLog.groupBy({
+                by: ['userId', 'actionType'],
+                where: {
+                    userId: { in: memberIds },
+                    status: 'SUCCESS',
+                    actionType: { in: ['INVITE', 'MESSAGE', 'VISIT'] },
+                    executedAt: { gte: since },
+                },
+                _count: { _all: true },
+            }),
+            prisma.lead.groupBy({
+                by: ['userId', 'status'],
+                where: { userId: { in: memberIds } },
+                _count: { _all: true },
+            }),
+        ]);
+
+        const actOf = (uid: string, type: string) =>
+            activityRows.find((r) => r.userId === uid && r.actionType === type)?._count._all || 0;
+        const leadOf = (uid: string, status?: string) =>
+            pipelineRows
+                .filter((r) => r.userId === uid && (status ? r.status === status : true))
+                .reduce((sum, r) => sum + r._count._all, 0);
+
+        const members = roster.map((m) => {
+            const invites = actOf(m.userId, 'INVITE');
+            const messages = actOf(m.userId, 'MESSAGE');
+            const visits = actOf(m.userId, 'VISIT');
+            const leads = leadOf(m.userId);
+            // CONNECTED here counts leads currently at-or-past the connected stage.
+            const connected = leadOf(m.userId, 'CONNECTED') + leadOf(m.userId, 'REPLIED');
+            const replied = leadOf(m.userId, 'REPLIED');
+            return {
+                userId: m.userId,
+                email: m.User?.email || '',
+                role: m.role,
+                activity: { invites, messages, visits },
+                pipeline: {
+                    leads,
+                    connected,
+                    replied,
+                    replyRate: leads ? Math.round((replied / leads) * 1000) / 10 : 0,
+                },
+            };
+        });
+
+        const sum = (fn: (x: typeof members[number]) => number) => members.reduce((a, m) => a + fn(m), 0);
+        const totalLeads = sum((m) => m.pipeline.leads);
+        const totalConnected = sum((m) => m.pipeline.connected);
+        const totalReplied = sum((m) => m.pipeline.replied);
+
+        res.json({
+            range,
+            activity: {
+                invites: sum((m) => m.activity.invites),
+                messages: sum((m) => m.activity.messages),
+                visits: sum((m) => m.activity.visits),
+            },
+            pipeline: {
+                leads: totalLeads,
+                connected: totalConnected,
+                replied: totalReplied,
+                connectedRate: totalLeads ? Math.round((totalConnected / totalLeads) * 1000) / 10 : 0,
+                repliedRate: totalLeads ? Math.round((totalReplied / totalLeads) * 1000) / 10 : 0,
+            },
+            members,
+        });
+    } catch (error) {
+        console.error('Error fetching team analytics:', error);
+        res.status(500).json({ error: 'Failed to fetch team analytics' });
+    }
+};
+
 // Remove a member (or leave the team yourself)
 export const removeMember = async (req: any, res: Response) => {
     const userId = req.user.id;

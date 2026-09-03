@@ -6,7 +6,8 @@ import {
     getInviteInfo,
     inviteMember,
     joinTeam,
-    removeMember
+    removeMember,
+    getTeamAnalytics
 } from '../controllers/team.controller';
 
 const router = express.Router();
@@ -16,6 +17,7 @@ router.use(authMiddleware);
 
 // Team management
 router.get('/', getMyTeam);
+router.get('/analytics', getTeamAnalytics);
 router.post('/create', createTeam);
 router.get('/invite/:token', getInviteInfo);
 router.post('/invite', inviteMember);

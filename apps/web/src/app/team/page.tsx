@@ -1,40 +1,30 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
     Users,
     UserPlus,
     Shield,
-    User,
     Trash2,
-    ExternalLink,
-    PlusCircle,
-    CheckCircle2,
-    Crown,
-    Zap
+    Download,
+    ChevronRight,
+    MessageSquare,
+    Eye,
+    X,
 } from 'lucide-react';
 import api from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 
 // --- Types ---
+type Role = 'OWNER' | 'ADMIN' | 'MEMBER';
+
 interface TeamMember {
     id: string;
-    role: 'OWNER' | 'ADMIN' | 'MEMBER';
+    role: Role;
     joinedAt: string;
-    user: {
-        id: string;
-        email: string;
-    };
-    stats?: {
-        activeCampaigns: number;
-        totalLeads: number;
-        invitesToday?: number;
-        messagesToday?: number;
-        totalReplies?: number;
-        hasProxy?: boolean;
-        dailyInviteLimit?: number;
-    };
+    user: { id: string; email: string };
+    stats?: { activeCampaigns: number; totalLeads: number; hasProxy?: boolean };
 }
 
 interface TeamInvite {
@@ -57,18 +47,45 @@ interface Team {
     invites: TeamInvite[];
 }
 
+interface AnalyticsMember {
+    userId: string;
+    email: string;
+    role: Role;
+    activity: { invites: number; messages: number; visits: number };
+    pipeline: { leads: number; connected: number; replied: number; replyRate: number };
+}
+
+interface Analytics {
+    range: string;
+    activity: { invites: number; messages: number; visits: number };
+    pipeline: { leads: number; connected: number; replied: number; connectedRate: number; repliedRate: number };
+    members: AnalyticsMember[];
+}
+
+const RANGES: { key: string; label: string; long: string }[] = [
+    { key: '7d', label: '7D', long: '7 days' },
+    { key: '30d', label: '30D', long: '30 days' },
+    { key: '90d', label: '90D', long: '90 days' },
+];
+
+const roleColor = (r: Role) => (r === 'OWNER' ? 'text-brand' : r === 'ADMIN' ? 'text-brand-600' : 'text-ink-400');
+
 export default function TeamPage() {
     const [loading, setLoading] = useState(true);
-    const [teamData, setTeamData] = useState<{ hasTeam: boolean; team?: Team; role?: string } | null>(null);
+    const [teamData, setTeamData] = useState<{ hasTeam: boolean; team?: Team; role?: Role } | null>(null);
+    const [view, setView] = useState<'perf' | 'members'>('perf');
+    const [range, setRange] = useState('30d');
+    const [analytics, setAnalytics] = useState<Analytics | null>(null);
+    const [loadingA, setLoadingA] = useState(false);
+
     const [isCreating, setIsCreating] = useState(false);
     const [newTeamName, setNewTeamName] = useState("");
     const [isInviting, setIsInviting] = useState(false);
     const [inviteEmail, setInviteEmail] = useState("");
     const [inviteRole, setInviteRole] = useState<'ADMIN' | 'MEMBER'>('MEMBER');
-    const [inviteMeta, setInviteMeta] = useState<{ inviteLink?: string; token?: string } | null>(null);
+    const [inviteMeta, setInviteMeta] = useState<{ token?: string; emailed?: boolean } | null>(null);
 
-    // Fetch team data
-    const fetchTeam = async () => {
+    const fetchTeam = useCallback(async () => {
         try {
             setLoading(true);
             const res = await api.get('/team');
@@ -78,13 +95,23 @@ export default function TeamPage() {
         } finally {
             setLoading(false);
         }
-    };
-
-    useEffect(() => {
-        fetchTeam();
     }, []);
 
-    // Create a new team
+    const fetchAnalytics = useCallback(async (r: string) => {
+        try {
+            setLoadingA(true);
+            const res = await api.get(`/team/analytics?range=${r}`);
+            setAnalytics(res.data);
+        } catch (err) {
+            console.error('Failed to fetch analytics:', err);
+        } finally {
+            setLoadingA(false);
+        }
+    }, []);
+
+    useEffect(() => { fetchTeam(); }, [fetchTeam]);
+    useEffect(() => { if (teamData?.hasTeam) fetchAnalytics(range); }, [teamData?.hasTeam, range, fetchAnalytics]);
+
     const handleCreateTeam = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
@@ -99,354 +126,338 @@ export default function TeamPage() {
         }
     };
 
-    // Invite a member
     const handleInvite = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
-            const res = await api.post('/team/invite', {
-                teamId: teamData?.team?.id,
-                email: inviteEmail,
-                role: inviteRole
-            });
-            setInviteMeta({ inviteLink: res.data.inviteLink, token: res.data.token });
-            fetchTeam(); // Refresh invites list
+            const res = await api.post('/team/invite', { teamId: teamData?.team?.id, email: inviteEmail, role: inviteRole });
+            setInviteMeta({ token: res.data.token, emailed: res.data.emailed });
+            fetchTeam();
             setInviteEmail("");
         } catch (err: any) {
             alert(err.response?.data?.error || "Failed to invite member.");
         }
     };
 
-    // Remove member
     const handleRemoveMember = async (targetUserId: string) => {
-        if (!confirm("Are you sure you want to remove this member?")) return;
+        if (!confirm("Remove this member from the team?")) return;
         try {
             await api.delete(`/team/${teamData?.team?.id}/members/${targetUserId}`);
             fetchTeam();
+            fetchAnalytics(range);
         } catch (err: any) {
             alert(err.response?.data?.error || "Failed to remove member.");
         }
     };
 
-    // --- Loading State ---
+    const exportCsv = () => {
+        if (!analytics) return;
+        const head = ['Member', 'Role', 'Invites', 'Messages', 'Visits', 'Leads', 'Connected', 'Replied', 'ReplyRate%'];
+        const rows = analytics.members.map((m) => [
+            m.email, m.role, m.activity.invites, m.activity.messages, m.activity.visits,
+            m.pipeline.leads, m.pipeline.connected, m.pipeline.replied, m.pipeline.replyRate,
+        ]);
+        const csv = [head, ...rows].map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `team-performance-${range}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+    };
+
+    // --- Loading ---
     if (loading) {
         return (
             <div className="flex items-center justify-center min-h-[60vh]">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand" />
             </div>
         );
     }
 
-    // --- Empty State (No Team) ---
+    // --- Empty state ---
     if (!teamData?.hasTeam) {
         return (
             <div className="max-w-xl mx-auto py-12 px-6">
-                <div className="bg-white rounded-[40px] shadow-2xl border p-10 text-center space-y-8 animate-in zoom-in duration-500">
-                    <div className="w-20 h-20 bg-indigo-50 rounded-3xl flex items-center justify-center mx-auto shadow-inner">
-                        <Users className="w-10 h-10 text-indigo-600" />
+                <div className="bg-white rounded-panel shadow-lift border border-line p-10 text-center space-y-8">
+                    <div className="w-20 h-20 bg-brand-50 rounded-3xl flex items-center justify-center mx-auto">
+                        <Users className="w-10 h-10 text-brand" />
                     </div>
                     <div>
-                        <h1 className="text-4xl font-black text-slate-800 uppercase tracking-tight italic">Create a Crew</h1>
-                        <p className="text-slate-500 mt-2 font-medium">Bring your colleagues together to boost your LinkedIn prospecting.</p>
+                        <h1 className="text-3xl font-black text-foreground uppercase tracking-tight italic">Create a team</h1>
+                        <p className="text-ink-400 mt-2 font-medium">Bring your colleagues into one workspace to run outreach together.</p>
                     </div>
-
                     <form onSubmit={handleCreateTeam} className="space-y-4">
-                        <div className="relative group">
-                            <input
-                                type="text"
-                                placeholder="Your Crew Name (e.g. Sales Rocket)"
-                                className="w-full px-6 py-5 bg-slate-50 border-2 border-slate-100 rounded-3xl focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 font-bold text-lg transition-all"
-                                value={newTeamName}
-                                onChange={(e) => setNewTeamName(e.target.value)}
-                                required
-                            />
-                        </div>
+                        <input
+                            type="text"
+                            placeholder="Team name (e.g. Sales Rocket)"
+                            className="w-full px-6 py-4 bg-surface border-2 border-line rounded-control focus:outline-none focus:ring-4 focus:ring-brand/10 focus:border-brand font-bold text-lg transition-all"
+                            value={newTeamName}
+                            onChange={(e) => setNewTeamName(e.target.value)}
+                            required
+                        />
                         <button
                             disabled={isCreating}
-                            className="w-full bg-slate-900 text-white py-5 rounded-3xl font-black uppercase text-sm tracking-widest hover:bg-black transition-all shadow-xl hover:-translate-y-1 active:scale-95 flex items-center justify-center space-x-2"
+                            className="w-full bg-ink-900 text-white py-4 rounded-control font-black uppercase text-sm tracking-widest hover:bg-black transition-all active:scale-[.98]"
                         >
-                            <span>{isCreating ? "Creating Crew..." : "Set Up Crew →"}</span>
+                            {isCreating ? "Creating…" : "Set up team →"}
                         </button>
                     </form>
-
-                    <div className="pt-6 border-t">
-                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                            Or check your email for an invitation from your admin
-                        </p>
-                    </div>
+                    <p className="pt-6 border-t border-line text-[11px] font-bold text-ink-400 uppercase tracking-widest">
+                        Or check your email for an invite from your team admin
+                    </p>
                 </div>
             </div>
         );
     }
 
-    // --- Team Dashboard ---
+    // --- Dashboard ---
     const team = teamData.team!;
     const myRole = teamData.role;
-    // Owners and admins manage the team (invite / remove seats).
     const canManage = myRole === 'OWNER' || myRole === 'ADMIN';
-    // Seat cap is plan-driven (falls back to current size if the API is old).
     const seatCap = team.maxSeats ?? team.members.length;
     const seatsUsed = team.members.length + (team.invites?.length || 0);
     const atCapacity = seatsUsed >= seatCap;
+    const rangeLong = RANGES.find((r) => r.key === range)?.long || range;
 
-    const totalInvitesToday = team.members.reduce((acc, m) => acc + (m.stats?.invitesToday || 0), 0);
-    const totalDailyLimit = team.members.reduce((acc, m) => acc + (m.stats?.dailyInviteLimit || 30), 0);
-    const totalReplies = team.members.reduce((acc, m) => acc + (m.stats?.totalReplies || 0), 0);
+    const toggleBtn = (active: boolean) => cn(
+        'px-4 py-2 rounded-chip font-black text-[11px] tracking-[0.1em] uppercase transition-all',
+        active ? 'bg-ink-900 text-white' : 'text-brand-600 hover:text-brand',
+    );
+    const rangeBtn = (active: boolean) => cn(
+        'px-3 py-1.5 rounded-chip font-black text-[11px] tracking-[0.1em] transition-all',
+        active ? 'bg-brand text-white' : 'text-brand-600 hover:text-brand',
+    );
 
     return (
-        <div className="max-w-7xl mx-auto space-y-8 sm:space-y-12 p-4 sm:p-8 lg:p-12 animate-in fade-in duration-500">
+        <div className="max-w-6xl mx-auto p-4 sm:p-8 space-y-6">
             {/* Header */}
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 sm:gap-10">
-                <div className="space-y-4">
-                    <div className="flex flex-wrap items-center gap-4">
-                        <h1 className="text-4xl sm:text-6xl font-black text-slate-900 uppercase tracking-tighter italic leading-none">{team.name}</h1>
-                        <div className="flex items-center space-x-2 px-3 sm:px-4 py-1 sm:py-1.5 bg-primary text-white text-[9px] sm:text-[10px] font-black uppercase tracking-[0.2em] rounded-full shadow-lg shadow-primary/20">
-                            <Shield className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
-                            <span>{myRole}</span>
-                        </div>
+            <div className="flex flex-wrap items-center gap-4">
+                <h1 className="text-3xl sm:text-4xl font-black text-foreground uppercase tracking-tighter italic leading-none">{team.name}</h1>
+                <span className="flex items-center gap-1.5 px-3 py-1 bg-brand text-white text-[10px] font-black uppercase tracking-[0.15em] rounded-full">
+                    <Shield className="w-3 h-3" />{myRole}
+                </span>
+            </div>
+
+            {/* Card */}
+            <div className="bg-white border border-line rounded-panel shadow-soft p-5 sm:p-6">
+                {/* Toolbar */}
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
+                    <div className="inline-flex bg-surface rounded-chip p-1">
+                        <button className={toggleBtn(view === 'perf')} onClick={() => setView('perf')}>Performance</button>
+                        <button className={toggleBtn(view === 'members')} onClick={() => setView('members')}>Members</button>
                     </div>
-                    <p className="text-slate-500 text-sm sm:text-base font-semibold max-w-2xl leading-relaxed lg:opacity-70 uppercase tracking-wide">Workspace for consolidated prospecting and workforce orchestration.</p>
+
+                    {view === 'perf' ? (
+                        <div className="flex items-center gap-2.5">
+                            <div className="inline-flex bg-surface rounded-chip p-1">
+                                {RANGES.map((r) => (
+                                    <button key={r.key} className={rangeBtn(range === r.key)} onClick={() => setRange(r.key)}>{r.label}</button>
+                                ))}
+                            </div>
+                            <button onClick={exportCsv} className="inline-flex items-center gap-1.5 border-[1.5px] border-ink-900 text-ink-900 font-black text-[11px] tracking-[0.08em] uppercase px-3.5 py-2 rounded-control hover:bg-ink-900 hover:text-white transition-all">
+                                <Download className="w-4 h-4" />CSV
+                            </button>
+                        </div>
+                    ) : canManage && (
+                        <button
+                            onClick={() => { setIsInviting(!isInviting); setInviteMeta(null); }}
+                            disabled={atCapacity}
+                            className={cn(
+                                'inline-flex items-center gap-1.5 font-black text-[11px] tracking-[0.08em] uppercase px-4 py-2.5 rounded-control transition-all',
+                                atCapacity ? 'bg-surface text-ink-400 cursor-not-allowed' : 'bg-ink-900 text-white hover:bg-black active:scale-[.98]',
+                            )}
+                        >
+                            <UserPlus className="w-4 h-4" />Invite
+                        </button>
+                    )}
                 </div>
 
-                {canManage && (
-                    <button
-                        onClick={() => { setIsInviting(!isInviting); setInviteMeta(null); }}
-                        disabled={atCapacity}
-                        className={cn(
-                            "flex items-center justify-center space-x-3 border-2 px-6 sm:px-10 py-4 sm:py-5 rounded-2xl sm:rounded-3xl font-black uppercase text-[10px] sm:text-xs tracking-[0.15em] transition-all shadow-premium active:scale-95 group",
-                            atCapacity
-                                ? 'bg-slate-50 text-slate-400 border-slate-100 cursor-not-allowed'
-                                : 'bg-background text-foreground border-foreground hover:bg-foreground hover:text-background'
-                        )}
-                    >
-                        <UserPlus className="w-4 h-4 sm:w-5 sm:h-5 group-hover:rotate-12 transition-transform" />
-                        <span>Invite Operator</span>
-                    </button>
-                )}
-            </div>
-
-            {/* Quick Stats Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
-                {[
-                    { label: 'Total Members', value: team.members?.length || 0, icon: Users, color: 'text-blue-600', bg: 'bg-blue-50' },
-                    { label: 'Network Invites', value: `${totalInvitesToday}/${totalDailyLimit}`, icon: ExternalLink, color: 'text-primary', bg: 'bg-primary/5' },
-                    { label: 'Total Leads Won', value: totalReplies, icon: Crown, color: 'text-amber-600', bg: 'bg-amber-50' },
-                    { label: 'Cloud Status', value: 'Protected', icon: Shield, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-                ].map((stat) => (
-                    <div key={stat.label} className="bg-white p-6 sm:p-8 rounded-[2rem] sm:rounded-[3rem] border border-slate-100 shadow-premium flex items-center space-x-5 hover:border-primary/20 transition-all group">
-                        <div className={cn("p-4 sm:p-5 rounded-2xl transition-all group-hover:scale-110", stat.bg, stat.color)}>
-                            <stat.icon className="w-6 h-6 sm:w-7 sm:h-7" />
-                        </div>
-                        <div>
-                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">{stat.label}</p>
-                            <p className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight uppercase">{stat.value}</p>
-                        </div>
-                    </div>
-                ))}
-            </div>
-
-            {/* Main Content Grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12">
-                {/* Invite Panel Sidebar */}
-                <AnimatePresence>
-                    {isInviting && canManage && (
-                        <motion.div 
-                            initial={{ opacity: 0, x: -20 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            exit={{ opacity: 0, x: -20 }}
-                            className="lg:col-span-4 space-y-6"
-                        >
-                            <div className="bg-white rounded-[3rem] border border-primary/20 shadow-premium p-8 sm:p-10 relative overflow-hidden">
-                                <div className="absolute top-0 right-0 w-40 h-40 bg-primary/5 rounded-full -mr-20 -mt-20 blur-3xl" />
-                                <div className="relative">
-                                    <div className="flex items-center justify-between mb-8 sm:mb-10">
-                                        <h2 className="text-2xl sm:text-3xl font-black text-slate-900 uppercase tracking-tight italic">New Key</h2>
-                                        <button onClick={() => setIsInviting(false)} className="bg-slate-100 p-2 sm:p-3 rounded-full text-slate-400 hover:text-slate-900 transition-colors">
-                                            <PlusCircle className="w-4 h-4 sm:w-5 sm:h-5 rotate-45" />
-                                        </button>
+                {/* ---- PERFORMANCE ---- */}
+                {view === 'perf' && (
+                    <div className={cn('transition-opacity', loadingA && 'opacity-50')}>
+                        {/* Activity */}
+                        <p className="label !text-ink-400 mb-2.5">Activity — last {rangeLong}</p>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
+                            {[
+                                { label: 'Invites', v: analytics?.activity.invites, icon: UserPlus, bg: 'bg-brand-50', fg: 'text-brand' },
+                                { label: 'Messages', v: analytics?.activity.messages, icon: MessageSquare, bg: 'bg-sky-50', fg: 'text-sky-600' },
+                                { label: 'Visits', v: analytics?.activity.visits, icon: Eye, bg: 'bg-emerald-50', fg: 'text-emerald-600' },
+                            ].map((c) => (
+                                <div key={c.label} className="bg-surface border border-line rounded-card p-4 flex items-center gap-3.5">
+                                    <div className={cn('w-11 h-11 rounded-control grid place-items-center', c.bg, c.fg)}>
+                                        <c.icon className="w-5 h-5" />
                                     </div>
-
-                                    <form onSubmit={handleInvite} className="space-y-6 sm:space-y-8">
-                                        <div className="space-y-3">
-                                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] px-2">Identification Email</label>
-                                            <input
-                                                type="email"
-                                                className="w-full px-6 py-4 sm:py-5 bg-slate-50 border border-slate-100 rounded-2xl focus:outline-none focus:ring-4 focus:ring-primary/10 focus:border-primary transition-all font-bold text-sm sm:text-base"
-                                                placeholder="operator@nexus.com"
-                                                value={inviteEmail}
-                                                onChange={(e) => setInviteEmail(e.target.value)}
-                                                required
-                                            />
-                                        </div>
-                                        <div className="space-y-3">
-                                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] px-2">Access Level</label>
-                                            <div className="grid grid-cols-2 gap-4">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setInviteRole('MEMBER')}
-                                                    className={cn(
-                                                        "py-4 sm:py-5 text-[10px] sm:text-[11px] font-black uppercase tracking-widest rounded-2xl border transition-all",
-                                                        inviteRole === 'MEMBER' 
-                                                            ? 'bg-primary text-white border-primary shadow-lg shadow-primary/20' 
-                                                            : 'bg-background text-slate-500 border-slate-200 hover:border-primary/40'
-                                                    )}
-                                                >
-                                                    Agent
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setInviteRole('ADMIN')}
-                                                    className={cn(
-                                                        "py-4 sm:py-5 text-[10px] sm:text-[11px] font-black uppercase tracking-widest rounded-2xl border transition-all",
-                                                        inviteRole === 'ADMIN' 
-                                                            ? 'bg-primary text-white border-primary shadow-lg shadow-primary/20' 
-                                                            : 'bg-background text-slate-500 border-slate-200 hover:border-primary/40'
-                                                    )}
-                                                >
-                                                    Admin
-                                                </button>
-                                            </div>
-                                        </div>
-                                        <button className="w-full bg-slate-900 text-white py-5 sm:py-6 rounded-2xl sm:rounded-3xl font-black uppercase text-[10px] sm:text-xs tracking-[0.25em] hover:bg-black transition-all shadow-xl active:scale-95">
-                                            Generate Access Key
-                                        </button>
-                                    </form>
-
-                                    {inviteMeta && (
-                                        <motion.div 
-                                            initial={{ opacity: 0, y: 20 }}
-                                            animate={{ opacity: 1, y: 0 }}
-                                            className="mt-8 sm:mt-10 p-6 sm:p-8 bg-emerald-50 rounded-[2.5rem] border border-emerald-100"
-                                        >
-                                            <p className="text-[10px] font-black text-emerald-700 uppercase tracking-[0.2em] mb-4 flex items-center">
-                                                <Shield className="w-4 h-4 mr-2" />
-                                                Cloud Link Active
-                                            </p>
-                                            <div 
-                                                className="bg-white p-4 rounded-2xl border border-emerald-100 flex items-center justify-between cursor-pointer group"
-                                                onClick={() => {
-                                                    navigator.clipboard.writeText(`${window.location.origin}/team/join?token=${inviteMeta.token}`);
-                                                    alert("Link Encrypted & Copied!");
-                                                }}
-                                            >
-                                                <p className="text-[9px] text-emerald-600 truncate font-mono font-bold pr-4">
-                                                    {window.location.origin.replace(/(^\w+:|^)\/\//, '')}/...{inviteMeta.token?.slice(-8)}
-                                                </p>
-                                                <PlusCircle className="w-4 h-4 text-emerald-400 group-hover:scale-110 group-hover:text-emerald-600 transition-all flex-shrink-0" />
-                                            </div>
-                                        </motion.div>
-                                    )}
-                                </div>
-                            </div>
-                        </motion.div>
-                    )}
-                </AnimatePresence>
-
-                {/* Workforce Display */}
-                <div className={cn(
-                    "bg-white rounded-[3rem] sm:rounded-[4rem] border border-slate-100 shadow-premium overflow-hidden transition-all duration-500",
-                    isInviting && canManage ? 'lg:col-span-8' : 'lg:col-span-12'
-                )}>
-                    <div className="px-8 sm:px-12 py-8 sm:py-10 border-b border-slate-50 flex flex-wrap items-center justify-between gap-6 bg-slate-50/20">
-                        <div className="flex items-center space-x-4">
-                            <h2 className="text-2xl sm:text-3xl font-black text-slate-900 uppercase tracking-tight italic">Division Units</h2>
-                            <span className="bg-primary/10 text-primary px-3 sm:px-4 py-1 sm:py-1.5 rounded-full text-[9px] sm:text-[10px] font-black tracking-[0.2em] uppercase">
-                                {seatsUsed}/{seatCap} Seats
-                            </span>
-                        </div>
-                    </div>
-
-                    <div className="p-4 sm:p-8">
-                        {/* Mobile List View */}
-                        <div className="grid grid-cols-1 gap-4 lg:hidden">
-                            {team.members.map((m) => (
-                                <div key={m.id} className="p-6 rounded-[2rem] border border-slate-100 bg-white hover:border-primary/20 transition-all space-y-6">
-                                    <div className="flex items-center justify-between">
-                                        <div className="flex items-center space-x-4">
-                                            <div className="w-12 h-12 bg-slate-900 rounded-2xl flex items-center justify-center text-white font-black">
-                                                {m.user.email[0].toUpperCase()}
-                                            </div>
-                                            <div className="min-w-0">
-                                                <p className="text-sm font-black text-slate-900 truncate">{m.user.email}</p>
-                                                <p className="text-[9px] font-bold text-primary uppercase tracking-[0.15em]">{m.role}</p>
-                                            </div>
-                                        </div>
-                                        {canManage && m.user.id !== team.ownerId && (
-                                            <button onClick={() => handleRemoveMember(m.user.id)} className="p-2.5 bg-red-50 text-red-500 rounded-xl">
-                                                <Trash2 className="w-4 h-4" />
-                                            </button>
-                                        )}
-                                    </div>
-                                    <div className="grid grid-cols-3 gap-2 py-4 border-y border-slate-50">
-                                        <div className="text-center">
-                                            <p className="text-xs font-black text-slate-900">{m.stats?.invitesToday || 0}</p>
-                                            <p className="text-[8px] font-bold text-slate-400 uppercase">Invites</p>
-                                        </div>
-                                        <div className="text-center border-x border-slate-100">
-                                            <p className="text-xs font-black text-slate-900">{m.stats?.messagesToday || 0}</p>
-                                            <p className="text-[8px] font-bold text-slate-400 uppercase">Msg</p>
-                                        </div>
-                                        <div className="text-center">
-                                            <p className="text-xs font-black text-emerald-600">{m.stats?.totalReplies || 0}</p>
-                                            <p className="text-[8px] font-bold text-slate-400 uppercase">Leads</p>
-                                        </div>
+                                    <div>
+                                        <p className="label !text-ink-400 !text-[10px]">{c.label}</p>
+                                        <p className="text-2xl font-black text-foreground tracking-tight tabular-nums">{(c.v ?? 0).toLocaleString()}</p>
                                     </div>
                                 </div>
                             ))}
                         </div>
 
-                        {/* Desktop View */}
-                        <div className="hidden lg:block overflow-x-auto">
-                            <table className="w-full text-left">
+                        {/* Pipeline */}
+                        <p className="label !text-ink-400 mb-2.5">Pipeline — current</p>
+                        <div className="flex items-stretch gap-2 mb-6">
+                            <div className="flex-1 bg-ink-900 text-white rounded-card p-4">
+                                <p className="label !text-ink-400 !text-[10px]">Leads</p>
+                                <p className="text-2xl font-black tracking-tight tabular-nums">{(analytics?.pipeline.leads ?? 0).toLocaleString()}</p>
+                            </div>
+                            <div className="grid place-items-center text-ink-400"><ChevronRight className="w-5 h-5" /></div>
+                            <div className="flex-1 bg-brand-50 rounded-card p-4">
+                                <p className="label !text-brand !text-[10px]">Connected</p>
+                                <p className="text-2xl font-black text-brand-700 tracking-tight tabular-nums">
+                                    {(analytics?.pipeline.connected ?? 0).toLocaleString()} <span className="text-[13px] font-extrabold text-brand-600">{analytics?.pipeline.connectedRate ?? 0}%</span>
+                                </p>
+                            </div>
+                            <div className="grid place-items-center text-ink-400"><ChevronRight className="w-5 h-5" /></div>
+                            <div className="flex-1 bg-emerald-50 rounded-card p-4">
+                                <p className="label !text-emerald-600 !text-[10px]">Replied</p>
+                                <p className="text-2xl font-black text-emerald-800 tracking-tight tabular-nums">
+                                    {(analytics?.pipeline.replied ?? 0).toLocaleString()} <span className="text-[13px] font-extrabold text-emerald-500">{analytics?.pipeline.repliedRate ?? 0}%</span>
+                                </p>
+                            </div>
+                        </div>
+
+                        {/* Leaderboard */}
+                        <p className="label !text-ink-400 mb-2.5">Per-member leaderboard</p>
+                        <div className="overflow-x-auto border border-line rounded-card">
+                            <table className="w-full border-collapse text-[13px] min-w-[560px]">
                                 <thead>
-                                    <tr className="text-[10px] font-black text-slate-400 uppercase tracking-[0.25em] border-b border-slate-50">
-                                        <th className="px-4 py-8">Operator</th>
-                                        <th className="px-4 py-8">Status</th>
-                                        <th className="px-4 py-8 text-center">Load</th>
-                                        <th className="px-4 py-8 text-right">Shield</th>
-                                        <th className="px-4 py-8 text-right"></th>
+                                    <tr className="bg-surface">
+                                        <th className="text-left px-4 py-3 label !text-ink-400 !text-[9px]">Member</th>
+                                        <th className="text-right px-2 py-3 label !text-ink-400 !text-[9px]">Inv</th>
+                                        <th className="text-right px-2 py-3 label !text-ink-400 !text-[9px]">Msg</th>
+                                        <th className="text-right px-2 py-3 label !text-ink-400 !text-[9px]">Vis</th>
+                                        <th className="text-right px-2 py-3 label !text-ink-400 !text-[9px] border-l border-line">Leads</th>
+                                        <th className="text-right px-2 py-3 label !text-ink-400 !text-[9px]">Conn</th>
+                                        <th className="text-right px-2 py-3 label !text-ink-400 !text-[9px]">Repl</th>
+                                        <th className="text-right px-4 py-3 label !text-ink-400 !text-[9px]">Reply%</th>
                                     </tr>
                                 </thead>
-                                <tbody className="divide-y divide-slate-50">
-                                    {team.members.map((m) => (
-                                        <tr key={m.id} className="hover:bg-slate-50/50 transition-all group">
-                                            <td className="px-4 py-8">
-                                                <div className="flex items-center space-x-5">
-                                                    <div className="w-14 h-14 bg-slate-900 rounded-[1.5rem] flex items-center justify-center text-white font-black text-lg">
-                                                        {m.user.email[0].toUpperCase()}
-                                                    </div>
+                                <tbody>
+                                    {(analytics?.members || []).map((m) => (
+                                        <tr key={m.userId} className="border-t border-line">
+                                            <td className="px-4 py-3">
+                                                <div className="flex items-center gap-2.5">
+                                                    <div className="w-7 h-7 rounded-chip bg-ink-900 text-white grid place-items-center font-black text-xs">{(m.email[0] || '?').toUpperCase()}</div>
                                                     <div>
-                                                        <p className="text-lg font-black text-slate-900 tracking-tight">{m.user.email}</p>
-                                                        <p className="text-[10px] font-black uppercase text-slate-400">{m.role}</p>
+                                                        <div className="font-extrabold text-foreground">{m.email}</div>
+                                                        <div className={cn('text-[9px] font-black tracking-[0.12em] uppercase', roleColor(m.role))}>{m.role}</div>
                                                     </div>
                                                 </div>
                                             </td>
-                                            <td className="px-4 py-8">
-                                                <div className="inline-flex items-center space-x-2 px-4 py-2 bg-emerald-50 text-emerald-600 rounded-2xl text-[10px] font-black uppercase">
-                                                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                                                    <span>Active</span>
-                                                </div>
-                                            </td>
-                                            <td className="px-4 py-8 text-center">
-                                                <p className="text-xl font-black text-slate-900">{m.stats?.totalReplies || 0}</p>
-                                                <p className="text-[9px] font-bold text-slate-400 uppercase">Leads</p>
-                                            </td>
-                                            <td className="px-4 py-8 text-right">
-                                                <Shield className={cn("w-5 h-5 ml-auto", m.stats?.hasProxy ? "text-primary" : "text-slate-200")} />
-                                            </td>
-                                            <td className="px-4 py-8 text-right">
-                                                {canManage && m.user.id !== team.ownerId && (
-                                                    <button onClick={() => handleRemoveMember(m.user.id)} className="p-3 text-red-500 hover:bg-red-50 rounded-2xl transition-all">
-                                                        <Trash2 className="w-5 h-5" />
-                                                    </button>
-                                                )}
-                                            </td>
+                                            <td className="text-right px-2 py-3 font-bold text-ink-700 tabular-nums">{m.activity.invites}</td>
+                                            <td className="text-right px-2 py-3 font-bold text-ink-700 tabular-nums">{m.activity.messages}</td>
+                                            <td className="text-right px-2 py-3 font-bold text-ink-700 tabular-nums">{m.activity.visits}</td>
+                                            <td className="text-right px-2 py-3 font-bold text-foreground tabular-nums border-l border-line">{m.pipeline.leads}</td>
+                                            <td className="text-right px-2 py-3 font-bold text-brand tabular-nums">{m.pipeline.connected}</td>
+                                            <td className="text-right px-2 py-3 font-bold text-emerald-600 tabular-nums">{m.pipeline.replied}</td>
+                                            <td className="text-right px-4 py-3 font-black text-emerald-600 tabular-nums">{m.pipeline.replyRate}%</td>
                                         </tr>
                                     ))}
+                                    {!loadingA && (analytics?.members || []).length === 0 && (
+                                        <tr><td colSpan={8} className="px-4 py-8 text-center text-ink-400 font-medium">No activity yet.</td></tr>
+                                    )}
                                 </tbody>
                             </table>
                         </div>
                     </div>
-                </div>
+                )}
+
+                {/* ---- MEMBERS ---- */}
+                {view === 'members' && (
+                    <div>
+                        <div className="flex items-center justify-between mb-3">
+                            <p className="label !text-ink-400">Seats</p>
+                            <span className="bg-brand-50 text-brand font-black text-[10px] tracking-[0.14em] uppercase px-3 py-1.5 rounded-full">
+                                {seatsUsed} / {seatCap} seats used
+                            </span>
+                        </div>
+
+                        {/* Invite panel */}
+                        <AnimatePresence>
+                            {isInviting && canManage && (
+                                <motion.form
+                                    initial={{ opacity: 0, height: 0 }}
+                                    animate={{ opacity: 1, height: 'auto' }}
+                                    exit={{ opacity: 0, height: 0 }}
+                                    onSubmit={handleInvite}
+                                    className="overflow-hidden mb-4"
+                                >
+                                    <div className="bg-surface border border-brand/20 rounded-card p-4 space-y-3">
+                                        <div className="flex items-center justify-between">
+                                            <p className="label !text-ink-500">Invite a teammate</p>
+                                            <button type="button" onClick={() => setIsInviting(false)} className="text-ink-400 hover:text-foreground"><X className="w-4 h-4" /></button>
+                                        </div>
+                                        <div className="flex flex-col sm:flex-row gap-3">
+                                            <input
+                                                type="email" required placeholder="name@company.com" value={inviteEmail}
+                                                onChange={(e) => setInviteEmail(e.target.value)}
+                                                className="flex-1 px-4 py-2.5 bg-white border border-line rounded-control focus:outline-none focus:ring-4 focus:ring-brand/10 focus:border-brand font-semibold text-sm"
+                                            />
+                                            <div className="inline-flex bg-white border border-line rounded-control p-1">
+                                                {(['MEMBER', 'ADMIN'] as const).map((r) => (
+                                                    <button key={r} type="button" onClick={() => setInviteRole(r)}
+                                                        className={cn('px-4 py-1.5 rounded-chip font-black text-[11px] tracking-[0.1em] uppercase transition-all', inviteRole === r ? 'bg-brand text-white' : 'text-ink-400')}>{r}</button>
+                                                ))}
+                                            </div>
+                                            <button className="bg-ink-900 text-white font-black text-[11px] tracking-[0.1em] uppercase px-5 py-2.5 rounded-control hover:bg-black active:scale-[.98]">Send invite</button>
+                                        </div>
+                                        {inviteMeta && (
+                                            <p className="text-[12px] font-semibold text-emerald-600">
+                                                {inviteMeta.emailed ? 'Invite emailed.' : 'Invite created — copy the link:'}{' '}
+                                                <span className="font-mono text-ink-500 break-all">{`${typeof window !== 'undefined' ? window.location.origin : ''}/team/join?token=${inviteMeta.token}`}</span>
+                                            </p>
+                                        )}
+                                    </div>
+                                </motion.form>
+                            )}
+                        </AnimatePresence>
+
+                        {/* Roster */}
+                        <div className="flex flex-col gap-2.5">
+                            {team.members.map((m) => (
+                                <div key={m.id} className="flex items-center justify-between border border-line rounded-card p-3.5">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-control bg-ink-900 text-white grid place-items-center font-black">{(m.user.email[0] || '?').toUpperCase()}</div>
+                                        <div>
+                                            <div className="font-extrabold text-foreground text-sm">{m.user.email}</div>
+                                            <div className="flex items-center gap-2 mt-0.5">
+                                                <span className={cn('text-[9px] font-black tracking-[0.12em] uppercase', roleColor(m.role))}>{m.role}</span>
+                                                <span className="text-[11px] text-ink-400 font-medium">· {m.stats?.totalLeads ?? 0} leads · {m.stats?.activeCampaigns ?? 0} active</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                        <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-emerald-600">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />Active
+                                        </span>
+                                        {canManage && m.role !== 'OWNER' ? (
+                                            <button onClick={() => handleRemoveMember(m.user.id)} className="w-9 h-9 rounded-control bg-red-50 text-red-500 grid place-items-center hover:bg-red-100 transition-colors">
+                                                <Trash2 className="w-4 h-4" />
+                                            </button>
+                                        ) : m.role === 'OWNER' && (
+                                            <span className="text-[10px] font-black tracking-[0.1em] text-ink-400 uppercase">Owner</span>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* Pending invites */}
+                        {(team.invites || []).length > 0 && (
+                            <div className="mt-3 space-y-2">
+                                {team.invites.map((inv) => (
+                                    <div key={inv.id} className="bg-surface border border-dashed border-brand/30 rounded-card px-4 py-3 flex items-center justify-between">
+                                        <span className="text-[12px] font-semibold text-ink-500">Pending invite — <span className="text-foreground">{inv.email}</span></span>
+                                        <span className="text-[10px] font-black tracking-[0.12em] text-fuchsia-600 uppercase">Pending</span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )}
             </div>
         </div>
     );
