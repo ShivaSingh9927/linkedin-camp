@@ -389,7 +389,19 @@ model Team {
   id         String       @id @default(cuid())
   name       String
   ownerId    String
+  // The team's effective plan, mirrored from the owner's Subscription by the
+  // Razorpay webhook. Members inherit this tier (fan-out) without holding their
+  // own subscription. Team collaboration is Business-only (see config/plans.ts).
+  tier       SubscriptionTier @default(FREE)
+  // Seats the owner has paid for (subscription quantity). The invite/seat cap is
+  // derived from this, NOT a hardcoded constant.
+  seatsPurchased Int          @default(1)
   createdAt  DateTime     @default(now())
+  // Real FK to the owning user (was a bare string). Cascade so deleting the
+  // owner tears down the team.
+  owner        User         @relation("TeamOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  // The seat-based subscription lives on the team (owner pays for N seats).
+  Subscription Subscription?
   TeamInvite TeamInvite[]
   TeamMember TeamMember[]
 }
@@ -488,6 +500,7 @@ model User {
   Notification            Notification[]
   SmartList               SmartList[]
   TeamMember              TeamMember[]
+  OwnedTeams              Team[]            @relation("TeamOwner")
   Proxy                   Proxy?            @relation(fields: [proxyId], references: [id])
   WorkerLog               WorkerLog[]
   EmailAccount            EmailAccount?
@@ -636,6 +649,10 @@ enum InviteStatus {
 model Subscription {
   id                 String             @id @default(cuid())
   userId             String             @unique
+  // Set when this subscription pays for a whole team (seat-based, Business).
+  // The webhook fans the granted tier out to every TeamMember. Null = a normal
+  // single-user subscription.
+  teamId             String?            @unique
   provider           String             @default("razorpay")
   providerCustomerId String?
   providerSubId      String?            @unique // razorpay subscription_id
@@ -648,6 +665,7 @@ model Subscription {
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
   User               User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  Team               Team?              @relation(fields: [teamId], references: [id], onDelete: Cascade)
 
   @@index([status])
 }

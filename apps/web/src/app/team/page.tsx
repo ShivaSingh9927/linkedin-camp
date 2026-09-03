@@ -20,7 +20,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 // --- Types ---
 interface TeamMember {
     id: string;
-    role: 'ADMIN' | 'MEMBER';
+    role: 'OWNER' | 'ADMIN' | 'MEMBER';
     joinedAt: string;
     user: {
         id: string;
@@ -50,6 +50,9 @@ interface Team {
     id: string;
     name: string;
     ownerId: string;
+    tier?: string;
+    seatsPurchased?: number;
+    maxSeats?: number;
     members: TeamMember[];
     invites: TeamInvite[];
 }
@@ -178,6 +181,12 @@ export default function TeamPage() {
     // --- Team Dashboard ---
     const team = teamData.team!;
     const myRole = teamData.role;
+    // Owners and admins manage the team (invite / remove seats).
+    const canManage = myRole === 'OWNER' || myRole === 'ADMIN';
+    // Seat cap is plan-driven (falls back to current size if the API is old).
+    const seatCap = team.maxSeats ?? team.members.length;
+    const seatsUsed = team.members.length + (team.invites?.length || 0);
+    const atCapacity = seatsUsed >= seatCap;
 
     const totalInvitesToday = team.members.reduce((acc, m) => acc + (m.stats?.invitesToday || 0), 0);
     const totalDailyLimit = team.members.reduce((acc, m) => acc + (m.stats?.dailyInviteLimit || 30), 0);
@@ -198,14 +207,14 @@ export default function TeamPage() {
                     <p className="text-slate-500 text-sm sm:text-base font-semibold max-w-2xl leading-relaxed lg:opacity-70 uppercase tracking-wide">Workspace for consolidated prospecting and workforce orchestration.</p>
                 </div>
 
-                {myRole === 'ADMIN' && (
+                {canManage && (
                     <button
                         onClick={() => { setIsInviting(!isInviting); setInviteMeta(null); }}
-                        disabled={team.members.length + (team.invites?.length || 0) >= 10}
+                        disabled={atCapacity}
                         className={cn(
                             "flex items-center justify-center space-x-3 border-2 px-6 sm:px-10 py-4 sm:py-5 rounded-2xl sm:rounded-3xl font-black uppercase text-[10px] sm:text-xs tracking-[0.15em] transition-all shadow-premium active:scale-95 group",
-                            team.members.length + (team.invites?.length || 0) >= 10 
-                                ? 'bg-slate-50 text-slate-400 border-slate-100 cursor-not-allowed' 
+                            atCapacity
+                                ? 'bg-slate-50 text-slate-400 border-slate-100 cursor-not-allowed'
                                 : 'bg-background text-foreground border-foreground hover:bg-foreground hover:text-background'
                         )}
                     >
@@ -239,7 +248,7 @@ export default function TeamPage() {
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12">
                 {/* Invite Panel Sidebar */}
                 <AnimatePresence>
-                    {isInviting && myRole === 'ADMIN' && (
+                    {isInviting && canManage && (
                         <motion.div 
                             initial={{ opacity: 0, x: -20 }}
                             animate={{ opacity: 1, x: 0 }}
@@ -335,13 +344,13 @@ export default function TeamPage() {
                 {/* Workforce Display */}
                 <div className={cn(
                     "bg-white rounded-[3rem] sm:rounded-[4rem] border border-slate-100 shadow-premium overflow-hidden transition-all duration-500",
-                    isInviting && myRole === 'ADMIN' ? 'lg:col-span-8' : 'lg:col-span-12'
+                    isInviting && canManage ? 'lg:col-span-8' : 'lg:col-span-12'
                 )}>
                     <div className="px-8 sm:px-12 py-8 sm:py-10 border-b border-slate-50 flex flex-wrap items-center justify-between gap-6 bg-slate-50/20">
                         <div className="flex items-center space-x-4">
                             <h2 className="text-2xl sm:text-3xl font-black text-slate-900 uppercase tracking-tight italic">Division Units</h2>
                             <span className="bg-primary/10 text-primary px-3 sm:px-4 py-1 sm:py-1.5 rounded-full text-[9px] sm:text-[10px] font-black tracking-[0.2em] uppercase">
-                                {team.members.length}/10 Operational
+                                {seatsUsed}/{seatCap} Seats
                             </span>
                         </div>
                     </div>
@@ -361,7 +370,7 @@ export default function TeamPage() {
                                                 <p className="text-[9px] font-bold text-primary uppercase tracking-[0.15em]">{m.role}</p>
                                             </div>
                                         </div>
-                                        {myRole === 'ADMIN' && m.user.id !== team.ownerId && (
+                                        {canManage && m.user.id !== team.ownerId && (
                                             <button onClick={() => handleRemoveMember(m.user.id)} className="p-2.5 bg-red-50 text-red-500 rounded-xl">
                                                 <Trash2 className="w-4 h-4" />
                                             </button>
@@ -425,7 +434,7 @@ export default function TeamPage() {
                                                 <Shield className={cn("w-5 h-5 ml-auto", m.stats?.hasProxy ? "text-primary" : "text-slate-200")} />
                                             </td>
                                             <td className="px-4 py-8 text-right">
-                                                {myRole === 'ADMIN' && m.user.id !== team.ownerId && (
+                                                {canManage && m.user.id !== team.ownerId && (
                                                     <button onClick={() => handleRemoveMember(m.user.id)} className="p-3 text-red-500 hover:bg-red-50 rounded-2xl transition-all">
                                                         <Trash2 className="w-5 h-5" />
                                                     </button>

@@ -56,6 +56,11 @@ export interface Plan {
     /** false = the credits are a one-time grant (Free), not a monthly refill. */
     emailFinderRecurring: boolean;
     features: PlanFeatures;
+    /** Seats bundled into the base price (1 = single-user plan). */
+    seatsIncluded: number;
+    /** Hard ceiling on total seats (members + pending invites) the owner may
+     *  provision. 1 = no team. Extra seats above seatsIncluded are paid add-ons. */
+    maxSeats: number;
     supportSla: string;
     /** Display prices for the pricing page (single source of truth). Two price
      *  books (India ₹ = PPP, Global $ = Western WTP), NOT a currency conversion.
@@ -84,6 +89,8 @@ const FREE: Plan = {
     emailFinderCredits: 10,
     emailFinderRecurring: false, // one-time taste
     features: { crmSync: false, multichannel: false, team: false, api: false, copilot: 'limited', templates: 'starter' },
+    seatsIncluded: 1,
+    maxSeats: 1,
     supportSla: 'community',
     pricing: { inr: { monthly: 0, annualPerMonth: 0, annualTotal: 0 }, usd: { monthly: 0, annualPerMonth: 0, annualTotal: 0 } },
 };
@@ -98,6 +105,8 @@ const CORE: Plan = {
     emailFinderCredits: 100,
     emailFinderRecurring: true,
     features: { crmSync: true, multichannel: false, team: false, api: false, copilot: 'full', templates: 'all' },
+    seatsIncluded: 1,
+    maxSeats: 1,
     supportSla: 'email-48h',
     pricing: { inr: { monthly: 399, annualPerMonth: 333, annualTotal: 3990 }, usd: { monthly: 19, annualPerMonth: 16, annualTotal: 190 } },
 };
@@ -111,7 +120,9 @@ const PRO: Plan = {
     leadsStored: 2500,
     emailFinderCredits: 300,
     emailFinderRecurring: true,
-    features: { crmSync: true, multichannel: false, team: true, api: true, copilot: 'full', templates: 'all' },
+    features: { crmSync: true, multichannel: false, team: false, api: true, copilot: 'full', templates: 'all' },
+    seatsIncluded: 1,
+    maxSeats: 1, // Team management is a Business-tier capability.
     supportSla: 'priority-4h',
     pricing: { inr: { monthly: 1199, annualPerMonth: 999, annualTotal: 11990 }, usd: { monthly: 49, annualPerMonth: 41, annualTotal: 490 } },
 };
@@ -126,6 +137,8 @@ const BUSINESS: Plan = {
     emailFinderCredits: 500,
     emailFinderRecurring: true,
     features: { crmSync: true, multichannel: true, team: true, api: true, copilot: 'full', templates: 'all' },
+    seatsIncluded: 1, // owner seat; extra seats are paid add-ons at ~one plan/seat
+    maxSeats: 25,
     supportSla: 'priority-4h',
     pricing: { inr: { monthly: 1699, annualPerMonth: 1416, annualTotal: 16990 }, usd: { monthly: 69, annualPerMonth: 58, annualTotal: 690 } },
 };
@@ -165,6 +178,16 @@ export const LEAD_CAP_PAID = CORE.leadsStored; // lowest paid; real cap comes fr
 /** Max leads a user on this tier may store. */
 export function leadCapForTier(tier: SubscriptionTier | string | null | undefined): number {
     return planFor(tier).leadsStored;
+}
+
+/** Hard ceiling on total seats (members + pending invites) for a tier. */
+export function maxSeatsForTier(tier: SubscriptionTier | string | null | undefined): number {
+    return planFor(tier).maxSeats;
+}
+
+/** Seats bundled into the base price for a tier. */
+export function seatsIncludedForTier(tier: SubscriptionTier | string | null | undefined): number {
+    return planFor(tier).seatsIncluded;
 }
 
 // ── Razorpay price catalog (Phase 1) ─────────────────────────────────────────

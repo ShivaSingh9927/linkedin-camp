@@ -165,6 +165,25 @@ class MailService {
         });
     }
 
+    async sendTeamInvite(to: string, args: { teamName: string; inviterEmail?: string; inviteUrl: string; role: string }) {
+        const { teamName, inviterEmail, inviteUrl, role } = args;
+        const roleLabel = role === 'ADMIN' ? 'an admin' : 'a member';
+        const from = inviterEmail ? `${inviterEmail} invited you to` : 'You have been invited to join';
+        return this.send('Team invite email', {
+            to,
+            subject: `You're invited to join ${teamName} on Qampi`,
+            html: `
+                <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; rounded: 12px;">
+                    <h2 style="color: #0f172a;">Join ${teamName} on Qampi</h2>
+                    <p style="color: #475569; line-height: 1.6;">${from} <strong>${teamName}</strong> as ${roleLabel}.</p>
+                    <p style="color: #475569; line-height: 1.6;">Qampi runs safe, AI-assisted LinkedIn outreach. Accept the invite to get set up with your own workspace under this team.</p>
+                    <a href="${inviteUrl}" style="display: inline-block; margin-top: 20px; padding: 12px 24px; background-color: #7c3aed; color: white; text-decoration: none; border-radius: 8px; font-weight: bold;">Accept invite</a>
+                    <p style="color: #94a3b8; font-size: 12px; margin-top: 24px;">This invite expires in 7 days. If you didn't expect it, you can ignore this email.</p>
+                </div>
+            `,
+        });
+    }
+
     // For testing purposes.
     async sendTestEmail(to: string) {
         return this.send('Test email', {

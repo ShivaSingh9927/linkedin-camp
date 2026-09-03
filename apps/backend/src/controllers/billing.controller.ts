@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import crypto from 'crypto';
 import { prisma } from '@repo/db';
 import { ACTIVE_PLANS, planFor, razorpayPlanId, type BillingCycle } from '../config/plans';
+import type { SubscriptionTier } from '@prisma/client';
 import {
     razorpayConfigured,
     razorpayKeyId,
@@ -242,10 +243,13 @@ async function applyRazorpayEvent(event: any): Promise<void> {
         // The single write of User.tier: grant on active, revoke on terminal.
         // PAST_DUE / PAUSED / TRIALING keep the current tier (grace window) —
         // Phase 5 dunning refines the downgrade timing.
+        const seats: number = Number(entity.quantity) || local?.seats || 1;
         if (mapped === 'ACTIVE') {
             await prisma.user.update({ where: { id: userId }, data: { tier } });
+            await syncTeamTier(userId, tier, seats);
         } else if (mapped === 'CANCELED') {
             await prisma.user.update({ where: { id: userId }, data: { tier: 'FREE' } });
+            await syncTeamTier(userId, 'FREE', seats);
         }
 
         // Dunning: a charge failed (pending = will retry, halted = retries
@@ -259,6 +263,46 @@ async function applyRazorpayEvent(event: any): Promise<void> {
 
     // payment.failed carries no subscription entity; the subscription.pending/
     // .halted events above are the ones we act on for dunning.
+}
+
+// Seat-based billing fan-out. When a team owner's subscription becomes active
+// (or is revoked), mirror the tier onto the Team and every seat: members inherit
+// the owner's plan without holding their own subscription. Members who DO have
+// their own active subscription are left alone so we never clobber a self-payer.
+// No-op for a solo user (no owned team).
+async function syncTeamTier(ownerUserId: string, tier: SubscriptionTier, seats: number): Promise<void> {
+    try {
+        const team = await prisma.team.findFirst({
+            where: { ownerId: ownerUserId },
+            include: { TeamMember: true },
+        });
+        if (!team) return;
+
+        await prisma.team.update({
+            where: { id: team.id },
+            data: { tier, seatsPurchased: Math.max(1, seats) },
+        });
+
+        const memberIds = team.TeamMember.map((m) => m.userId).filter((id) => id !== ownerUserId);
+        if (memberIds.length === 0) return;
+
+        // Don't override a member who pays for their own plan.
+        const selfPayers = await prisma.subscription.findMany({
+            where: { userId: { in: memberIds }, status: 'ACTIVE' },
+            select: { userId: true },
+        });
+        const skip = new Set(selfPayers.map((s) => s.userId));
+        const targets = memberIds.filter((id) => !skip.has(id));
+        if (targets.length === 0) return;
+
+        await prisma.user.updateMany({
+            where: { id: { in: targets } },
+            data: { tier },
+        });
+        console.log(`[BILLING] team ${team.id}: fanned tier ${tier} to ${targets.length} member(s)`);
+    } catch (err: any) {
+        console.error('[BILLING] syncTeamTier failed:', err?.message || err);
+    }
 }
 
 // In-app notification + email nudging the user to fix a failed payment.
