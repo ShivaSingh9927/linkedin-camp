@@ -1418,10 +1418,13 @@ def activation_recommend_search(req: ActivationRequest):
     def _compute():
         system = (
             "You are Qampi, an outreach copilot that writes effective LinkedIn people-search "
-            "queries. LinkedIn search supports boolean operators (AND, OR, NOT, quotes for exact "
-            "phrases, parentheses for grouping). Best practice is precise TITLE + INDUSTRY + "
-            "LOCATION targeting over vague keyword soup. Propose searches that find the user's "
-            "best-fit buyer. Return ONLY valid JSON."
+            "queries. IMPORTANT: the user is on FREE/basic LinkedIn, whose search does NOT "
+            "support boolean — AND/OR/NOT, \"quoted phrases\", and (parentheses) are taken "
+            "literally and return ZERO results. Write each query as a SHORT PLAIN phrase of "
+            "2-5 words: one job title plus a domain/industry word (e.g. 'healthcare AI "
+            "executive', 'fintech product manager'). No operators, no quotes, no parentheses, "
+            "no lists of synonyms. Propose searches that find the user's best-fit buyer. "
+            "Return ONLY valid JSON."
         )
         user = f"""What I know about this user:
 {grounding}
@@ -1431,14 +1434,14 @@ Propose 2-3 DISTINCT people-searches (different angles, not rephrasings). Return
   "recommendations": [
     {{
       "label": "<3-5 word name for this search>",
-      "keywords": "<a ready-to-run LinkedIn boolean search string of job titles / terms>",
+      "keywords": "<a SHORT plain phrase, 2-5 words: a job title + domain word. NO boolean/quotes/parentheses>",
       "filters": {{ "title": "<primary title or ''>", "location": "<location or ''>", "industry": "<industry or ''>", "degree": "<any | 2nd | 3rd>" }},
       "rationale": "<one short sentence: why this finds good leads for them>"
     }}
   ]
 }}
 RULES:
-- `keywords` must be a real query using boolean operators and quoted phrases, e.g. ("head of data" OR "VP analytics") AND SaaS.
+- `keywords` MUST be a short plain phrase, 2-5 words, e.g. "head of data SaaS" or "VP analytics". NEVER use AND/OR/NOT, quotes, or parentheses — free LinkedIn returns zero for those.
 - Default degree to "any" (widest net). A narrow 2nd-degree search often returns NOBODY for a user with a small or early network — breadth beats warmth when the alternative is an empty list. Only narrow to 2nd when the user clearly has a large, relevant network.
 - If the user's goal is finding a JOB (not selling), target the HIRING side — recruiters, "talent acquisition", "technical recruiter", hiring managers, and team leads in the user's OWN field/role at companies they'd want to join. Do NOT target businesses they'd sell to; ignore any sales-style "target audience" in that case.
 - Ground titles + industry in the user's OWN field and location (from their headline/industry above) — never invent an unrelated vertical.
@@ -1565,11 +1568,12 @@ def activation_build_search(req: BuildSearchRequest):
         tried_block = "(none)"
 
     system = (
-        "You are Qampi, an expert at LinkedIn people-search. LinkedIn's keyword box "
-        "supports boolean: AND, OR, NOT, \"quoted phrases\", and (parentheses). Best "
-        "practice: OR-groups of role SYNONYMS, quote multi-word titles, and NOT out "
-        "noise (freelance, recruiter, intern, student, assistant) — precise targeting "
-        "beats a vague keyword. Return ONLY valid JSON."
+        "You are Qampi, an expert at LinkedIn people-search. IMPORTANT: the user is on "
+        "FREE/basic LinkedIn, whose keyword box does NOT support boolean — AND/OR/NOT, "
+        "\"quoted phrases\", and (parentheses) are taken literally and return ZERO "
+        "results. Write the query as a SHORT PLAIN phrase of 2-5 words: a job title "
+        "plus a domain/industry word (e.g. 'healthcare AI executive'). No operators, "
+        "no quotes, no parentheses, no synonym lists. Return ONLY valid JSON."
     )
     # ICP-first grounding: use the user's stated target audience/ICP if present;
     # otherwise infer one from their profile + who they've actually imported.
@@ -1581,16 +1585,17 @@ def activation_build_search(req: BuildSearchRequest):
             f'    {phrase}\n'
             f'Its filters were: {base_filter_bits}.\n'
             'Rebuild it BROADER while keeping the SAME kind of person the user asked '
-            'for — do NOT pivot to a different role, seniority, or industry, and do '
-            'NOT substitute the profile\'s target audience for what they asked. To '
-            'widen: (1) set degree to "any"; (2) DROP the most restrictive filter — '
-            'usually a niche industry (e.g. remove a "fintech" industry facet and '
-            'fold it into keywords at most, or drop it entirely); (3) expand the '
-            'title OR-group with more synonyms and adjacent titles for the same role '
-            '(e.g. founder → "founder" OR "co-founder" OR "founding" OR CEO OR '
-            '"managing director" OR owner); (4) remove any location filter unless the '
-            'user explicitly asked for one. First reason briefly about WHY it likely '
-            'returned nobody, then output the broader query for the SAME target.'
+            'for — do NOT pivot to a different role, seniority, or industry. The way '
+            'to broaden on free LinkedIn is to make the phrase SHORTER and SIMPLER, '
+            'NOT longer. Concretely: (1) set degree to "any"; (2) drop the most '
+            'restrictive word (a niche industry or a location) and any extra '
+            'qualifiers, keeping just the CORE title + one domain word (e.g. '
+            '"healthcare AI decision maker" -> "healthcare AI", or "senior fintech '
+            'growth marketer" -> "fintech marketer"); (3) if it is already 2 words, '
+            'generalise the title to a broader one (e.g. "Chief Medical Officer" -> '
+            '"healthcare leader"). Never add OR-lists, quotes, or parentheses. First '
+            'reason briefly about WHY it likely returned nobody, then output the '
+            'shorter, plainer query for the SAME target.'
         )
     elif rotate:
         ask = (
@@ -1600,8 +1605,8 @@ def activation_build_search(req: BuildSearchRequest):
             'a mined-out angle. IMPORTANT: if the angles below are mined out or returned '
             'nobody, the previous searches were almost certainly TOO NARROW for this '
             "user's network — so BROADEN, don't just re-theme: relax the connection "
-            'degree (2nd → 3rd), drop the most restrictive filter (e.g. a niche '
-            'industry), and widen the title OR-group to adjacent/related roles. First '
+            'degree (2nd → 3rd), drop the most restrictive word (e.g. a niche '
+            'industry), and use a shorter, plainer title. First '
             'reason briefly about WHY the prior angles likely returned nobody, then '
             'build a broader search that will actually surface people.'
         )
@@ -1618,21 +1623,21 @@ Searches they've ALREADY run (do not repeat these; prefer a new angle):
 
 {ask}
 
-Build ONE strong LinkedIn boolean search. Return EXACTLY:
+Build ONE strong LinkedIn search as a SHORT PLAIN phrase (no boolean). Return EXACTLY:
 {{
   "label": "<3-5 word name for this search>",
-  "keywords": "<a ready-to-run LinkedIn boolean string: OR-groups of role synonyms, quoted multi-word titles, NOT-exclusions for noise>",
+  "keywords": "<a SHORT plain phrase, 2-5 words: core job title + one domain/industry word. NO boolean, NO quotes, NO parentheses>",
   "filters": {{ "title": "<primary title or ''>", "location": "<location or ''>", "industry": "<industry or ''>", "degree": "<any | 2nd | 3rd>" }},
   "rationale": "<one short sentence: why this finds good leads for them>"
 }}
 RULES:
 - Grounding priority for WHO to target: (1) their stated target audience/ICP if given; (2) else infer an ICP from their profile + imported audience; (3) never invent facts.
-- `keywords` MUST use boolean operators, e.g. ("founder" OR "co-founder" OR "founding member" OR CEO) NOT (freelance OR recruiter OR intern).
-- If the user already typed a valid boolean query, keep it (just tidy it) — don't dumb it down.
+- `keywords` MUST be a short plain phrase, 2-5 words, e.g. "startup founder" or "fintech CEO". NEVER use AND/OR/NOT, quotes, or parentheses — free LinkedIn returns zero for boolean.
+- If the user typed a boolean query, SIMPLIFY it to a plain phrase (keep the core title + domain; drop the OR-lists and exclusions).
 - Ground titles/industry/location in their profile + audience when the phrase is vague — use the user's OWN field and location; never invent an unrelated vertical.
 - If the user's goal is finding a JOB, target the HIRING side (recruiters, "talent acquisition", "technical recruiter", hiring managers, team leads in the user's OWN field) — NOT businesses they'd sell to; ignore a sales-style target audience in that case.
 - When rotating, the new search must differ MEANINGFULLY from every angle listed above.
-- Default degree to "any" (widest net). A narrow 2nd-degree search often returns NOBODY for a small/early network — only use 2nd when the user clearly has a large, relevant network. Keep `keywords` under ~200 characters, `rationale` under ~15 words.
+- Default degree to "any" (widest net). A narrow 2nd-degree search often returns NOBODY for a small/early network — only use 2nd when the user clearly has a large, relevant network. Keep `keywords` to 2-5 plain words (under ~60 characters), `rationale` under ~15 words.
 - Output ONLY the JSON, no code fences, no trailing commas."""
     # Low-effort DeepSeek thinking sharpens the query and lets the model reason
     # about WHY prior angles failed before it builds the next one. Env kill-switch
@@ -1699,7 +1704,7 @@ def copilot_route(req: CopilotRouteRequest):
 Classify the message into exactly ONE intent from the allowed list and write a short warm reply. Return EXACTLY this JSON:
 {{
   "intent": "<one of: {', '.join(intents)}>",
-  "params": {{ "keywords": "<if find_leads: a ready-to-run LinkedIn search string; if lookup_lead: the person's name to find in their existing leads; else ''>", "templateId": "<if launch_campaign and the user named a specific template; else ''>" }},
+  "params": {{ "keywords": "<if find_leads: a SHORT plain phrase (2-5 words, job title + domain), NO boolean/quotes/parentheses; if lookup_lead: the person's name to find in their existing leads; else ''>", "templateId": "<if launch_campaign and the user named a specific template; else ''>" }},
   "reply": "<one short, warm sentence to show the user; if unsupported/off_topic, gently say what you can help with instead>",
   "needsConfirm": <true ONLY if intent is launch_campaign, else false>
 }}

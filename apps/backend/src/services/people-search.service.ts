@@ -180,6 +180,37 @@ export function parseSearchPeopleHtml(html: string, limit = 10): SearchPerson[] 
     return people;
 }
 
+// Free / basic LinkedIn people-search does NOT honor boolean syntax (AND / OR /
+// NOT, "quoted phrases", parentheses). A boolean string is taken literally and
+// returns "No results found" — the exact failure the copilot hit with the AI's
+// Sales-Navigator-style queries. Flatten any boolean into a plain, ranked
+// keyword phrase so the search actually matches people. No-op on a phrase that's
+// already plain. Applied to every search (LLM- or user-authored).
+export function simplifyKeywords(input: string): string {
+    let s = clean(input || '');
+    if (!s) return s;
+    const hasBoolean = /["()]|\b(AND|OR|NOT)\b/i.test(s);
+    if (hasBoolean) {
+        s = s.replace(/\bNOT\s*\([^)]*\)/gi, ' ');   // drop NOT(...) exclusion groups
+        s = s.replace(/\bNOT\s+"[^"]*"/gi, ' ');     // drop NOT "phrase"
+        s = s.replace(/\bNOT\s+\S+/gi, ' ');         // drop NOT term
+        s = s.replace(/[()"]/g, ' ');                // strip quotes + parentheses
+        s = s.replace(/\b(AND|OR)\b/gi, ' ');        // operators → space
+        // De-dupe words (case-insensitive), keep order, cap so it stays a phrase
+        // LinkedIn basic search ranks well rather than a 40-word title soup.
+        const seen = new Set<string>();
+        const words: string[] = [];
+        for (const w of clean(s).split(' ')) {
+            const k = w.toLowerCase();
+            if (!w || seen.has(k)) continue;
+            seen.add(k);
+            words.push(w);
+        }
+        s = words.slice(0, 8).join(' ');
+    }
+    return s.slice(0, 120);
+}
+
 // LinkedIn network-degree URL tokens: 1st=F, 2nd=S, 3rd+=O.
 const DEGREE_TOKEN: Record<1 | 2 | 3, string> = { 1: 'F', 2: 'S', 3: 'O' };
 
@@ -188,7 +219,9 @@ const DEGREE_TOKEN: Record<1 | 2 | 3, string> = { 1: 'F', 2: 'S', 3: 'O' };
 // keyword search already ranks title/location/industry text well, and this keeps
 // the request a single GET. Degree is a clean enum, so it goes on as a real param.
 export function buildSearchUrl(keywords: string, filters?: SearchFilters, page?: number): string {
-    const terms = [keywords, filters?.title, filters?.location, filters?.industry]
+    // Flatten any boolean in the free-text keywords (filter facets are already
+    // plain), then fold in the facets. Keeps the query free-tier-friendly.
+    const terms = [simplifyKeywords(keywords), filters?.title, filters?.location, filters?.industry]
         .map((t) => clean(t || ''))
         .filter(Boolean);
     const kw = terms.join(' ');
