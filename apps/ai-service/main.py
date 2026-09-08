@@ -135,8 +135,12 @@ class MessageRequest(BaseModel):
     job_title: Optional[str] = None
     location: Optional[str] = None
     about: Optional[str] = None
-    experience: Optional[List[Dict[str, str]]] = None
-    education: Optional[List[Dict[str, str]]] = None
+    # Values may be numbers/nulls/nested objects in real enriched profiles
+    # (Voyager experience/education), so accept Any — declaring Dict[str, str]
+    # 422'd every message with an enriched profile and forced the generic
+    # "Hello!" fallback (found 2026-09-08 in live E2E).
+    experience: Optional[List[Dict[str, Any]]] = None
+    education: Optional[List[Dict[str, Any]]] = None
     # post_content: the lead's most recent LinkedIn post, when the campaign's
     # profile-visit step ran with enrichPosts. A SOFT signal — the model may
     # reference it if it's a genuinely relevant hook, but must not force it.
