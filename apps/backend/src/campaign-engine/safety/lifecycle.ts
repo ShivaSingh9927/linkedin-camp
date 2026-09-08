@@ -141,6 +141,23 @@ export async function transitionLead(
     // transition; monotonic + idempotent so this is always safe.
     await syncLeadStatus(campaignId, leadId).catch(() => {});
 
+    // Terminal ⇒ retire the legacy CampaignLead row. The per-minute scheduler
+    // (cron/scheduler.ts) still enqueues off the OLD fields — isCompleted=false +
+    // nextActionDate<=now — and NOT off this progress row's status. If we mark a
+    // lead STALLED/FAILED here but leave isCompleted=false, the scheduler keeps
+    // re-enqueuing it forever: the worker skip-runs its node, re-arms a delay, and
+    // the loop never ends (proven in prod: 6 STALLED leads logged 108 connects for
+    // 20 leads and kept spinning). COMPLETED was already synced by the worker's
+    // "workflow complete" path; STALLED/FAILED/REPLIED were the gap. Awaited so the
+    // very next scheduler tick can't pick the lead up. currentStepId=null so no
+    // partial step is left pointing anywhere.
+    if (isNowTerminal) {
+        await prisma.campaignLead.updateMany({
+            where: { campaignId, leadId, isCompleted: false },
+            data: { isCompleted: true, currentStepId: null },
+        }).catch(() => {});
+    }
+
     if (isNowTerminal) {
         // Fire-and-forget — campaign-level rollup shouldn't block the engine.
         recomputeCampaignStatus(campaignId).catch(err =>

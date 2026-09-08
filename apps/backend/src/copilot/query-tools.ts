@@ -253,15 +253,21 @@ export async function getCampaignProgress(userId: string): Promise<CampaignProgr
             where: { campaignId: campaign.id },
             select: { leadId: true, status: true, statusReason: true, connectionStatus: true, needsRetry: true, nextRetryAt: true },
         }),
+        // Group by (actionType, leadId) — NOT just actionType — so we can count
+        // DISTINCT leads per action, not raw event rows. A single lead can log the
+        // same action many times (retries, relaunches, or the old terminal-lead
+        // loop that logged 26 connects for one lead), which made "108 connection
+        // requests" for 20 leads. Distinct-lead counts are what the user means by
+        // "how many did it reach" and can never exceed the lead total.
         prisma.actionLog.groupBy({
-            by: ['actionType'],
+            by: ['actionType', 'leadId'],
             where: { campaignId: campaign.id, status: 'SUCCESS' },
-            _count: { _all: true },
         }),
     ]);
 
+    // Collapse (actionType, leadId) rows → distinct-lead count per actionType.
     const act: Record<string, number> = {};
-    for (const a of actionRows) act[a.actionType] = a._count._all;
+    for (const a of actionRows) act[a.actionType] = (act[a.actionType] || 0) + 1;
     const actions = {
         visited: (act['profile-visit'] || 0) + (act['profile-visit-voyager'] || 0),
         invited: act['connect'] || 0,

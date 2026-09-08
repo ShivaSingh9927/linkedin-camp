@@ -263,8 +263,11 @@ export const copilotMessage = async (req: AuthRequest, res: Response) => {
 
         let reply = routed.reply;
         if (intent === 'check_status' && toolData) {
-            const coverage = await getSearchCoverage(userId).catch(() => null);
-            const facts = statusFacts(toolData, ctx, coverage);
+            // Search coverage ("you've run N searches / mined-out angles") is about
+            // FINDING leads, not campaign status — it was padding every status answer
+            // into a wall of text. Keep status replies about the campaign + replies +
+            // limits; coverage surfaces under find_leads/advise where it's relevant.
+            const facts = statusFacts(toolData, ctx, null);
             reply = [reply, facts].filter(Boolean).join('\n\n');
         } else if (intent === 'check_status' && !reply) {
             // Hinted check_status (no classifier reply) with no live campaign data —

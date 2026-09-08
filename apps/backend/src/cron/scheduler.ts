@@ -113,14 +113,27 @@ const isUserActive = redisPresence === 'ACTIVE' || (now - lastActivity < twoMins
         // (that N+1 was ~55% of the scheduler loop time at 1000+ users).
         const campaignById = new Map(userCampaigns.map(c => [c.id, c]));
 
-        const userPendingTasks = await prisma.campaignLead.findMany({
+        // Defense-in-depth against the two-table drift that caused the terminal-
+        // lead loop: the primary guard is isCompleted (lifecycle.transitionLead now
+        // flips it on every terminal transition), but a legacy row whose progress is
+        // terminal yet isCompleted still false would otherwise be re-enqueued every
+        // tick forever. Build a (campaign,lead) terminal key set so we exclude a lead
+        // only from the campaign it's terminal IN — a lead can sit in several
+        // campaigns, and being done in one must not stop it in another.
+        const terminalProgress = await prisma.campaignLeadProgress.findMany({
+          where: { campaignId: { in: campaignIds }, status: { in: ['COMPLETED', 'STALLED', 'FAILED', 'REPLIED'] } },
+          select: { campaignId: true, leadId: true },
+        });
+        const terminalKeys = new Set(terminalProgress.map((p) => `${p.campaignId}:${p.leadId}`));
+
+        const userPendingTasks = (await prisma.campaignLead.findMany({
           where: {
             campaignId: { in: campaignIds },
             nextActionDate: { lte: new Date() },
             isCompleted: false,
           },
           take: 5,
-        });
+        })).filter((t) => !terminalKeys.has(`${t.campaignId}:${t.leadId}`));
 
         console.log(`[Scheduler] User ${user.id}: Found ${userPendingTasks.length} pending tasks.`);
 
