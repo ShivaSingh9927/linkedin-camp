@@ -357,6 +357,19 @@ export const initCampaignWorker = () => {
         const data = job.data as CampaignJobData;
         console.log('[CAMPAIGN-WORKER] 📥 Received job:', job.id, data);
 
+        // Stale-job guard: only ACTIVE campaigns may process or re-queue. Without
+        // this, jobs enqueued while a campaign was ACTIVE keep re-queueing forever
+        // on lock-busy after it completes/pauses (the !acquired branch below blindly
+        // re-adds the job), monopolizing the per-account lock and starving live
+        // campaigns. Observed right after the terminal-lead heal: the old completed
+        // campaign's queued backlog blocked a fresh campaign for 15+ min with zero
+        // browser launches. Drop (don't re-queue) so the backlog self-drains.
+        const camp = await prisma.campaign.findUnique({ where: { id: data.campaignId }, select: { status: true } });
+        if (!camp || camp.status !== 'ACTIVE') {
+            console.log(`[CAMPAIGN-WORKER] ⏭️  Dropping job ${job.id} — campaign ${data.campaignId} is ${camp?.status ?? 'missing'} (not ACTIVE).`);
+            return;
+        }
+
         const lockToken = `${job.id || 'unknown'}-${Date.now()}`;
         const acquired = await tryAcquireAccountLock(data.userId, lockToken);
 
