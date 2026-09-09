@@ -1815,6 +1815,63 @@ Answer it directly and honestly using the data above."""
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class CopilotStatusRequest(BaseModel):
+    # An adaptive-depth status answer. The backend computes the EXACT figures
+    # (deterministic, from the DB) and passes them in as `facts`; the model only
+    # decides how much to say, never what the numbers are.
+    message: str
+    facts: str
+    history: Optional[List[ThreadMessage]] = None
+
+
+@app.post("/ai/copilot/status")
+def copilot_status(req: CopilotStatusRequest):
+    """Report campaign status at the depth the question calls for. `facts` is the
+    authoritative, code-computed snapshot (the ONLY source of numbers); the model
+    summarizes tightly for a plain 'what's the status' and expands only when the
+    user actually asks for detail ('why', 'full breakdown', 'walk me through').
+    This replaces the old always-dump-everything behaviour while keeping figures
+    exact (the model may not invent or alter a number)."""
+    msg = (req.message or "").strip()
+    if not msg:
+        raise HTTPException(status_code=400, detail="message required")
+    facts = (req.facts or "").strip() or "No campaign data available yet."
+
+    hist = ""
+    if req.history:
+        lines = []
+        for m in req.history[-6:]:
+            who = "USER" if (m.sender or "").strip().lower() in ("you", "user", "me") else "QAMPI"
+            lines.append(f"- {who}: {m.text}")
+        hist = "\nRecent conversation (so you don't repeat what you just said):\n" + "\n".join(lines)
+
+    system = (
+        "You are Qampi, reporting on the user's LinkedIn outreach. You are given the EXACT, "
+        "authoritative facts computed from their account. Use ONLY these facts — never invent, "
+        "round, or alter a number, name, or status, and never state a figure that isn't there. "
+        "Decide the DEPTH from the question: a plain status check ('what's the status', 'any "
+        "update?', 'now what', 'what's happening') gets a TIGHT 1-2 sentence summary — the "
+        "campaign name + state + the numbers that matter (connected/replied, and anything needing "
+        "attention like replies waiting or leads stopped). Only when the user clearly asks for "
+        "detail ('why', 'full breakdown', 'walk me through', 'what happened to each', 'the "
+        "sequence') do you expand with the specifics. Do NOT dump the whole breakdown by default. "
+        "If nothing changed since the last turn, say so briefly instead of re-listing everything. "
+        "No headings; use **bold** sparingly for the campaign name or a key figure."
+    )
+    user = (
+        f"Authoritative facts (the ONLY source of numbers — do not alter or add to them):\n"
+        f"{facts}\n{hist}\n\n"
+        f"User's question: \"{msg}\"\n\n"
+        f"Answer at the appropriate depth."
+    )
+
+    try:
+        raw = call_llm(system, user, temperature=0.3, max_tokens=350)
+        return {"reply": (raw or "").strip()}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ─── Reflect-back: "here's what I understand about your business" ──────────────
 
 class UnderstandBusinessRequest(BaseModel):

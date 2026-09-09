@@ -521,6 +521,25 @@ export async function generateCopilotAdvice(input: CopilotAdviceInput): Promise<
     }
 }
 
+// Adaptive-depth campaign-status answer. The caller computes the EXACT figures
+// (deterministic) and passes them as `facts`; the model only decides how much to
+// say — a tight summary for a plain status check, detail only when asked. Returns
+// '' on any failure so the caller can fall back to the deterministic facts block.
+export async function generateCopilotStatus(input: { message: string; facts: string; history?: ThreadMessage[] }): Promise<string> {
+    if (isMockAI()) { await mockAiWait(); return ''; }
+    try {
+        const response = await axios.post(`${AI_SERVICE_URL}/ai/copilot/status`, {
+            message: input.message,
+            facts: input.facts,
+            history: input.history,
+        }, { timeout: 30000 });
+        return (response.data?.reply as string) || '';
+    } catch (error: any) {
+        console.error('[AI-SERVICE] Error generating copilot status:', error.message);
+        return '';
+    }
+}
+
 // 2-3 recommended LinkedIn people-searches for the copilot to offer as chips.
 export async function generateActivationSearchRecs(g: ActivationGrounding): Promise<{ recommendations: SearchRecommendation[] }> {
     if (isMockAI()) {

@@ -21,6 +21,7 @@ import {
     generateSearchQuery,
     generateReplySuggestions,
     generateCopilotAdvice,
+    generateCopilotStatus,
     routeCopilotMessage,
     type ActivationGrounding,
 } from '../campaign-engine/ai-service';
@@ -268,7 +269,17 @@ export const copilotMessage = async (req: AuthRequest, res: Response) => {
             // into a wall of text. Keep status replies about the campaign + replies +
             // limits; coverage surfaces under find_leads/advise where it's relevant.
             const facts = statusFacts(toolData, ctx, null);
-            reply = [reply, facts].filter(Boolean).join('\n\n');
+            // Compose an adaptive-depth answer FROM the exact facts: a tight summary
+            // for a plain status check, the full breakdown only when the user asks for
+            // it ("why", "walk me through"). Numbers stay exact (the model may only use
+            // what's in `facts`). Fall back to the raw facts block if the AI call fails
+            // so we never regress to a broken/empty status.
+            const composed = await generateCopilotStatus({
+                message: message.trim(),
+                facts,
+                history: Array.isArray(history) ? history : undefined,
+            });
+            reply = composed || [reply, facts].filter(Boolean).join('\n\n');
         } else if (intent === 'check_status' && !reply) {
             // Hinted check_status (no classifier reply) with no live campaign data —
             // answer deterministically from the recent-campaign snapshot we already have.
