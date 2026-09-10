@@ -32,10 +32,33 @@ export const humanMoveAndClick = async (page: Page, target: ClickTarget) => {
     }
 };
 
+export interface HumanTypeOptions {
+    /**
+     * Empty the field before typing. Default true: clicking an input that
+     * already holds text (a browser-prefilled email, a retry that kept its
+     * value) leaves the caret at the end, so typing APPENDS and produces a
+     * silently corrupted value.
+     */
+    clearFirst?: boolean;
+    /**
+     * Inject an occasional wrong-key-then-backspace to look human. Default
+     * true, but pass false for anything where an uncorrected stray character
+     * is unrecoverable — credentials, OTP codes — since the correction depends
+     * on the backspace actually landing.
+     */
+    simulateTypos?: boolean;
+}
+
 /**
  * Types text with human-like rhythm, including occasional typos and corrections.
  */
-export const humanType = async (page: Page, target: ClickTarget, text: string) => {
+export const humanType = async (
+    page: Page,
+    target: ClickTarget,
+    text: string,
+    options: HumanTypeOptions = {}
+) => {
+    const { clearFirst = true, simulateTypos = true } = options;
     try {
         const box = typeof target === 'string' ? page.locator(target).first() : target;
         // `waitFor` only exists on a Locator. Callers also pass ElementHandles
@@ -47,9 +70,21 @@ export const humanType = async (page: Page, target: ClickTarget, text: string) =
         await box.click({ force: true });
         await wait(randomRange(800, 1500));
 
+        if (clearFirst) {
+            // fill('') is the reliable clear; fall back to select-all+Delete for
+            // contenteditable/odd targets where fill isn't supported.
+            try {
+                await (box as any).fill('');
+            } catch {
+                await page.keyboard.press('Control+A');
+                await page.keyboard.press('Delete');
+            }
+            await wait(randomRange(150, 350));
+        }
+
         for (let i = 0; i < text.length; i++) {
             // Simulate biological inconsistency/typo (1.5% chance)
-            if (Math.random() < 0.015 && i > 0) {
+            if (simulateTypos && Math.random() < 0.015 && i > 0) {
                 const homeRow = 'asdfghjkl';
                 const wrongKey = homeRow[Math.floor(Math.random() * homeRow.length)];
                 await page.keyboard.press(wrongKey);

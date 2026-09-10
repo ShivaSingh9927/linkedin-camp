@@ -204,7 +204,7 @@ export async function loginWithOtp(input: LoginInput): Promise<LoginOutcome> {
         if (emailInput) {
             await humanMoveAndClick(page, emailInput);
             await wait(500);
-            await humanType(page, emailInput, email);
+            await humanType(page, emailInput, email, { simulateTypos: false });
             await wait(1000);
         }
 
@@ -215,7 +215,7 @@ export async function loginWithOtp(input: LoginInput): Promise<LoginOutcome> {
         if (passInput) {
             await humanMoveAndClick(page, passInput);
             await wait(500);
-            await humanType(page, passInput, password);
+            await humanType(page, passInput, password, { simulateTypos: false });
             await wait(1000);
         }
 

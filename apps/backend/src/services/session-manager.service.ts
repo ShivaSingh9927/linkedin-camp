@@ -221,8 +221,22 @@ class SessionManagerService {
                 const { humanType, humanMoveAndClick } = await import('./stealth.service');
                 await humanMoveAndClick(page, usernameInput);
                 await page.waitForTimeout(500);
-                await humanType(page, usernameInput, email);
+                await humanType(page, usernameInput, email, { simulateTypos: false });
                 await page.waitForTimeout(1000);
+
+                // Read the field back. A mismatch here means the value we sent
+                // isn't the value LinkedIn will receive (appended-to prefill, a
+                // dropped keystroke, an autofill overwrite) — which otherwise
+                // surfaces only as an indistinguishable "wrong email or
+                // password" much later.
+                const typedEmail = await usernameInput.inputValue().catch(() => null);
+                if (typedEmail !== null && typedEmail !== email) {
+                    console.warn(
+                        `[SESSION-MANAGER] ⚠️  Email field mismatch — field holds ${typedEmail.length} chars, ` +
+                        `expected ${email.length}. Correcting via fill().`
+                    );
+                    await usernameInput.fill(email).catch(() => {});
+                }
 
                 const continueBtn = await page.$('button[type="submit"]:has-text("Continue")');
                 if (continueBtn) {
@@ -256,8 +270,19 @@ class SessionManagerService {
                     console.log(`[SESSION-MANAGER] Typing password (human-like)...`);
                     await humanMoveAndClick(page, passwordInput);
                     await page.waitForTimeout(500);
-                    await humanType(page, passwordInput, password);
+                    await humanType(page, passwordInput, password, { simulateTypos: false });
                     await page.waitForTimeout(1000);
+
+                    // Same read-back for the password. Compare LENGTH only —
+                    // never log the value itself.
+                    const typedPass = await passwordInput.inputValue().catch(() => null);
+                    if (typedPass !== null && typedPass !== password) {
+                        console.warn(
+                            `[SESSION-MANAGER] ⚠️  Password field mismatch — field holds ${typedPass.length} chars, ` +
+                            `expected ${password.length}. Correcting via fill().`
+                        );
+                        await passwordInput.fill(password).catch(() => {});
+                    }
 
                     // Try multiple ways to find and click the submit button
                     let clicked = false;
