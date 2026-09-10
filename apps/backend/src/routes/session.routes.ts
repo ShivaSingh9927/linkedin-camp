@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import {
     startSocketLogin,
+    startInteractiveLogin,
+    stopInteractiveLogin,
     submitCredentials,
     submit2FACode,
     validateSession,
@@ -14,6 +16,8 @@ import { redisOtpResolver, submitOtp, newRequestId, claimRefreshSlot, releaseRef
 const router = Router();
 
 router.post('/start-socket-login', authMiddleware, startSocketLogin);
+router.post('/start-interactive-login', authMiddleware, startInteractiveLogin);
+router.post('/stop-interactive-login', authMiddleware, stopInteractiveLogin);
 router.post('/submit-credentials', authMiddleware, submitCredentials);
 router.post('/submit-2fa-code', authMiddleware, submit2FACode);
 router.post('/validate-session', authMiddleware, validateSession);

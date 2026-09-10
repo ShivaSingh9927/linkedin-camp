@@ -17,8 +17,9 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import { io as socketIO, Socket } from 'socket.io-client';
+import InteractiveLoginView from './InteractiveLoginView';
 
-type LinkStep = 'CREDENTIALS' | 'PROGRESS' | '2FA' | 'APPROVAL' | 'SUCCESS';
+type LinkStep = 'CREDENTIALS' | 'PROGRESS' | '2FA' | 'APPROVAL' | 'INTERACTIVE' | 'SUCCESS';
 
 const apiBase = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/v1\/?$/, '');
 
@@ -38,6 +39,9 @@ export default function LinkedInConnectivity() {
     const [progressMsg, setProgressMsg] = useState('Initializing secure browser...');
 
     const socketRef = useRef<Socket | null>(null);
+    // Reactive copy of the socket: InteractiveLoginView subscribes to frames on
+    // it, and a ref wouldn't re-render the child once the connection exists.
+    const [socket, setSocket] = useState<Socket | null>(null);
 
     useEffect(() => {
         setMounted(true);
@@ -69,6 +73,7 @@ export default function LinkedInConnectivity() {
 
         const s = socketIO(apiBase, { transports: ['websocket', 'polling'] });
         socketRef.current = s;
+        setSocket(s);
 
         s.on('connect', () => s.emit('join_room', { token }));
         s.on('SESSION_LOGIN_STATUS', (payload: { status?: string; message?: string; error?: string }) => {
@@ -109,6 +114,7 @@ export default function LinkedInConnectivity() {
         return () => {
             s.disconnect();
             socketRef.current = null;
+            setSocket(null);
         };
     }, [showModal]);
 
@@ -188,6 +194,48 @@ export default function LinkedInConnectivity() {
             setStep('CREDENTIALS');
             setLoading(false);
         }
+    };
+
+    /**
+     * Interactive sign-in: the user drives our cloud browser directly. The only
+     * route available to accounts with no password (Google/Apple SSO) or a
+     * passkey, and a way out of a CAPTCHA or device-approval dead end.
+     */
+    const handleStartInteractive = async () => {
+        setError(null);
+        setLoading(true);
+        setStep('INTERACTIVE');
+        try {
+            const token = localStorage.getItem('token');
+            const res = await fetch(`${apiBase}/api/v1/session/start-interactive-login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                body: '{}',
+            });
+            if (!res.ok) {
+                const j = await res.json().catch(() => ({}));
+                throw new Error(j.error || 'Failed to start interactive login');
+            }
+            // Frames now arrive over Socket.IO; success lands as
+            // SESSION_LOGIN_STATUS=SUCCESS when the user reaches the feed.
+        } catch (err: any) {
+            setError(err?.message || 'Connection error');
+            setStep('CREDENTIALS');
+            setLoading(false);
+        }
+    };
+
+    const handleCancelInteractive = async () => {
+        try {
+            const token = localStorage.getItem('token');
+            await fetch(`${apiBase}/api/v1/session/stop-interactive-login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                body: '{}',
+            });
+        } catch { /* best effort — the session self-expires regardless */ }
+        setStep('CREDENTIALS');
+        setLoading(false);
     };
 
     const handleVerify2FA = async (e: React.FormEvent) => {
@@ -310,7 +358,37 @@ export default function LinkedInConnectivity() {
                                         <p className="text-[10px] text-slate-400 text-center font-medium">
                                             Credentials are sent over TLS and used once for browser login. We store the resulting session cookies only.
                                         </p>
+
+                                        {/* Escape hatch for accounts that have no password to type:
+                                            LinkedIn accounts created with Google/Apple, and passkey
+                                            users (whose authenticator can't reach our cloud browser). */}
+                                        <div className="pt-1 text-center">
+                                            <button
+                                                type="button"
+                                                onClick={handleStartInteractive}
+                                                className="text-xs font-semibold text-slate-500 underline underline-offset-2 hover:text-slate-900"
+                                            >
+                                                Signed up with Google, Apple or a passkey? Sign in here instead
+                                            </button>
+                                        </div>
                                     </motion.form>
+                                )}
+
+                                {step === 'INTERACTIVE' && (
+                                    <motion.div
+                                        key="interactive"
+                                        initial={{ opacity: 0 }}
+                                        animate={{ opacity: 1 }}
+                                        exit={{ opacity: 0 }}
+                                    >
+                                        <InteractiveLoginView socket={socket} onCancel={handleCancelInteractive} />
+                                        {error && (
+                                            <div className="mt-3 flex items-start space-x-2 p-3 bg-red-50 text-red-600 rounded-2xl text-xs border border-red-100">
+                                                <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                                                <span>{error}</span>
+                                            </div>
+                                        )}
+                                    </motion.div>
                                 )}
 
                                 {step === 'PROGRESS' && (

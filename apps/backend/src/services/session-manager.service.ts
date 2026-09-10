@@ -23,6 +23,31 @@ export interface ActiveLoginSession {
     // can pin itself to the same exit IP. LinkedIn invalidates a session
     // the moment it sees the cookies arrive from a different IP.
     proxy?: { server: string; username?: string; password?: string };
+    // Live CDP screencast for interactive login (see startInteractive). Held
+    // so input dispatch and teardown can reach the same session.
+    cdp?: any;
+    interactive?: boolean;
+}
+
+/**
+ * Input events relayed from the browser-side viewer. Deliberately a narrow
+ * shape: this is user-controlled data that ends up driving a real browser, so
+ * only these fields are read and everything else is ignored.
+ */
+export interface InteractiveInputEvent {
+    kind: 'mouse' | 'key' | 'text' | 'wheel';
+    type?: string;      // mousePressed | mouseReleased | mouseMoved | keyDown | keyUp
+    x?: number;
+    y?: number;
+    button?: 'left' | 'right' | 'middle' | 'none';
+    clickCount?: number;
+    deltaX?: number;
+    deltaY?: number;
+    key?: string;
+    code?: string;
+    text?: string;
+    windowsVirtualKeyCode?: number;
+    modifiers?: number;
 }
 
 class SessionManagerService {
@@ -523,6 +548,155 @@ class SessionManagerService {
             this.emitStatus(userId, 'FAILED', { error: e.message });
             return { error: e.message };
         }
+    }
+
+    // ─── Interactive (remote-controlled) login ──────────────────────────
+    //
+    // Why this exists: a LinkedIn account created with Google/Apple SSO has no
+    // password, and a passkey account can't authenticate to a datacenter
+    // browser at all (cross-device passkeys need BLE proximity). Those users
+    // cannot complete the credential form no matter what they type.
+    //
+    // The fix is to let them drive OUR browser: we stream the proxied Chromium
+    // to them and relay their clicks and keystrokes back. They sign in however
+    // they normally do — SSO, passkey-on-this-device, 2FA, CAPTCHA — and the
+    // cookies are minted INSIDE the proxied context, so the sticky-proxy
+    // invariant (see launchAuthenticatedContext) holds exactly as it does for
+    // the credential path. Nothing is stored on our side but the resulting
+    // session, same as before.
+
+    /** JPEG quality/width for streamed frames — legible text without flooding the socket. */
+    private static readonly SCREENCAST = { format: 'jpeg' as const, quality: 60, maxWidth: 1280, maxHeight: 800 };
+
+    /**
+     * Attach a live view to an already-launched login session and wait, in the
+     * background, for the user to reach the feed. Returns as soon as streaming
+     * starts; success arrives later over the socket.
+     */
+    async startInteractive(userId: string): Promise<{ success: boolean; error?: string }> {
+        const session = this.activeSessions.get(userId);
+        if (!session) {
+            return { success: false, error: 'No active login session. Start the login first.' };
+        }
+        if (session.interactive) {
+            return { success: true }; // already streaming — don't stack screencasts
+        }
+
+        const { page, context } = session;
+        try {
+            const cdp = await context.newCDPSession(page);
+            session.cdp = cdp;
+            session.interactive = true;
+
+            cdp.on('Page.screencastFrame', async (frame: any) => {
+                // Ack FIRST: Chromium stops producing frames until the previous
+                // one is acknowledged, so a throw here would freeze the stream.
+                cdp.send('Page.screencastFrameAck', { sessionId: frame.sessionId }).catch(() => {});
+                session.lastActivity = Date.now();
+                if (io) {
+                    io.to(`user_${userId}`).emit('INTERACTIVE_FRAME', {
+                        data: frame.data, // base64 jpeg
+                        metadata: frame.metadata, // deviceWidth/Height for click mapping
+                    });
+                }
+            });
+
+            await cdp.send('Page.startScreencast', SessionManagerService.SCREENCAST);
+            console.log(`[SESSION-MANAGER] Interactive login streaming for ${userId}`);
+            this.emitStatus(userId, 'AWAITING_CREDENTIALS', {
+                interactive: true,
+                message: 'Sign in to LinkedIn in the window below — including "Continue with Google" if that is how you joined.',
+            });
+
+            // Watch for completion out-of-band. The user may take minutes
+            // (password managers, phone for 2FA), so this window is generous
+            // but bounded; cleanupStaleSessions is kept at bay by the frame
+            // handler touching lastActivity.
+            void page
+                .waitForURL('**/feed/**', { timeout: 15 * 60 * 1000 })
+                .then(async () => {
+                    console.log(`[SESSION-MANAGER] Interactive login reached feed for ${userId}`);
+                    await this.stopInteractive(userId);
+                    await this.handleSuccess(userId);
+                })
+                .catch((e: any) => {
+                    console.log(`[SESSION-MANAGER] Interactive login did not reach feed for ${userId}: ${e.message}`);
+                });
+
+            return { success: true };
+        } catch (e: any) {
+            console.error(`[SESSION-MANAGER] startInteractive failed for ${userId}: ${e.message}`);
+            session.interactive = false;
+            return { success: false, error: e.message };
+        }
+    }
+
+    /**
+     * Relay one viewer input into the live browser. Silently no-ops when there
+     * is no interactive session — stray events from a stale tab are expected
+     * and must not throw.
+     */
+    async dispatchInput(userId: string, evt: InteractiveInputEvent): Promise<void> {
+        const session = this.activeSessions.get(userId);
+        if (!session?.cdp || !session.interactive) return;
+        session.lastActivity = Date.now();
+
+        try {
+            switch (evt.kind) {
+                case 'mouse':
+                    await session.cdp.send('Input.dispatchMouseEvent', {
+                        type: evt.type || 'mouseMoved',
+                        x: Math.round(evt.x || 0),
+                        y: Math.round(evt.y || 0),
+                        button: evt.button || 'none',
+                        clickCount: evt.clickCount ?? (evt.type === 'mousePressed' || evt.type === 'mouseReleased' ? 1 : 0),
+                        modifiers: evt.modifiers || 0,
+                    });
+                    break;
+                case 'wheel':
+                    await session.cdp.send('Input.dispatchMouseEvent', {
+                        type: 'mouseWheel',
+                        x: Math.round(evt.x || 0),
+                        y: Math.round(evt.y || 0),
+                        deltaX: evt.deltaX || 0,
+                        deltaY: evt.deltaY || 0,
+                        modifiers: evt.modifiers || 0,
+                    });
+                    break;
+                case 'key':
+                    await session.cdp.send('Input.dispatchKeyEvent', {
+                        type: evt.type === 'keyUp' ? 'keyUp' : 'keyDown',
+                        key: evt.key,
+                        code: evt.code,
+                        windowsVirtualKeyCode: evt.windowsVirtualKeyCode,
+                        nativeVirtualKeyCode: evt.windowsVirtualKeyCode,
+                        text: evt.text,
+                        modifiers: evt.modifiers || 0,
+                    });
+                    break;
+                case 'text':
+                    // Paste and IME composition arrive as whole strings.
+                    if (evt.text) await session.cdp.send('Input.insertText', { text: evt.text });
+                    break;
+            }
+        } catch (e: any) {
+            console.log(`[SESSION-MANAGER] dispatchInput (${evt.kind}) failed for ${userId}: ${e.message}`);
+        }
+    }
+
+    /** Stop streaming but LEAVE the browser open — the caller decides its fate. */
+    async stopInteractive(userId: string): Promise<void> {
+        const session = this.activeSessions.get(userId);
+        if (!session?.cdp) return;
+        try {
+            await session.cdp.send('Page.stopScreencast');
+        } catch {}
+        try {
+            await session.cdp.detach();
+        } catch {}
+        session.cdp = undefined;
+        session.interactive = false;
+        console.log(`[SESSION-MANAGER] Interactive streaming stopped for ${userId}`);
     }
 
     async submit2FA(userId: string, code: string): Promise<{ success?: boolean; error?: string }> {

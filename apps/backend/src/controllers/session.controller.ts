@@ -17,6 +17,42 @@ export const startSocketLogin = async (req: any, res: Response) => {
     }
 };
 
+/**
+ * Interactive login: launch the proxied browser and stream it to the user so
+ * they can sign in themselves. This is the only path available to accounts
+ * with no password — Google/Apple SSO — and to passkey users, whose
+ * authenticator can't reach a datacenter browser.
+ */
+export const startInteractiveLogin = async (req: any, res: Response) => {
+    const userId = req.user.id;
+
+    try {
+        const launched = await sessionManager.startLogin(userId);
+        if (!launched.success) {
+            return res.status(500).json({ error: launched.error });
+        }
+        const streaming = await sessionManager.startInteractive(userId);
+        if (!streaming.success) {
+            return res.status(500).json({ error: streaming.error });
+        }
+        res.json({ success: true, message: 'Interactive login started. Frames stream over Socket.IO.' });
+    } catch (error: any) {
+        console.error(`[SESSION-CTRL] startInteractiveLogin error: ${error.message}`);
+        res.status(500).json({ error: 'Failed to start interactive login' });
+    }
+};
+
+export const stopInteractiveLogin = async (req: any, res: Response) => {
+    const userId = req.user.id;
+    try {
+        await sessionManager.stopInteractive(userId);
+        res.json({ success: true });
+    } catch (error: any) {
+        console.error(`[SESSION-CTRL] stopInteractiveLogin error: ${error.message}`);
+        res.status(500).json({ error: 'Failed to stop interactive login' });
+    }
+};
+
 export const submitCredentials = async (req: any, res: Response) => {
     const userId = req.user.id;
     const { email, password } = req.body;
