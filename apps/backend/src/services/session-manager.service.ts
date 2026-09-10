@@ -7,6 +7,7 @@ import { io } from '../socket';
 import { captureEvent } from './analytics.service';
 import { uploadScreenshotToS3 } from './s3-upload.service';
 import { markAccountHealthy } from '../campaign-engine/safety/checkpoint';
+import { scopeToLinkedIn, purgeNonLinkedInCookies } from './cookie-scope';
 
 const SESSION_STORAGE_PATH = process.env.SESSION_STORAGE_PATH || path.join(process.cwd(), 'sessions');
 
@@ -467,7 +468,8 @@ class SessionManagerService {
 
             await page.waitForTimeout(5000);
 
-            const cookies = await context.cookies();
+            const cookies = scopeToLinkedIn(await context.cookies(), 'credential-login');
+            await purgeNonLinkedInCookies(context, cookies, 'credential-login');
             fs.writeFileSync(path.join(sessionPath, 'cookies.json'), JSON.stringify(cookies, null, 2));
             console.log(`[SESSION-MANAGER] ${cookies.length} cookies saved`);
 
@@ -741,7 +743,11 @@ class SessionManagerService {
 
         await page.waitForTimeout(3000);
 
-        const cookies = await context.cookies();
+        const cookies = scopeToLinkedIn(await context.cookies(), 'handleSuccess');
+        // Interactive login sends the user through Google/Apple SSO in THIS
+        // context, so strip the identity-provider session out of the on-disk
+        // profile before it is flushed. We only ever needed li_at.
+        await purgeNonLinkedInCookies(context, cookies, 'handleSuccess');
         const liAt = cookies.find((c: Cookie) => c.name === 'li_at')?.value;
 
         const userAgent = await page.evaluate(() => navigator.userAgent);

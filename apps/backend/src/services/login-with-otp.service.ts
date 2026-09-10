@@ -8,6 +8,7 @@ import { captureEvent } from './analytics.service';
 import { uploadScreenshotToS3 } from './s3-upload.service';
 import { tryCapsolver } from './captcha-solver.service';
 import { captureChallengeScenario } from './challenge-capture.service';
+import { scopeToLinkedIn } from './cookie-scope';
 
 const SCREENSHOT_DIR = process.env.SESSION_STORAGE_PATH || '/app/sessions';
 
@@ -270,7 +271,7 @@ export async function loginWithOtp(input: LoginInput): Promise<LoginOutcome> {
         // Settle on /feed so all post-login cookies (CSRF, etc.) land.
         await wait(4000);
 
-        const cookies = await context.cookies();
+        const cookies = scopeToLinkedIn(await context.cookies(), 'otp-login');
         const livedUa = await page.evaluate(() => navigator.userAgent);
         const lsObj = await page.evaluate(() => {
             const out: Record<string, string> = {};
