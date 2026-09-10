@@ -31,6 +31,10 @@ export interface ActiveLoginSession {
     // The page currently being streamed. Differs from `page` while an SSO
     // pop-up (Google/Apple sign-in) is open and has the user's attention.
     streamPage?: Page;
+    // Chrome owns the final FedCM account/consent dialog, so it is not part of
+    // any Page screenshot. Keep a separate CDP session on the LinkedIn opener
+    // to observe and complete that otherwise-invisible step.
+    fedCmCdp?: any;
     lastFrameAt?: number;
     keyframeTimer?: NodeJS.Timeout;
     // Consecutive probes showing the streamed pop-up has no content.
@@ -656,6 +660,80 @@ class SessionManagerService {
     }
 
     /**
+     * Complete Chrome's browser-owned FedCM prompts for Google SSO.
+     *
+     * The interactive viewer streams webpage pixels only. FedCM account and
+     * consent dialogs live in Chrome UI, outside those pixels, so a user can
+     * successfully finish Google password + 2FA and still be left on
+     * accounts.google.com/gsi/select while LinkedIn waits forever. The login
+     * context starts with cleared cookies, which means the only account in the
+     * chooser is the account the user has just explicitly authenticated.
+     */
+    private async attachFedCmHandler(userId: string, page: Page): Promise<void> {
+        const session = this.activeSessions.get(userId);
+        if (!session || session.fedCmCdp) return;
+
+        try {
+            const cdp = await session.context.newCDPSession(page);
+            session.fedCmCdp = cdp;
+
+            cdp.on('FedCm.dialogShown', async (dialog: any) => {
+                const live = this.activeSessions.get(userId);
+                if (!live?.interactive) return;
+                live.lastActivity = Date.now();
+
+                const accounts = Array.isArray(dialog?.accounts) ? dialog.accounts : [];
+                console.log(
+                    `[SESSION-MANAGER] FedCM dialog for ${userId}: type=${dialog?.dialogType} ` +
+                    `accounts=${accounts.length}`
+                );
+
+                try {
+                    if (dialog?.dialogType === 'AccountChooser') {
+                        if (accounts.length !== 1) {
+                            // Never guess when Chrome offers more than the one
+                            // account the user just authenticated. This should
+                            // not happen because startLogin clears cookies.
+                            console.error(
+                                `[SESSION-MANAGER] FedCM chooser has ${accounts.length} accounts; refusing automatic selection`
+                            );
+                            this.emitStatus(userId, 'FAILED', {
+                                error: 'Google offered multiple accounts in a browser-only dialog. Cancel and retry the connection in a fresh window.',
+                            });
+                            return;
+                        }
+                        await cdp.send('FedCm.selectAccount', {
+                            dialogId: dialog.dialogId,
+                            accountIndex: 0,
+                        });
+                        console.log(`[SESSION-MANAGER] Selected the newly authenticated FedCM account for ${userId}`);
+                    } else if (dialog?.dialogType === 'ConfirmIdpLogin') {
+                        await cdp.send('FedCm.clickDialogButton', {
+                            dialogId: dialog.dialogId,
+                            dialogButton: 'ConfirmIdpLoginContinue',
+                        });
+                        console.log(`[SESSION-MANAGER] Confirmed FedCM identity-provider login for ${userId}`);
+                    } else if (dialog?.dialogType === 'Error') {
+                        console.error(`[SESSION-MANAGER] Chrome displayed a FedCM error for ${userId}`);
+                    }
+                    // AutoReauthn intentionally needs no command; Chrome is
+                    // already completing it without a user choice.
+                } catch (e: any) {
+                    console.error(`[SESSION-MANAGER] FedCM dialog handling failed for ${userId}: ${e?.message}`);
+                }
+            });
+
+            await cdp.send('FedCm.enable', { disableRejectionDelay: true });
+            console.log(`[SESSION-MANAGER] FedCM dialog handler enabled for ${userId}`);
+        } catch (e: any) {
+            // Older Chrome builds may not expose the domain. Keep the manual
+            // page flow available and make the missing capability diagnosable.
+            session.fedCmCdp = undefined;
+            console.error(`[SESSION-MANAGER] Could not enable FedCM handler for ${userId}: ${e?.message}`);
+        }
+    }
+
+    /**
      * Screencast only emits on repaint, so a page that has finished rendering
      * and then sits still produces nothing. That is fine while the user is
      * looking at a page they already saw — but after switching back from a
@@ -772,6 +850,9 @@ class SessionManagerService {
 
         const { page, context } = session;
         try {
+            // Enable before the user clicks "Continue with Google"; FedCM only
+            // reports dialogs that appear after the domain is enabled.
+            await this.attachFedCmHandler(userId, page);
             await this.attachScreencast(userId, page);
             session.interactive = true;
 
@@ -898,6 +979,11 @@ class SessionManagerService {
         } catch {}
         session.cdp = undefined;
         session.streamPage = undefined;
+        if (session.fedCmCdp) {
+            try { await session.fedCmCdp.send('FedCm.disable'); } catch {}
+            try { await session.fedCmCdp.detach(); } catch {}
+            session.fedCmCdp = undefined;
+        }
         session.interactive = false;
         console.log(`[SESSION-MANAGER] Interactive streaming stopped for ${userId}`);
     }
