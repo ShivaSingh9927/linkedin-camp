@@ -139,6 +139,15 @@ export default function LinkedInConnectivity() {
         return () => clearTimeout(t);
     }, [step]);
 
+    // Reaching the feed already saves the session and closes the cloud browser
+    // server-side, so leaving the modal up is just a dead panel the user has to
+    // dismiss. Show "Connected" long enough to read, then get out of the way.
+    useEffect(() => {
+        if (step !== 'SUCCESS') return;
+        const t = setTimeout(() => setShowModal(false), 1800);
+        return () => clearTimeout(t);
+    }, [step]);
+
     const fetchStatus = async () => {
         try {
             const token = localStorage.getItem('token');

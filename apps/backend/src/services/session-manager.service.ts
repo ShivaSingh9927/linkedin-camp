@@ -598,9 +598,17 @@ class SessionManagerService {
             session.cdp = undefined;
         }
 
+        // Chromium only composites the FOREGROUND page. With the opener and an
+        // SSO pop-up both alive, whichever one is backgrounded stops painting:
+        // screencast emits nothing and screenshots come back blank. That is the
+        // white view — a live page we simply weren't allowed to see. Make the
+        // page we stream the visible one.
+        await target.bringToFront().catch(() => {});
+
         const cdp = await session.context.newCDPSession(target);
         session.cdp = cdp;
         session.streamPage = target;
+        console.log(`[SESSION-MANAGER] Streaming ${target.url().slice(0, 80)} for ${userId}`);
 
         cdp.on('Page.screencastFrame', (frame: any) => {
             // Ack FIRST: Chromium stops producing frames until the previous
@@ -642,6 +650,10 @@ class SessionManagerService {
 
             try {
                 if (live.streamPage.isClosed()) return;
+                // A stalled stream usually means this page lost the foreground
+                // (an SSO pop-up took it) and stopped compositing. Reclaim it,
+                // otherwise both the screencast AND this screenshot stay blank.
+                await live.streamPage.bringToFront().catch(() => {});
                 const buf = await live.streamPage.screenshot({ type: 'jpeg', quality: 60 });
                 const viewport = live.streamPage.viewportSize() || { width: 1280, height: 800 };
                 live.lastFrameAt = Date.now();
