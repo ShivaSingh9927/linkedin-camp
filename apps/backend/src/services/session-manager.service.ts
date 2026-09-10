@@ -625,6 +625,27 @@ class SessionManagerService {
         });
 
         await cdp.send('Page.startScreencast', SessionManagerService.SCREENCAST);
+
+        // Chromium drops the screencast when a page navigates ACROSS PROCESSES.
+        // SSO pop-ups always do this: Google opens about:blank, then navigates
+        // to accounts.google.com — a cross-origin hop — so the stream we just
+        // started dies exactly when the interesting page appears, leaving the
+        // blank first frame on screen with no error anywhere. Restart it after
+        // each navigation of the page we're streaming.
+        const restart = async () => {
+            const live = this.activeSessions.get(userId);
+            if (!live?.interactive || live.streamPage !== target || target.isClosed()) return;
+            try {
+                await target.bringToFront().catch(() => {});
+                await cdp.send('Page.startScreencast', SessionManagerService.SCREENCAST);
+                console.log(`[SESSION-MANAGER] Screencast restarted after navigation → ${target.url().slice(0, 80)}`);
+            } catch (e: any) {
+                console.log(`[SESSION-MANAGER] Screencast restart failed: ${e.message}`);
+            }
+        };
+        target.on('domcontentloaded', restart);
+        target.on('load', restart);
+
         this.startKeyframeWatchdog(userId);
     }
 
@@ -643,9 +664,33 @@ class SessionManagerService {
         const session = this.activeSessions.get(userId);
         if (!session || session.keyframeTimer) return;
 
+        let ticks = 0;
         session.keyframeTimer = setInterval(async () => {
             const live = this.activeSessions.get(userId);
             if (!live?.interactive || !live.streamPage) return;
+
+            // Periodic ground truth about WHAT is on screen. A blank stream is
+            // ambiguous from the outside — dead screencast, backgrounded page,
+            // or a page that is genuinely white — and guessing between those
+            // cost several deploy cycles. Log the page's own view of itself.
+            if (++ticks % 5 === 0 && !live.streamPage.isClosed()) {
+                try {
+                    const info = await live.streamPage.evaluate(() => ({
+                        url: location.href,
+                        title: document.title,
+                        visible: document.visibilityState,
+                        bodyChars: document.body?.innerText?.trim().length ?? 0,
+                        text: (document.body?.innerText || '').trim().slice(0, 120).replace(/\s+/g, ' '),
+                    }));
+                    console.log(
+                        `[SESSION-MANAGER] stream state ${userId}: url=${info.url.slice(0, 70)} ` +
+                        `visible=${info.visible} chars=${info.bodyChars} title="${info.title.slice(0, 40)}" text="${info.text}"`
+                    );
+                } catch (e: any) {
+                    console.log(`[SESSION-MANAGER] stream state probe failed for ${userId}: ${e?.message}`);
+                }
+            }
+
             if (Date.now() - (live.lastFrameAt || 0) < 1500) return; // stream is healthy
 
             try {
@@ -661,8 +706,12 @@ class SessionManagerService {
                     data: buf.toString('base64'),
                     metadata: { deviceWidth: viewport.width, deviceHeight: viewport.height },
                 });
-            } catch {
-                // Page may be mid-navigation; the next tick will catch it.
+            } catch (e: any) {
+                // Page may be mid-navigation; the next tick will catch it. Log
+                // it though — a permanently failing watchdog is the difference
+                // between "briefly stale" and "white screen forever", and
+                // swallowing it silently already cost one debugging round.
+                console.log(`[SESSION-MANAGER] Keyframe capture failed for ${userId}: ${e?.message}`);
             }
         }, 1000);
     }
