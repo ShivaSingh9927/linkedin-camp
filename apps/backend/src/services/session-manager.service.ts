@@ -322,7 +322,15 @@ class SessionManagerService {
                     if (credError && !postSubmitUrl.includes('/feed')) {
                         console.log(`[SESSION-MANAGER] Credential error detected: ${credError}`);
                         uploadScreenshotToS3(page, userId, 'cred_error').catch(() => {});
-                        this.emitStatus(userId, 'FAILED', { error: credError });
+                        // A LinkedIn account created via "Continue with Google"
+                        // (or Apple) has NO password — the credential lives with
+                        // the identity provider. LinkedIn still answers a
+                        // password attempt with the generic "wrong email or
+                        // password", which sends the user hunting for a password
+                        // that was never set. We can't tell the two cases apart
+                        // from here, so say so and give them the way out.
+                        const credErrorWithHint = `${credError} If you created your LinkedIn account with "Continue with Google" or Apple, it has no password yet — set one in LinkedIn under Settings & Privacy → Sign in & security → Change password, then try again.`;
+                        this.emitStatus(userId, 'FAILED', { error: credErrorWithHint });
                         await context.close().catch(() => {});
                         this.activeSessions.delete(userId);
                         return {}; // already emitted FAILED — don't let the controller re-emit
