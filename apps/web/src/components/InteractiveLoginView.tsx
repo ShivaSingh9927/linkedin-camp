@@ -108,27 +108,43 @@ export default function InteractiveLoginView({ socket, onCancel }: Props) {
         // Leave copy/paste to the browser so onPaste can handle it as text.
         if ((e.ctrlKey || e.metaKey) && ['v', 'c', 'x', 'a'].includes(e.key.toLowerCase())) return;
         e.preventDefault();
-        const printable = e.key.length === 1;
+
+        // Printable characters go in as TEXT, never as a synthesised key event.
+        // Deriving a virtual key code from the character (charCodeAt) collides
+        // catastrophically with the control-key range: '.' is 46, which is
+        // VK_DELETE, so typing a period deleted forward instead. The same trap
+        // catches '-' (45, Insert), '#' (35, End), '%' (37, Left) and most
+        // other punctuation. insertText carries no key semantics, so there is
+        // nothing to collide with.
+        if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+            send({ kind: 'text', text: e.key });
+            return;
+        }
+
         send({
             kind: 'key',
             type: 'keyDown',
             key: e.key,
             code: e.code,
-            text: printable ? e.key : e.key === 'Enter' ? '\r' : undefined,
-            windowsVirtualKeyCode: VK[e.key] ?? (printable ? e.key.toUpperCase().charCodeAt(0) : undefined),
+            text: e.key === 'Enter' ? '\r' : undefined,
+            windowsVirtualKeyCode: VK[e.key],
             modifiers: modifiersOf(e),
         });
     }, [send]);
 
     const onKeyUp = useCallback((e: React.KeyboardEvent) => {
         if ((e.ctrlKey || e.metaKey) && ['v', 'c', 'x', 'a'].includes(e.key.toLowerCase())) return;
+        // Printable keys were delivered via insertText on keydown — a lone
+        // keyUp for them would be meaningless (and would need the same bogus
+        // key code we just removed).
+        if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) return;
         e.preventDefault();
         send({
             kind: 'key',
             type: 'keyUp',
             key: e.key,
             code: e.code,
-            windowsVirtualKeyCode: VK[e.key] ?? (e.key.length === 1 ? e.key.toUpperCase().charCodeAt(0) : undefined),
+            windowsVirtualKeyCode: VK[e.key],
             modifiers: modifiersOf(e),
         });
     }, [send]);
