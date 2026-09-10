@@ -32,9 +32,11 @@ export interface ActiveLoginSession {
     // pop-up (Google/Apple sign-in) is open and has the user's attention.
     streamPage?: Page;
     // Chrome owns the final FedCM account/consent dialog, so it is not part of
-    // any Page screenshot. Keep a separate CDP session on the LinkedIn opener
-    // to observe and complete that otherwise-invisible step.
-    fedCmCdp?: any;
+    // any Page screenshot. A dialog can belong to the LinkedIn opener OR the
+    // Google popup, so keep one observer per page.
+    fedCmCdps?: Map<Page, any>;
+    // Only reload a contentless Google handoff once per login attempt.
+    ssoRecoveryAttempted?: boolean;
     lastFrameAt?: number;
     keyframeTimer?: NodeJS.Timeout;
     // Consecutive probes showing the streamed pop-up has no content.
@@ -671,11 +673,13 @@ class SessionManagerService {
      */
     private async attachFedCmHandler(userId: string, page: Page): Promise<void> {
         const session = this.activeSessions.get(userId);
-        if (!session || session.fedCmCdp) return;
+        if (!session) return;
+        if (!session.fedCmCdps) session.fedCmCdps = new Map();
+        if (session.fedCmCdps.has(page)) return;
 
         try {
             const cdp = await session.context.newCDPSession(page);
-            session.fedCmCdp = cdp;
+            session.fedCmCdps.set(page, cdp);
 
             cdp.on('FedCm.dialogShown', async (dialog: any) => {
                 const live = this.activeSessions.get(userId);
@@ -724,11 +728,14 @@ class SessionManagerService {
             });
 
             await cdp.send('FedCm.enable', { disableRejectionDelay: true });
-            console.log(`[SESSION-MANAGER] FedCM dialog handler enabled for ${userId}`);
+            console.log(
+                `[SESSION-MANAGER] FedCM dialog handler enabled for ${userId} on ` +
+                `${page === session.page ? 'LinkedIn opener' : 'SSO popup'}`
+            );
         } catch (e: any) {
             // Older Chrome builds may not expose the domain. Keep the manual
             // page flow available and make the missing capability diagnosable.
-            session.fedCmCdp = undefined;
+            session.fedCmCdps.delete(page);
             console.error(`[SESSION-MANAGER] Could not enable FedCM handler for ${userId}: ${e?.message}`);
         }
     }
@@ -787,6 +794,21 @@ class SessionManagerService {
                     if (isPopup && info.bodyChars === 0) {
                         live.blankTicks = (live.blankTicks || 0) + 1;
                         if (live.blankTicks >= 2 && !live.page.isClosed()) {
+                            const isGoogleHandoff = /^https:\/\/accounts\.google\.com\/gsi\/select(?:[/?#]|$)/i.test(info.url);
+                            if (isGoogleHandoff && !live.ssoRecoveryAttempted) {
+                                // Google password + 2FA have already succeeded
+                                // here. Retry the callback document once using
+                                // those freshly authenticated cookies.
+                                live.ssoRecoveryAttempted = true;
+                                live.blankTicks = 0;
+                                console.log(`[SESSION-MANAGER] Reloading stalled Google SSO handoff once for ${userId}`);
+                                await live.streamPage.reload({
+                                    waitUntil: 'domcontentloaded',
+                                    timeout: 30000,
+                                }).catch((e: any) =>
+                                    console.log(`[SESSION-MANAGER] Google SSO handoff reload failed: ${e?.message}`));
+                                return;
+                            }
                             console.log(
                                 `[SESSION-MANAGER] Pop-up has no UI (${info.url.slice(0, 60)}) — returning the view to LinkedIn`
                             );
@@ -866,6 +888,9 @@ class SessionManagerService {
             context.on('page', async (popup: Page) => {
                 try {
                     console.log(`[SESSION-MANAGER] Pop-up opened for ${userId} — following it`);
+                    // Browser-owned Google UI may be associated with this
+                    // popup target rather than the LinkedIn opener.
+                    await this.attachFedCmHandler(userId, popup);
                     await popup.waitForLoadState('domcontentloaded').catch(() => {});
                     await this.attachScreencast(userId, popup);
 
@@ -979,10 +1004,13 @@ class SessionManagerService {
         } catch {}
         session.cdp = undefined;
         session.streamPage = undefined;
-        if (session.fedCmCdp) {
-            try { await session.fedCmCdp.send('FedCm.disable'); } catch {}
-            try { await session.fedCmCdp.detach(); } catch {}
-            session.fedCmCdp = undefined;
+        if (session.fedCmCdps) {
+            for (const cdp of session.fedCmCdps.values()) {
+                try { await cdp.send('FedCm.disable'); } catch {}
+                try { await cdp.detach(); } catch {}
+            }
+            session.fedCmCdps.clear();
+            session.fedCmCdps = undefined;
         }
         session.interactive = false;
         console.log(`[SESSION-MANAGER] Interactive streaming stopped for ${userId}`);
