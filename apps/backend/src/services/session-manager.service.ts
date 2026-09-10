@@ -28,6 +28,9 @@ export interface ActiveLoginSession {
     // so input dispatch and teardown can reach the same session.
     cdp?: any;
     interactive?: boolean;
+    // The page currently being streamed. Differs from `page` while an SSO
+    // pop-up (Google/Apple sign-in) is open and has the user's attention.
+    streamPage?: Page;
 }
 
 /**
@@ -575,6 +578,42 @@ class SessionManagerService {
      * background, for the user to reach the feed. Returns as soon as streaming
      * starts; success arrives later over the socket.
      */
+    /**
+     * Point the live stream at `target`, replacing whatever was streaming.
+     * Used both for the initial attach and for following SSO pop-ups.
+     */
+    private async attachScreencast(userId: string, target: Page): Promise<void> {
+        const session = this.activeSessions.get(userId);
+        if (!session) return;
+
+        // Tear down the previous stream first — two screencasts feeding one
+        // socket would interleave frames from different pages.
+        if (session.cdp) {
+            try { await session.cdp.send('Page.stopScreencast'); } catch {}
+            try { await session.cdp.detach(); } catch {}
+            session.cdp = undefined;
+        }
+
+        const cdp = await session.context.newCDPSession(target);
+        session.cdp = cdp;
+        session.streamPage = target;
+
+        cdp.on('Page.screencastFrame', (frame: any) => {
+            // Ack FIRST: Chromium stops producing frames until the previous
+            // one is acknowledged, so a throw here would freeze the stream.
+            cdp.send('Page.screencastFrameAck', { sessionId: frame.sessionId }).catch(() => {});
+            session.lastActivity = Date.now();
+            if (io) {
+                io.to(`user_${userId}`).emit('INTERACTIVE_FRAME', {
+                    data: frame.data, // base64 jpeg
+                    metadata: frame.metadata, // deviceWidth/Height for click mapping
+                });
+            }
+        });
+
+        await cdp.send('Page.startScreencast', SessionManagerService.SCREENCAST);
+    }
+
     async startInteractive(userId: string): Promise<{ success: boolean; error?: string }> {
         const session = this.activeSessions.get(userId);
         if (!session) {
@@ -586,24 +625,33 @@ class SessionManagerService {
 
         const { page, context } = session;
         try {
-            const cdp = await context.newCDPSession(page);
-            session.cdp = cdp;
+            await this.attachScreencast(userId, page);
             session.interactive = true;
 
-            cdp.on('Page.screencastFrame', async (frame: any) => {
-                // Ack FIRST: Chromium stops producing frames until the previous
-                // one is acknowledged, so a throw here would freeze the stream.
-                cdp.send('Page.screencastFrameAck', { sessionId: frame.sessionId }).catch(() => {});
-                session.lastActivity = Date.now();
-                if (io) {
-                    io.to(`user_${userId}`).emit('INTERACTIVE_FRAME', {
-                        data: frame.data, // base64 jpeg
-                        metadata: frame.metadata, // deviceWidth/Height for click mapping
+            // Follow pop-ups. "Continue with Google" is Google Identity
+            // Services, which opens sign-in in a NEW WINDOW rather than
+            // navigating — a separate Page in this same context. Streaming
+            // only the original page made that click look like it did
+            // nothing: the Google window was open on the server, invisible to
+            // the user. Switch the stream to whatever page opens, and switch
+            // back when it closes (SSO pop-ups close themselves on success).
+            context.on('page', async (popup: Page) => {
+                try {
+                    console.log(`[SESSION-MANAGER] Pop-up opened for ${userId} — following it`);
+                    await popup.waitForLoadState('domcontentloaded').catch(() => {});
+                    await this.attachScreencast(userId, popup);
+
+                    popup.once('close', async () => {
+                        console.log(`[SESSION-MANAGER] Pop-up closed for ${userId} — back to the main window`);
+                        const live = this.activeSessions.get(userId);
+                        if (!live?.interactive) return;
+                        await this.attachScreencast(userId, live.page).catch(() => {});
                     });
+                } catch (err: any) {
+                    console.error(`[SESSION-MANAGER] Failed to follow pop-up for ${userId}: ${err.message}`);
                 }
             });
 
-            await cdp.send('Page.startScreencast', SessionManagerService.SCREENCAST);
             console.log(`[SESSION-MANAGER] Interactive login streaming for ${userId}`);
             this.emitStatus(userId, 'AWAITING_CREDENTIALS', {
                 interactive: true,
@@ -697,6 +745,7 @@ class SessionManagerService {
             await session.cdp.detach();
         } catch {}
         session.cdp = undefined;
+        session.streamPage = undefined;
         session.interactive = false;
         console.log(`[SESSION-MANAGER] Interactive streaming stopped for ${userId}`);
     }
