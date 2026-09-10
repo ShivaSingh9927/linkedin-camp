@@ -5,6 +5,7 @@ import { prisma } from '@repo/db';
 import path from 'path';
 import fs from 'fs';
 import { getOrAssignProxy } from '../services/proxy.service';
+import { captureUserCountry } from '../services/geo.service';
 import axios from 'axios';
 import { LinkedInService } from '../services/linkedin.service';
 import { mailService } from '../services/mail.service';
@@ -211,6 +212,11 @@ export const syncLinkedinProfile = async (req: any, res: Response) => {
 
 export const startLinkedinLogin = async (req: any, res: Response) => {
     const userId = req.user.id;
+    // Resolve the user's country BEFORE picking a proxy: this is the last moment
+    // we hold a request (and therefore a client IP), and the proxy chosen here
+    // gets pinned as linkedinProxySnapshot for the life of the session.
+    await captureUserCountry(userId, req).catch((e: any) =>
+        console.warn(`[LOGIN-BOT] Country capture failed for ${userId}: ${e?.message}`));
     await getOrAssignProxy(userId);
     
     res.json({ success: true, message: 'Launching LinkedIn login browser...' });
@@ -234,13 +240,21 @@ export const heartbeat = async (req: any, res: Response) => {
 
     try {
         const now = new Date();
+        // Only FILL IN the country, never overwrite it. The extension reports the
+        // operator's browser IP, which for a persona account (operator abroad,
+        // LinkedIn account elsewhere) contradicts the account's real country —
+        // letting a heartbeat flip actualCountry would drag the account onto the
+        // wrong-country proxy on its next re-login.
+        const existing = await prisma.user.findUnique({
+            where: { id: userId },
+            select: { actualCountry: true },
+        });
         await prisma.user.update({
             where: { id: userId },
             data: {
                 linkedinActiveInBrowser: true,
                 lastBrowserActivityAt: now,
-                // Update country if not set, helps with proxy assignment later
-                actualCountry: country || undefined
+                ...(country && !existing?.actualCountry ? { actualCountry: country } : {}),
             }
         });
 
