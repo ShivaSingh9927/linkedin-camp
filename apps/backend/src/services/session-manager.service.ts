@@ -31,6 +31,8 @@ export interface ActiveLoginSession {
     // The page currently being streamed. Differs from `page` while an SSO
     // pop-up (Google/Apple sign-in) is open and has the user's attention.
     streamPage?: Page;
+    lastFrameAt?: number;
+    keyframeTimer?: NodeJS.Timeout;
 }
 
 /**
@@ -72,6 +74,7 @@ class SessionManagerService {
         for (const [userId, session] of this.activeSessions.entries()) {
             if (now - session.lastActivity > 10 * 60 * 1000) {
                 console.log(`[SESSION-MANAGER] Session expired for user ${userId}`);
+                this.stopKeyframeWatchdog(session);
                 await session.context.close().catch(() => {});
                 this.activeSessions.delete(userId);
                 this.emitStatus(userId, 'FAILED', { error: 'Session timed out' });
@@ -86,6 +89,7 @@ class SessionManagerService {
     async startLogin(userId: string): Promise<{ success: boolean; error?: string }> {
         if (this.activeSessions.has(userId)) {
             const existing = this.activeSessions.get(userId)!;
+            this.stopKeyframeWatchdog(existing);
             await existing.context.close().catch(() => {});
             this.activeSessions.delete(userId);
         }
@@ -603,6 +607,7 @@ class SessionManagerService {
             // one is acknowledged, so a throw here would freeze the stream.
             cdp.send('Page.screencastFrameAck', { sessionId: frame.sessionId }).catch(() => {});
             session.lastActivity = Date.now();
+            session.lastFrameAt = Date.now();
             if (io) {
                 io.to(`user_${userId}`).emit('INTERACTIVE_FRAME', {
                     data: frame.data, // base64 jpeg
@@ -612,6 +617,54 @@ class SessionManagerService {
         });
 
         await cdp.send('Page.startScreencast', SessionManagerService.SCREENCAST);
+        this.startKeyframeWatchdog(userId);
+    }
+
+    /**
+     * Screencast only emits on repaint, so a page that has finished rendering
+     * and then sits still produces nothing. That is fine while the user is
+     * looking at a page they already saw — but after switching back from a
+     * closed SSO pop-up, the viewer's last frame belongs to the pop-up (or is
+     * blank), and without a repaint on the main page it would stay that way
+     * indefinitely: a white screen with a perfectly healthy session behind it.
+     *
+     * So poll for staleness and push a screenshot as a keyframe. Cheap,
+     * because it only fires when the stream has genuinely gone quiet.
+     */
+    private startKeyframeWatchdog(userId: string) {
+        const session = this.activeSessions.get(userId);
+        if (!session || session.keyframeTimer) return;
+
+        session.keyframeTimer = setInterval(async () => {
+            const live = this.activeSessions.get(userId);
+            if (!live?.interactive || !live.streamPage) return;
+            if (Date.now() - (live.lastFrameAt || 0) < 1500) return; // stream is healthy
+
+            try {
+                if (live.streamPage.isClosed()) return;
+                const buf = await live.streamPage.screenshot({ type: 'jpeg', quality: 60 });
+                const viewport = live.streamPage.viewportSize() || { width: 1280, height: 800 };
+                live.lastFrameAt = Date.now();
+                io?.to(`user_${userId}`).emit('INTERACTIVE_FRAME', {
+                    data: buf.toString('base64'),
+                    metadata: { deviceWidth: viewport.width, deviceHeight: viewport.height },
+                });
+            } catch {
+                // Page may be mid-navigation; the next tick will catch it.
+            }
+        }, 1000);
+    }
+
+    private stopKeyframeWatchdog(session: ActiveLoginSession) {
+        if (session.keyframeTimer) {
+            clearInterval(session.keyframeTimer);
+            session.keyframeTimer = undefined;
+        }
+    }
+
+    /** True while a live interactive stream exists for this user. */
+    isInteractive(userId: string): boolean {
+        return !!this.activeSessions.get(userId)?.interactive;
     }
 
     async startInteractive(userId: string): Promise<{ success: boolean; error?: string }> {
@@ -737,7 +790,12 @@ class SessionManagerService {
     /** Stop streaming but LEAVE the browser open — the caller decides its fate. */
     async stopInteractive(userId: string): Promise<void> {
         const session = this.activeSessions.get(userId);
-        if (!session?.cdp) return;
+        if (!session) return;
+        this.stopKeyframeWatchdog(session);
+        if (!session.cdp) {
+            session.interactive = false;
+            return;
+        }
         try {
             await session.cdp.send('Page.stopScreencast');
         } catch {}

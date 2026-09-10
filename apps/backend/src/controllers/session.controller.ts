@@ -27,6 +27,16 @@ export const startInteractiveLogin = async (req: any, res: Response) => {
     const userId = req.user.id;
 
     try {
+        // Re-entrancy guard. startLogin() closes any existing context and
+        // launches a fresh one, so a second call — a double click, a React
+        // re-render, a retry — silently destroys a sign-in the user is halfway
+        // through, and their in-flight SSO pop-up dies with it. If a stream is
+        // already live, leave it alone.
+        if (sessionManager.isInteractive(userId)) {
+            console.log(`[SESSION-CTRL] Interactive login already live for ${userId} — reusing it`);
+            return res.json({ success: true, message: 'Interactive login already running.' });
+        }
+
         const launched = await sessionManager.startLogin(userId);
         if (!launched.success) {
             return res.status(500).json({ error: launched.error });
