@@ -33,6 +33,8 @@ export interface ActiveLoginSession {
     streamPage?: Page;
     lastFrameAt?: number;
     keyframeTimer?: NodeJS.Timeout;
+    // Consecutive probes showing the streamed pop-up has no content.
+    blankTicks?: number;
 }
 
 /**
@@ -640,7 +642,11 @@ class SessionManagerService {
                 await cdp.send('Page.startScreencast', SessionManagerService.SCREENCAST);
                 console.log(`[SESSION-MANAGER] Screencast restarted after navigation → ${target.url().slice(0, 80)}`);
             } catch (e: any) {
-                console.log(`[SESSION-MANAGER] Screencast restart failed: ${e.message}`);
+                // "already active" just means the stream survived the
+                // navigation — the common case, and not worth reporting.
+                if (!/already active/i.test(e?.message || '')) {
+                    console.log(`[SESSION-MANAGER] Screencast restart failed: ${e.message}`);
+                }
             }
         };
         target.on('domcontentloaded', restart);
@@ -673,7 +679,7 @@ class SessionManagerService {
             // ambiguous from the outside — dead screencast, backgrounded page,
             // or a page that is genuinely white — and guessing between those
             // cost several deploy cycles. Log the page's own view of itself.
-            if (++ticks % 5 === 0 && !live.streamPage.isClosed()) {
+            if (++ticks % 2 === 0 && !live.streamPage.isClosed()) {
                 try {
                     const info = await live.streamPage.evaluate(() => ({
                         url: location.href,
@@ -686,6 +692,33 @@ class SessionManagerService {
                         `[SESSION-MANAGER] stream state ${userId}: url=${info.url.slice(0, 70)} ` +
                         `visible=${info.visible} chars=${info.bodyChars} title="${info.title.slice(0, 40)}" text="${info.text}"`
                     );
+
+                    // A pop-up with no content is Google Identity Services'
+                    // handshake step (accounts.google.com/gsi/select and
+                    // friends): it has NO UI by design — it postMessages the
+                    // result to the opener and closes. Streaming it shows the
+                    // user a white rectangle while the page that actually
+                    // matters, the LinkedIn opener, sits behind it. Worse,
+                    // holding the pop-up in the foreground backgrounds the
+                    // opener, and Chromium throttles background pages — which
+                    // can stall the very handshake we're waiting on.
+                    //
+                    // So once a pop-up proves contentless, hand the view back
+                    // to the opener.
+                    const isPopup = live.streamPage !== live.page;
+                    if (isPopup && info.bodyChars === 0) {
+                        live.blankTicks = (live.blankTicks || 0) + 1;
+                        if (live.blankTicks >= 2 && !live.page.isClosed()) {
+                            console.log(
+                                `[SESSION-MANAGER] Pop-up has no UI (${info.url.slice(0, 60)}) — returning the view to LinkedIn`
+                            );
+                            live.blankTicks = 0;
+                            await this.attachScreencast(userId, live.page).catch(() => {});
+                            return;
+                        }
+                    } else {
+                        live.blankTicks = 0;
+                    }
                 } catch (e: any) {
                     console.log(`[SESSION-MANAGER] stream state probe failed for ${userId}: ${e?.message}`);
                 }
