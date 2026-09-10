@@ -39,6 +39,10 @@ export interface ActiveLoginSession {
     // Retry the already-authorized Google button once with the fresh Google
     // session; the retry normally skips credentials and completes the handoff.
     googleSsoRetryAttempted?: boolean;
+    // Multiple signals can observe /feed at nearly the same time (navigation,
+    // waitForURL, and the stream watchdog). Only one may persist and close the
+    // context.
+    finalizing?: boolean;
     lastFrameAt?: number;
     keyframeTimer?: NodeJS.Timeout;
     // Consecutive probes showing the streamed pop-up has no content.
@@ -94,6 +98,10 @@ class SessionManagerService {
 
     private getUserSessionPath(userId: string): string {
         return path.join(SESSION_STORAGE_PATH, userId);
+    }
+
+    private isLinkedInFeed(url: string): boolean {
+        return /^https:\/\/(?:[a-z]{2}\.)?linkedin\.com\/feed(?:[/?#]|$)/i.test(url);
     }
 
     async startLogin(userId: string): Promise<{ success: boolean; error?: string }> {
@@ -769,6 +777,46 @@ class SessionManagerService {
         return false;
     }
 
+    /** Open the provider chosen in CloudLink on LinkedIn's real login page. */
+    private async openSsoProvider(userId: string, provider: 'google' | 'apple'): Promise<boolean> {
+        const session = this.activeSessions.get(userId);
+        if (!session?.interactive || session.page.isClosed()) return false;
+
+        const accessibleName = provider === 'google'
+            ? /continue with google/i
+            : /sign in with apple/i;
+
+        try {
+            for (const frame of session.page.frames()) {
+                const button = frame.getByRole('button', { name: accessibleName }).first();
+                if (!await button.isVisible().catch(() => false)) continue;
+                console.log(`[SESSION-MANAGER] Opening LinkedIn ${provider} SSO for ${userId}`);
+                await button.click({ timeout: 10000 });
+                return true;
+            }
+        } catch (e: any) {
+            console.error(`[SESSION-MANAGER] Could not open ${provider} SSO for ${userId}: ${e?.message}`);
+        }
+        return false;
+    }
+
+    /** Persist and tear down exactly once when any observer sees LinkedIn feed. */
+    private async completeInteractiveLogin(userId: string, source: string): Promise<void> {
+        const session = this.activeSessions.get(userId);
+        if (!session || session.finalizing || !this.isLinkedInFeed(session.page.url())) return;
+
+        session.finalizing = true;
+        console.log(`[SESSION-MANAGER] Interactive login reached feed for ${userId} (${source})`);
+        try {
+            await this.stopInteractive(userId);
+            await this.handleSuccess(userId);
+        } catch (e: any) {
+            session.finalizing = false;
+            console.error(`[SESSION-MANAGER] Interactive login finalization failed for ${userId}: ${e?.message}`);
+            this.emitStatus(userId, 'FAILED', { error: 'LinkedIn connected, but the session could not be saved. Please retry.' });
+        }
+    }
+
     /**
      * Screencast only emits on repaint, so a page that has finished rendering
      * and then sits still produces nothing. That is fine while the user is
@@ -788,6 +836,13 @@ class SessionManagerService {
         session.keyframeTimer = setInterval(async () => {
             const live = this.activeSessions.get(userId);
             if (!live?.interactive || !live.streamPage) return;
+
+            // URL events can be missed during Google's popup handoff. Poll the
+            // authoritative opener as a fallback and finalize immediately.
+            if (this.isLinkedInFeed(live.page.url())) {
+                void this.completeInteractiveLogin(userId, 'watchdog');
+                return;
+            }
 
             // Periodic ground truth about WHAT is on screen. A blank stream is
             // ambiguous from the outside — dead screencast, backgrounded page,
@@ -899,7 +954,7 @@ class SessionManagerService {
         return !!this.activeSessions.get(userId)?.interactive;
     }
 
-    async startInteractive(userId: string): Promise<{ success: boolean; error?: string }> {
+    async startInteractive(userId: string, provider?: 'google' | 'apple'): Promise<{ success: boolean; error?: string }> {
         const session = this.activeSessions.get(userId);
         if (!session) {
             return { success: false, error: 'No active login session. Start the login first.' };
@@ -915,6 +970,16 @@ class SessionManagerService {
             await this.attachFedCmHandler(userId, page);
             await this.attachScreencast(userId, page);
             session.interactive = true;
+
+            // Observe the opener directly. This fires earlier than a rendered
+            // screencast frame and does not depend on Google closing its popup.
+            const detectFeed = () => {
+                void this.completeInteractiveLogin(userId, 'navigation');
+            };
+            page.on('framenavigated', (frame) => {
+                if (frame === page.mainFrame() && this.isLinkedInFeed(frame.url())) detectFeed();
+            });
+            page.on('domcontentloaded', detectFeed);
 
             // Follow pop-ups. "Continue with Google" is Google Identity
             // Services, which opens sign-in in a NEW WINDOW rather than
@@ -949,17 +1014,20 @@ class SessionManagerService {
                 message: 'Sign in to LinkedIn in the window below — including "Continue with Google" if that is how you joined.',
             });
 
+            if (provider) {
+                const opened = await this.openSsoProvider(userId, provider);
+                if (!opened) {
+                    console.log(`[SESSION-MANAGER] ${provider} button was not auto-opened; leaving the LinkedIn login page interactive`);
+                }
+            }
+
             // Watch for completion out-of-band. The user may take minutes
             // (password managers, phone for 2FA), so this window is generous
             // but bounded; cleanupStaleSessions is kept at bay by the frame
             // handler touching lastActivity.
             void page
                 .waitForURL('**/feed/**', { timeout: 15 * 60 * 1000 })
-                .then(async () => {
-                    console.log(`[SESSION-MANAGER] Interactive login reached feed for ${userId}`);
-                    await this.stopInteractive(userId);
-                    await this.handleSuccess(userId);
-                })
+                .then(() => this.completeInteractiveLogin(userId, 'waitForURL'))
                 .catch((e: any) => {
                     console.log(`[SESSION-MANAGER] Interactive login did not reach feed for ${userId}: ${e.message}`);
                 });
@@ -1093,8 +1161,6 @@ class SessionManagerService {
     private async handleSuccess(userId: string): Promise<{ success: boolean }> {
         const session = this.activeSessions.get(userId)!;
         const { page, context } = session;
-
-        await page.waitForTimeout(3000);
 
         const cookies = scopeToLinkedIn(await context.cookies(), 'handleSuccess');
         // Interactive login sends the user through Google/Apple SSO in THIS

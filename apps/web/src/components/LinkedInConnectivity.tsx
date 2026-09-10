@@ -15,6 +15,8 @@ import {
     ArrowRight,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { FcGoogle } from 'react-icons/fc';
+import { FaApple } from 'react-icons/fa';
 import { toast } from 'sonner';
 import { io as socketIO, Socket } from 'socket.io-client';
 import InteractiveLoginView from './InteractiveLoginView';
@@ -81,8 +83,9 @@ export default function LinkedInConnectivity() {
             else if (payload?.status) setProgressMsg(payload.status);
 
             if (payload?.status === 'SUCCESS') {
-                setStep('SUCCESS');
-                fetchStatus();
+                setStatus({ connected: true, expired: false });
+                setShowModal(false);
+                void fetchStatus();
                 toast.success('LinkedIn connected!');
                 setLoading(false);
             } else if (payload?.status === 'AWAITING_2FA') {
@@ -136,15 +139,6 @@ export default function LinkedInConnectivity() {
             setStep('CREDENTIALS');
             setLoading(false);
         }, ms);
-        return () => clearTimeout(t);
-    }, [step]);
-
-    // Reaching the feed already saves the session and closes the cloud browser
-    // server-side, so leaving the modal up is just a dead panel the user has to
-    // dismiss. Show "Connected" long enough to read, then get out of the way.
-    useEffect(() => {
-        if (step !== 'SUCCESS') return;
-        const t = setTimeout(() => setShowModal(false), 1800);
         return () => clearTimeout(t);
     }, [step]);
 
@@ -210,7 +204,7 @@ export default function LinkedInConnectivity() {
      * route available to accounts with no password (Google/Apple SSO) or a
      * passkey, and a way out of a CAPTCHA or device-approval dead end.
      */
-    const handleStartInteractive = async () => {
+    const handleStartInteractive = async (provider: 'google' | 'apple') => {
         setError(null);
         setLoading(true);
         setStep('INTERACTIVE');
@@ -219,7 +213,7 @@ export default function LinkedInConnectivity() {
             const res = await fetch(`${apiBase}/api/v1/session/start-interactive-login`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                body: '{}',
+                body: JSON.stringify({ provider }),
             });
             if (!res.ok) {
                 const j = await res.json().catch(() => ({}));
@@ -368,16 +362,29 @@ export default function LinkedInConnectivity() {
                                             Credentials are sent over TLS and used once for browser login. We store the resulting session cookies only.
                                         </p>
 
-                                        {/* Escape hatch for accounts that have no password to type:
-                                            LinkedIn accounts created with Google/Apple, and passkey
-                                            users (whose authenticator can't reach our cloud browser). */}
-                                        <div className="pt-1 text-center">
+                                        <div className="space-y-2 pt-1">
+                                            <div className="flex items-center gap-3 py-1" aria-hidden="true">
+                                                <span className="h-px flex-1 bg-slate-200" />
+                                                <span className="text-[11px] font-semibold text-slate-400">or</span>
+                                                <span className="h-px flex-1 bg-slate-200" />
+                                            </div>
                                             <button
                                                 type="button"
-                                                onClick={handleStartInteractive}
-                                                className="text-xs font-semibold text-slate-500 underline underline-offset-2 hover:text-slate-900"
+                                                onClick={() => handleStartInteractive('google')}
+                                                disabled={loading}
+                                                className="relative flex h-12 w-full items-center justify-center rounded-full border border-slate-400 bg-white px-5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0a66c2] focus-visible:ring-offset-2 disabled:opacity-60"
                                             >
-                                                Signed up with Google, Apple or a passkey? Sign in here instead
+                                                <FcGoogle className="absolute left-5 h-5 w-5" aria-hidden="true" />
+                                                Continue with Google
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => handleStartInteractive('apple')}
+                                                disabled={loading}
+                                                className="relative flex h-12 w-full items-center justify-center rounded-full border border-slate-400 bg-white px-5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0a66c2] focus-visible:ring-offset-2 disabled:opacity-60"
+                                            >
+                                                <FaApple className="absolute left-5 h-5 w-5 text-black" aria-hidden="true" />
+                                                Sign in with Apple
                                             </button>
                                         </div>
                                     </motion.form>

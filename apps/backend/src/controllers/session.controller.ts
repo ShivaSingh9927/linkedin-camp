@@ -25,6 +25,11 @@ export const startSocketLogin = async (req: any, res: Response) => {
  */
 export const startInteractiveLogin = async (req: any, res: Response) => {
     const userId = req.user.id;
+    const provider = req.body?.provider;
+
+    if (provider !== undefined && provider !== 'google' && provider !== 'apple') {
+        return res.status(400).json({ error: 'Provider must be google or apple.' });
+    }
 
     try {
         // Re-entrancy guard. startLogin() closes any existing context and
@@ -41,7 +46,7 @@ export const startInteractiveLogin = async (req: any, res: Response) => {
         if (!launched.success) {
             return res.status(500).json({ error: launched.error });
         }
-        const streaming = await sessionManager.startInteractive(userId);
+        const streaming = await sessionManager.startInteractive(userId, provider);
         if (!streaming.success) {
             return res.status(500).json({ error: streaming.error });
         }
