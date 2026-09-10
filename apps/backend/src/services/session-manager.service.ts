@@ -615,6 +615,22 @@ class SessionManagerService {
     // LinkedIn renders a wrong-email / wrong-password error inline on the login
     // page (no navigation). Detect it so we fail in ~1s instead of waiting the
     // full 120s feed timeout. Returns the human-readable error text, or null.
+    /**
+     * Known LinkedIn credential-rejection copy. Used as a fallback when the
+     * id-based error containers below don't match — LinkedIn reskins the login
+     * form periodically, and when these selectors go stale the caller silently
+     * falls through to the 120s feed timeout and reports
+     * "page.waitForURL: Timeout" instead of "wrong password", which is
+     * indistinguishable from a network/proxy failure to whoever is debugging.
+     */
+    private static readonly CRED_ERROR_PHRASES = [
+        'Wrong email or password',
+        "That's not the right password",
+        'Hmm, that’s not the right password',
+        'Please enter a valid email address or phone number',
+        'Couldn’t find a LinkedIn account associated with this email',
+    ];
+
     private async detectCredentialError(page: Page): Promise<string | null> {
         try {
             const selectors = ['#error-for-password', '#error-for-username', 'div[error-for]', '.form__label--error'];
@@ -623,6 +639,17 @@ class SessionManagerService {
                 if (el && await el.isVisible().catch(() => false)) {
                     const txt = (await el.innerText().catch(() => '')).trim();
                     if (txt) return txt;
+                }
+            }
+
+            // Fallback: look for the error copy itself. Scoped to VISIBLE nodes
+            // so hidden/templated markup can't produce a false positive that
+            // aborts a login which is really at a checkpoint.
+            for (const phrase of SessionManagerService.CRED_ERROR_PHRASES) {
+                const loc = page.locator(`text=${phrase}`).first();
+                if (await loc.isVisible({ timeout: 500 }).catch(() => false)) {
+                    const txt = (await loc.innerText().catch(() => '')).trim();
+                    return txt || phrase;
                 }
             }
         } catch {}
