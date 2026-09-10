@@ -35,8 +35,10 @@ export interface ActiveLoginSession {
     // any Page screenshot. A dialog can belong to the LinkedIn opener OR the
     // Google popup, so keep one observer per page.
     fedCmCdps?: Map<Page, any>;
-    // Only reload a contentless Google handoff once per login attempt.
-    ssoRecoveryAttempted?: boolean;
+    // A long Google password/2FA flow can return with a stale popup opener.
+    // Retry the already-authorized Google button once with the fresh Google
+    // session; the retry normally skips credentials and completes the handoff.
+    googleSsoRetryAttempted?: boolean;
     lastFrameAt?: number;
     keyframeTimer?: NodeJS.Timeout;
     // Consecutive probes showing the streamed pop-up has no content.
@@ -741,6 +743,33 @@ class SessionManagerService {
     }
 
     /**
+     * Re-open Google's LinkedIn sign-in button after Google authentication has
+     * completed in a popup that failed to hand its credential to the opener.
+     * Playwright's click is a trusted user gesture, and this is only called
+     * after the user explicitly chose Google in the same interactive attempt.
+     */
+    private async retryGoogleSso(userId: string): Promise<boolean> {
+        const session = this.activeSessions.get(userId);
+        if (!session?.interactive || session.page.isClosed()) return false;
+
+        try {
+            await session.page.bringToFront().catch(() => {});
+            for (const frame of session.page.frames()) {
+                if (!/^https:\/\/accounts\.google\.com\/gsi\/button(?:[/?#]|$)/i.test(frame.url())) continue;
+                const button = frame.getByRole('button', { name: /continue with google/i }).first();
+                if (!await button.isVisible().catch(() => false)) continue;
+                console.log(`[SESSION-MANAGER] Retrying Google SSO with the authenticated browser session for ${userId}`);
+                await button.click({ timeout: 10000 });
+                return true;
+            }
+            console.error(`[SESSION-MANAGER] Could not find the Google sign-in button for retry (${userId})`);
+        } catch (e: any) {
+            console.error(`[SESSION-MANAGER] Google SSO retry failed for ${userId}: ${e?.message}`);
+        }
+        return false;
+    }
+
+    /**
      * Screencast only emits on repaint, so a page that has finished rendering
      * and then sits still produces nothing. That is fine while the user is
      * looking at a page they already saw — but after switching back from a
@@ -770,12 +799,15 @@ class SessionManagerService {
                         url: location.href,
                         title: document.title,
                         visible: document.visibilityState,
+                        hasOpener: !!window.opener,
+                        openerClosed: window.opener ? window.opener.closed : null,
                         bodyChars: document.body?.innerText?.trim().length ?? 0,
                         text: (document.body?.innerText || '').trim().slice(0, 120).replace(/\s+/g, ' '),
                     }));
                     console.log(
                         `[SESSION-MANAGER] stream state ${userId}: url=${info.url.slice(0, 70)} ` +
-                        `visible=${info.visible} chars=${info.bodyChars} title="${info.title.slice(0, 40)}" text="${info.text}"`
+                        `visible=${info.visible} opener=${info.hasOpener ? (info.openerClosed ? 'closed' : 'open') : 'none'} ` +
+                        `chars=${info.bodyChars} title="${info.title.slice(0, 40)}" text="${info.text}"`
                     );
 
                     // A pop-up with no content is Google Identity Services'
@@ -795,18 +827,24 @@ class SessionManagerService {
                         live.blankTicks = (live.blankTicks || 0) + 1;
                         if (live.blankTicks >= 2 && !live.page.isClosed()) {
                             const isGoogleHandoff = /^https:\/\/accounts\.google\.com\/gsi\/select(?:[/?#]|$)/i.test(info.url);
-                            if (isGoogleHandoff && !live.ssoRecoveryAttempted) {
-                                // Google password + 2FA have already succeeded
-                                // here. Retry the callback document once using
-                                // those freshly authenticated cookies.
-                                live.ssoRecoveryAttempted = true;
+                            if (isGoogleHandoff && !live.googleSsoRetryAttempted) {
+                                // The first popup has already authenticated
+                                // Google. Close its stalled callback and click
+                                // the original Google button once more; the new
+                                // popup has a fresh opener and reuses the active
+                                // Google session instead of asking for password
+                                // and 2FA again.
+                                live.googleSsoRetryAttempted = true;
                                 live.blankTicks = 0;
-                                console.log(`[SESSION-MANAGER] Reloading stalled Google SSO handoff once for ${userId}`);
-                                await live.streamPage.reload({
-                                    waitUntil: 'domcontentloaded',
-                                    timeout: 30000,
-                                }).catch((e: any) =>
-                                    console.log(`[SESSION-MANAGER] Google SSO handoff reload failed: ${e?.message}`));
+                                const stalledPopup = live.streamPage;
+                                console.log(
+                                    `[SESSION-MANAGER] Google handoff stalled with opener=` +
+                                    `${info.hasOpener ? (info.openerClosed ? 'closed' : 'open') : 'none'}; reopening SSO once`
+                                );
+                                await stalledPopup.close().catch(() => {});
+                                await this.attachScreencast(userId, live.page).catch(() => {});
+                                await live.page.waitForTimeout(500);
+                                await this.retryGoogleSso(userId);
                                 return;
                             }
                             console.log(
