@@ -425,17 +425,20 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
             } else if (routed.intent === 'web_search') {
                 const query = routed.params.keywords || q;
                 const status = await getBrowserWebSearchStatus();
-                push({
-                    id: nextId(), role: 'qampi', kind: 'webSearch', query,
-                    state: !status.installed ? 'install' : status.permissionGranted ? 'ready' : 'permission',
-                });
+                const webSearchId = nextId();
+                const state = !status.installed ? 'install' : status.permissionGranted ? 'searching' : 'permission';
+                push({ id: webSearchId, role: 'qampi', kind: 'webSearch', query, state });
+                // Permission is the one browser-mandated user gesture. Once it
+                // has been granted, invoke the tool immediately instead of
+                // asking the user to click a second “Search” button.
+                if (status.installed && status.permissionGranted) void runWebSearch(webSearchId, query);
             }
             // lookup_lead / check_status / explain / unsupported / off_topic → the reply already said it.
         } catch {
             setMessages((prev) => prev.filter((m) => m.id !== thinkId));
             push({ id: nextId(), role: 'qampi', kind: 'text', text: 'I had trouble with that — try rephrasing, or tell me the kind of people you want to reach.' });
         }
-    }, [started, push, doSearch, recommendCampaigns, offerLaunch, handleReplies, historyForRouter]);
+    }, [started, push, doSearch, recommendCampaigns, offerLaunch, handleReplies, historyForRouter, runWebSearch]);
 
     const submitInput = useCallback(() => {
         const q = input.trim();

@@ -23,7 +23,8 @@ type ExtensionResponse = {
     error?: string;
 };
 
-const TIMEOUT_MS = 1200;
+// Allow a cold extension service worker to wake before declaring it absent.
+const TIMEOUT_MS = 4000;
 
 function extensionRequest(type: string, payload?: Record<string, unknown>): Promise<ExtensionResponse> {
     if (typeof window === 'undefined') return Promise.resolve({ ok: false, error: 'Browser extension is unavailable.' });

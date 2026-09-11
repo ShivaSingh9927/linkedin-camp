@@ -34,6 +34,9 @@ const WEB_SEARCH_ORIGINS = [...DDG_ORIGINS, ...SEARCH_FALLBACK_ORIGINS];
 const WEB_SEARCH_CACHE_KEY = 'copilotWebSearchCache';
 const WEB_SEARCH_TTL_MS = 24 * 60 * 60 * 1000;
 const WEB_SEARCH_MAX_RESULTS = 5;
+const WEB_SEARCH_RETRY_DELAYS_MS = [0, 500, 1500];
+
+const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function cleanSearchText(value, max = 420) {
     return String(value || '')
@@ -132,19 +135,26 @@ async function runBrowserWebSearch(rawQuery) {
         if (cached) return { ok: true, query, results: cached.results, cached: true, fetchedAt: cached.fetchedAt };
 
         let results = [];
-        if (permissions.duckDuckGo) {
-            const response = await fetch(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}&kl=us-en`, {
-                headers: { 'Accept': 'text/html,application/xhtml+xml' },
-            });
-            if (response.ok) results = parseDdgHtml(await response.text());
+        for (let attempt = 0; attempt < WEB_SEARCH_RETRY_DELAYS_MS.length && !results.length; attempt += 1) {
+            if (WEB_SEARCH_RETRY_DELAYS_MS[attempt]) await pause(WEB_SEARCH_RETRY_DELAYS_MS[attempt]);
+            if (permissions.duckDuckGo) {
+                try {
+                    const response = await fetch(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}&kl=us-en`, {
+                        headers: { 'Accept': 'text/html,application/xhtml+xml' },
+                    });
+                    if (response.ok) results = parseDdgHtml(await response.text());
+                } catch { /* try the fallback below */ }
+            }
+            if (!results.length && permissions.bing) {
+                try {
+                    const fallback = await fetch(`https://www.bing.com/search?format=rss&q=${encodeURIComponent(query)}`, {
+                        headers: { 'Accept': 'application/rss+xml,application/xml,text/xml' },
+                    });
+                    if (fallback.ok) results = parseBingRss(await fallback.text());
+                } catch { /* retry the provider pair */ }
+            }
         }
-        if (!results.length && permissions.bing) {
-            const fallback = await fetch(`https://www.bing.com/search?format=rss&q=${encodeURIComponent(query)}`, {
-                headers: { 'Accept': 'application/rss+xml,application/xml,text/xml' },
-            });
-            if (fallback.ok) results.push(...parseBingRss(await fallback.text()));
-        }
-        if (!results.length) return { ok: false, error: 'No web results found. Try a shorter query.' };
+        if (!results.length) return { ok: false, error: 'No web results after 3 attempts. Try a shorter or more specific query.' };
         const entry = { query, results, fetchedAt: now, expiresAt: now + WEB_SEARCH_TTL_MS };
         await chrome.storage.local.set({ [WEB_SEARCH_CACHE_KEY]: [entry, ...fresh].slice(0, 20) });
         return { ok: true, query, results, cached: false, fetchedAt: now };
