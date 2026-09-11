@@ -30,8 +30,13 @@
         "https://api.qampi.com/*",
         "https://app.qampi.com/*"
     ],
+    "optional_host_permissions": [
+        "https://duckduckgo.com/*",
+        "https://html.duckduckgo.com/*",
+        "https://api.duckduckgo.com/*"
+    ],
     "content_security_policy": {
-        "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://api.qampi.com https://app.qampi.com;"
+        "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://api.qampi.com https://app.qampi.com https://duckduckgo.com https://html.duckduckgo.com https://api.duckduckgo.com;"
     },
     "background": {
         "service_worker": "background.js"

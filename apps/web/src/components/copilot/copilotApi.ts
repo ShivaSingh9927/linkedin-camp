@@ -2,6 +2,15 @@
 // 401 handling already built in) so the conversation component stays declarative.
 
 import api from '@/lib/api';
+import { recordCopilotHarnessTurn } from '@/lib/copilot-harness-store';
+import type { BrowserWebResult } from '@/lib/copilot-web-search';
+
+function harnessErrorCode(error: unknown, fallback: string): string {
+    const candidate = error as { response?: { data?: { error?: unknown } } } | null;
+    return typeof candidate?.response?.data?.error === 'string'
+        ? candidate.response.data.error
+        : fallback;
+}
 
 export interface Understand {
     youAre: string;
@@ -159,7 +168,7 @@ export async function fetchProactiveContext(): Promise<ProactiveContext> {
 
 export type CopilotIntent =
     | 'find_leads' | 'recommend_campaign' | 'launch_campaign'
-    | 'check_status' | 'explain' | 'unsupported' | 'off_topic';
+    | 'check_status' | 'web_search' | 'explain' | 'unsupported' | 'off_topic';
 
 // A lead whose latest message is inbound (they replied, awaiting the user).
 export interface WaitingReply {
@@ -186,12 +195,48 @@ export interface RoutedMessage {
     toolData?: RoutedToolData | null;
 }
 
+export async function summarizeBrowserWebSearch(message: string, results: BrowserWebResult[]): Promise<{ reply: string; sources: Array<{ title: string; url: string }> }> {
+    const { data } = await api.post('/ai/copilot/web-summary', { message, results });
+    return {
+        reply: typeof data?.reply === 'string' ? data.reply : '',
+        sources: Array.isArray(data?.sources) ? data.sources : [],
+    };
+}
+
 // Draft a reply to one lead (loads their thread server-side). `tone` → warmer
 // takes on "Try warmer". Rationale is the model's recommended-next line.
-export interface ReplyDraftResult { text: string; rationale: string }
+export interface ReplyDraftResult { text: string; rationale: string; harnessTurnId: string }
 export async function draftReply(leadId: string, tone?: string): Promise<ReplyDraftResult> {
-    const { data } = await api.post('/ai/copilot/draft-reply', { leadId, ...(tone ? { tone } : {}) });
-    return { text: data?.text || '', rationale: data?.rationale || '' };
+    const started = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const harnessTurnId = `reply_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    try {
+        const { data } = await api.post('/ai/copilot/draft-reply', { leadId, ...(tone ? { tone } : {}) });
+        const text = data?.text || '';
+        await recordCopilotHarnessTurn({
+            id: harnessTurnId,
+            createdAt: Date.now(),
+            kind: 'reply_draft',
+            outputChars: text.length,
+            success: true,
+            latencyMs: Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - started),
+            qualityFlags: Array.isArray(data?.qualityFlags) ? data.qualityFlags : [],
+            outcome: 'generated',
+            tone: tone || 'professional',
+        }).catch(() => undefined);
+        return { text, rationale: data?.rationale || '', harnessTurnId };
+    } catch (error: unknown) {
+        void recordCopilotHarnessTurn({
+            id: harnessTurnId,
+            createdAt: Date.now(),
+            kind: 'reply_draft',
+            success: false,
+            latencyMs: Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - started),
+            errorCode: harnessErrorCode(error, 'draft_failed'),
+            outcome: 'failed',
+            tone: tone || 'professional',
+        }).catch(() => undefined);
+        throw error;
+    }
 }
 
 // Queue a human-authored reply on the guarded inbox send path (Qampi never
@@ -214,8 +259,40 @@ export async function routeMessage(
     intentHint?: RoutedMessage['intent'],
     broadenOf?: { keywords: string; filters?: SearchFilters },
 ): Promise<RoutedMessage> {
-    const { data } = await api.post('/ai/copilot/message', { message, history, importedThisSession, intentHint, broadenOf });
-    return data as RoutedMessage;
+    const started = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const turnId = `copilot_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    try {
+        const { data } = await api.post('/ai/copilot/message', { message, history, importedThisSession, intentHint, broadenOf });
+        const result = data as RoutedMessage;
+        void recordCopilotHarnessTurn({
+            id: turnId,
+            createdAt: Date.now(),
+            kind: 'route',
+            inputChars: message.length,
+            historyTurns: history.length,
+            intentHinted: !!intentHint,
+            intent: result.intent,
+            needsConfirm: result.needsConfirm,
+            success: true,
+            outcome: 'generated',
+            latencyMs: Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - started),
+        }).catch(() => undefined);
+        return result;
+    } catch (error: unknown) {
+        void recordCopilotHarnessTurn({
+            id: turnId,
+            createdAt: Date.now(),
+            kind: 'route',
+            inputChars: message.length,
+            historyTurns: history.length,
+            intentHinted: !!intentHint,
+            success: false,
+            outcome: 'failed',
+            latencyMs: Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - started),
+            errorCode: harnessErrorCode(error, 'request_failed'),
+        }).catch(() => undefined);
+        throw error;
+    }
 }
 
 // ---- one-click launch (reuses the existing guarded endpoints) ----

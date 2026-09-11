@@ -9,15 +9,17 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Search, Loader2, ArrowUp, Check, Plus, MapPin, Clock, ArrowRight, Rocket, LinkIcon, Sparkles, PenSquare, Trash2, MessageSquare, Send } from 'lucide-react';
+import { Search, Loader2, ArrowUp, Check, Plus, MapPin, Clock, ArrowRight, Rocket, LinkIcon, Sparkles, PenSquare, Trash2, MessageSquare, Send, ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { track } from '@/lib/analytics';
+import { updateCopilotHarnessTurn } from '@/lib/copilot-harness-store';
 import {
     fetchUnderstand, fetchSearchRecommendations, runSearch, importPeople, fetchTemplateRecommendations,
     routeMessage, launchFromTemplate, fetchAvailableLeads, fetchTemplateHint, fetchProactiveContext,
-    draftReply, sendReply,
+    draftReply, sendReply, summarizeBrowserWebSearch,
     type Understand, type SearchRecommendation, type SearchPerson, type TemplatePick, type HistoryMsg, type LaunchOverrides, type TemplateHint, type ProactiveContext, type WaitingReply,
 } from './copilotApi';
+import { getBrowserWebSearchStatus, requestBrowserWebSearchPermission, searchFromBrowser } from '@/lib/copilot-web-search';
 import { type Msg, nextId } from './copilotTypes';
 import { useCopilot, type ThreadMeta } from './CopilotProvider';
 
@@ -246,7 +248,7 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
         push({ id: cardId, role: 'qampi', kind: 'replyDraft', leadId: wr.leadId, name: wr.name, subtitle: wr.subtitle, theirMessage: wr.message, draft: '', rationale: '', tone: 'professional', remaining: q.length - i - 1, state: 'drafting' });
         try {
             const d = await draftReply(wr.leadId);
-            patch(cardId, { draft: d.text, rationale: d.rationale, state: 'ready' } as Partial<Msg>);
+            patch(cardId, { draft: d.text, initialDraft: d.text, harnessTurnId: d.harnessTurnId, rationale: d.rationale, state: 'ready' } as Partial<Msg>);
         } catch {
             patch(cardId, { state: 'error', error: 'I couldn’t draft this one — open it in the inbox.' } as Partial<Msg>);
         }
@@ -267,8 +269,14 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
         try {
             await sendReply(m.leadId, m.draft.trim());
             track('copilot_reply_sent', {});
+            if (m.harnessTurnId) void updateCopilotHarnessTurn(m.harnessTurnId, {
+                outcome: 'sent',
+                edited: m.draft.trim() !== (m.initialDraft || '').trim(),
+                outputChars: m.draft.trim().length,
+            }).catch(() => undefined);
             patch(msgId, { state: 'sent' } as Partial<Msg>);
         } catch {
+            if (m.harnessTurnId) void updateCopilotHarnessTurn(m.harnessTurnId, { outcome: 'send_failed', errorCode: 'send_failed' }).catch(() => undefined);
             patch(msgId, { state: 'error', error: 'Couldn’t queue that reply. Try again in a moment.' } as Partial<Msg>);
         }
     }, [patch]);
@@ -277,17 +285,25 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
     const tryWarmerReply = useCallback(async (msgId: string) => {
         const m = messagesRef.current.find((x) => x.id === msgId);
         if (!m || m.kind !== 'replyDraft') return;
+        if (m.harnessTurnId) void updateCopilotHarnessTurn(m.harnessTurnId, {
+            outcome: 'regenerated',
+            edited: m.draft.trim() !== (m.initialDraft || '').trim(),
+        }).catch(() => undefined);
         patch(msgId, { state: 'drafting' } as Partial<Msg>);
         try {
             const d = await draftReply(m.leadId, 'warm');
-            patch(msgId, { draft: d.text, rationale: d.rationale, tone: 'warm', state: 'ready' } as Partial<Msg>);
+            patch(msgId, { draft: d.text, initialDraft: d.text, harnessTurnId: d.harnessTurnId, editedRecorded: false, rationale: d.rationale, tone: 'warm', state: 'ready' } as Partial<Msg>);
         } catch {
             patch(msgId, { state: 'error', error: 'Couldn’t re-draft that. Try again.' } as Partial<Msg>);
         }
     }, [patch]);
 
     const editReplyDraft = useCallback((msgId: string, text: string) => {
-        patch(msgId, { draft: text } as Partial<Msg>);
+        const m = messagesRef.current.find((x) => x.id === msgId);
+        if (m?.kind === 'replyDraft' && m.harnessTurnId && !m.editedRecorded && text !== m.initialDraft) {
+            void updateCopilotHarnessTurn(m.harnessTurnId, { outcome: 'edited', edited: true }).catch(() => undefined);
+        }
+        patch(msgId, { draft: text, ...(m?.kind === 'replyDraft' && text !== m.initialDraft ? { editedRecorded: true } : {}) } as Partial<Msg>);
     }, [patch]);
 
     const backToProspecting = useCallback(() => {
@@ -356,6 +372,26 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
         loadSearchChips();
     }, [push, started, loadSearchChips]);
 
+    const runWebSearch = useCallback(async (msgId: string, query: string, requestPermission = false) => {
+        if (requestPermission) {
+            const granted = await requestBrowserWebSearchPermission();
+            if (!granted) {
+                patch(msgId, { state: 'error', error: 'DuckDuckGo permission was not granted. You can enable it when you are ready.' });
+                return;
+            }
+        }
+        patch(msgId, { state: 'searching', error: undefined });
+        try {
+            const search = await searchFromBrowser(query);
+            const summary = await summarizeBrowserWebSearch(query, search.results);
+            setMessages((prev) => prev.filter((m) => m.id !== msgId));
+            const sources = summary.sources.map((s) => `- ${s.title}: ${s.url}`).join('\n');
+            push({ id: nextId(), role: 'qampi', kind: 'text', text: [summary.reply, sources].filter(Boolean).join('\n\n') || 'I found public sources, but could not create a summary.' });
+        } catch (error) {
+            patch(msgId, { state: 'error', error: error instanceof Error ? error.message : 'Web search failed.' });
+        }
+    }, [patch, push, setMessages]);
+
     // Free-text (or a quick-action chip) → intent router → the right closed
     // action (or an honest reply).
     const runMessage = useCallback(async (q: string, intentHint?: 'check_status' | 'handle_replies' | 'find_leads') => {
@@ -385,6 +421,13 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
                 else recommendCampaigns();
             } else if (routed.intent === 'handle_replies') {
                 handleReplies(routed.toolData?.waitingReplies || []);
+            } else if (routed.intent === 'web_search') {
+                const query = routed.params.keywords || q;
+                const status = await getBrowserWebSearchStatus();
+                push({
+                    id: nextId(), role: 'qampi', kind: 'webSearch', query,
+                    state: !status.installed ? 'install' : status.permissionGranted ? 'ready' : 'permission',
+                });
             }
             // lookup_lead / check_status / explain / unsupported / off_topic → the reply already said it.
         } catch {
@@ -453,6 +496,7 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
                         onEditReply={editReplyDraft}
                         onDraftNext={draftNextReply}
                         onBackToProspecting={backToProspecting}
+                        onRunWebSearch={runWebSearch}
                     />
                 ))}
             </div>
@@ -615,7 +659,7 @@ function PanelResting({ onSuggestSearches, onRecommendCampaign, onCheckStatus }:
     );
 }
 
-function MessageRow({ m, onPickSearch, onRunDraft, onShowMore, onTryDifferent, onImported, onPickTemplate, onLaunch, onSendReply, onTryWarmer, onEditReply, onDraftNext, onBackToProspecting }: {
+function MessageRow({ m, onPickSearch, onRunDraft, onShowMore, onTryDifferent, onImported, onPickTemplate, onLaunch, onSendReply, onTryWarmer, onEditReply, onDraftNext, onBackToProspecting, onRunWebSearch }: {
     m: Msg;
     onPickSearch: (label: string, keywords: string, filters?: SearchRecommendation['filters']) => void;
     onRunDraft: (msgId: string, label: string, keywords: string, filters?: SearchRecommendation['filters']) => void;
@@ -629,6 +673,7 @@ function MessageRow({ m, onPickSearch, onRunDraft, onShowMore, onTryDifferent, o
     onEditReply: (msgId: string, text: string) => void;
     onDraftNext: () => void;
     onBackToProspecting: () => void;
+    onRunWebSearch: (msgId: string, query: string, requestPermission?: boolean) => void;
 }) {
     if (m.kind === 'text') {
         return m.role === 'user'
@@ -638,6 +683,7 @@ function MessageRow({ m, onPickSearch, onRunDraft, onShowMore, onTryDifferent, o
     if (m.kind === 'understand') return <QBubble><UnderstandCard loading={m.loading} data={m.data} /></QBubble>;
     if (m.kind === 'searchChips') return <div className="pl-8"><SearchChips loading={m.loading} recs={m.recs} onPick={onPickSearch} /></div>;
     if (m.kind === 'searchDraft') return <div className="pl-8"><SearchDraftCard m={m} onRun={onRunDraft} /></div>;
+    if (m.kind === 'webSearch') return <div className="pl-8"><WebSearchCard m={m} onRun={onRunWebSearch} /></div>;
     if (m.kind === 'searching') return <QBubble><span className="inline-flex items-center gap-2 text-ink-500"><Loader2 className="w-3.5 h-3.5 animate-spin text-brand" /> {m.label === '…' ? 'Thinking…' : `Searching LinkedIn for “${m.label}”…`}</span></QBubble>;
     if (m.kind === 'results') return <div className="pl-8"><ResultsBlock m={m} onImported={onImported} onShowMore={onShowMore} onTryDifferent={onTryDifferent} /></div>;
     if (m.kind === 'templates') return <div className="pl-8"><TemplatePicks loading={m.loading} picks={m.picks} onPick={onPickTemplate} /></div>;
@@ -645,6 +691,39 @@ function MessageRow({ m, onPickSearch, onRunDraft, onShowMore, onTryDifferent, o
     if (m.kind === 'replyDraft') return <div className="pl-8"><ReplyDraftCard m={m} onSend={onSendReply} onTryWarmer={onTryWarmer} onEdit={onEditReply} onDraftNext={onDraftNext} onBackToProspecting={onBackToProspecting} /></div>;
     if (m.kind === 'reconnect') return <QBubble><ReconnectNotice /></QBubble>;
     return null;
+}
+
+function WebSearchCard({ m, onRun }: { m: Extract<Msg, { kind: 'webSearch' }>; onRun: (msgId: string, query: string, requestPermission?: boolean) => void }) {
+    const extensionUrl = 'https://chromewebstore.google.com/detail/qampi-%E2%80%94-lead-importer/gcmepobpaoiokgcekafhpjehmpnckodk';
+    return (
+        <div className="bg-card border border-line rounded-card p-3 space-y-2.5">
+            <div className="flex items-center gap-2">
+                <Search className="w-3.5 h-3.5 text-brand shrink-0" />
+                <span className="text-[13px] font-medium text-foreground">Browser web search</span>
+            </div>
+            <p className="text-[11px] leading-relaxed text-ink-500">
+                {m.state === 'install' ? 'Install the Qampi extension to search from your browser. Results are cached locally, then only the selected snippets are summarised.' :
+                    m.state === 'permission' ? 'Allow DuckDuckGo access once so Qampi can perform this search in your browser.' :
+                        m.state === 'searching' ? `Searching the web for “${m.query}”…` :
+                            m.state === 'error' ? m.error : `Search the public web for “${m.query}”.`}
+            </p>
+            {m.state === 'install' ? (
+                <a href={extensionUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-[13px] font-medium bg-brand text-white rounded-chip px-3.5 py-2 hover:bg-brand-600 transition-colors">
+                    <ExternalLink className="w-3.5 h-3.5" /> Install Qampi Extension
+                </a>
+            ) : m.state === 'permission' ? (
+                <button onClick={() => onRun(m.id, m.query, true)} className="inline-flex items-center gap-2 text-[13px] font-medium bg-brand text-white rounded-chip px-3.5 py-2 hover:bg-brand-600 transition-colors">
+                    <Check className="w-3.5 h-3.5" /> Enable & search
+                </button>
+            ) : m.state === 'ready' || m.state === 'error' ? (
+                <button onClick={() => onRun(m.id, m.query)} className="inline-flex items-center gap-2 text-[13px] font-medium bg-brand text-white rounded-chip px-3.5 py-2 hover:bg-brand-600 transition-colors">
+                    <Search className="w-3.5 h-3.5" /> Search & summarise
+                </button>
+            ) : (
+                <span className="inline-flex items-center gap-2 text-[12px] text-ink-500"><Loader2 className="w-3.5 h-3.5 animate-spin text-brand" /> Searching from your browser</span>
+            )}
+        </div>
+    );
 }
 
 // A reasoned query, shown BEFORE a search is spent. The user edits the boolean +

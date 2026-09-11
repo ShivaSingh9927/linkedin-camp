@@ -18,6 +18,7 @@ import {
     Webhook,
     Send,
     ExternalLink,
+    Activity,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
@@ -27,11 +28,12 @@ import EmailAccountSettings from '@/components/EmailAccountSettings';
 import { PageHeader, Card, Button, Badge } from '@/components/ui';
 import { cn } from '@/lib/utils';
 import api from '@/lib/api';
+import CopilotDiagnostics from '@/components/CopilotDiagnostics';
 
 // API docs (Redoc) are served by the backend on the API domain, not the app.
 const DOCS_URL = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/v1\/?$/, '').replace(/\/$/, '') + '/api/public/v1/docs';
 
-type SectionKey = 'account' | 'safety' | 'linkedin' | 'email' | 'integrations' | 'billing' | 'api' | 'webhooks';
+type SectionKey = 'account' | 'safety' | 'copilot' | 'linkedin' | 'email' | 'integrations' | 'billing' | 'api' | 'webhooks';
 
 const NAV_GROUPS: { label: string; items: { key: SectionKey; label: string; icon: any; href?: string }[] }[] = [
     {
@@ -39,6 +41,7 @@ const NAV_GROUPS: { label: string; items: { key: SectionKey; label: string; icon
         items: [
             { key: 'account', label: 'Account', icon: User },
             { key: 'safety', label: 'Safety & limits', icon: Shield },
+            { key: 'copilot', label: 'Copilot diagnostics', icon: Activity },
         ],
     },
     {
@@ -133,6 +136,7 @@ export default function SettingsPage() {
                 <div className="min-w-0">
                     {activeSection === 'account' && <AccountSection />}
                     {activeSection === 'safety' && <SafetySection />}
+                    {activeSection === 'copilot' && <CopilotDiagnostics />}
                     {activeSection === 'linkedin' && <LinkedInConnectivity />}
                     {activeSection === 'email' && <EmailAccountSettings />}
                     {activeSection === 'integrations' && <IntegrationsSettings />}

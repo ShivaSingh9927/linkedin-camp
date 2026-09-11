@@ -24,6 +24,81 @@ const BACKEND_URLS = [
     'http://localhost:3001',
 ];
 
+const DDG_ORIGINS = [
+    'https://duckduckgo.com/*',
+    'https://html.duckduckgo.com/*',
+    'https://api.duckduckgo.com/*',
+];
+const WEB_SEARCH_CACHE_KEY = 'copilotWebSearchCache';
+const WEB_SEARCH_TTL_MS = 24 * 60 * 60 * 1000;
+const WEB_SEARCH_MAX_RESULTS = 5;
+
+function cleanSearchText(value, max = 420) {
+    return String(value || '')
+        .replace(/<[^>]*>/g, ' ')
+        .replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#x27;|&#39;/g, "'")
+        .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+        .replace(/\s+/g, ' ').trim().slice(0, max);
+}
+
+function unwrapDdgUrl(value) {
+    try {
+        const url = new URL(value, 'https://duckduckgo.com');
+        return url.searchParams.get('uddg') || url.href;
+    } catch { return value; }
+}
+
+// DuckDuckGo has no stable full-search API. Keep the parser deliberately small,
+// return only a handful of public snippets, and fail soft if its result markup
+// changes. This is a browser-side convenience, never a crawler.
+function parseDdgHtml(html) {
+    const blocks = html.match(/<div[^>]+class="[^\"]*result__body[^\"]*"[\s\S]*?<\/div>\s*<\/div>/gi) || [];
+    const results = [];
+    for (const block of blocks) {
+        const link = block.match(/<a[^>]+class="[^\"]*result__a[^\"]*"[^>]+href="([^\"]+)"[^>]*>([\s\S]*?)<\/a>/i)
+            || block.match(/<a[^>]+href="([^\"]+)"[^>]+class="[^\"]*result__a[^\"]*"[^>]*>([\s\S]*?)<\/a>/i);
+        if (!link) continue;
+        const snippet = block.match(/class="[^\"]*result__snippet[^\"]*"[^>]*>([\s\S]*?)<\//i);
+        const title = cleanSearchText(link[2], 180);
+        const url = unwrapDdgUrl(link[1]);
+        if (!title || !url || !/^https?:\/\//i.test(url)) continue;
+        results.push({ title, url, snippet: cleanSearchText(snippet?.[1] || '', 420) });
+        if (results.length >= WEB_SEARCH_MAX_RESULTS) break;
+    }
+    return results;
+}
+
+async function hasWebSearchPermission() {
+    return chrome.permissions.contains({ origins: DDG_ORIGINS });
+}
+
+async function runBrowserWebSearch(rawQuery) {
+    const query = cleanSearchText(rawQuery, 160);
+    if (!query) return { ok: false, error: 'Enter a search query.' };
+    if (!(await hasWebSearchPermission())) return { ok: false, permissionNeeded: true };
+
+    const now = Date.now();
+    const stored = await chrome.storage.local.get(WEB_SEARCH_CACHE_KEY);
+    const cache = Array.isArray(stored[WEB_SEARCH_CACHE_KEY]) ? stored[WEB_SEARCH_CACHE_KEY] : [];
+    const fresh = cache.filter((entry) => entry && entry.expiresAt > now).slice(0, 20);
+    const cached = fresh.find((entry) => entry.query.toLowerCase() === query.toLowerCase());
+    if (cached) return { ok: true, query, results: cached.results, cached: true, fetchedAt: cached.fetchedAt };
+
+    try {
+        const response = await fetch(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}&kl=us-en`, {
+            headers: { 'Accept': 'text/html,application/xhtml+xml' },
+        });
+        if (!response.ok) return { ok: false, error: `Search unavailable (HTTP ${response.status}).` };
+        const results = parseDdgHtml(await response.text());
+        if (!results.length) return { ok: false, error: 'No web results found. Try a shorter query.' };
+        const entry = { query, results, fetchedAt: now, expiresAt: now + WEB_SEARCH_TTL_MS };
+        await chrome.storage.local.set({ [WEB_SEARCH_CACHE_KEY]: [entry, ...fresh].slice(0, 20) });
+        return { ok: true, query, results, cached: false, fetchedAt: now };
+    } catch (error) {
+        return { ok: false, error: error?.message || 'Could not reach DuckDuckGo.' };
+    }
+}
+
 // ─── Utility: Network Fetch ──────────────────────────────────
 async function directFetch(url, options) {
     try {
@@ -41,6 +116,22 @@ async function directFetch(url, options) {
 
 // ─── Message Handlers ────────────────────────────────────────
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.type === 'COPILOT_WEB_SEARCH_STATUS') {
+        hasWebSearchPermission().then((permissionGranted) => sendResponse({ ok: true, installed: true, permissionGranted }));
+        return true;
+    }
+
+    if (message.type === 'COPILOT_WEB_SEARCH_PERMISSION') {
+        chrome.permissions.request({ origins: DDG_ORIGINS })
+            .then((granted) => sendResponse({ ok: true, permissionGranted: granted }))
+            .catch((error) => sendResponse({ ok: false, error: error?.message || 'Permission request failed.' }));
+        return true;
+    }
+
+    if (message.type === 'COPILOT_WEB_SEARCH') {
+        runBrowserWebSearch(message.payload?.query).then(sendResponse);
+        return true;
+    }
     if (message.type === 'SAVE_TOKEN') {
         chrome.storage.local.set({ token: message.token });
     }

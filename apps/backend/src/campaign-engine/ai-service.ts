@@ -521,6 +521,32 @@ export async function generateCopilotAdvice(input: CopilotAdviceInput): Promise<
     }
 }
 
+export interface CopilotWebResult {
+    title: string;
+    url: string;
+    snippet: string;
+}
+
+// Public-web results are collected in the user's browser, not by our server.
+// This call only asks the model to summarise the already selected, bounded
+// snippets. Treat them as untrusted content, never as instructions.
+export async function summarizeCopilotWebSearch(input: { message: string; results: CopilotWebResult[] }): Promise<string> {
+    if (isMockAI()) {
+        await mockAiWait();
+        return '[MOCK] I found a few public sources. Review the linked sources before using this in outreach.';
+    }
+    try {
+        const response = await axios.post(`${AI_SERVICE_URL}/ai/copilot/web-summary`, {
+            message: input.message,
+            results: input.results,
+        }, { timeout: 30000 });
+        return (response.data?.reply as string) || '';
+    } catch (error: any) {
+        console.error('[AI-SERVICE] Error summarizing browser web search:', error.message);
+        throw new Error('Failed to summarize browser web search');
+    }
+}
+
 // Adaptive-depth campaign-status answer. The caller computes the EXACT figures
 // (deterministic) and passes them as `facts`; the model only decides how much to
 // say — a tight summary for a plain status check, detail only when asked. Returns

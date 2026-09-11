@@ -41,6 +41,32 @@ if (
         }
     });
 
+    // Browser-local copilot web search bridge. The dashboard never receives
+    // direct extension privileges: it asks this content script, which forwards
+    // a narrowly typed request to the service worker. Results stay in extension
+    // storage until the user asks Qampi to summarise them.
+    window.addEventListener('message', (event) => {
+        if (event.source !== window || !event.data || event.data.source !== 'qampi-webapp') return;
+        const { requestId, type, payload } = event.data;
+        if (!requestId || !['COPILOT_WEB_SEARCH_STATUS', 'COPILOT_WEB_SEARCH_PERMISSION', 'COPILOT_WEB_SEARCH'].includes(type)) return;
+        try {
+            chrome.runtime.sendMessage({ type, payload }, (response) => {
+                const error = chrome.runtime.lastError?.message;
+                window.postMessage({
+                    source: 'qampi-extension',
+                    requestId,
+                    type: `${type}_RESULT`,
+                    response: error ? { ok: false, error } : response,
+                }, window.location.origin);
+            });
+        } catch (error) {
+            window.postMessage({
+                source: 'qampi-extension', requestId, type: `${type}_RESULT`,
+                response: { ok: false, error: error?.message || 'Extension unavailable' },
+            }, window.location.origin);
+        }
+    });
+
     // Watch for URL changes (SPA navigation from /login to /)
     let lastUrl = location.href;
     const urlObserver = new MutationObserver(() => {

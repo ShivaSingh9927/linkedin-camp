@@ -27,6 +27,7 @@ export type CopilotIntent =
     | 'recommend_campaign'  // suggest 2–3 starter templates
     | 'launch_campaign'     // launch a chosen TEMPLATE on imported leads (side-effect → confirm)
     | 'check_status'        // read-only: campaign progress, remaining budgets
+    | 'web_search'          // browser-mediated public-web lookup; requires the Qampi extension + user approval
     | 'advise'              // grounded analysis/opinion about THEIR outreach (read-only)
     | 'explain'             // answer a question about how Qampi (the product) works / a template
     | 'unsupported'         // a real ACTION Qampi can't do yet → honest decline + capabilities
@@ -34,7 +35,7 @@ export type CopilotIntent =
 
 export const COPILOT_INTENTS: CopilotIntent[] = [
     'find_leads', 'lookup_lead', 'handle_replies', 'recommend_campaign', 'launch_campaign',
-    'check_status', 'advise', 'explain', 'unsupported', 'off_topic',
+    'check_status', 'web_search', 'advise', 'explain', 'unsupported', 'off_topic',
 ];
 
 export interface CapabilitySpec {
@@ -50,6 +51,7 @@ export const CAPABILITIES: CapabilitySpec[] = [
     { intent: 'recommend_campaign', summary: 'The user wants campaign/sequence suggestions, or asks "what campaign should I run".', sideEffect: false },
     { intent: 'launch_campaign', summary: 'The user wants to start/launch/run a campaign on their leads. params.templateId if they named one.', sideEffect: true },
     { intent: 'check_status', summary: 'The user asks about progress or CURRENT NUMBERS/facts — how many leads/searches/invites are left, or the state of their campaign.', sideEffect: false },
+    { intent: 'web_search', summary: 'The user asks to research a public company, website, or current public-web fact relevant to outreach. The browser extension searches only after the user approves. Extract a short search query into params.keywords; never claim you searched until browser results are returned.', sideEffect: false },
     { intent: 'advise', summary: 'The user wants ANALYSIS, ADVICE, or an OPINION about their OWN outreach — how to improve their strategy, whether their AI profile / ICP / targeting is right or too broad, why their results look the way they do, what to change, or what is working. Answered from their real data. NOT a request to run an action, and NOT the same as recommending a campaign.', sideEffect: false },
     { intent: 'explain', summary: 'The user asks how Qampi ITSELF works, what a template/step does, or general how-to about using the app — not about their own data or results.', sideEffect: false },
     { intent: 'unsupported', summary: 'A concrete ACTION Qampi genuinely cannot perform (e.g. custom/bespoke sequences, mass DMs, auto-replying to conversations, viewing who viewed their profile, exceeding LinkedIn limits). Asking for ADVICE is never unsupported — that is advise.', sideEffect: false },

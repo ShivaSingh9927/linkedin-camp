@@ -11,11 +11,12 @@ export type Msg =
     // A reasoned query shown BEFORE a search is spent — the user approves/edits it.
     | { id: string; role: 'qampi'; kind: 'searchDraft'; label: string; keywords: string; filters?: SearchFilters; rationale?: string; reasoning?: string }
     | { id: string; role: 'qampi'; kind: 'searching'; label: string }
+    | { id: string; role: 'qampi'; kind: 'webSearch'; query: string; state: 'install' | 'permission' | 'ready' | 'searching' | 'error'; error?: string }
     | { id: string; role: 'qampi'; kind: 'results'; people: SearchPerson[]; via: string; remaining: number; cap: number; keywords: string; filters?: SearchFilters; page: number; saturation?: SaturationSignal }
     | { id: string; role: 'qampi'; kind: 'templates'; loading: boolean; picks?: TemplatePick[] }
     | { id: string; role: 'qampi'; kind: 'launchConfirm'; templateId: string; label: string; leadIds: string[]; note?: string; setup?: { objective: string; cta: string; tone: string }; meta?: { durationDays: number; stepCount: number; needsEmail: boolean }; state: 'idle' | 'launching' | 'done' | 'error'; campaignId?: string; error?: string }
     // An in-chat reply card: their message + a Qampi draft the user reviews/sends.
-    | { id: string; role: 'qampi'; kind: 'replyDraft'; leadId: string; name: string; subtitle: string; theirMessage: string; draft: string; rationale: string; tone: string; remaining: number; state: 'drafting' | 'ready' | 'sending' | 'sent' | 'error'; error?: string }
+    | { id: string; role: 'qampi'; kind: 'replyDraft'; leadId: string; name: string; subtitle: string; theirMessage: string; draft: string; initialDraft?: string; harnessTurnId?: string; editedRecorded?: boolean; rationale: string; tone: string; remaining: number; state: 'drafting' | 'ready' | 'sending' | 'sent' | 'error'; error?: string }
     | { id: string; role: 'qampi'; kind: 'reconnect' };
 
 export type MsgKind = Msg['kind'];

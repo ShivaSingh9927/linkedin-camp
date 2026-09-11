@@ -22,6 +22,7 @@ import {
     generateReplySuggestions,
     generateCopilotAdvice,
     generateCopilotStatus,
+    summarizeCopilotWebSearch,
     routeCopilotMessage,
     type ActivationGrounding,
 } from '../campaign-engine/ai-service';
@@ -31,6 +32,7 @@ import { checkQuota } from '../campaign-engine/safety/quota';
 import { renderCapabilityContract, COPILOT_INTENTS, type CopilotContext, type CopilotIntent } from '../copilot/capabilities';
 import { runIntentQuery, getAudienceSummary, findLeadByName, getCampaignStatus, getLastCompletedCampaign, getCampaignProgress, describeCampaignProgress, getWaitingReplies, type QueryToolData, type AudienceSummaryData, type LeadMatch } from '../copilot/query-tools';
 import { getTriedAngles, getSearchCoverage } from '../services/search-memory.service';
+import { gradeLinkedInCopy, selectBestLinkedInCopy } from '../copilot/copy-quality';
 
 // Build the grounding object from the user's businessProfile. Both self-* fields
 // (read from their real LinkedIn after connect) and the onboarding-provided
@@ -381,6 +383,35 @@ export const copilotMessage = async (req: AuthRequest, res: Response) => {
     }
 };
 
+// The browser extension fetches the public results and retains its local cache.
+// This endpoint accepts only a small, sanitised set of snippets for one-shot
+// summarisation; it never initiates a server-side web request.
+export const copilotWebSummary = async (req: AuthRequest, res: Response) => {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+    const { message, results } = req.body || {};
+    if (typeof message !== 'string' || !message.trim()) return res.status(400).json({ error: 'message_required' });
+    if (!Array.isArray(results) || results.length === 0) return res.status(400).json({ error: 'results_required' });
+
+    const clean = results.slice(0, 5).flatMap((item: unknown) => {
+        const row = item as { title?: unknown; url?: unknown; snippet?: unknown };
+        const title = typeof row?.title === 'string' ? row.title.replace(/\s+/g, ' ').trim().slice(0, 180) : '';
+        const url = typeof row?.url === 'string' ? row.url.trim().slice(0, 1000) : '';
+        const snippet = typeof row?.snippet === 'string' ? row.snippet.replace(/\s+/g, ' ').trim().slice(0, 500) : '';
+        if (!title || !/^https:\/\//i.test(url)) return [];
+        return [{ title, url, snippet }];
+    });
+    if (!clean.length) return res.status(400).json({ error: 'valid_results_required' });
+
+    try {
+        const reply = await summarizeCopilotWebSearch({ message: message.trim().slice(0, 500), results: clean });
+        return res.json({ reply, sources: clean.map(({ title, url }) => ({ title, url })) });
+    } catch (error: any) {
+        console.error('[COPILOT] web summary error:', error.message);
+        return res.status(502).json({ error: 'web_summary_failed', message: 'I found results but could not summarise them right now.' });
+    }
+};
+
 // Draft ONE reply to a lead who responded — loads their thread + the user's
 // profile and returns a ready draft + a one-line rationale (recommendedNext).
 // Read-only compose: SENDING stays on the guarded inbox send path (the human
@@ -409,7 +440,13 @@ export const copilotDraftReply = async (req: AuthRequest, res: Response) => {
             profileHeadline: lead.headline || lead.jobTitle || undefined,
             company: lead.company || undefined,
         });
-        res.json({ text: result.variations?.[0]?.text || '', rationale: result.recommendedNext || '', situation: result.situation });
+        // The AI already returns up to three variations. Pick the cleanest one
+        // deterministically instead of spending another model call on judging.
+        const candidates = result.variations || [];
+        const selected = selectBestLinkedInCopy(candidates, 'reply');
+        const text = selected?.text || '';
+        const qualityFlags = gradeLinkedInCopy(text, 'reply').map((item) => item.code);
+        res.json({ text, rationale: result.recommendedNext || '', situation: result.situation, qualityFlags });
     } catch (error: any) {
         console.error('[COPILOT] draft-reply error:', error.message);
         res.status(502).json({ error: 'draft_failed', message: 'Could not draft a reply right now. Try again in a moment.' });

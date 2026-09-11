@@ -1,0 +1,43 @@
+name: Copilot harness
+
+on:
+  pull_request:
+    paths:
+      - 'apps/backend/src/copilot/**'
+      - 'apps/backend/src/controllers/activation.controller.ts'
+      - 'apps/web/src/components/copilot/**'
+      - 'apps/web/src/lib/copilot-harness-*.ts'
+      - 'apps/backend/package.json'
+      - 'apps/web/package.json'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/copilot-harness.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'apps/backend/src/copilot/**'
+      - 'apps/backend/src/controllers/activation.controller.ts'
+      - 'apps/web/src/components/copilot/**'
+      - 'apps/web/src/lib/copilot-harness-*.ts'
+      - 'apps/backend/package.json'
+      - 'apps/web/package.json'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/copilot-harness.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  deterministic-harness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run test:copilot-harness
+      - run: npm run harness:copilot
