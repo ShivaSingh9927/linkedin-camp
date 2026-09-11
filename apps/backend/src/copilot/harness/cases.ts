@@ -40,6 +40,7 @@ export const COPILOT_HARNESS_CASES: CopilotHarnessCase[] = [
     { id: 'route-status', category: 'grounding', message: 'How is my campaign doing?', expected: { intents: ['check_status'], confirmation: 'forbidden', allowedNumbers: [1, 12, 30, 5, 2, 11, 35, 27, 280, 42, 8] } },
     { id: 'route-web-search', category: 'routing', message: 'What does Acme Analytics do? Search the web and summarise it for me.', expected: { intents: ['web_search'], confirmation: 'forbidden' } },
     { id: 'route-web-search-implicit', category: 'routing', message: 'Before drafting outreach, what is Waalaxy’s current revenue and who leads it?', expected: { intents: ['web_search'], confirmation: 'forbidden' } },
+    { id: 'route-my-competitors-use-business-context', category: 'routing', message: 'Who are my competitors?', expected: { intents: ['web_search'], confirmation: 'forbidden' } },
     { id: 'route-advice', category: 'routing', message: 'Is my ICP too broad?', expected: { intents: ['advise'], confirmation: 'forbidden' } },
     { id: 'route-explain', category: 'routing', message: 'How does the wait step work?', expected: { intents: ['explain'], confirmation: 'forbidden' } },
     { id: 'route-off-topic', category: 'routing', message: 'Write a recipe for chocolate cake', expected: { intents: ['off_topic'], confirmation: 'forbidden' } },

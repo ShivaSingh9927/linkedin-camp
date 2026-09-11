@@ -47,6 +47,7 @@ async function loadGrounding(userId: string): Promise<ActivationGrounding> {
         selfIndustry: bp?.selfIndustry || undefined,
         selfLocation: bp?.selfGeoLocation || undefined,
         company: bp?.company || undefined,
+        website: bp?.website || undefined,
         companyDescription: bp?.companyDescription || undefined,
         products: bp?.products || undefined,
         differentiators: bp?.differentiators || undefined,
@@ -75,6 +76,20 @@ function distillProfile(g: ActivationGrounding) {
         youSell: clamp([g.company, g.companyDescription || g.products || g.valueProp].filter(Boolean).join(': ')) || undefined,
         bestFitBuyer: clamp(g.targetAudience || g.persona || g.industry),
         goal: clamp(g.goalType),
+    };
+}
+
+// Keep enough business identity in the chat contract to answer “my company”
+// questions accurately, without dumping a raw profile or strategy document.
+function distillBusiness(g: ActivationGrounding) {
+    return {
+        company: clamp(g.company),
+        website: clamp(g.website),
+        description: clamp(g.companyDescription),
+        products: clamp(g.products),
+        differentiators: clamp(g.differentiators),
+        targetAudience: clamp(g.targetAudience),
+        industry: clamp(g.industry),
     };
 }
 
@@ -240,6 +255,7 @@ export const copilotMessage = async (req: AuthRequest, res: Response) => {
             dailyMessageRemaining: msgQ.remaining,
             profileComplete: isProfileComplete(grounding),
             profile: distillProfile(grounding),
+            business: distillBusiness(grounding),
             recentCampaign,
             hasHubspot: !!user?.hubspotToken,
             hasPipedrive: !!user?.pipedriveToken,

@@ -383,6 +383,7 @@ export interface ActivationGrounding {
     selfIndustry?: string;
     selfLocation?: string;
     company?: string;
+    website?: string;
     companyDescription?: string;
     products?: string;
     differentiators?: string;

@@ -61,11 +61,12 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
     const repliesQueueRef = useRef<WaitingReply[]>([]);
     const replyIdxRef = useRef(0);
 
-    // Compact history for the router (last several text turns only).
+    // Keep the last 16 text messages (roughly eight exchanges). This preserves
+    // corrections such as the user's business identity without unbounded cost.
     const historyForRouter = useCallback((): HistoryMsg[] => {
         return messagesRef.current
             .filter((m): m is Extract<Msg, { kind: 'text' }> => m.kind === 'text')
-            .slice(-8)
+            .slice(-16)
             .map((m) => ({ sender: m.role === 'user' ? 'you' : 'qampi', text: m.text }));
     }, []);
 
@@ -404,7 +405,10 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
         try {
             const routed = await routeMessage(q, historyForRouter(), importedLeadIdsRef.current.length, intentHint);
             setMessages((prev) => prev.filter((m) => m.id !== thinkId));
-            if (routed.reply) push({ id: nextId(), role: 'qampi', kind: 'text', text: routed.reply });
+            // Web-search availability is determined in the browser below. Do not
+            // render the router's generic “approve the search” sentence first:
+            // it can be stale once permission is already granted and auto-run.
+            if (routed.reply && routed.intent !== 'web_search') push({ id: nextId(), role: 'qampi', kind: 'text', text: routed.reply });
             if (routed.intent === 'find_leads') {
                 // Show the reasoned query first (approve/edit before spending a search);
                 // fall back to a raw-phrase search if the builder didn't return one.
