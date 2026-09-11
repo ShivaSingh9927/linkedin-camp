@@ -61,12 +61,13 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
     const repliesQueueRef = useRef<WaitingReply[]>([]);
     const replyIdxRef = useRef(0);
 
-    // Keep the last 16 text messages (roughly eight exchanges). This preserves
-    // corrections such as the user's business identity without unbounded cost.
+    // Keep the last 40 text messages (roughly twenty exchanges). The transcript
+    // remains bounded, while retaining enough context for corrections, objectives,
+    // and campaign decisions to survive a longer working conversation.
     const historyForRouter = useCallback((): HistoryMsg[] => {
         return messagesRef.current
             .filter((m): m is Extract<Msg, { kind: 'text' }> => m.kind === 'text')
-            .slice(-16)
+            .slice(-40)
             .map((m) => ({ sender: m.role === 'user' ? 'you' : 'qampi', text: m.text }));
     }, []);
 

@@ -41,6 +41,7 @@ export const COPILOT_HARNESS_CASES: CopilotHarnessCase[] = [
     { id: 'route-web-search', category: 'routing', message: 'What does Acme Analytics do? Search the web and summarise it for me.', expected: { intents: ['web_search'], confirmation: 'forbidden' } },
     { id: 'route-web-search-implicit', category: 'routing', message: 'Before drafting outreach, what is Waalaxy’s current revenue and who leads it?', expected: { intents: ['web_search'], confirmation: 'forbidden' } },
     { id: 'route-my-competitors-use-business-context', category: 'routing', message: 'Who are my competitors?', expected: { intents: ['web_search'], confirmation: 'forbidden' } },
+    { id: 'ambiguous-campaign-asks-first', category: 'grounding', message: 'Create a campaign for them', expected: { intents: ['advise', 'recommend_campaign'], confirmation: 'forbidden', requiredPhrases: ['?'] } },
     { id: 'route-advice', category: 'routing', message: 'Is my ICP too broad?', expected: { intents: ['advise'], confirmation: 'forbidden' } },
     { id: 'route-explain', category: 'routing', message: 'How does the wait step work?', expected: { intents: ['explain'], confirmation: 'forbidden' } },
     { id: 'route-off-topic', category: 'routing', message: 'Write a recipe for chocolate cake', expected: { intents: ['off_topic'], confirmation: 'forbidden' } },
