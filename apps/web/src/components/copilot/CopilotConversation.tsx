@@ -126,7 +126,7 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
         // Only echo the user's ask on the first page; "Show more" is a quiet continuation.
         if (page === 1) push({ id: nextId(), role: 'user', kind: 'text', text: label });
         const sId = nextId();
-        push({ id: sId, role: 'qampi', kind: 'searching', label: `Searching LinkedIn for “${label}”` });
+        push({ id: sId, role: 'qampi', kind: 'searching', label: `Searching LinkedIn for “${label}”`, detail: 'Using your selected filters to find relevant prospects.' });
         try {
             // Dedup + saturation are now server-side (durable search memory), so the
             // returned people are already fresh and we get a mined-out signal back.
@@ -188,7 +188,7 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
     const rotateAngle = useCallback(async () => {
         track('copilot_rotate_angle', {});
         const thinkId = nextId();
-        push({ id: thinkId, role: 'qampi', kind: 'searching', label: 'Finding a fresh LinkedIn search angle' });
+        push({ id: thinkId, role: 'qampi', kind: 'searching', label: 'Finding a fresh LinkedIn search angle', detail: 'The previous angle is exhausted, so I’m looking for a nearby untapped audience.' });
         try {
             const routed = await routeMessage('Suggest a different search angle for fresh leads', historyForRouter(), importedLeadIdsRef.current.length, 'find_leads');
             setMessages((prev) => prev.filter((m) => m.id !== thinkId));
@@ -211,7 +211,7 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
     const broadenSearch = useCallback(async (label: string, keywords: string, filters?: SearchRecommendation['filters']) => {
         track('copilot_broaden_search', {});
         const thinkId = nextId();
-        push({ id: thinkId, role: 'qampi', kind: 'searching', label: 'Broadening the search while keeping your target' });
+        push({ id: thinkId, role: 'qampi', kind: 'searching', label: 'Broadening the search while keeping your target', detail: 'The earlier query was too narrow, so I’m relaxing filters without changing your audience.' });
         try {
             const routed = await routeMessage(
                 `Broaden this search — it returned nobody: ${keywords}`,
@@ -400,7 +400,7 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
         if (!started) setStarted(true);
         push({ id: nextId(), role: 'user', kind: 'text', text: q });
         const thinkId = nextId();
-        push({ id: thinkId, role: 'qampi', kind: 'searching', label: 'Understanding your request and choosing the next step' });
+        push({ id: thinkId, role: 'qampi', kind: 'searching', label: 'Understanding your request and choosing the next step', detail: 'I’m matching it to the right Qampi action and checking what information it needs.' });
         try {
             const routed = await routeMessage(q, historyForRouter(), importedLeadIdsRef.current.length, intentHint);
             setMessages((prev) => prev.filter((m) => m.id !== thinkId));
@@ -688,7 +688,7 @@ function MessageRow({ m, onPickSearch, onRunDraft, onShowMore, onTryDifferent, o
     if (m.kind === 'searchChips') return <div className="pl-8"><SearchChips loading={m.loading} recs={m.recs} onPick={onPickSearch} /></div>;
     if (m.kind === 'searchDraft') return <div className="pl-8"><SearchDraftCard m={m} onRun={onRunDraft} /></div>;
     if (m.kind === 'webSearch') return <div className="pl-8"><WebSearchCard m={m} onRun={onRunWebSearch} /></div>;
-    if (m.kind === 'searching') return <QBubble><span className="inline-flex items-center gap-2 text-ink-500"><Loader2 className="w-3.5 h-3.5 animate-spin text-brand" /> {m.label.startsWith('Searching LinkedIn') ? m.label : `Working on: ${m.label}`}</span></QBubble>;
+    if (m.kind === 'searching') return <QBubble><div className="text-ink-500"><span className="inline-flex items-center gap-2"><Loader2 className="w-3.5 h-3.5 animate-spin text-brand" /> {m.label}</span>{m.detail && <p className="ml-5.5 mt-1 text-[11px] leading-relaxed text-ink-400">Why: {m.detail}</p>}</div></QBubble>;
     if (m.kind === 'results') return <div className="pl-8"><ResultsBlock m={m} onImported={onImported} onShowMore={onShowMore} onTryDifferent={onTryDifferent} /></div>;
     if (m.kind === 'templates') return <div className="pl-8"><TemplatePicks loading={m.loading} picks={m.picks} onPick={onPickTemplate} /></div>;
     if (m.kind === 'launchConfirm') return <div className="pl-8"><LaunchConfirm m={m} onLaunch={onLaunch} /></div>;

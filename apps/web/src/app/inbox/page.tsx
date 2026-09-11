@@ -492,7 +492,7 @@ export default function InboxPage() {
                     {isSuggesting
                       ? <div className="w-3.5 h-3.5 border-2 border-brand-200 border-t-brand rounded-full animate-spin" />
                       : <Sparkles className="w-3.5 h-3.5" />}
-                    {isSuggesting ? 'Qampi is thinking…' : 'Qampi suggests a reply'}
+                    {isSuggesting ? 'Drafting reply options from this conversation…' : 'Qampi suggests a reply'}
                   </button>
                   {replyText.trim() && (
                     <button
