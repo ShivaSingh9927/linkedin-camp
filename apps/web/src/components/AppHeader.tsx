@@ -30,7 +30,7 @@ export function AppHeader({ onMenuClick }: { onMenuClick?: () => void }) {
   }, []);
 
   return (
-    <header className="h-16 bg-background/80 backdrop-blur border-b border-line sticky top-0 z-20 flex items-center justify-between gap-2 px-4 sm:px-6 lg:px-8">
+    <header className="h-14 sm:h-16 bg-background/90 backdrop-blur border-b border-line sticky top-0 z-20 flex items-center justify-between gap-2 px-3 sm:px-6 lg:px-8">
       <div className="flex items-center gap-2 flex-1 min-w-0">
         {/* Mobile menu trigger */}
         <button
@@ -65,7 +65,7 @@ export function AppHeader({ onMenuClick }: { onMenuClick?: () => void }) {
                   initial={{ opacity: 0, scale: 0.97, y: 8 }}
                   animate={{ opacity: 1, scale: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.97, y: 8 }}
-                  className="absolute top-full right-0 mt-2 w-80 bg-card border border-line rounded-card shadow-lift z-50 overflow-hidden"
+                  className="fixed left-3 right-3 top-14 mt-2 sm:absolute sm:left-auto sm:right-0 sm:top-full sm:w-80 bg-card border border-line rounded-card shadow-lift z-50 overflow-hidden"
                 >
                   <div className="px-5 py-4 border-b border-line flex items-center justify-between">
                     <h3 className="font-bold text-foreground">Notifications</h3>

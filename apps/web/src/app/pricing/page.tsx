@@ -162,9 +162,9 @@ export default function PricingPage() {
                 </h1>
                 <p className="text-slate-500 font-semibold text-sm mt-1.5">Scale your outreach safely — upgrade or downgrade anytime.</p>
 
-                <div className="flex flex-wrap justify-center items-center gap-3 mt-4">
+                <div className="flex flex-col justify-center items-stretch gap-2.5 mt-4 sm:flex-row sm:flex-wrap sm:items-center">
                     {/* Region */}
-                    <div className="bg-white p-1 rounded-2xl border border-slate-200 shadow-sm flex items-center">
+                    <div className="bg-white p-1 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-center">
                         {(['india', 'global'] as Region[]).map((r) => (
                             <button
                                 key={r}
@@ -179,7 +179,7 @@ export default function PricingPage() {
                         ))}
                     </div>
                     {/* Billing cycle */}
-                    <div className="bg-white p-1 rounded-2xl border border-slate-200 shadow-sm flex items-center">
+                    <div className="bg-white p-1 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-center">
                         <button
                             onClick={() => setIsYearly(false)}
                             className={cn('px-5 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all', !isYearly ? 'bg-slate-900 text-white' : 'text-slate-400 hover:text-slate-600')}

@@ -117,6 +117,15 @@
 
   body {
     @apply font-sans bg-background text-foreground antialiased;
+    overflow-x: hidden;
+  }
+
+  button,
+  a,
+  input,
+  select,
+  textarea {
+    -webkit-tap-highlight-color: transparent;
   }
 
   h1,

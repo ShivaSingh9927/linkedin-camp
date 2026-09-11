@@ -118,7 +118,7 @@ export default function DashboardPage() {
           mobile. */}
       {setup?.requiredDone && (
         <div className="flex flex-col gap-4 lg:h-[calc(100dvh-6.5rem)] lg:min-h-0">
-          <div className="flex items-end justify-between gap-4 shrink-0">
+          <div className="flex flex-col items-start justify-between gap-3 shrink-0 sm:flex-row sm:items-end">
             <div className="min-w-0">
               <h1 className="text-[26px] font-bold tracking-tight leading-none text-foreground truncate">
                 {firstName ? `${greeting()}, ${firstName}` : greeting()}
@@ -144,12 +144,12 @@ export default function DashboardPage() {
             {/* Left: KPIs + the Qampi conversation as the MAIN surface */}
             <div className="lg:col-span-2 flex flex-col gap-4 min-h-0">
               {/* KPI row */}
-              <div className="grid grid-cols-3 gap-3 shrink-0">
+              <div className="grid grid-cols-1 gap-2.5 shrink-0 sm:grid-cols-3 sm:gap-3">
                 {kpis.map((kpi, i) => (
                   <motion.div
                     key={kpi.label}
                     initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
-                    className="bg-card border border-line rounded-card p-4"
+                    className="bg-card border border-line rounded-card p-3.5 sm:p-4"
                   >
                     <div className="flex items-center gap-2">
                       <div className="w-7 h-7 rounded-control bg-brand-50 grid place-items-center shrink-0">
@@ -157,7 +157,7 @@ export default function DashboardPage() {
                       </div>
                       <span className="text-[12px] text-ink-500 truncate">{kpi.label}</span>
                     </div>
-                    <p className="num text-[26px] leading-none mt-3">{kpi.value}</p>
+                    <p className="num text-[24px] leading-none mt-2.5 sm:text-[26px] sm:mt-3">{kpi.value}</p>
                   </motion.div>
                 ))}
               </div>

@@ -28,7 +28,7 @@ export function SidebarWrapper({ children }: { children: React.ReactNode }) {
   if (isAuthPage) return <>{children}</>;
 
   return (
-    <div className="h-screen flex bg-surface overflow-hidden">
+    <div className="h-[100dvh] flex bg-surface overflow-hidden">
       {/* Left sidebar — persistent on lg+ */}
       <div className="hidden lg:flex flex-shrink-0 h-full">
         <Sidebar />
@@ -59,7 +59,7 @@ export function SidebarWrapper({ children }: { children: React.ReactNode }) {
         <AppHeader onMenuClick={() => setMobileNavOpen(true)} />
         <AccountHealthBanner />
         <main className="flex-1 overflow-y-auto">
-          <div className="px-4 sm:px-6 lg:px-8 2xl:px-12 pt-3 pb-5 sm:pt-4 sm:pb-6 lg:pt-4 lg:pb-6">
+          <div className="px-3 sm:px-6 lg:px-8 2xl:px-12 pt-3 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:pt-4 sm:pb-6 lg:pt-4 lg:pb-6">
             {children}
           </div>
         </main>

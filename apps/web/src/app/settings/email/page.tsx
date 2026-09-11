@@ -22,7 +22,7 @@ export default function EmailSettingsPage() {
                 }
             />
 
-            <div className="flex-1 p-8">
+            <div className="flex-1 p-3 sm:p-8">
                 <EmailAccountSettings />
             </div>
         </div>

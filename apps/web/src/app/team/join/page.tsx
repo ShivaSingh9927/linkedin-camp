@@ -65,8 +65,8 @@ function JoinTeamContent() {
 
     if (error) {
         return (
-            <div className="max-w-md mx-auto pt-20 px-6 animate-in zoom-in duration-500">
-                <div className="bg-white rounded-[40px] shadow-2xl border border-red-100 p-10 text-center space-y-6">
+            <div className="max-w-md mx-auto pt-10 sm:pt-20 px-4 sm:px-6 animate-in zoom-in duration-500">
+                <div className="bg-white rounded-[28px] sm:rounded-[40px] shadow-2xl border border-red-100 p-6 sm:p-10 text-center space-y-6">
                     <div className="w-20 h-20 bg-red-50 rounded-full flex items-center justify-center mx-auto">
                         <AlertCircle className="w-10 h-10 text-red-500" />
                     </div>
@@ -84,8 +84,8 @@ function JoinTeamContent() {
 
     if (success) {
         return (
-            <div className="max-w-md mx-auto pt-20 px-6 animate-in zoom-in duration-500">
-                <div className="bg-white rounded-[40px] shadow-2xl border border-emerald-100 p-10 text-center space-y-6">
+            <div className="max-w-md mx-auto pt-10 sm:pt-20 px-4 sm:px-6 animate-in zoom-in duration-500">
+                <div className="bg-white rounded-[28px] sm:rounded-[40px] shadow-2xl border border-emerald-100 p-6 sm:p-10 text-center space-y-6">
                     <div className="w-20 h-20 bg-emerald-50 rounded-full flex items-center justify-center mx-auto">
                         <ShieldCheck className="w-10 h-10 text-emerald-500" />
                     </div>
@@ -100,8 +100,8 @@ function JoinTeamContent() {
     }
 
     return (
-        <div className="max-w-lg mx-auto pt-20 px-6 animate-in slide-in-from-bottom-8 duration-700">
-            <div className="bg-white rounded-[40px] shadow-2xl border p-12 overflow-hidden relative">
+        <div className="max-w-lg mx-auto pt-10 sm:pt-20 px-4 sm:px-6 animate-in slide-in-from-bottom-8 duration-700">
+            <div className="bg-white rounded-[28px] sm:rounded-[40px] shadow-2xl border p-6 sm:p-12 overflow-hidden relative">
                 {/* Decorative background curve */}
                 <div className="absolute top-0 left-0 w-full h-32 bg-indigo-600/5" />
 
@@ -155,7 +155,7 @@ export default function JoinTeamPage() {
     return (
         <div className="min-h-screen bg-slate-50 relative pb-20">
             {/* Simple top bar for standalone feeling */}
-            <div className="h-20 border-b bg-white flex items-center px-10">
+            <div className="h-16 sm:h-20 border-b bg-white flex items-center px-4 sm:px-10">
                 <div className="flex items-center space-x-3">
                     <div className="w-8 h-8 rounded-xl bg-indigo-600 flex items-center justify-center shadow-lg shadow-indigo-200">
                         <Users className="w-4 h-4 text-white" />

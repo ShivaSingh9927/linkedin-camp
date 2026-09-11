@@ -298,19 +298,19 @@ export default function TeamPage() {
 
                         {/* Pipeline */}
                         <p className="label !text-ink-400 mb-2.5">Pipeline — current</p>
-                        <div className="flex items-stretch gap-2 mb-6">
+                        <div className="grid grid-cols-1 sm:flex sm:items-stretch gap-2 mb-6">
                             <div className="flex-1 bg-ink-900 text-white rounded-card p-4">
                                 <p className="label !text-ink-400 !text-[10px]">Leads</p>
                                 <p className="text-2xl font-black tracking-tight tabular-nums">{(analytics?.pipeline.leads ?? 0).toLocaleString()}</p>
                             </div>
-                            <div className="grid place-items-center text-ink-400"><ChevronRight className="w-5 h-5" /></div>
+                            <div className="grid place-items-center text-ink-400 rotate-90 sm:rotate-0"><ChevronRight className="w-5 h-5" /></div>
                             <div className="flex-1 bg-brand-50 rounded-card p-4">
                                 <p className="label !text-brand !text-[10px]">Connected</p>
                                 <p className="text-2xl font-black text-brand-700 tracking-tight tabular-nums">
                                     {(analytics?.pipeline.connected ?? 0).toLocaleString()} <span className="text-[13px] font-extrabold text-brand-600">{analytics?.pipeline.connectedRate ?? 0}%</span>
                                 </p>
                             </div>
-                            <div className="grid place-items-center text-ink-400"><ChevronRight className="w-5 h-5" /></div>
+                            <div className="grid place-items-center text-ink-400 rotate-90 sm:rotate-0"><ChevronRight className="w-5 h-5" /></div>
                             <div className="flex-1 bg-emerald-50 rounded-card p-4">
                                 <p className="label !text-emerald-600 !text-[10px]">Replied</p>
                                 <p className="text-2xl font-black text-emerald-800 tracking-tight tabular-nums">
@@ -418,11 +418,11 @@ export default function TeamPage() {
                         {/* Roster */}
                         <div className="flex flex-col gap-2.5">
                             {team.members.map((m) => (
-                                <div key={m.id} className="flex items-center justify-between border border-line rounded-card p-3.5">
-                                    <div className="flex items-center gap-3">
+                                <div key={m.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border border-line rounded-card p-3.5">
+                                    <div className="flex items-center gap-3 min-w-0">
                                         <div className="w-10 h-10 rounded-control bg-ink-900 text-white grid place-items-center font-black">{(m.user.email[0] || '?').toUpperCase()}</div>
                                         <div>
-                                            <div className="font-extrabold text-foreground text-sm">{m.user.email}</div>
+                                            <div className="font-extrabold text-foreground text-sm break-all">{m.user.email}</div>
                                             <div className="flex items-center gap-2 mt-0.5">
                                                 <span className={cn('text-[9px] font-black tracking-[0.12em] uppercase', roleColor(m.role))}>{m.role}</span>
                                                 <span className="text-[11px] text-ink-400 font-medium">· {m.stats?.totalLeads ?? 0} leads · {m.stats?.activeCampaigns ?? 0} active</span>
@@ -449,8 +449,8 @@ export default function TeamPage() {
                         {(team.invites || []).length > 0 && (
                             <div className="mt-3 space-y-2">
                                 {team.invites.map((inv) => (
-                                    <div key={inv.id} className="bg-surface border border-dashed border-brand/30 rounded-card px-4 py-3 flex items-center justify-between">
-                                        <span className="text-[12px] font-semibold text-ink-500">Pending invite — <span className="text-foreground">{inv.email}</span></span>
+                                    <div key={inv.id} className="bg-surface border border-dashed border-brand/30 rounded-card px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
+                                        <span className="text-[12px] font-semibold text-ink-500 break-all">Pending invite — <span className="text-foreground">{inv.email}</span></span>
                                         <span className="text-[10px] font-black tracking-[0.12em] text-fuchsia-600 uppercase">Pending</span>
                                     </div>
                                 ))}

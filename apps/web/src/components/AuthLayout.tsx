@@ -61,9 +61,9 @@ export function AuthLayout({ type, title, description }: AuthLayoutProps) {
     };
 
     return (
-        <div className="relative min-h-screen flex items-center justify-center w-full overflow-hidden p-6">
+        <div className="relative min-h-[100dvh] flex items-center justify-center w-full overflow-hidden p-4 sm:p-6">
             <AuthSky />
-            <div className="relative z-10 w-full max-w-md rounded-3xl border border-white/60 bg-background/95 backdrop-blur-sm shadow-2xl px-8 py-16 sm:px-10 sm:py-20">
+            <div className="relative z-10 w-full max-w-md rounded-[1.75rem] border border-white/60 bg-background/95 backdrop-blur-sm shadow-2xl px-5 py-8 sm:rounded-3xl sm:px-10 sm:py-14">
                 <div className="flex flex-col items-center text-center gap-3">
                     <div className="flex items-center gap-3 mb-3 animate-element animate-delay-100">
                         <img
@@ -81,19 +81,19 @@ export function AuthLayout({ type, title, description }: AuthLayoutProps) {
                     <p className="animate-element animate-delay-200 text-base text-muted-foreground font-medium">{description}</p>
                 </div>
 
-                <div className="flex flex-col gap-5 mt-12 w-full max-w-[380px] mx-auto">
+                <div className="flex flex-col gap-4 mt-8 sm:mt-10 w-full max-w-[380px] mx-auto">
                     {/* Google one-tap. Google renders its own fixed-width pill in
                         an iframe — don't stretch the iframe (that leaves dead space
                         on the right and warps the shape); just center it at its
                         natural width so it lines up with the LinkedIn button. */}
-                    <div className="animate-element animate-delay-300 flex justify-center">
+                    <div className="animate-element animate-delay-300 flex justify-center overflow-hidden">
                         <GoogleLogin
                             onSuccess={handleGoogleSuccess}
                             onError={() => toast.error('Google Sign-In failed')}
                             shape="pill"
                             theme="filled_blue"
                             size="large"
-                            width="380"
+                            width="300"
                             text={type === 'login' ? 'signin_with' : 'signup_with'}
                         />
                     </div>
@@ -112,7 +112,7 @@ export function AuthLayout({ type, title, description }: AuthLayoutProps) {
                     <button
                         type="button"
                         onClick={() => goToProvider('linkedin')}
-                        className="animate-element animate-delay-500 w-full h-10 rounded-full border border-border bg-background px-4 text-sm font-semibold text-foreground hover:bg-muted/50 transition-all active:scale-[0.98] flex items-center justify-center gap-3 shadow-sm"
+                        className="animate-element animate-delay-500 w-full max-w-[300px] mx-auto h-10 rounded-full border border-border bg-background px-4 text-sm font-semibold text-foreground hover:bg-muted/50 transition-all active:scale-[0.98] flex items-center justify-center gap-3 shadow-sm"
                     >
                         <LinkedInIcon />
                         {type === 'login' ? 'Sign in with LinkedIn' : 'Sign up with LinkedIn'}
@@ -123,7 +123,7 @@ export function AuthLayout({ type, title, description }: AuthLayoutProps) {
                     </p>
                 </div>
 
-                <p className="animate-element animate-delay-700 text-center text-xs font-medium text-muted-foreground leading-relaxed mt-12">
+                <p className="animate-element animate-delay-700 text-center text-xs font-medium text-muted-foreground leading-relaxed mt-8 sm:mt-10">
                     By continuing you agree to Qampi&apos;s Terms of Service and Privacy Policy.
                 </p>
 

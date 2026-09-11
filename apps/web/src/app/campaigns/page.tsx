@@ -758,7 +758,32 @@ const removeLeadFromCampaign = async (campaignId: string, leadId: string) => {
                         />
                     ) : (
                         <Card className="overflow-hidden">
-                            <div className="overflow-x-auto">
+                            <div className="divide-y divide-line md:hidden">
+                                {filteredCampaigns.map((campaign) => {
+                                    const tone = campaign.status === 'ACTIVE' ? 'success' : campaign.status === 'QUEUED' ? 'info' : campaign.status === 'PAUSED' ? 'warning' : 'neutral';
+                                    const leadCount = campaign._count?.CampaignLead ?? campaign.leadCount ?? null;
+                                    return (
+                                        <div key={campaign.id} className="p-4">
+                                            <div className="flex items-start justify-between gap-3">
+                                                <Link href={`/campaigns/${campaign.id}`} className="min-w-0 flex-1">
+                                                    <p className="truncate text-[14px] font-semibold text-foreground">{campaign.name}</p>
+                                                    <p className="mt-1 text-[11px] font-medium text-ink-400">{leadCount ?? 0} leads · ID {campaign.id.slice(0, 8)}</p>
+                                                </Link>
+                                                <Badge tone={tone} dot>{campaign.status.charAt(0) + campaign.status.slice(1).toLowerCase()}</Badge>
+                                            </div>
+                                            <div className="mt-3 flex items-center justify-between gap-2">
+                                                <div className="min-w-0">{(campaign.status === 'ACTIVE' || campaign.status === 'QUEUED') && <CampaignEta campaignId={campaign.id} />}</div>
+                                                <div className="flex shrink-0 gap-1">
+                                                    <button onClick={() => toggleStatus(campaign.id, campaign.status)} aria-label={campaign.status === 'ACTIVE' ? 'Pause campaign' : 'Start campaign'} className={cn('w-10 h-10 rounded-control grid place-items-center', campaign.status === 'ACTIVE' ? 'text-amber-600 bg-amber-50' : 'text-emerald-600 bg-emerald-50')}>{campaign.status === 'ACTIVE' ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}</button>
+                                                    <Link href={`/campaigns/${campaign.id}/builder`} aria-label="Edit campaign" className="w-10 h-10 rounded-control grid place-items-center bg-surface text-ink-500"><Wrench className="w-4 h-4" /></Link>
+                                                    <button onClick={() => deleteCampaign(campaign.id)} aria-label="Delete campaign" className="w-10 h-10 rounded-control grid place-items-center bg-red-50 text-red-600"><Trash2 className="w-4 h-4" /></button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                            <div className="hidden overflow-x-auto md:block">
                             <table className="w-full text-[13px] min-w-[640px]">
                                 <thead>
                                     <tr className="border-b border-line">
@@ -806,10 +831,10 @@ const removeLeadFromCampaign = async (campaignId: string, leadId: string) => {
                     )}
 
                     {/* Templates nudge */}
-                    <div className="rounded-card bg-gradient-to-r from-brand-50 to-white border border-brand-100 p-4 pl-5 flex items-center gap-4">
+                    <div className="rounded-card bg-gradient-to-r from-brand-50 to-white border border-brand-100 p-4 flex flex-col items-start gap-3 sm:pl-5 sm:flex-row sm:items-center sm:gap-4">
                         <div className="w-9 h-9 rounded-control bg-card text-brand grid place-items-center shrink-0 shadow-soft"><LayoutTemplate className="w-4 h-4" /></div>
                         <p className="text-[13px] font-medium text-ink-700 flex-1">Not sure where to start? <b>{templates.length} prebuilt templates</b> — launch in one click.</p>
-                        <Button variant="outline" size="sm" onClick={() => setView('templates')}>Browse templates →</Button>
+                        <Button className="w-full sm:w-auto" variant="outline" size="sm" onClick={() => setView('templates')}>Browse templates →</Button>
                     </div>
                 </div>
             )}
@@ -829,9 +854,9 @@ const removeLeadFromCampaign = async (campaignId: string, leadId: string) => {
                             initial={{ scale: 0.95, opacity: 0, y: 30 }}
                             animate={{ scale: 1, opacity: 1, y: 0 }}
                             exit={{ scale: 0.95, opacity: 0, y: 30 }}
-                            className="bg-background rounded-[3rem] shadow-2xl border border-border w-full max-w-3xl max-h-[85vh] overflow-hidden flex flex-col relative z-50"
+                            className="bg-background rounded-[1.5rem] sm:rounded-[3rem] shadow-2xl border border-border w-full max-w-3xl max-h-[92dvh] sm:max-h-[85vh] overflow-hidden flex flex-col relative z-50"
                         >
-                            <div className="px-10 py-10 border-b border-border flex items-center justify-between bg-muted/30">
+                            <div className="px-4 py-4 sm:px-10 sm:py-10 border-b border-border flex items-center justify-between gap-3 bg-muted/30">
                                 <div>
                                     <h3 className="text-2xl font-black text-foreground uppercase tracking-tight italic">Engine Status</h3>
                                     {statusPanel.data && (
@@ -918,7 +943,7 @@ const removeLeadFromCampaign = async (campaignId: string, leadId: string) => {
                                 )}
                             </div>
 
-                            <div className="flex-1 overflow-y-auto p-10 scrollbar-hide">
+                            <div className="flex-1 overflow-y-auto p-4 sm:p-10 scrollbar-hide">
                                 {statusLoading ? (
                                     <div className="flex h-64 items-center justify-center">
                                         <Loader2 className="w-10 h-10 text-primary animate-spin" />

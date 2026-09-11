@@ -275,7 +275,7 @@ export default function LinkedInConnectivity() {
     const modalContent = (
         <AnimatePresence>
             {showModal && (
-                <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+                <div className="fixed inset-0 z-[9999] flex items-end justify-center p-2 sm:items-center sm:p-4">
                     <motion.div
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
@@ -288,10 +288,10 @@ export default function LinkedInConnectivity() {
                         animate={{ scale: 1, opacity: 1, y: 0 }}
                         exit={{ scale: 0.95, opacity: 0, y: 10 }}
                         onClick={(e) => e.stopPropagation()}
-                        className="bg-white w-full max-w-lg rounded-[2.5rem] shadow-2xl relative z-10 overflow-hidden border border-border/50 flex flex-col max-h-[95vh]"
+                        className="bg-white w-full max-w-lg rounded-[1.75rem] sm:rounded-[2.5rem] shadow-2xl relative z-10 overflow-hidden border border-border/50 flex flex-col max-h-[calc(100dvh-1rem)] sm:max-h-[95vh]"
                     >
-                        <div className="overflow-y-auto scrollbar-hide py-8 px-8 sm:px-12">
-                            <div className="flex items-center justify-between mb-8">
+                        <div className="overflow-y-auto scrollbar-hide py-5 px-5 sm:py-8 sm:px-12">
+                            <div className="flex items-center justify-between mb-5 sm:mb-8">
                                 <div className="flex items-center space-x-3">
                                     <div className="w-12 h-12 bg-[#0077b5] rounded-xl flex items-center justify-center shadow-lg">
                                         <Linkedin className="w-7 h-7 text-white" />

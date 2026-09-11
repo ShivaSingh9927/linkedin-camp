@@ -191,10 +191,10 @@ export default function OnboardingPage() {
                     <div className="flex justify-center mb-4">
                         <img src="/qampi_wbg.png" alt="Logo" className="w-12 h-12 object-contain animate-in zoom-in duration-1000" />
                     </div>
-                    <h1 className="text-3xl font-black text-foreground tracking-tight sm:text-4xl">
+                    <h1 className="text-2xl font-black text-foreground tracking-tight sm:text-4xl">
                         Welcome{firstName} — let&apos;s get to know you
                     </h1>
-                    <p className="text-muted-foreground font-medium mt-3 max-w-xl mx-auto">
+                    <p className="text-[13px] sm:text-base text-muted-foreground font-medium mt-3 max-w-xl mx-auto">
                         {isJobSeeking
                             ? 'From a couple of details, the AI figures out your strengths, your target roles and how to stand out — so you don’t have to fill out a long form.'
                             : 'Just a few things. From these, the AI builds your tailored outreach strategy — who to reach, what to say and how to stand out — so you don’t have to fill out a long form.'}
@@ -205,7 +205,7 @@ export default function OnboardingPage() {
                 <motion.div
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="bg-white rounded-[2.5rem] border border-slate-200 shadow-2xl shadow-slate-200/50 p-7 sm:p-9 relative overflow-hidden"
+                    className="bg-white rounded-[1.75rem] sm:rounded-[2.5rem] border border-slate-200 shadow-2xl shadow-slate-200/50 p-4 sm:p-9 relative overflow-hidden"
                 >
                     <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-primary/40 via-primary to-primary/40" />
 
@@ -215,7 +215,7 @@ export default function OnboardingPage() {
                             <label className="text-xs font-black text-muted-foreground uppercase tracking-widest ml-1 flex items-center gap-2">
                                 What brings you to Qampi? <span className="text-red-500">*</span>
                             </label>
-                            <div className="grid grid-cols-2 gap-3">
+                            <div className="grid grid-cols-2 gap-2 sm:gap-3">
                                 {GOALS.map((g) => {
                                     const selected = goalType === g.key;
                                     return (
@@ -225,7 +225,7 @@ export default function OnboardingPage() {
                                             disabled={!g.live}
                                             onClick={() => g.live && setGoalType(g.key)}
                                             className={cn(
-                                                'relative text-left rounded-2xl border p-3.5 transition-all',
+                                                'relative text-left rounded-2xl border p-3 sm:p-3.5 transition-all',
                                                 !g.live && 'opacity-50 cursor-not-allowed border-slate-200',
                                                 g.live && !selected && 'border-slate-200 hover:border-primary/50 hover:shadow-sm',
                                                 selected && 'border-primary ring-4 ring-primary/10 bg-primary/[0.03]',

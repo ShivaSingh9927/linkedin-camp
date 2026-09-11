@@ -46,17 +46,17 @@ export default function AddProxiesPage() {
     };
 
     return (
-        <div className="p-8 bg-slate-950 min-h-screen text-slate-200">
+        <div className="p-3 sm:p-8 bg-slate-950 min-h-screen text-slate-200">
             <div className="max-w-3xl mx-auto">
                 <Link
                     href="/admin/proxies"
-                    className="flex items-center gap-2 text-slate-500 hover:text-slate-300 transition-colors mb-8 text-sm group"
+                    className="flex items-center gap-2 text-slate-500 hover:text-slate-300 transition-colors mb-5 sm:mb-8 text-sm group"
                 >
                     <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
                     Back to Infrastructure
                 </Link>
 
-                <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 relative overflow-hidden">
+                <div className="bg-slate-900 border border-slate-800 rounded-3xl p-4 sm:p-8 relative overflow-hidden">
                     {/* Accent decoration */}
                     <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/5 blur-3xl -z-0" />
 

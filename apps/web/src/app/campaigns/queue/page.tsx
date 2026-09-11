@@ -116,7 +116,7 @@ export default function FollowUpsPage() {
     return (
         <div className="max-w-4xl mx-auto space-y-8 p-4 sm:p-8 animate-in fade-in duration-500">
             {/* Header */}
-            <div className="flex items-end justify-between gap-4">
+            <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
                 <div>
                     <h1 className="text-3xl font-black text-slate-800 uppercase tracking-tight italic">Follow-ups</h1>
                     <p className="text-sm font-semibold text-slate-500 mt-1">
@@ -125,7 +125,7 @@ export default function FollowUpsPage() {
                 </div>
                 <button
                     onClick={fetchFollowUps}
-                    className="flex items-center gap-2 px-4 py-2.5 rounded-2xl border text-xs font-bold text-slate-600 hover:bg-slate-50 transition-colors"
+                    className="flex w-full sm:w-auto items-center justify-center gap-2 px-4 py-2.5 rounded-2xl border text-xs font-bold text-slate-600 hover:bg-slate-50 transition-colors"
                 >
                     <RefreshCw className={cn('w-4 h-4', loading && 'animate-spin')} />
                     Refresh
@@ -149,7 +149,7 @@ export default function FollowUpsPage() {
                     const Icon = seg.icon;
                     return (
                         <section key={seg.key} className="bg-white rounded-3xl border shadow-sm overflow-hidden">
-                            <div className="p-6 border-b border-slate-50 flex items-start justify-between gap-4">
+                            <div className="p-4 sm:p-6 border-b border-slate-50 flex items-start justify-between gap-4">
                                 <div className="flex items-start gap-3">
                                     <div className={cn('w-10 h-10 rounded-2xl grid place-items-center flex-shrink-0', seg.tone)}>
                                         <Icon className="w-5 h-5" />
@@ -172,7 +172,7 @@ export default function FollowUpsPage() {
                                     const checked = selected.has(l.id);
                                     return (
                                         <li key={l.id}>
-                                            <button onClick={() => toggle(l.id)} className="w-full flex items-center gap-3 px-6 py-4 hover:bg-slate-50/60 transition-colors text-left">
+                                            <button onClick={() => toggle(l.id)} className="w-full flex items-center gap-3 px-4 sm:px-6 py-4 hover:bg-slate-50/60 transition-colors text-left">
                                                 {checked ? <CheckSquare className="w-5 h-5 text-indigo-600 flex-shrink-0" /> : <Square className="w-5 h-5 text-slate-300 flex-shrink-0" />}
                                                 <div className="min-w-0 flex-1">
                                                     <p className="text-sm font-bold text-slate-800 truncate">{[l.firstName, l.lastName].filter(Boolean).join(' ') || 'Unknown'}</p>

@@ -715,8 +715,8 @@ export default function LeadsPage() {
 
                 <div className="grid grid-cols-1 lg:grid-cols-[230px_1fr] gap-6">
                     {/* ─── LISTS RAIL ─── */}
-                    <aside className="space-y-5">
-                        <div>
+                    <aside className="flex gap-4 overflow-x-auto pb-2 -mx-3 px-3 lg:mx-0 lg:block lg:space-y-5 lg:overflow-visible lg:px-0 lg:pb-0">
+                        <div className="min-w-[220px] lg:min-w-0">
                             <div className="label mb-2 px-1">Lists</div>
                             <div className="space-y-0.5">
                                 <button
@@ -748,7 +748,7 @@ export default function LeadsPage() {
                             </div>
                         </div>
 
-                        <div>
+                        <div className="min-w-[220px] lg:min-w-0">
                             <div className="label mb-2 px-1 flex items-center justify-between">
                                 <span>Saved views</span>
                                 <button
@@ -820,7 +820,7 @@ export default function LeadsPage() {
 
                         {/* Bulk action bar */}
                         {selectedLeads.size > 0 && (
-                            <div className="bg-ink-900 text-white rounded-control px-4 py-2.5 flex items-center gap-3 animate-in fade-in slide-in-from-top-2 duration-200">
+                            <div className="bg-ink-900 text-white rounded-control px-4 py-2.5 flex flex-wrap items-center gap-3 animate-in fade-in slide-in-from-top-2 duration-200">
                                 <span className="text-[13px] font-semibold">{selectedLeads.size} selected</span>
                                 <div className="w-px h-5 bg-white/20" />
                                 <button onClick={() => setShowAssignModal(true)} className="text-[13px] font-bold flex items-center gap-1.5 bg-brand text-white px-3.5 py-1.5 rounded-control hover:bg-brand-600 transition-colors shadow-lift">
@@ -832,7 +832,7 @@ export default function LeadsPage() {
                                 <button onClick={() => setShowBulkTagModal(true)} className="text-[13px] font-semibold flex items-center gap-1.5 hover:text-brand-200 transition-colors">
                                     <ListPlus className="w-4 h-4" />Move to list
                                 </button>
-                                <button onClick={handleBulkDelete} className="text-[13px] font-semibold flex items-center gap-1.5 hover:text-red-300 transition-colors ml-auto">
+                                <button onClick={handleBulkDelete} className="text-[13px] font-semibold flex items-center gap-1.5 hover:text-red-300 transition-colors sm:ml-auto">
                                     <Trash2 className="w-4 h-4" />Delete
                                 </button>
                             </div>
@@ -852,9 +852,46 @@ export default function LeadsPage() {
                             />
                         ) : (
                             <Card className="overflow-hidden">
+                                <div className="divide-y divide-line md:hidden">
+                                    {filteredLeads.map((lead) => (
+                                        <div key={lead.id} onClick={() => setSelectedLead(lead)} className={cn(
+                                            'p-4 cursor-pointer transition-colors',
+                                            selectedLeads.has(lead.id) && 'bg-brand-50/60',
+                                            selectedLead?.id === lead.id && 'bg-brand-50',
+                                        )}>
+                                            <div className="flex items-start gap-3">
+                                                <input
+                                                    type="checkbox"
+                                                    aria-label={`Select ${lead.firstName} ${lead.lastName}`}
+                                                    className="mt-1 rounded border-line text-brand focus:ring-brand/30 w-4 h-4 cursor-pointer"
+                                                    checked={selectedLeads.has(lead.id)}
+                                                    onClick={(e) => e.stopPropagation()}
+                                                    onChange={() => toggleSelectLead(lead.id)}
+                                                />
+                                                <Avatar name={`${lead.firstName} ${lead.lastName}`} size="md" />
+                                                <div className="min-w-0 flex-1">
+                                                    <div className="flex flex-wrap items-center gap-1.5">
+                                                        <span className="truncate font-semibold text-foreground">{lead.firstName} {lead.lastName}</span>
+                                                        {degreeLabel(lead.connectionDegree) && <Badge tone="neutral" className="!px-1.5 !py-0.5 !text-[10px]">{degreeLabel(lead.connectionDegree)}</Badge>}
+                                                    </div>
+                                                    <p className="mt-0.5 truncate text-[12px] font-medium text-ink-500">{lead.jobTitle || lead.headline || '—'}{lead.company ? ` · ${lead.company}` : ''}</p>
+                                                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                                                        <Badge tone={statusTone(lead.status)}>{lead.status.replace('_', ' ').toLowerCase().replace(/^\w/, c => c.toUpperCase())}</Badge>
+                                                        {(lead.tags || []).filter(t => !t.startsWith('bot:')).slice(0, 2).map(tag => <Badge key={tag} tone="neutral">{tag}</Badge>)}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div className="mt-3 flex justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                                                <button onClick={() => { setSelectedLeads(new Set([lead.id])); setShowAssignModal(true); }} aria-label="Add to campaign" className="w-10 h-10 rounded-control bg-brand-50 text-brand grid place-items-center"><Plus className="w-4 h-4" /></button>
+                                                <button onClick={(e) => handleEnrich(lead.id, e)} aria-label="Enrich prospect" className="w-10 h-10 rounded-control bg-surface text-ink-500 grid place-items-center"><Database className="w-4 h-4" /></button>
+                                                <button onClick={(e) => handleDeleteLead(lead.id, e)} aria-label="Delete prospect" className="w-10 h-10 rounded-control bg-red-50 text-red-600 grid place-items-center"><Trash2 className="w-4 h-4" /></button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
                                 {/* Only this container scrolls — the page header + filters stay put.
                                     overflow-auto = vertical (capped to viewport) + horizontal (extra columns). */}
-                                <div className="overflow-auto max-h-[calc(100vh-300px)]">
+                                <div className="hidden overflow-auto max-h-[calc(100vh-300px)] md:block">
                                     <table className="w-full text-[13px] min-w-[1000px]">
                                         <thead className="sticky top-0 z-10 bg-white shadow-[0_1px_0_0_var(--color-line)]">
                                             <tr>

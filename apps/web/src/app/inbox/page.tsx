@@ -330,9 +330,9 @@ export default function InboxPage() {
         <p className="text-[13px] text-red-600 bg-red-50 border border-red-100 px-4 py-2.5 rounded-control font-medium">{syncError}</p>
       )}
 
-      <Card className="overflow-hidden grid grid-cols-1 md:grid-cols-[320px_1fr] h-[calc(100vh-200px)] min-h-[460px]">
+      <Card className="overflow-hidden grid grid-cols-1 md:grid-cols-[320px_1fr] min-h-[560px] md:h-[calc(100vh-200px)] md:min-h-[460px]">
         {/* Conversation list */}
-        <div className={cn('border-r border-line flex flex-col min-h-0', selectedConvo && 'hidden md:flex')}>
+        <div className={cn('border-r-0 border-line flex flex-col min-h-0 md:border-r', selectedConvo && 'hidden md:flex')}>
           <div className="p-3 border-b border-line space-y-3">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-400" />
@@ -395,7 +395,7 @@ export default function InboxPage() {
         <div className={cn('flex flex-col min-h-0', !selectedConvo && 'hidden md:flex')}>
           {selectedConvo ? (
             <>
-              <div className="px-5 py-3.5 border-b border-line flex items-center gap-3">
+              <div className="px-3 py-3.5 sm:px-5 border-b border-line flex items-center gap-3">
                 <button onClick={() => setSelectedConvo(null)} className="md:hidden text-ink-400"><ArrowLeft className="w-5 h-5" /></button>
                 <Avatar name={`${selectedConvo.firstName} ${selectedConvo.lastName}`} />
                 <div className="min-w-0 flex-1">
@@ -405,14 +405,14 @@ export default function InboxPage() {
                 <Badge tone={STATUS_TONE[selectedConvo.status] || 'neutral'}>{selectedConvo.status.charAt(0) + selectedConvo.status.slice(1).toLowerCase()}</Badge>
               </div>
 
-              <div className="flex-1 p-5 overflow-y-auto bg-[#faf9fc] min-h-0">
+              <div className="flex-1 p-3 sm:p-5 overflow-y-auto bg-[#faf9fc] min-h-0">
                 {isLoadingMessages ? (
                   <div className="h-full grid place-items-center"><RefreshCw className="w-6 h-6 animate-spin text-ink-300" /></div>
                 ) : (
                   <div className="space-y-3">
                     {messages.map((msg, idx) => (
                       <div key={msg.id || idx} className={cn('flex flex-col', msg.direction === 'SENT' ? 'items-end' : 'items-start')}>
-                        <div className={cn('max-w-[75%] px-4 py-2.5 text-[13px] rounded-card',
+                        <div className={cn('max-w-[88%] sm:max-w-[75%] px-4 py-2.5 text-[13px] rounded-card',
                           msg.direction === 'SENT' ? 'bg-brand text-white rounded-tr-chip' : 'bg-card border border-line rounded-tl-chip')}>
                           {msg.content}
                         </div>
@@ -427,10 +427,10 @@ export default function InboxPage() {
                 )}
               </div>
 
-              <div className="p-4 border-t border-line relative" ref={composerRef}>
+              <div className="p-3 sm:p-4 border-t border-line relative" ref={composerRef}>
                 {/* Reply copilot — situation read + 2-3 draft options, floating above the box. */}
                 {showSuggestions && (
-                  <div className="absolute bottom-full left-4 right-4 mb-2 bg-card border border-line rounded-card shadow-lift z-50 p-3 max-h-[46vh] overflow-y-auto flex flex-col">
+                  <div className="absolute bottom-full left-3 right-3 sm:left-4 sm:right-4 mb-2 bg-card border border-line rounded-card shadow-lift z-50 p-3 max-h-[58dvh] sm:max-h-[46vh] overflow-y-auto flex flex-col">
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-1.5 text-[12px] font-bold text-foreground">
                         <Sparkles className="w-3.5 h-3.5 text-brand" /> Qampi suggests a reply

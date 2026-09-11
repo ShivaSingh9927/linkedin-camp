@@ -35,13 +35,13 @@ export function PageHeader({
   actions?: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-7">
-      <div>
+    <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-5 sm:mb-7">
+      <div className="min-w-0">
         {eyebrow && <span className="label !text-brand">{eyebrow}</span>}
-        <h1 className="text-[28px] font-bold tracking-tight leading-none text-foreground mt-2">{title}</h1>
-        {subtitle && <p className="text-ink-500 font-medium mt-2">{subtitle}</p>}
+        <h1 className="text-[24px] sm:text-[28px] font-bold tracking-tight leading-tight sm:leading-none text-foreground mt-2 break-words">{title}</h1>
+        {subtitle && <p className="text-[13px] sm:text-base text-ink-500 font-medium mt-1.5 sm:mt-2 leading-relaxed">{subtitle}</p>}
       </div>
-      {actions && <div className="flex items-center gap-2 flex-shrink-0">{actions}</div>}
+      {actions && <div className="flex w-full items-center gap-2 sm:w-auto sm:flex-shrink-0 [&>*]:min-w-0">{actions}</div>}
     </div>
   );
 }

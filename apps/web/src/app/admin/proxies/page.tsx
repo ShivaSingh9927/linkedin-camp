@@ -121,17 +121,17 @@ export default function ProxyAdminPage() {
     });
 
     return (
-        <div className="p-8 bg-slate-950 min-h-screen text-slate-200">
+        <div className="p-3 sm:p-8 bg-slate-950 min-h-screen text-slate-200">
             <div className="max-w-7xl mx-auto">
                 {/* Header */}
-                <div className="flex justify-between items-center mb-8">
+                <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-6 sm:mb-8">
                     <div>
-                        <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+                        <h1 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
                             Infrastructure Management
                         </h1>
                         <p className="text-slate-400 mt-1">Monitor and manage proxy health & user assignments</p>
                     </div>
-                    <div className="flex gap-4">
+                    <div className="flex gap-3 w-full sm:w-auto">
                         <button
                             onClick={fetchProxies}
                             className="p-2 bg-slate-900 border border-slate-800 rounded-lg hover:bg-slate-800 transition-colors"
@@ -141,7 +141,7 @@ export default function ProxyAdminPage() {
                         </button>
                         <Link
                             href="/admin/proxies/add"
-                            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg font-medium transition-all shadow-lg shadow-blue-900/20"
+                            className="flex flex-1 sm:flex-none items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg font-medium transition-all shadow-lg shadow-blue-900/20"
                         >
                             <Plus className="w-4 h-4" />
                             Add Proxies
@@ -161,12 +161,12 @@ export default function ProxyAdminPage() {
                             onChange={(e) => setSearchTerm(e.target.value)}
                         />
                     </div>
-                    <div className="flex gap-2 col-span-2">
+                    <div className="flex gap-2 col-span-2 overflow-x-auto pb-1">
                         {(['ALL', 'HEALTHY', 'BANNED', 'LINKEDIN_BANNED'] as const).map((f) => (
                             <button
                                 key={f}
                                 onClick={() => setFilter(f)}
-                                className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-medium border transition-all ${filter === f
+                                className={`min-w-max flex-1 py-1.5 px-3 rounded-lg text-xs font-medium border transition-all ${filter === f
                                         ? 'bg-slate-800 border-slate-700 text-blue-400'
                                         : 'bg-transparent border-slate-800 text-slate-500 hover:border-slate-700'
                                     }`}
@@ -192,7 +192,7 @@ export default function ProxyAdminPage() {
                         filteredProxies.map((proxy) => (
                             <div
                                 key={proxy.id}
-                                className={`relative bg-slate-900 border rounded-2xl p-6 hover:shadow-xl hover:shadow-blue-950/20 transition-all group overflow-hidden ${proxy.banned ? 'border-red-900/50' : proxy.linkedinBanned ? 'border-yellow-900/50' : 'border-slate-800'
+                                className={`relative bg-slate-900 border rounded-2xl p-4 sm:p-6 hover:shadow-xl hover:shadow-blue-950/20 transition-all group overflow-hidden ${proxy.banned ? 'border-red-900/50' : proxy.linkedinBanned ? 'border-yellow-900/50' : 'border-slate-800'
                                     }`}
                             >
                                 {/* Status Glow */}

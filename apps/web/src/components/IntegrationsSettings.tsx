@@ -270,7 +270,7 @@ export default function IntegrationsSettings() {
                     )}
                 </div>
                 {open && (
-                    <div className="pb-4 pl-[60px] grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
+                    <div className="pb-4 grid grid-cols-1 sm:grid-cols-2 sm:pl-[60px] gap-3 items-end">
                         {c.fields.map((f, i) => (
                             <div key={i} className={cn(c.fields.length === 1 && 'sm:col-span-2')}>
                                 <div className="label mb-1 flex items-center justify-between normal-case">
@@ -337,7 +337,7 @@ export default function IntegrationsSettings() {
                                 )}
                             </div>
                             {webhookOpen && (
-                                <div className="pb-4 pl-[60px] grid grid-cols-1 sm:grid-cols-[160px_1fr_auto] gap-3 items-end">
+                                <div className="pb-4 grid grid-cols-1 sm:grid-cols-[160px_1fr_auto] sm:pl-[60px] gap-3 items-end">
                                     <div>
                                         <div className="label mb-1">Provider</div>
                                         <select value={provider} onChange={(e) => setProvider(e.target.value)} className="w-full bg-white border border-line rounded-control px-3 py-2 text-[13px] outline-none focus:ring-2 focus:ring-brand/30">
@@ -357,7 +357,7 @@ export default function IntegrationsSettings() {
                             )}
                             {/* Active webhooks */}
                             {integrations.length > 0 && (
-                                <div className="pb-4 pl-[60px] space-y-2">
+                                <div className="pb-4 sm:pl-[60px] space-y-2">
                                     {integrations.map((integration) => (
                                         <div key={integration.id} className="flex items-center gap-3 bg-surface rounded-control px-3 py-2">
                                             <div className="w-7 h-7 rounded-lg grid place-items-center shrink-0 bg-white border border-line text-ink-500">
@@ -387,4 +387,3 @@ export default function IntegrationsSettings() {
         </div>
     );
 }
-

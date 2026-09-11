@@ -158,7 +158,7 @@ export default function InteractiveLoginView({ socket, onCancel }: Props) {
 
     return (
         <div className="flex flex-col gap-3">
-            <div className="flex items-start gap-2 rounded-control bg-surface px-3 py-2 text-sm text-ink/70">
+            <div className="flex items-start gap-2 rounded-control bg-surface px-3 py-2 text-[12px] sm:text-sm text-ink/70">
                 <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-brand" />
                 <p>
                     Sign in to LinkedIn below — including <strong>Continue with Google</strong> or Apple if that&apos;s how
@@ -198,8 +198,8 @@ export default function InteractiveLoginView({ socket, onCancel }: Props) {
                 )}
             </div>
 
-            <div className="flex items-center justify-between text-xs text-ink/50">
-                <span>Click the view first, then type as you normally would.</span>
+            <div className="flex items-center justify-between gap-3 text-[11px] sm:text-xs text-ink/50">
+                <span className="leading-snug">Tap the view first, then type normally.</span>
                 <button type="button" onClick={onCancel} className="underline hover:text-ink">
                     Cancel
                 </button>

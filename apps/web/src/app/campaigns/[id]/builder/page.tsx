@@ -266,9 +266,9 @@ export default function CampaignBuilderPage({ params }: { params: Promise<{ id: 
     );
 
     return (
-        <div className="space-y-6 flex flex-col h-full overflow-hidden">
-            <div className="flex justify-between items-center px-4 py-2 border-b bg-card rounded-2xl shadow-sm">
-                <div className="flex items-center space-x-4">
+        <div className="space-y-4 sm:space-y-6 flex flex-col min-h-full overflow-visible lg:h-full lg:overflow-hidden">
+            <div className="flex flex-col items-stretch gap-3 px-3 py-3 border-b bg-card rounded-2xl shadow-sm sm:flex-row sm:items-center sm:justify-between sm:px-4 sm:py-2">
+                <div className="flex min-w-0 items-center space-x-3 sm:space-x-4">
                     <Link href="/campaigns" className="p-2 hover:bg-slate-100 rounded-full transition-all">
                         <ArrowLeft className="w-5 h-5 text-slate-600" />
                     </Link>
@@ -276,7 +276,7 @@ export default function CampaignBuilderPage({ params }: { params: Promise<{ id: 
                         <input
                             value={campaignName}
                             onChange={(e) => setCampaignName(e.target.value)}
-                            className="text-xl font-bold bg-transparent border-none focus:ring-0 p-0 text-slate-800 placeholder:text-slate-400"
+                            className="w-full min-w-0 text-lg sm:text-xl font-bold bg-transparent border-none focus:ring-0 p-0 text-slate-800 placeholder:text-slate-400"
                             placeholder="Campaign Name"
                         />
                         <div className="flex items-center space-x-2 text-xs">
@@ -287,16 +287,16 @@ export default function CampaignBuilderPage({ params }: { params: Promise<{ id: 
                             }`}>
                                 {status}
                             </span>
-                            <span className="text-slate-400">ID: {id}</span>
+                            <span className="hidden text-slate-400 sm:inline">ID: {id}</span>
                         </div>
                     </div>
                 </div>
 
-                <div className="flex items-center space-x-3">
+                <div className="flex items-center gap-2 sm:space-x-3">
                     <button
                         onClick={() => handleSave(false)}
                         disabled={saving}
-                        className="flex items-center space-x-2 px-5 py-2.5 border rounded-xl font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50 transition-all text-sm"
+                        className="flex flex-1 items-center justify-center space-x-2 px-3 sm:flex-none sm:px-5 py-2.5 border rounded-xl font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50 transition-all text-sm"
                     >
                         {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                         <span>{id === 'new' ? 'Create Draft' : 'Save Changes'}</span>
@@ -305,7 +305,7 @@ export default function CampaignBuilderPage({ params }: { params: Promise<{ id: 
                     <button
                         onClick={openLaunchModal}
                         disabled={saving || status === 'ACTIVE'}
-                        className="flex items-center space-x-2 px-6 py-2.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-200 disabled:opacity-50 transition-all text-sm"
+                        className="flex flex-1 items-center justify-center space-x-2 px-3 sm:flex-none sm:px-6 py-2.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-200 disabled:opacity-50 transition-all text-sm"
                     >
                         <Play className="w-4 h-4 fill-current" />
                         <span>Launch Campaign</span>
@@ -352,7 +352,7 @@ export default function CampaignBuilderPage({ params }: { params: Promise<{ id: 
                                 />
                             </div>
                             
-                            <div className="grid grid-cols-2 gap-3">
+                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                                 <div className="space-y-2">
                                     <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
                                         Call to Action
@@ -400,7 +400,7 @@ export default function CampaignBuilderPage({ params }: { params: Promise<{ id: 
                 </div>
             </div>
 
-            <div className="flex-1 relative rounded-2xl overflow-hidden border">
+            <div className="relative min-h-[520px] flex-1 rounded-2xl overflow-hidden border lg:min-h-0">
                 <CampaignBuilder
                     nodes={nodes}
                     edges={edges}

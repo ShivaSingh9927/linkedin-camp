@@ -298,8 +298,8 @@ function CampaignBuilderInner({
 
   return (
     <BuilderLockContext.Provider value={locked}>
-    <div className="w-full h-full bg-slate-50 relative group flex flex-row overflow-hidden">
-      <div className="flex-1 relative">
+    <div className="w-full min-h-[520px] lg:h-full bg-slate-50 relative group flex flex-col lg:flex-row overflow-visible lg:overflow-hidden">
+      <div className="flex-1 min-h-[520px] lg:min-h-0 relative">
         {/* Locked badge replaces the build menu for template/quick-launch campaigns */}
         {locked && (
           <div className="absolute top-4 left-4 z-50 flex items-center gap-2.5 px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl shadow-lg max-w-[240px]">
@@ -312,13 +312,13 @@ function CampaignBuilderInner({
         )}
         {/* Floating Menu (hidden when locked) */}
         {!locked && (
-        <div className="absolute top-4 left-4 z-50 flex flex-col gap-2 p-4 bg-white border border-slate-200 rounded-2xl shadow-xl max-w-[200px]">
+        <div className="absolute top-3 left-3 right-3 sm:right-auto sm:top-4 sm:left-4 z-50 flex flex-col gap-2 p-3 sm:p-4 bg-white border border-slate-200 rounded-2xl shadow-xl sm:max-w-[200px]">
           <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-2">
             <Plus className="w-3 h-3" />
             Build Sequence
           </div>
 
-          <div className="grid grid-cols-1 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-1 gap-2">
             <button
               onClick={() => addNode('VISIT', 'Profile Visit', 'ACTION')}
               className="flex items-center gap-2 p-2 rounded-lg hover:bg-amber-50 text-slate-600 hover:text-amber-600 border border-transparent hover:border-amber-100 transition-all text-xs font-bold"
@@ -416,7 +416,7 @@ function CampaignBuilderInner({
         </div>
         )}
 
-        <div className="w-full h-[700px] border-t bg-slate-50">
+        <div className="w-full h-[540px] sm:h-[700px] border-t bg-slate-50">
           <ReactFlow
             nodes={nodes}
             edges={edges}
@@ -452,8 +452,8 @@ function CampaignBuilderInner({
 
       {/* Properties Panel */}
       {selectedNode && (
-        <div className="w-80 bg-white border-l border-slate-200 shadow-2xl z-50 flex flex-col animate-in slide-in-from-right duration-300">
-          <div className="p-6 border-b flex justify-between items-center bg-slate-50">
+        <div className="w-full max-h-[70vh] lg:w-80 lg:max-h-none bg-white border-t lg:border-t-0 lg:border-l border-slate-200 shadow-2xl z-50 flex flex-col animate-in slide-in-from-right duration-300">
+          <div className="p-4 sm:p-6 border-b flex justify-between items-center bg-slate-50">
             <div>
               <h3 className="font-black text-slate-800 uppercase tracking-tight text-sm">Step Settings</h3>
               <p className="text-[10px] font-bold text-slate-400 uppercase">{(selectedNode.data as any).label}</p>
@@ -463,7 +463,7 @@ function CampaignBuilderInner({
             </button>
           </div>
 
-          <div className="p-6 flex-1 overflow-y-auto space-y-6">
+          <div className="p-4 sm:p-6 flex-1 overflow-y-auto space-y-6">
             {/* B.4 — Connection-gate warning. Surfaces when this step requires
                 a 1st-degree connection AND no upstream CONNECT / CHECK_CONNECTION
                 exists. B.5 "Add Gate" button auto-inserts the gate. */}

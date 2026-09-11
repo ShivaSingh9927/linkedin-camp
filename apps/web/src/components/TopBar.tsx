@@ -12,15 +12,15 @@ interface TopBarProps {
 
 export function TopBar({ title, description, action, className }: TopBarProps) {
   return (
-    <div className={cn("bg-background/50 backdrop-blur-md border-b border-border px-8 py-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4", className)}>
+    <div className={cn("bg-background/50 backdrop-blur-md border-b border-border px-3 py-5 sm:px-8 sm:py-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4", className)}>
       <div>
-        <h1 className="text-3xl font-black text-foreground tracking-tight leading-tight">{title}</h1>
+        <h1 className="text-2xl sm:text-3xl font-black text-foreground tracking-tight leading-tight">{title}</h1>
         {description && (
-          <p className="text-sm font-bold text-muted-foreground mt-1 max-w-xl">{description}</p>
+          <p className="text-[13px] sm:text-sm font-bold text-muted-foreground mt-1 max-w-xl">{description}</p>
         )}
       </div>
       {action && (
-        <div className="flex items-center space-x-3 shrink-0">
+        <div className="flex w-full sm:w-auto items-center gap-3 shrink-0 [&>button]:flex-1 sm:[&>button]:flex-none [&>a]:flex-1 sm:[&>a]:flex-none">
           {action}
         </div>
       )}
