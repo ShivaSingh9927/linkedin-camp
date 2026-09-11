@@ -306,6 +306,36 @@ export const startCampaign = async (req: any, res: Response) => {
                                     isCompleted: false,
                                 }
                             });
+
+                            // Restart must reset BOTH execution layers. The old
+                            // CampaignLead row is what the scheduler reads, but
+                            // CampaignLeadProgress is the lifecycle source of
+                            // truth. Leaving a prior COMPLETED progress row in
+                            // place makes recomputeCampaignStatus immediately
+                            // close the freshly restarted campaign again.
+                            await prisma.campaignLeadProgress.upsert({
+                                where: { campaignId_leadId: { campaignId: id, leadId } },
+                                create: {
+                                    campaignId: id,
+                                    leadId,
+                                    status: 'PENDING',
+                                    currentNodeIndex: 0,
+                                    connectionStatus: 'not_connected',
+                                    needsRetry: false,
+                                    deferralCount: 0,
+                                },
+                                update: {
+                                    status: 'PENDING',
+                                    statusReason: null,
+                                    currentNodeIndex: 0,
+                                    connectionStatus: 'not_connected',
+                                    needsRetry: false,
+                                    nextRetryAt: null,
+                                    completedAt: null,
+                                    terminalAt: null,
+                                    deferralCount: 0,
+                                },
+                            });
                         } else {
                             await prisma.campaignLead.create({
                                 data: {
