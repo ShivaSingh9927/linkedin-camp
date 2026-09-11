@@ -65,6 +65,22 @@ function parseDdgHtml(html) {
         results.push({ title, url, snippet: cleanSearchText(snippet?.[1] || '', 420) });
         if (results.length >= WEB_SEARCH_MAX_RESULTS) break;
     }
+
+    // DDG occasionally changes the result container nesting (especially for
+    // regional/Edge responses). Fall back to the stable result__a anchors so
+    // valid public results are not discarded just because wrapper markup moved.
+    if (!results.length) {
+        const anchors = [...html.matchAll(/<a[^>]+class="[^\"]*result__a[^\"]*"[^>]+href="([^\"]+)"[^>]*>([\s\S]*?)<\/a>/gi)];
+        for (const match of anchors) {
+            const title = cleanSearchText(match[2], 180);
+            const url = unwrapDdgUrl(match[1]);
+            if (!title || !url || !/^https?:\/\//i.test(url)) continue;
+            const tail = html.slice((match.index || 0) + match[0].length, (match.index || 0) + match[0].length + 3500);
+            const snippetMatch = tail.match(/class="[^\"]*result__snippet[^\"]*"[^>]*>([\s\S]*?)<\//i);
+            results.push({ title, url, snippet: cleanSearchText(snippetMatch?.[1] || '', 420) });
+            if (results.length >= WEB_SEARCH_MAX_RESULTS) break;
+        }
+    }
     return results;
 }
 

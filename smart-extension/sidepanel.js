@@ -23,6 +23,8 @@ let extractionState = {
 // ─── DOM Elements ───────────────────────────────────────────
 const els = {};
 function initElements() {
+    const versionEl = document.getElementById('footer-version');
+    if (versionEl && chrome?.runtime?.getManifest) versionEl.textContent = `v${chrome.runtime.getManifest().version}`;
     els.authBadge = document.getElementById('auth-badge');
     els.listNameInput = document.getElementById('list-name');
     els.controls = document.getElementById('controls');
