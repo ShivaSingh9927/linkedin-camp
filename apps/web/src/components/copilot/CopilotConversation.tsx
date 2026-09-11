@@ -126,7 +126,7 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
         // Only echo the user's ask on the first page; "Show more" is a quiet continuation.
         if (page === 1) push({ id: nextId(), role: 'user', kind: 'text', text: label });
         const sId = nextId();
-        push({ id: sId, role: 'qampi', kind: 'searching', label });
+        push({ id: sId, role: 'qampi', kind: 'searching', label: `Searching LinkedIn for “${label}”` });
         try {
             // Dedup + saturation are now server-side (durable search memory), so the
             // returned people are already fresh and we get a mined-out signal back.
@@ -188,7 +188,7 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
     const rotateAngle = useCallback(async () => {
         track('copilot_rotate_angle', {});
         const thinkId = nextId();
-        push({ id: thinkId, role: 'qampi', kind: 'searching', label: '…' });
+        push({ id: thinkId, role: 'qampi', kind: 'searching', label: 'Finding a fresh LinkedIn search angle' });
         try {
             const routed = await routeMessage('Suggest a different search angle for fresh leads', historyForRouter(), importedLeadIdsRef.current.length, 'find_leads');
             setMessages((prev) => prev.filter((m) => m.id !== thinkId));
@@ -211,7 +211,7 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
     const broadenSearch = useCallback(async (label: string, keywords: string, filters?: SearchRecommendation['filters']) => {
         track('copilot_broaden_search', {});
         const thinkId = nextId();
-        push({ id: thinkId, role: 'qampi', kind: 'searching', label: '…' });
+        push({ id: thinkId, role: 'qampi', kind: 'searching', label: 'Broadening the search while keeping your target' });
         try {
             const routed = await routeMessage(
                 `Broaden this search — it returned nobody: ${keywords}`,
@@ -400,7 +400,7 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
         if (!started) setStarted(true);
         push({ id: nextId(), role: 'user', kind: 'text', text: q });
         const thinkId = nextId();
-        push({ id: thinkId, role: 'qampi', kind: 'searching', label: '…' });
+        push({ id: thinkId, role: 'qampi', kind: 'searching', label: 'Understanding your request and choosing the next step' });
         try {
             const routed = await routeMessage(q, historyForRouter(), importedLeadIdsRef.current.length, intentHint);
             setMessages((prev) => prev.filter((m) => m.id !== thinkId));
@@ -688,7 +688,7 @@ function MessageRow({ m, onPickSearch, onRunDraft, onShowMore, onTryDifferent, o
     if (m.kind === 'searchChips') return <div className="pl-8"><SearchChips loading={m.loading} recs={m.recs} onPick={onPickSearch} /></div>;
     if (m.kind === 'searchDraft') return <div className="pl-8"><SearchDraftCard m={m} onRun={onRunDraft} /></div>;
     if (m.kind === 'webSearch') return <div className="pl-8"><WebSearchCard m={m} onRun={onRunWebSearch} /></div>;
-    if (m.kind === 'searching') return <QBubble><span className="inline-flex items-center gap-2 text-ink-500"><Loader2 className="w-3.5 h-3.5 animate-spin text-brand" /> {m.label === '…' ? 'Thinking…' : `Searching LinkedIn for “${m.label}”…`}</span></QBubble>;
+    if (m.kind === 'searching') return <QBubble><span className="inline-flex items-center gap-2 text-ink-500"><Loader2 className="w-3.5 h-3.5 animate-spin text-brand" /> {m.label.startsWith('Searching LinkedIn') ? m.label : `Working on: ${m.label}`}</span></QBubble>;
     if (m.kind === 'results') return <div className="pl-8"><ResultsBlock m={m} onImported={onImported} onShowMore={onShowMore} onTryDifferent={onTryDifferent} /></div>;
     if (m.kind === 'templates') return <div className="pl-8"><TemplatePicks loading={m.loading} picks={m.picks} onPick={onPickTemplate} /></div>;
     if (m.kind === 'launchConfirm') return <div className="pl-8"><LaunchConfirm m={m} onLaunch={onLaunch} /></div>;
@@ -706,9 +706,9 @@ function WebSearchCard({ m, onRun }: { m: Extract<Msg, { kind: 'webSearch' }>; o
                 <span className="text-[13px] font-medium text-foreground">Browser web search</span>
             </div>
             <p className="text-[11px] leading-relaxed text-ink-500">
-                {m.state === 'install' ? 'Install the Qampi extension to search from your browser. Results are cached locally, then only the selected snippets are summarised.' :
-                    m.state === 'permission' ? 'Allow DuckDuckGo access once so Qampi can perform this search in your browser.' :
-                        m.state === 'searching' ? `Searching the web for “${m.query}”…` :
+                {m.state === 'install' ? 'Install the Qampi extension, then reload your browser and return here. Results are cached locally, then only the selected snippets are summarised.' :
+                    m.state === 'permission' ? 'Allow public-search access once so Qampi can complete this search automatically.' :
+                        m.state === 'searching' ? `Finding public sources for “${m.query}”…` :
                             m.state === 'error' ? m.error : `Search the public web for “${m.query}”.`}
             </p>
             {m.state === 'install' ? (
@@ -724,7 +724,7 @@ function WebSearchCard({ m, onRun }: { m: Extract<Msg, { kind: 'webSearch' }>; o
                     <Search className="w-3.5 h-3.5" /> Search & summarise
                 </button>
             ) : (
-                <span className="inline-flex items-center gap-2 text-[12px] text-ink-500"><Loader2 className="w-3.5 h-3.5 animate-spin text-brand" /> Searching from your browser</span>
+                <span className="inline-flex items-center gap-2 text-[12px] text-ink-500"><Loader2 className="w-3.5 h-3.5 animate-spin text-brand" /> Finding sources and preparing a summary</span>
             )}
         </div>
     );
@@ -1015,7 +1015,7 @@ function Row({ label, value }: { label: string; value: string }) {
 }
 
 function SearchChips({ loading, recs, onPick }: { loading: boolean; recs?: SearchRecommendation[]; onPick: (label: string, keywords: string, filters?: SearchRecommendation['filters']) => void }) {
-    if (loading) return <span className="inline-flex items-center gap-2 text-[13px] text-ink-500"><Loader2 className="w-3.5 h-3.5 animate-spin text-brand" /> Thinking of good searches…</span>;
+    if (loading) return <span className="inline-flex items-center gap-2 text-[13px] text-ink-500"><Loader2 className="w-3.5 h-3.5 animate-spin text-brand" /> Reviewing your profile to prepare targeted searches…</span>;
     if (!recs || !recs.length) return <span className="text-[13px] text-ink-500">No suggestions — type a search below.</span>;
     return (
         <div className="flex flex-col gap-2">
