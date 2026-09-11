@@ -19,6 +19,7 @@ type ExtensionResponse = {
     results?: BrowserWebResult[];
     query?: string;
     cached?: boolean;
+    permissionNeeded?: boolean;
     error?: string;
 };
 
@@ -60,6 +61,7 @@ export async function requestBrowserWebSearchPermission(): Promise<boolean> {
 
 export async function searchFromBrowser(query: string): Promise<{ query: string; results: BrowserWebResult[]; cached: boolean }> {
     const response = await extensionRequest('COPILOT_WEB_SEARCH', { query });
+    if (response.permissionNeeded) throw new Error('Browser search access needs permission. Click Enable & search to continue.');
     if (!response.ok || !Array.isArray(response.results)) throw new Error(response.error || 'Web search failed.');
     const results = response.results
         .filter((r): r is BrowserWebResult => !!r && typeof r.title === 'string' && typeof r.url === 'string' && /^https:\/\//i.test(r.url))

@@ -30,6 +30,7 @@ const DDG_ORIGINS = [
     'https://api.duckduckgo.com/*',
 ];
 const SEARCH_FALLBACK_ORIGINS = ['https://www.bing.com/*'];
+const WEB_SEARCH_ORIGINS = [...DDG_ORIGINS, ...SEARCH_FALLBACK_ORIGINS];
 const WEB_SEARCH_CACHE_KEY = 'copilotWebSearchCache';
 const WEB_SEARCH_TTL_MS = 24 * 60 * 60 * 1000;
 const WEB_SEARCH_MAX_RESULTS = 5;
@@ -100,28 +101,41 @@ function parseBingRss(xml) {
     return results;
 }
 
+async function getWebSearchPermissions() {
+    const [duckDuckGo, bing] = await Promise.all([
+        chrome.permissions.contains({ origins: DDG_ORIGINS }),
+        chrome.permissions.contains({ origins: SEARCH_FALLBACK_ORIGINS }),
+    ]);
+    return { duckDuckGo, bing };
+}
+
 async function hasWebSearchPermission() {
-    return chrome.permissions.contains({ origins: [...DDG_ORIGINS, ...SEARCH_FALLBACK_ORIGINS] });
+    const permissions = await getWebSearchPermissions();
+    return permissions.duckDuckGo || permissions.bing;
 }
 
 async function runBrowserWebSearch(rawQuery) {
     const query = cleanSearchText(rawQuery, 160);
     if (!query) return { ok: false, error: 'Enter a search query.' };
-    if (!(await hasWebSearchPermission())) return { ok: false, permissionNeeded: true };
-
-    const now = Date.now();
-    const stored = await chrome.storage.local.get(WEB_SEARCH_CACHE_KEY);
-    const cache = Array.isArray(stored[WEB_SEARCH_CACHE_KEY]) ? stored[WEB_SEARCH_CACHE_KEY] : [];
-    const fresh = cache.filter((entry) => entry && entry.expiresAt > now).slice(0, 20);
-    const cached = fresh.find((entry) => entry.query.toLowerCase() === query.toLowerCase());
-    if (cached) return { ok: true, query, results: cached.results, cached: true, fetchedAt: cached.fetchedAt };
-
     try {
-        const response = await fetch(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}&kl=us-en`, {
-            headers: { 'Accept': 'text/html,application/xhtml+xml' },
-        });
-        const results = response.ok ? parseDdgHtml(await response.text()) : [];
-        if (!results.length) {
+        const permissions = await getWebSearchPermissions();
+        if (!permissions.duckDuckGo && !permissions.bing) return { ok: false, permissionNeeded: true, error: 'Allow browser search access to continue.' };
+
+        const now = Date.now();
+        const stored = await chrome.storage.local.get(WEB_SEARCH_CACHE_KEY);
+        const cache = Array.isArray(stored[WEB_SEARCH_CACHE_KEY]) ? stored[WEB_SEARCH_CACHE_KEY] : [];
+        const fresh = cache.filter((entry) => entry && entry.expiresAt > now).slice(0, 20);
+        const cached = fresh.find((entry) => entry.query.toLowerCase() === query.toLowerCase());
+        if (cached) return { ok: true, query, results: cached.results, cached: true, fetchedAt: cached.fetchedAt };
+
+        let results = [];
+        if (permissions.duckDuckGo) {
+            const response = await fetch(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}&kl=us-en`, {
+                headers: { 'Accept': 'text/html,application/xhtml+xml' },
+            });
+            if (response.ok) results = parseDdgHtml(await response.text());
+        }
+        if (!results.length && permissions.bing) {
             const fallback = await fetch(`https://www.bing.com/search?format=rss&q=${encodeURIComponent(query)}`, {
                 headers: { 'Accept': 'application/rss+xml,application/xml,text/xml' },
             });
@@ -154,19 +168,23 @@ async function directFetch(url, options) {
 // ─── Message Handlers ────────────────────────────────────────
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'COPILOT_WEB_SEARCH_STATUS') {
-        hasWebSearchPermission().then((permissionGranted) => sendResponse({ ok: true, installed: true, permissionGranted }));
+        hasWebSearchPermission()
+            .then((permissionGranted) => sendResponse({ ok: true, installed: true, permissionGranted }))
+            .catch((error) => sendResponse({ ok: false, error: error?.message || 'Could not check web-search permission.' }));
         return true;
     }
 
     if (message.type === 'COPILOT_WEB_SEARCH_PERMISSION') {
-        chrome.permissions.request({ origins: DDG_ORIGINS })
+        chrome.permissions.request({ origins: WEB_SEARCH_ORIGINS })
             .then((granted) => sendResponse({ ok: true, permissionGranted: granted }))
             .catch((error) => sendResponse({ ok: false, error: error?.message || 'Permission request failed.' }));
         return true;
     }
 
     if (message.type === 'COPILOT_WEB_SEARCH') {
-        runBrowserWebSearch(message.payload?.query).then(sendResponse);
+        runBrowserWebSearch(message.payload?.query)
+            .then(sendResponse)
+            .catch((error) => sendResponse({ ok: false, error: error?.message || 'Browser web search failed.' }));
         return true;
     }
     if (message.type === 'SAVE_TOKEN') {

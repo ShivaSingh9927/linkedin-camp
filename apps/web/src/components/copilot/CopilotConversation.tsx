@@ -388,7 +388,8 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
             const sources = summary.sources.map((s) => `- ${s.title}: ${s.url}`).join('\n');
             push({ id: nextId(), role: 'qampi', kind: 'text', text: [summary.reply, sources].filter(Boolean).join('\n\n') || 'I found public sources, but could not create a summary.' });
         } catch (error) {
-            patch(msgId, { state: 'error', error: error instanceof Error ? error.message : 'Web search failed.' });
+            const message = error instanceof Error ? error.message : 'Web search failed.';
+            patch(msgId, { state: /permission/i.test(message) ? 'permission' : 'error', error: message });
         }
     }, [patch, push, setMessages]);
 
