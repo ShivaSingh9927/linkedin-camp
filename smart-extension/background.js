@@ -111,7 +111,10 @@ async function getWebSearchPermissions() {
 
 async function hasWebSearchPermission() {
     const permissions = await getWebSearchPermissions();
-    return permissions.duckDuckGo || permissions.bing;
+    // Treat the provider pair as one capability. Existing users may already
+    // have the former DDG-only grant; returning false here prompts a one-time
+    // upgrade for the Bing fallback instead of silently retrying DDG alone.
+    return permissions.duckDuckGo && permissions.bing;
 }
 
 async function runBrowserWebSearch(rawQuery) {
