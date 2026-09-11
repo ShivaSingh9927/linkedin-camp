@@ -932,7 +932,10 @@ export async function runCampaign(
 
     // Get all leads for this campaign
     const campaignLeads = await prisma.campaignLead.findMany({
-        where: { campaignId, isCompleted: false },
+        // Do not let a run for one due lead pull every other lead forward.
+        // DELAY transitions mirror their wake-up time to nextActionDate; this
+        // filter is the companion guard that preserves those waits in a batch.
+        where: { campaignId, isCompleted: false, nextActionDate: { lte: new Date() } },
     });
 
     // Per-lead resume cursors. A lead parked at a delay carries a

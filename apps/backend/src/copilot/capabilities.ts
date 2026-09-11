@@ -113,6 +113,12 @@ export interface CopilotContext {
         total: number;
         connected: number;
         replied: number;
+        // Execution truth, not a coarse campaign-card guess. This gives every
+        // Copilot turn enough sequence context to explain a multi-day wait.
+        steps?: string[];
+        waitingLeads?: number;
+        nextActionAt?: string | null;
+        endedReasons?: Record<string, number>;
     } | null;
 }
 
@@ -142,10 +148,13 @@ export function renderCapabilityContract(ctx: CopilotContext): string {
     const actions = CAPABILITIES.map((c) => `- ${c.intent}: ${c.summary}${c.sideEffect ? ' (side-effect — the user must confirm)' : ''}`).join('\n');
     const rules = hardRules().map((r) => `- ${r}`).join('\n');
     const rc = ctx.recentCampaign;
+    const endedSummary = rc?.endedReasons && Object.keys(rc.endedReasons).length
+        ? ` Terminal reasons: ${Object.entries(rc.endedReasons).map(([reason, count]) => `${count}=${reason}`).join(', ')}.`
+        : '';
     const campaignLine = rc
         ? (rc.status === 'ACTIVE'
-            ? `Active campaign: "${rc.name}" — ${rc.processed}/${rc.total} leads processed, ${rc.connected} connected, ${rc.replied} replied.`
-            : `Most recent campaign: "${rc.name}" (finished) — ${rc.total} leads, ${rc.connected} connected, ${rc.replied} replied.`)
+            ? `Active campaign: "${rc.name}" — ${rc.processed}/${rc.total} leads processed, ${rc.connected} connected, ${rc.replied} replied.${rc.steps?.length ? ` Sequence: ${rc.steps.join(' → ')}.` : ''}${rc.waitingLeads ? ` ${rc.waitingLeads} lead${rc.waitingLeads === 1 ? '' : 's'} are in a scheduled wait${rc.nextActionAt ? `; next action at ${rc.nextActionAt}` : ''} and will resume automatically.` : ''}`
+            : `Most recent campaign: "${rc.name}" (finished) — ${rc.total} leads, ${rc.connected} connected, ${rc.replied} replied.${rc.steps?.length ? ` Sequence was: ${rc.steps.join(' → ')}.` : ''}${endedSummary}`)
         : 'No campaigns run yet.';
     const status = [
         `LinkedIn connected: ${ctx.linkedinConnected ? 'yes' : 'no'}`,

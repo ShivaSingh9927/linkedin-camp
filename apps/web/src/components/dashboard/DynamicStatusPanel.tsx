@@ -23,6 +23,9 @@ export interface StatusCampaign {
     pending: number;
     connected: number;
     replied: number;
+    deferred?: number;
+    nextActionAt?: string | null;
+    terminalReasons?: Record<string, number>;
 }
 
 export interface StatusLog {
@@ -65,6 +68,16 @@ function relTime(iso: string | undefined, now: number): string {
     return `${days}d`;
 }
 
+function futureTime(iso: string | null | undefined, now: number): string | null {
+    if (!iso) return null;
+    const ms = new Date(iso).getTime() - now;
+    if (!Number.isFinite(ms) || ms <= 0) return 'shortly';
+    const hours = Math.round(ms / (60 * 60 * 1000));
+    if (hours < 24) return `in ~${Math.max(1, hours)}h`;
+    const days = Math.round(hours / 24);
+    return `in ~${days} day${days === 1 ? '' : 's'}`;
+}
+
 interface Nudge {
     icon: typeof Rocket;
     text: React.ReactNode;
@@ -97,6 +110,8 @@ export function DynamicStatusPanel({ campaigns, logs, setup, loading, quotas }: 
     }, []);
 
     const active = campaigns.find((c) => c.status === 'ACTIVE');
+    const scheduledWaits = active?.deferred || 0;
+    const nextResume = futureTime(active?.nextActionAt, now);
     const feed = logs.filter((l) => ACTION_META[l.actionType] && l.status === 'SUCCESS').slice(0, 6);
     const lastActivityAt = logs[0]?.executedAt;
     const idleDays = lastActivityAt ? Math.floor((now - new Date(lastActivityAt).getTime()) / DAY_MS) : null;
@@ -124,12 +139,21 @@ export function DynamicStatusPanel({ campaigns, logs, setup, loading, quotas }: 
                 text: <><b className="font-semibold">{repliesWaiting} {repliesWaiting === 1 ? 'reply' : 'replies'} waiting</b> — keep the conversation going.</>,
             };
         }
+        if (active && scheduledWaits > 0) {
+            return {
+                icon: Activity, tone: 'brand',
+                text: <><b className="font-semibold">{scheduledWaits} {scheduledWaits === 1 ? 'lead is' : 'leads are'} in a scheduled wait</b>{nextResume ? ` — the sequence will continue automatically ${nextResume}.` : ' — the sequence will continue automatically when its next step is due.'}</>,
+            };
+        }
         if (!active) {
             if (recentlyCompleted && now - new Date(recentlyCompleted.at!).getTime() < 2 * DAY_MS) {
                 const { c, at } = recentlyCompleted;
+                const notAccepted = (c.terminalReasons?.connection_not_confirmed || 0) + (c.terminalReasons?.connection_not_accepted || 0);
                 return {
                     icon: CheckCircle2, tone: 'success', cta: 'New campaign', href: '/campaigns',
-                    text: <><b className="font-semibold">{c.name}</b> finished {relTime(at, now)} ago — {c.connected} connected, {c.replied} replied. Ready for the next batch?</>,
+                    text: notAccepted > 0
+                        ? <><b className="font-semibold">{c.name}</b> ended {relTime(at, now)} ago — {notAccepted} {notAccepted === 1 ? 'invite was' : 'invites were'} not accepted by its connection-check deadline, so it will not restart automatically.</>
+                        : <><b className="font-semibold">{c.name}</b> finished its configured sequence {relTime(at, now)} ago — {c.connected} connected, {c.replied} replied.</>,
                 };
             }
             if (idleDays != null && idleDays >= 3) {
@@ -161,7 +185,11 @@ export function DynamicStatusPanel({ campaigns, logs, setup, loading, quotas }: 
                         {active ? active.name : loading ? 'Loading…' : 'No campaign running'}
                     </p>
                     <p className="text-[11px] text-ink-500 leading-tight">
-                        {active ? `Autopilot running · ${processed} of ${active.totalLeads} leads` : loading ? '' : 'Ready when you are'}
+                        {active
+                            ? scheduledWaits > 0
+                                ? `Scheduled wait · ${scheduledWaits} lead${scheduledWaits === 1 ? '' : 's'} resume${nextResume ? ` ${nextResume}` : ' automatically'}`
+                                : `Autopilot running · ${processed} of ${active.totalLeads} leads`
+                            : loading ? '' : 'Ready when you are'}
                     </p>
                 </div>
                 {active && <span className="text-[12px] font-semibold text-foreground shrink-0">{pct}%</span>}

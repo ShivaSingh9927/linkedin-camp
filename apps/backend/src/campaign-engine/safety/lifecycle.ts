@@ -141,6 +141,17 @@ export async function transitionLead(
     // transition; monotonic + idempotent so this is always safe.
     await syncLeadStatus(campaignId, leadId).catch(() => {});
 
+    // The minute scheduler still selects work from the legacy CampaignLead row.
+    // Keep that wake-up clock in lockstep with the execution-progress clock.
+    // Without this mirror, a lead parked at a multi-day DELAY remains eligible
+    // immediately, is picked up on the next scheduler tick, and skips its wait.
+    if (effectiveTo === 'DEFERRED' && patch.nextRetryAt) {
+        await prisma.campaignLead.updateMany({
+            where: { campaignId, leadId, isCompleted: false },
+            data: { nextActionDate: patch.nextRetryAt },
+        }).catch(err => console.error(`[lifecycle] nextActionDate mirror failed: ${err.message}`));
+    }
+
     // Terminal ⇒ retire the legacy CampaignLead row. The per-minute scheduler
     // (cron/scheduler.ts) still enqueues off the OLD fields — isCompleted=false +
     // nextActionDate<=now — and NOT off this progress row's status. If we mark a

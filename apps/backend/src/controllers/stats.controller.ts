@@ -60,6 +60,13 @@ export const getStats = async (req: any, res: Response) => {
                         select: {
                             status: true
                         }
+                    },
+                    CampaignLeadProgress: {
+                        select: {
+                            status: true,
+                            statusReason: true,
+                            nextRetryAt: true,
+                        }
                     }
                 },
                 orderBy: { createdAt: 'desc' }
@@ -84,6 +91,17 @@ export const getStats = async (req: any, res: Response) => {
             // `camp.leads` was undefined → `.length` threw → the whole /stats call
             // 500'd, so the dashboard saw zero campaigns even when many existed.
             const leads = camp.CampaignLead;
+            const progress = camp.CampaignLeadProgress;
+            const deferred = progress.filter(p => p.status === 'DEFERRED');
+            const terminalReasons: Record<string, number> = {};
+            for (const p of progress) {
+                if (p.status !== 'COMPLETED' || !p.statusReason) continue;
+                terminalReasons[p.statusReason] = (terminalReasons[p.statusReason] || 0) + 1;
+            }
+            const nextActionAt = deferred
+                .map(p => p.nextRetryAt)
+                .filter((d): d is Date => !!d)
+                .sort((a, b) => a.getTime() - b.getTime())[0] || null;
             return {
                 id: camp.id,
                 name: camp.name,
@@ -91,7 +109,10 @@ export const getStats = async (req: any, res: Response) => {
                 totalLeads: leads.length,
                 pending: leads.filter(l => l.status === 'PENDING').length,
                 connected: leads.filter(l => l.status === 'CONNECTED' || l.status === 'REPLIED').length,
-                replied: leads.filter(l => l.status === 'REPLIED').length
+                replied: leads.filter(l => l.status === 'REPLIED').length,
+                deferred: deferred.length,
+                nextActionAt,
+                terminalReasons,
             };
         });
 

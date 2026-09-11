@@ -234,6 +234,10 @@ export const copilotMessage = async (req: AuthRequest, res: Response) => {
                         total: p.total,
                         connected: p.connected,
                         replied: p.run.replied,
+                        steps: p.steps,
+                        waitingLeads: p.run.deferred,
+                        nextActionAt: p.nextActionAt,
+                        endedReasons: p.endedReasons,
                     };
                 }
                 const active = await getCampaignStatus(userId).catch(() => null);
