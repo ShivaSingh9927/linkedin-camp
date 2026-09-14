@@ -1,6 +1,6 @@
 import { NodeHandler, NodeResult, PostOutput } from '../types';
 import { persistDiscoveredPost } from '../storage';
-import { discoverNthPostUrl } from './post-discovery';
+import { getOrDiscoverNthPost } from './post-discovery';
 
 const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
 
@@ -17,7 +17,7 @@ async function safeGoto(page: any, url: string, retries = 3) {
 }
 
 export const likeNthPost: NodeHandler = async (ctx, config): Promise<NodeResult> => {
-    const { page, lead } = ctx;
+    const { page, lead, storedOutputs } = ctx;
     const n = config.n || 1;
 
     const output: PostOutput = { postUrl: null, postContent: null, liked: false };
@@ -25,7 +25,7 @@ export const likeNthPost: NodeHandler = async (ctx, config): Promise<NodeResult>
     try {
         console.log(`[LIKE-NTH-POST] Navigating to posts feed (target: post #${n})...`);
 
-        const discovered = await discoverNthPostUrl(page, lead.linkedinUrl, n, 'LIKE-NTH-POST');
+        const discovered = await getOrDiscoverNthPost(storedOutputs, page, lead.linkedinUrl, n, 'LIKE-NTH-POST');
         if (!discovered) {
             return { success: false, error: `Post #${n} not found` };
         }
@@ -54,24 +54,35 @@ export const likeNthPost: NodeHandler = async (ctx, config): Promise<NodeResult>
 
         // Like (use evaluate() to bypass sticky headers, matching testscripts)
         const likeBtn = page.locator('button:has(span:text-is("Like"))').first();
-        if (await likeBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
-            const isPressed = await likeBtn.getAttribute('aria-pressed');
-            if (isPressed !== 'true') {
-                await likeBtn.evaluate((el: any) => el.click());
-                await wait(2000);
-                // Verify like took effect
-                const nowPressed = await likeBtn.getAttribute('aria-pressed').catch(() => null);
-                if (nowPressed === 'true') {
-                    output.liked = true;
-                    console.log('[LIKE-NTH-POST] Liked (verified).');
-                } else {
-                    output.liked = true;
-                    console.log('[LIKE-NTH-POST] Like clicked (unverified).');
-                }
-            } else {
-                output.liked = true;
-                console.log('[LIKE-NTH-POST] Already liked.');
-            }
+        const btnVisible = await likeBtn.isVisible({ timeout: 5000 }).catch(() => false);
+
+        // Truthful reporting: if the Like button isn't on the page we did NOT
+        // like anything, so return failure. Previously this fell through to
+        // `return { success: true }`, so a missing button was logged as a
+        // successful like — which is why an account could show "17 likes" for
+        // posts where nothing was actually clicked. The engine keys ActionLog
+        // SUCCESS/FAILED on this return value, so honesty here is what makes the
+        // like metric mean what it says.
+        if (!btnVisible) {
+            return { success: false, error: 'Like button not found on post' };
+        }
+
+        const isPressed = await likeBtn.getAttribute('aria-pressed');
+        if (isPressed === 'true') {
+            output.liked = true;
+            console.log('[LIKE-NTH-POST] Already liked.');
+        } else {
+            await likeBtn.evaluate((el: any) => el.click());
+            await wait(2000);
+            // Re-read on a FRESH locator — the post-click DOM swap can leave the
+            // old handle stale and report the pre-click state.
+            const nowPressed = await page
+                .locator('button:has(span:text-is("Like")), button:has(span:text-is("Liked"))')
+                .first()
+                .getAttribute('aria-pressed')
+                .catch(() => null);
+            output.liked = true;
+            console.log(nowPressed === 'true' ? '[LIKE-NTH-POST] Liked (verified).' : '[LIKE-NTH-POST] Like clicked (unverified).');
         }
 
         return { success: true, output };

@@ -2,7 +2,7 @@ import { NodeHandler, NodeResult, PostOutput } from '../types';
 import { resolveVariables } from '../variables';
 import { generateAIComment } from '../ai-service';
 import { persistDiscoveredPost } from '../storage';
-import { discoverNthPostUrl } from './post-discovery';
+import { getOrDiscoverNthPost } from './post-discovery';
 
 const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
 const randomRange = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1) + min);
@@ -33,7 +33,7 @@ export const commentNthPost: NodeHandler = async (ctx, config): Promise<NodeResu
 
         console.log(`[COMMENT-NTH-POST] Navigating to posts feed (target: post #${n})...`);
 
-        const discovered = await discoverNthPostUrl(page, lead.linkedinUrl, n, 'COMMENT-NTH-POST');
+        const discovered = await getOrDiscoverNthPost(storedOutputs, page, lead.linkedinUrl, n, 'COMMENT-NTH-POST');
         if (!discovered) {
             return { success: false, error: `Post #${n} not found` };
         }
@@ -65,6 +65,23 @@ export const commentNthPost: NodeHandler = async (ctx, config): Promise<NodeResu
         // Scroll to ensure comment section is rendered
         await page.mouse.wheel(0, 400);
         await wait(2000);
+
+        // Click the post's "Comment" action FIRST. On many posts LinkedIn does
+        // not mount the comment editor into the DOM until this button is
+        // clicked — so the old code, which jumped straight to hunting for the
+        // editor, found nothing and failed with "Comment box not found" on
+        // exactly those posts (then the lead re-tried the same dead post up to
+        // 3x). Opening the composer explicitly is what makes the editor exist.
+        // Best-effort: some layouts render it eagerly, so a miss here is fine.
+        try {
+            const commentTrigger = page
+                .locator('button[aria-label*="Comment"], button:has(span:text-is("Comment"))')
+                .first();
+            if (await commentTrigger.isVisible({ timeout: 4000 }).catch(() => false)) {
+                await commentTrigger.click({ force: true }).catch(() => {});
+                await wait(randomRange(1500, 2500));
+            }
+        } catch { /* editor may already be present */ }
 
         let commentText: string;
         if (aiEnabled && postContent) {

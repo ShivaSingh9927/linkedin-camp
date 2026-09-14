@@ -150,3 +150,37 @@ export async function discoverNthPostUrl(
     }
     return null;
 }
+
+/**
+ * Discover the Nth post ONCE per lead per run, sharing the result between the
+ * like and comment nodes.
+ *
+ * like-nth-post and comment-nth-post each used to scrape the same profile's
+ * recent-activity feed independently. Two DOM scrapes of the same page is
+ * wasted load and — worse — non-deterministic: the feed can render differently
+ * on the second pass, so like would find post #1 and comment would then report
+ * "Post #1 not found" for the very same target (the exact contradiction that
+ * surfaced this). Discovering once and caching in the in-memory storedOutputs
+ * for this run removes both the double load and the inconsistency. The cache is
+ * per-run (not persisted); on a resume the fallback is simply to discover
+ * again, which is correct, just not free.
+ */
+const DISCOVERY_CACHE_KEY = '__postDiscovery';
+
+export async function getOrDiscoverNthPost(
+    storedOutputs: Record<string, any>,
+    page: any,
+    linkedinUrl: string,
+    n: number,
+    logPrefix: string,
+): Promise<DiscoveredPost | null> {
+    const cache = (storedOutputs[DISCOVERY_CACHE_KEY] ||= {}) as Record<string, DiscoveredPost>;
+    const cached = cache[String(n)];
+    if (cached?.url) {
+        console.log(`[${logPrefix}] Reusing post #${n} discovered earlier this run (${cached.urn}) — no re-scrape.`);
+        return cached;
+    }
+    const discovered = await discoverNthPostUrl(page, linkedinUrl, n, logPrefix);
+    if (discovered) cache[String(n)] = discovered;
+    return discovered;
+}
