@@ -19,6 +19,8 @@ export interface ActiveLoginSession {
     page: Page;
     status: LoginStatus;
     lastActivity: number;
+    // Wall-clock start, for the absolute lifetime cap (see cleanupStaleSessions).
+    startedAt?: number;
     // The exact proxy this login is being captured behind. Persisted to
     // User.linkedinProxySnapshot on success so every later automation step
     // can pin itself to the same exit IP. LinkedIn invalidates a session
@@ -85,9 +87,20 @@ class SessionManagerService {
 
     private async cleanupStaleSessions() {
         const now = Date.now();
+        const IDLE_MS = 10 * 60 * 1000;
+        // Absolute cap. An interactive session streams frames every second, and
+        // its keyframe watchdog is a synthetic frame source — so `lastActivity`
+        // must NOT be bumped by frames (only by real user input), or the idle
+        // check below can never fire and the browser lives forever. This
+        // wall-clock ceiling is the belt-and-braces backstop: a login that
+        // hasn't reached the feed in 20 min is dead regardless of frame traffic.
+        const MAX_LIFETIME_MS = 20 * 60 * 1000;
+
         for (const [userId, session] of this.activeSessions.entries()) {
-            if (now - session.lastActivity > 10 * 60 * 1000) {
-                console.log(`[SESSION-MANAGER] Session expired for user ${userId}`);
+            const idle = now - session.lastActivity > IDLE_MS;
+            const tooOld = session.startedAt != null && now - session.startedAt > MAX_LIFETIME_MS;
+            if (idle || tooOld) {
+                console.log(`[SESSION-MANAGER] Session expired for user ${userId} (${tooOld ? 'max-lifetime' : 'idle'}).`);
                 this.stopKeyframeWatchdog(session);
                 await session.context.close().catch(() => {});
                 this.activeSessions.delete(userId);
@@ -200,6 +213,7 @@ class SessionManagerService {
                 page,
                 status: 'NAVIGATING',
                 lastActivity: Date.now(),
+                startedAt: Date.now(),
                 proxy: launchOptions.proxy,
             });
 
@@ -632,7 +646,13 @@ class SessionManagerService {
             // Ack FIRST: Chromium stops producing frames until the previous
             // one is acknowledged, so a throw here would freeze the stream.
             cdp.send('Page.screencastFrameAck', { sessionId: frame.sessionId }).catch(() => {});
-            session.lastActivity = Date.now();
+            // DO NOT bump lastActivity here. Frames are produced continuously
+            // (the page repaints, and the keyframe watchdog manufactures one a
+            // second), so treating them as activity made the idle-cleanup timer
+            // immortal — an abandoned interactive login streamed for days. Only
+            // real user input (dispatchInput) and login progress count as
+            // activity. lastFrameAt is a separate signal used purely to detect a
+            // stalled stream.
             session.lastFrameAt = Date.now();
             if (io) {
                 io.to(`user_${userId}`).emit('INTERACTIVE_FRAME', {

@@ -1,8 +1,5 @@
 import { prisma } from '@repo/db';
-import { exec } from 'child_process';
-import { promisify } from 'util';
-
-const execAsync = promisify(exec);
+import { request as pwRequest } from 'patchright';
 
 /**
  * Checks a single proxy by attempting to fetch an IP through it.
@@ -12,32 +9,38 @@ export const checkProxyHealth = async (proxyId: string) => {
     const proxy = await prisma.proxy.findUnique({ where: { id: proxyId } });
     if (!proxy) return;
 
-    const proxyUrl = proxy.proxyUsername
-        ? `http://${proxy.proxyUsername}:${proxy.proxyPassword}@${proxy.proxyHost}:${proxy.proxyPort}`
-        : `http://${proxy.proxyHost}:${proxy.proxyPort}`;
+    // Proxy config for Playwright's request context. This replaces a shell-out
+    // to `curl`, which is NOT in the container image — so every check threw
+    // "curl: not found", failed, and inflated failureCount into the thousands
+    // (10,695 on one proxy). Since getOrAssignProxy orders by failureCount, that
+    // silently corrupted proxy selection. Playwright's request context egresses
+    // through the proxy natively, in-process, no external binary.
+    const proxyConfig = {
+        server: `http://${proxy.proxyHost}:${proxy.proxyPort}`,
+        username: proxy.proxyUsername || undefined,
+        password: proxy.proxyPassword || undefined,
+    };
 
+    let ctx: Awaited<ReturnType<typeof pwRequest.newContext>> | null = null;
     try {
-        // Updated: 60-second timeout as requested
         console.log(`[PROXY-HEALTH] Testing ${proxy.proxyIp} (General + LinkedIn)...`);
+        ctx = await pwRequest.newContext({ proxy: proxyConfig, timeout: 20000 });
 
-        // 1. General Connectivity (ipify.org)
-        const { stdout } = await execAsync(`curl -x ${proxyUrl} -m 20 -s https://api.ipify.org`);
-        const reportedIp = stdout.trim();
+        // 1. General connectivity (ipify.org)
+        const ipResp = await ctx.get('https://api.ipify.org', { timeout: 20000 });
+        const reportedIp = (await ipResp.text()).trim();
+        if (!ipResp.ok() || !reportedIp) throw new Error(`Proxy offline or empty response from ipify (status ${ipResp.status()})`);
 
-        if (!reportedIp) throw new Error('Proxy offline or empty response from ipify');
-
-            // 2. LinkedIn-Specific Health Check
-            // We check the LinkedIn homepage.
-            let linkedinBlocked = false;
-            try {
-                const { stdout: linkedinOut } = await execAsync(`curl -x ${proxyUrl} -m 30 -s -k -o /dev/null -w "%{http_code}" https://www.linkedin.com`);
-                const httpCode = linkedinOut.trim();
-                console.log(`[PROXY-HEALTH] LinkedIn test status for ${proxy.proxyIp}: ${httpCode}`);
-
-                if (httpCode === '999' || httpCode === '403') {
-                    linkedinBlocked = true;
-                }
-            } catch (le: any) {
+        // 2. LinkedIn-specific reachability
+        let linkedinBlocked = false;
+        try {
+            const liResp = await ctx.get('https://www.linkedin.com', { timeout: 30000, maxRedirects: 0 });
+            const httpCode = liResp.status();
+            console.log(`[PROXY-HEALTH] LinkedIn test status for ${proxy.proxyIp}: ${httpCode}`);
+            if (httpCode === 999 || httpCode === 403) {
+                linkedinBlocked = true;
+            }
+        } catch (le: any) {
             console.warn(`[PROXY-HEALTH] LinkedIn reachability test failed: ${le.message}`);
         }
 
@@ -74,6 +77,8 @@ export const checkProxyHealth = async (proxyId: string) => {
         });
 
         return false;
+    } finally {
+        await ctx?.dispose().catch(() => {});
     }
 };
 
