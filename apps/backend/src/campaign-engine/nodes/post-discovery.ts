@@ -89,6 +89,20 @@ export interface DiscoveredPost {
     discoveredCount: number;
 }
 
+/** Discovery outcome that separates "empty feed" (terminal) from a transient miss. */
+export interface DiscoveryResult {
+    post: DiscoveredPost | null;
+    /**
+     * True when the feed genuinely had NO posts (or fewer than N) after all
+     * retries — a deterministic miss the caller should retire the lead on,
+     * rather than defer-and-retry. Distinct from a null caused by a flaky load,
+     * where retrying later is legitimate.
+     */
+    emptyFeed: boolean;
+    /** Posts seen on the last attempt (0 = nothing rendered / no posts). */
+    lastCount: number;
+}
+
 /**
  * Navigate to a lead's recent-activity feed and return the permalink of the
  * Nth post (1-based). Returns null if the feed had fewer than N posts after
@@ -99,7 +113,7 @@ export async function discoverNthPostUrl(
     linkedinUrl: string,
     n: number,
     logPrefix: string,
-): Promise<DiscoveredPost | null> {
+): Promise<DiscoveryResult> {
     const cleanUrl = linkedinUrl.split('?')[0].replace(/\/$/, '');
     const activityUrl = cleanUrl + '/recent-activity/shares/';
 
@@ -129,9 +143,13 @@ export async function discoverNthPostUrl(
         if (found.urn) {
             console.log(`[${logPrefix}] Discovered ${found.count} post(s); picked #${n} (${found.urn}).`);
             return {
-                url: `https://www.linkedin.com/feed/update/${found.urn}/`,
-                urn: found.urn,
-                discoveredCount: found.count,
+                post: {
+                    url: `https://www.linkedin.com/feed/update/${found.urn}/`,
+                    urn: found.urn,
+                    discoveredCount: found.count,
+                },
+                emptyFeed: false,
+                lastCount: found.count,
             };
         }
 
@@ -148,7 +166,10 @@ export async function discoverNthPostUrl(
     } else {
         console.warn(`[${logPrefix}] [POST-DISCOVERY] Only ${lastCount} post(s) on feed; #${n} is out of range.`);
     }
-    return null;
+    // Consistent "few but not enough" and "none at all" both mean this profile
+    // won't yield post #n on a retry either — treat as an empty/insufficient
+    // feed so the caller retires the lead instead of re-scraping it 3x.
+    return { post: null, emptyFeed: true, lastCount };
 }
 
 /**
@@ -173,14 +194,14 @@ export async function getOrDiscoverNthPost(
     linkedinUrl: string,
     n: number,
     logPrefix: string,
-): Promise<DiscoveredPost | null> {
+): Promise<DiscoveryResult> {
     const cache = (storedOutputs[DISCOVERY_CACHE_KEY] ||= {}) as Record<string, DiscoveredPost>;
     const cached = cache[String(n)];
     if (cached?.url) {
         console.log(`[${logPrefix}] Reusing post #${n} discovered earlier this run (${cached.urn}) — no re-scrape.`);
-        return cached;
+        return { post: cached, emptyFeed: false, lastCount: cached.discoveredCount };
     }
-    const discovered = await discoverNthPostUrl(page, linkedinUrl, n, logPrefix);
-    if (discovered) cache[String(n)] = discovered;
-    return discovered;
+    const result = await discoverNthPostUrl(page, linkedinUrl, n, logPrefix);
+    if (result.post) cache[String(n)] = result.post;
+    return result;
 }

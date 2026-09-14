@@ -776,6 +776,20 @@ async function runLead(
                 // Write the failed execution too
                 await writeNodeOutput(campaignId, lead.id, nodeExec).catch(() => {});
 
+                // Deterministic failure — retrying can't help (e.g. the target
+                // has no recent posts for a like/comment node). Retire the lead
+                // now instead of deferring it into MAX_DEFERRALS re-attempts of
+                // the same dead profile.
+                if (result.terminal) {
+                    const reason = result.terminalReason || result.error || 'no_action_possible';
+                    console.log(`[ENGINE] Lead ${lead.firstName}: ${nodeType} — ${reason} (deterministic). Retiring lead, no retry.`);
+                    await transitionLead(campaignId, lead.id, 'COMPLETED', { reason })
+                        .catch(err => console.error(`[ENGINE] terminal transition failed: ${err.message}`));
+                    execResult.status = 'completed';
+                    execResult.skipReason = reason;
+                    return execResult;
+                }
+
                 // Check if fatal
                 if (FATAL_NODES.has(nodeType)) {
                     execResult.status = 'failed';

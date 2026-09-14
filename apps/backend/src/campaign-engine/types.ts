@@ -271,6 +271,17 @@ export interface NodeResult {
     success: boolean;
     output?: Record<string, any>;
     error?: string;
+    /**
+     * Set true when the failure is DETERMINISTIC — retrying can't succeed, so
+     * the engine should retire this lead (soft-terminal COMPLETED) instead of
+     * deferring and re-attempting it up to MAX_DEFERRALS. Example: the target
+     * has no recent posts, so a like/comment node will fail identically every
+     * time. Without this the same dead profile is re-hit 3x, which is wasted
+     * work and needless account-risk surface.
+     */
+    terminal?: boolean;
+    /** Human-readable terminal reason, recorded on the lead. */
+    terminalReason?: string;
 }
 
 // ---- Node handler signature ----

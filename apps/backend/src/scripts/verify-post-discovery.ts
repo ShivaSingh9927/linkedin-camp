@@ -37,10 +37,12 @@ const comment = readCode('campaign-engine/nodes/comment-nth-post.ts');
 const like = readCode('campaign-engine/nodes/like-nth-post.ts');
 
 console.log('\n--- both nodes use the ONE shared helper ---');
-check('comment node imports discoverNthPostUrl', /import\s*\{[^}]*discoverNthPostUrl[^}]*\}\s*from\s*'\.\/post-discovery'/.test(comment));
-check('like node imports discoverNthPostUrl', /import\s*\{[^}]*discoverNthPostUrl[^}]*\}\s*from\s*'\.\/post-discovery'/.test(like));
-check('comment node calls the helper', /await discoverNthPostUrl\(/.test(comment));
-check('like node calls the helper', /await discoverNthPostUrl\(/.test(like));
+// Both nodes now go through getOrDiscoverNthPost — the run-scoped cache that
+// discovers once and shares the result between like and comment.
+check('comment node imports getOrDiscoverNthPost', /import\s*\{[^}]*getOrDiscoverNthPost[^}]*\}\s*from\s*'\.\/post-discovery'/.test(comment));
+check('like node imports getOrDiscoverNthPost', /import\s*\{[^}]*getOrDiscoverNthPost[^}]*\}\s*from\s*'\.\/post-discovery'/.test(like));
+check('comment node calls the shared helper', /await getOrDiscoverNthPost\(/.test(comment));
+check('like node calls the shared helper', /await getOrDiscoverNthPost\(/.test(like));
 check('no copy-pasted inline discovery left in comment node',
     !comment.includes("'/recent-activity/shares/'"),
     'the activity-feed URL should only exist inside the shared helper now');

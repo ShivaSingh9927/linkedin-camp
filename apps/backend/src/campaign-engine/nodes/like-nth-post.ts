@@ -25,8 +25,14 @@ export const likeNthPost: NodeHandler = async (ctx, config): Promise<NodeResult>
     try {
         console.log(`[LIKE-NTH-POST] Navigating to posts feed (target: post #${n})...`);
 
-        const discovered = await getOrDiscoverNthPost(storedOutputs, page, lead.linkedinUrl, n, 'LIKE-NTH-POST');
+        const { post: discovered, emptyFeed } = await getOrDiscoverNthPost(storedOutputs, page, lead.linkedinUrl, n, 'LIKE-NTH-POST');
         if (!discovered) {
+            // Empty/insufficient feed is deterministic — the profile has no
+            // recent post to like, and a retry will find the same. Retire the
+            // lead rather than re-scraping it up to 3x.
+            if (emptyFeed) {
+                return { success: false, terminal: true, terminalReason: 'no_recent_post', error: 'No recent post found' };
+            }
             return { success: false, error: `Post #${n} not found` };
         }
 

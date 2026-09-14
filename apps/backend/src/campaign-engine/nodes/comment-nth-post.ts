@@ -33,8 +33,12 @@ export const commentNthPost: NodeHandler = async (ctx, config): Promise<NodeResu
 
         console.log(`[COMMENT-NTH-POST] Navigating to posts feed (target: post #${n})...`);
 
-        const discovered = await getOrDiscoverNthPost(storedOutputs, page, lead.linkedinUrl, n, 'COMMENT-NTH-POST');
+        const { post: discovered, emptyFeed } = await getOrDiscoverNthPost(storedOutputs, page, lead.linkedinUrl, n, 'COMMENT-NTH-POST');
         if (!discovered) {
+            // No recent post to comment on — deterministic, retire the lead.
+            if (emptyFeed) {
+                return { success: false, terminal: true, terminalReason: 'no_recent_post', error: 'No recent post found' };
+            }
             return { success: false, error: `Post #${n} not found` };
         }
 
