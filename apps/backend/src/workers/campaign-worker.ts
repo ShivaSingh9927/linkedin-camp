@@ -377,7 +377,15 @@ export const initCampaignWorker = () => {
             console.log(`[CAMPAIGN-WORKER] 🔒 Account ${data.userId} busy — re-queueing in ${LOCK_RETRY_DELAY_MS / 1000}s`);
             const queue = getCampaignQueue();
             if (queue) {
+                // Stable jobId so a busy account can't accumulate a pile of
+                // identical lock-retry jobs — at most ONE pending retry per
+                // campaign exists at a time (BullMQ dedupes by jobId). Distinct
+                // from the primary `campaign-${id}` id (below) on purpose: the
+                // job re-queueing here is itself the active `campaign-${id}`, so
+                // reusing that id would be swallowed as a duplicate-of-self and
+                // the retry would silently vanish.
                 await queue.add(`retry-${data.campaignId}`, data, {
+                    jobId: `campaign-${data.campaignId}-lockretry`,
                     delay: LOCK_RETRY_DELAY_MS,
                     removeOnComplete: true,
                     attempts: 1,
@@ -434,7 +442,18 @@ export const enqueueCampaign = async (userId: string, campaignId: string, delayM
     const queue = getCampaignQueue();
     if (!queue) return;
 
+    // Stable jobId — the single most important guard against duplicate actions.
+    // enqueueCampaign is called from TWO independent triggers (the start/enroll
+    // controller and the FIFO queue promoter), and previously each `add` with no
+    // jobId minted a fresh numeric job. Both would then run the FULL campaign
+    // over the same matured leads — serialized by the per-account lock, but both
+    // to completion — so a lead could be liked/commented twice (observed
+    // 2026-09-13: same prospect commented 2s apart, the pattern that most looks
+    // like a bot to LinkedIn). With a stable id BullMQ ignores the second add
+    // while one is still waiting/active/delayed; removeOnComplete frees the id so
+    // a genuinely later run still enqueues.
     await queue.add(`campaign-${campaignId}`, { userId, campaignId }, {
+        jobId: `campaign-${campaignId}`,
         delay: delayMs,
         removeOnComplete: true,
         attempts: 1, // Don't auto-retry LinkedIn actions to prevent bans
