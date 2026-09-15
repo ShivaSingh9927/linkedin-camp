@@ -179,9 +179,15 @@ export const commentNthPost: NodeHandler = async (ctx, config): Promise<NodeResu
             await page.keyboard.type(commentText, { delay: randomRange(30, 60) });
             await wait(randomRange(1500, 2500));
 
-            // Click somewhere else to trigger React state update
-            await page.mouse.click(10, 10);
-            await wait(500);
+            // Nudge the editor's React state WITHOUT leaving it. The old code
+            // clicked the viewport corner (10,10) here "to trigger React" — that
+            // lands on whatever sits top-left (nav, a menu, nothing), blurring
+            // the composer and, on some layouts, discarding the draft. A
+            // keystroke inside the editor produces the same state update while
+            // keeping focus where it belongs.
+            await page.keyboard.press('Space');
+            await page.keyboard.press('Backspace');
+            await wait(600);
 
             // Submit button. SCOPED to the comment form and required to carry a
             // real label — the old list had a bare `button.artdeco-button--primary`
@@ -237,16 +243,25 @@ export const commentNthPost: NodeHandler = async (ctx, config): Promise<NodeResu
             // submit is reported as a failure, not a success. Previously both
             // branches set commented=true and returned success, so ActionLog
             // showed four SUCCESS comments that did not exist on LinkedIn.
-            const commentAppeared = await page.evaluate((text: string) => {
-                const needle = text.substring(0, 30);
-                const items = document.querySelectorAll(
-                    '.comments-comment-item__main-content, .comments-comment-item, article[class*="comments-comment"]',
-                );
-                for (const c of items) {
-                    if (c.textContent?.includes(needle)) return true;
-                }
-                return false;
-            }, commentText).catch(() => false);
+            // Poll. LinkedIn renders the new comment asynchronously, and a
+            // single look right after the click reported "never appeared" for
+            // comments that may simply not have painted yet — the same
+            // impatience that made the DM check unreliable.
+            let commentAppeared = false;
+            for (let attempt = 0; attempt < 4 && !commentAppeared; attempt++) {
+                commentAppeared = await page.evaluate((text: string) => {
+                    const needle = text.substring(0, 30);
+                    const items = document.querySelectorAll(
+                        '.comments-comment-item__main-content, .comments-comment-item, ' +
+                        'article[class*="comments-comment"], div[class*="comments-comment-item"]',
+                    );
+                    for (const c of items) {
+                        if (c.textContent?.includes(needle)) return true;
+                    }
+                    return false;
+                }, commentText).catch(() => false);
+                if (!commentAppeared) await wait(2500);
+            }
 
             if (!commentAppeared) {
                 console.log('[COMMENT-NTH-POST] Submit clicked but the comment never appeared — reporting failure.');
