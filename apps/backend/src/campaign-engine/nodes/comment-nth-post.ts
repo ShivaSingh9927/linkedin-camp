@@ -196,6 +196,25 @@ export const commentNthPost: NodeHandler = async (ctx, config): Promise<NodeResu
             // (Follow, Connect, a modal's CTA...). Proven on 2026-09-14: it
             // matched a button whose text was EMPTY, we "clicked" it, and not one
             // of the four comments actually posted.
+            // Get the Messaging overlay out of the way first. It docks to the
+            // BOTTOM-RIGHT — exactly where the composer's submit button sits —
+            // and the 2026-09-15 screenshots show it overlapping that button in
+            // every failed run. An overlay on top of the target intercepts the
+            // click even when Playwright considers the button visible.
+            try {
+                const msgToggle = page
+                    .locator('button[aria-label*="Messaging"], header.msg-overlay-bubble-header button')
+                    .first();
+                if (await msgToggle.isVisible({ timeout: 2000 }).catch(() => false)) {
+                    const expanded = await msgToggle.getAttribute('aria-expanded').catch(() => null);
+                    if (expanded !== 'false') {
+                        await msgToggle.click({ force: true }).catch(() => {});
+                        await wait(800);
+                        console.log('[COMMENT-NTH-POST] Collapsed the messaging overlay.');
+                    }
+                }
+            } catch { /* overlay absent — nothing to move */ }
+
             const commentForm = page
                 .locator('form.comments-comment-box__form, div.comments-comment-box, div[class*="comments-comment-box"]')
                 .first();
@@ -245,7 +264,19 @@ export const commentNthPost: NodeHandler = async (ctx, config): Promise<NodeResu
             }
 
             if (!submitBtn) {
-                console.log('[COMMENT-NTH-POST] No labelled submit button in the comment box.');
+                // Narrowing the selector list to composer-only identities removed
+                // the action-bar false positive but matched nothing at all, so the
+                // real control's identity is still unknown. Dump every button in
+                // the composer rather than guess at a fourth selector list.
+                const candidates = await scope.locator('button').evaluateAll((els: any[]) =>
+                    els.slice(0, 12).map((e) => ({
+                        cls: (e.className || '').toString().slice(0, 70),
+                        aria: e.getAttribute('aria-label') || '',
+                        text: (e.textContent || '').trim().slice(0, 24),
+                        disabled: e.disabled === true,
+                    })),
+                ).catch(() => []);
+                console.log(`[COMMENT-NTH-POST] No submit button matched. Buttons in composer: ${JSON.stringify(candidates)}`);
                 return { success: false, error: 'Comment submit button not found' };
             }
 

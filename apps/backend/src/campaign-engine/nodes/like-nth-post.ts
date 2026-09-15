@@ -79,8 +79,27 @@ export const likeNthPost: NodeHandler = async (ctx, config): Promise<NodeResult>
         // "Recent post" panel populated. Fire-and-forget.
         persistDiscoveredPost(lead.id, output.postUrl, output.postContent).catch(() => {});
 
-        // Like (use evaluate() to bypass sticky headers, matching testscripts)
-        const likeBtn = page.locator('button:has(span:text-is("Like"))').first();
+        // SCOPE the Like button to the target post's own container.
+        //
+        // /feed/update/<urn>/ is a FEED route: LinkedIn renders the focused post
+        // and then keeps listing more posts beneath it. A page-wide
+        // `.first()` therefore matches whichever Like button comes first in the
+        // DOM, which is not necessarily the post we came for. Screenshots on
+        // 2026-09-15 showed the click landing among unrelated feed posts while
+        // the URL and title were correctly "Post | LinkedIn" — and because the
+        // surrounding feed differs per account, the same code looked account-
+        // specific and sent me chasing an imaginary write-block.
+        //
+        // The container carries data-urn, so bind to the target explicitly and
+        // fall back to the old page-wide lookup only if LinkedIn stops
+        // rendering that attribute.
+        const scoped = page.locator(`[data-urn="${discovered.urn}"]`).first();
+        const haveScope = (await scoped.count().catch(() => 0)) > 0;
+        if (!haveScope) {
+            console.log(`[LIKE-NTH-POST] No [data-urn="${discovered.urn}"] container — falling back to page-wide lookup.`);
+        }
+        const root: any = haveScope ? scoped : page;
+        const likeBtn = root.locator('button:has(span:text-is("Like")), button[aria-label^="React Like"]').first();
         const btnVisible = await likeBtn.isVisible({ timeout: 5000 }).catch(() => false);
 
         // Truthful reporting: if the Like button isn't on the page we did NOT
