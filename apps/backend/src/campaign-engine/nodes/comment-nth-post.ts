@@ -220,47 +220,32 @@ export const commentNthPost: NodeHandler = async (ctx, config): Promise<NodeResu
                 .first();
             const scope = (await commentForm.count().catch(() => 0)) ? commentForm : page;
 
-            // ONLY the composer's own submit control.
-            //
-            // `button:has-text("Comment")` and `button[aria-label="Comment"]`
-            // were in this list and they match the POST'S ACTION BAR button
-            // (Like | Comment | Repost | Send) — the one that merely focuses the
-            // composer. Screenshots on 2026-09-15 caught it: after "submitting",
-            // the action-bar Comment button is highlighted and the typed comment
-            // is still sitting in the editor, unsent. The one comment that DID
-            // post that day was the run where the selector list happened to
-            // match comments-comment-box__submit first.
-            //
-            // So match the submit control by its own identity, never by the word
-            // "Comment", which LinkedIn also uses for an unrelated button.
+            // Selectors lifted verbatim from testscripts/phase2_nth_recent_post_
+            // like&comment.js, which demonstrably posts comments. The detail I had
+            // wrong: the submit control is
+            // `button.artdeco-button--primary:has-text("Comment")` — the CLASS AND
+            // the text TOGETHER. The post's action-bar Comment button is not
+            // artdeco-button--primary, so the pair excludes it, while either half
+            // alone fails: the class alone matches any primary button on the page,
+            // and the text alone matches the action bar. The engine shipped both
+            // halves as SEPARATE entries and kept clicking the action bar; my
+            // previous fix then deleted the text half and matched nothing at all.
             const submitSelectors = [
                 'button.comments-comment-box__submit-button',
-                'button[class*="comments-comment-box__submit"]',
-                'button[class*="comments-comment-box"][type="submit"]',
-                'form[class*="comments-comment-box"] button[type="submit"]',
-                'button[aria-label="Submit comment"]',
-                'button[aria-label="Post comment"]',
+                'button.artdeco-button--primary:has-text("Comment")',
+                'button.artdeco-button--primary:has-text("Post")',
             ];
 
             let submitBtn: any = null;
             for (const sel of submitSelectors) {
                 try {
-                    const btn = scope.locator(sel).first();
-                    if (!(await btn.isVisible({ timeout: 2000 }).catch(() => false))) continue;
-                    if (await btn.isDisabled().catch(() => false)) continue;
-                    // A submit control with neither text nor aria-label is not the
-                    // one we want — that is precisely the empty-text button that
-                    // silently ate four comments.
-                    const label = ((await btn.textContent().catch(() => '')) || '').trim()
-                        || ((await btn.getAttribute('aria-label').catch(() => '')) || '').trim();
-                    if (!label) {
-                        console.log(`[COMMENT-NTH-POST] Ignoring unlabelled control matched by ${sel}`);
-                        continue;
+                    const btn = page.locator(sel).first();
+                    if (await btn.isVisible({ timeout: 3000 }).catch(() => false)) {
+                        submitBtn = btn;
+                        console.log(`[COMMENT-NTH-POST] Submit button found: ${sel}`);
+                        break;
                     }
-                    submitBtn = btn;
-                    console.log(`[COMMENT-NTH-POST] Submit button found: ${sel} (label: "${label}")`);
-                    break;
-                } catch {}
+                } catch { /* try the next */ }
             }
 
             if (!submitBtn) {
@@ -284,6 +269,18 @@ export const commentNthPost: NodeHandler = async (ctx, config): Promise<NodeResu
             // clicked — this frame is what shows whether the draft actually
             // made it into the editor.
             await actionShot(page, userId, `comment_before_${lead.id}`);
+            // Jiggle only when the control is actually disabled, then use a
+            // TRUSTED Playwright click — the working script's own note is that
+            // React's form handler accepts that and ignores evaluate()-dispatched
+            // clicks.
+            const disabledAttr = await submitBtn.getAttribute('disabled').catch(() => null);
+            if (disabledAttr !== null) {
+                console.log('[COMMENT-NTH-POST] Submit disabled — jiggling the editor to trigger React state.');
+                await page.keyboard.press('Space');
+                await page.keyboard.press('Backspace');
+                await wait(1000);
+            }
+
             await submitBtn.click({ force: true });
             await wait(5000);
             await actionShot(page, userId, `comment_after_${lead.id}`);
