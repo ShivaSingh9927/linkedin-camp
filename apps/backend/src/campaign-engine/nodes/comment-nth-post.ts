@@ -312,16 +312,23 @@ export const commentNthPost: NodeHandler = async (ctx, config): Promise<NodeResu
             // impatience that made the DM check unreliable.
             let commentAppeared = false;
             for (let attempt = 0; attempt < 4 && !commentAppeared; attempt++) {
+                // Search the rendered TEXT, not class-named containers. Every
+                // selector in the old list was class-based, so on the obfuscated
+                // build it could never see a posted comment — a success would be
+                // reported as a failure no matter what. The comment body is
+                // distinctive enough that its presence in the page text is sound
+                // evidence.
                 commentAppeared = await page.evaluate((text: string) => {
-                    const needle = text.substring(0, 30);
-                    const items = document.querySelectorAll(
-                        '.comments-comment-item__main-content, .comments-comment-item, ' +
-                        'article[class*="comments-comment"], div[class*="comments-comment-item"]',
+                    const needle = text.substring(0, 40);
+                    const body = (document.body as any)?.innerText || '';
+                    // Exclude the editor itself — the draft is still sitting in
+                    // it, so a naive page-text match would always succeed.
+                    const editor = document.querySelector(
+                        'div.tiptap.ProseMirror[contenteditable="true"], div[role="textbox"][aria-label*="Add a comment"]',
                     );
-                    for (const c of items) {
-                        if (c.textContent?.includes(needle)) return true;
-                    }
-                    return false;
+                    const draft = (editor as any)?.innerText || '';
+                    const outside = draft ? body.split(draft).join(' ') : body;
+                    return outside.includes(needle);
                 }, commentText).catch(() => false);
                 if (!commentAppeared) await wait(2500);
             }
