@@ -2,7 +2,6 @@ import { NodeHandler, NodeResult, ConnectOutput } from '../types';
 import { prisma } from '@repo/db';
 import { detectConnectionState, extractSlug, isOnLeadProfile } from '../connection-state';
 import { syncLeadStatus } from '../safety/lifecycle';
-import { hasPendingSentInvite } from '../../services/voyager-api.service';
 
 const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
 const randomRange = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1) + min);
@@ -20,7 +19,7 @@ async function safeGoto(page: any, url: string, retries = 3) {
 }
 
 export const connect: NodeHandler = async (ctx): Promise<NodeResult> => {
-    const { page, lead, campaignId, userId, apiRequest } = ctx;
+    const { page, lead, campaignId } = ctx;
 
     const output: ConnectOutput = { status: 'failed' };
 
@@ -155,45 +154,43 @@ export const connect: NodeHandler = async (ctx): Promise<NodeResult> => {
 
             // PROVE it. Clicking Send is not evidence the invite exists —
             // Qampi showed leads as invited while LinkedIn showed no pending
-            // invitation. Ask LinkedIn instead, browser-free.
+            // invitation.
             //
-            // null means "couldn't determine" (endpoint shape drift, fetch
-            // failure) and must NEVER be read as "not sent" — that would
-            // mass-fail genuine invites. So: true → sent; false → LinkedIn
-            // says no such invite, report failure; null → fall back to the
-            // DOM, which is right here on screen.
-            const vanity = slug;
-            let confirmed: boolean | null = null;
-            try {
-                confirmed = await hasPendingSentInvite(userId, vanity, page, apiRequest);
-            } catch (e: any) {
-                console.log(`[CONNECT] Sent-invite check errored (${e?.message}) — falling back to DOM.`);
-            }
-
-            if (confirmed === null) {
-                // DOM fallback: after a successful invite LinkedIn swaps the
-                // action to a Pending state on the profile.
-                const pendingVisible = await page
+            // This was written to ask Voyager (browser-free), but every
+            // invitation REST route is gone: invitationViews?q=sentInvitation,
+            // sentInvitationViewsV2, normInvitations and relationships/invitations
+            // all 400, and the profileView/networkinfo routes 410 — verified
+            // against a live session on 2026-09-15. What remains is GraphQL
+            // behind rotating queryIds, the same unreliable dependency
+            // post-discovery already refuses to take. So the evidence is the
+            // profile itself, which is already on screen: after a successful
+            // invite LinkedIn swaps the action to a Pending state.
+            //
+            // Polled rather than checked once — the swap is a client-side
+            // re-render and a single immediate look reports a false negative.
+            let pending = false;
+            for (let attempt = 0; attempt < 4 && !pending; attempt++) {
+                pending = await page
                     .locator('button:has-text("Pending"), span:text-is("Pending"), button[aria-label*="Pending"]')
                     .first()
-                    .isVisible({ timeout: 6000 })
+                    .isVisible({ timeout: 2500 })
                     .catch(() => false);
-                confirmed = pendingVisible ? true : null;
-                console.log(`[CONNECT] Voyager inconclusive; DOM pending indicator: ${pendingVisible}`);
+                if (!pending && attempt < 3) await wait(2000);
             }
 
-            if (confirmed === false) {
-                console.log('[CONNECT] LinkedIn reports no pending invitation after Send — reporting failure.');
-                return { success: false, error: 'Invite not found on LinkedIn after sending' };
+            if (!pending) {
+                // No Pending state means LinkedIn did not register an invite.
+                // Reporting failure is safe to retry: the node's own
+                // already-pending/connected guard makes a later re-run a no-op
+                // if the invite did in fact land, and only SUCCESS rows count
+                // against the daily invite cap.
+                console.log('[CONNECT] Send clicked but profile never showed Pending — reporting failure.');
+                return { success: false, error: 'Invite not confirmed (no Pending state after sending)' };
             }
 
-            // confirmed === true, or genuinely inconclusive after both checks.
-            // Record what we actually know rather than asserting more.
-            (output as any).verified = confirmed === true;
+            (output as any).verified = true;
             output.status = 'sent';
-            console.log(confirmed === true
-                ? '[CONNECT] Connection request sent (verified on LinkedIn).'
-                : '[CONNECT] Connection request sent (UNVERIFIED — could not confirm).');
+            console.log('[CONNECT] Connection request sent (Pending confirmed on profile).');
 
             if (campaignId) {
                 await updateConnectionStatus(campaignId, lead.id, 'pending');
