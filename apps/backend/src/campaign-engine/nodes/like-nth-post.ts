@@ -1,6 +1,7 @@
 import { NodeHandler, NodeResult, PostOutput } from '../types';
 import { persistDiscoveredPost } from '../storage';
 import { getOrDiscoverNthPost } from './post-discovery';
+import { actionShot } from './action-shot';
 
 const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
 
@@ -17,7 +18,7 @@ async function safeGoto(page: any, url: string, retries = 3) {
 }
 
 export const likeNthPost: NodeHandler = async (ctx, config): Promise<NodeResult> => {
-    const { page, lead, storedOutputs } = ctx;
+    const { page, lead, storedOutputs, userId } = ctx;
     const n = config.n || 1;
 
     const output: PostOutput = { postUrl: null, postContent: null, liked: false };
@@ -78,8 +79,10 @@ export const likeNthPost: NodeHandler = async (ctx, config): Promise<NodeResult>
             output.liked = true;
             console.log('[LIKE-NTH-POST] Already liked.');
         } else {
+            await actionShot(page, userId, `like_before_${lead.id}`);
             await likeBtn.evaluate((el: any) => el.click());
             await wait(2000);
+            await actionShot(page, userId, `like_after_${lead.id}`);
             // Re-read on a FRESH locator — the post-click DOM swap can leave the
             // old handle stale and report the pre-click state.
             const nowPressed = await page

@@ -118,6 +118,12 @@ services:
       #    after watching `docker stats` show sustained RAM+swap headroom.
       WORKER_CONCURRENCY: "24"
       BROWSER_LAUNCH_LIMIT: "12"
+      # Before/after screenshots around like/comment clicks, uploaded to S3.
+      # Diagnostic only — a full-page screenshot plus an S3 PUT per action is
+      # far too much for normal operation. Flip to "1" in .env.production and
+      # restart when investigating actions that report success but change
+      # nothing, then flip it back.
+      ACTION_SHOTS: "${ACTION_SHOTS:-0}"
       DATABASE_URL: ${DATABASE_URL}
       REDIS_URL: ${REDIS_URL}
       JWT_SECRET: ${JWT_SECRET}

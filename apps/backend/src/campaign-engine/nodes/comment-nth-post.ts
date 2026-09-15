@@ -3,6 +3,7 @@ import { resolveVariables } from '../variables';
 import { generateAIComment } from '../ai-service';
 import { persistDiscoveredPost } from '../storage';
 import { getOrDiscoverNthPost } from './post-discovery';
+import { actionShot } from './action-shot';
 
 const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
 const randomRange = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1) + min);
@@ -20,7 +21,7 @@ async function safeGoto(page: any, url: string, retries = 3) {
 }
 
 export const commentNthPost: NodeHandler = async (ctx, config): Promise<NodeResult> => {
-    const { page, lead, storedOutputs, campaign, aiContext } = ctx;
+    const { page, lead, storedOutputs, campaign, aiContext, userId } = ctx;
     const n = config.n || 1;
     const rawText = config.text || 'Great insights!';
     const aiEnabled = config.aiEnabled || false;
@@ -235,8 +236,13 @@ export const commentNthPost: NodeHandler = async (ctx, config): Promise<NodeResu
                 return { success: false, error: 'Comment submit button not found' };
             }
 
+            // Captured with the comment typed and the button about to be
+            // clicked — this frame is what shows whether the draft actually
+            // made it into the editor.
+            await actionShot(page, userId, `comment_before_${lead.id}`);
             await submitBtn.click({ force: true });
             await wait(5000);
+            await actionShot(page, userId, `comment_after_${lead.id}`);
 
             // Verify the comment actually rendered. This is the ONLY evidence the
             // comment posted, so it decides the node's result: an unverified
