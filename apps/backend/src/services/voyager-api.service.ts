@@ -777,6 +777,50 @@ export async function getInvitationsSummary(userId: string, page?: Page): Promis
     };
 }
 
+/**
+ * Is there an OUTGOING invitation pending to this person?
+ *
+ * The connect node used to declare "sent" the moment it clicked Send, with no
+ * evidence at all — and its fallback path declared success whenever the URL
+ * lacked the words "connect"/"invitation", which a profile URL never contains,
+ * so it passed unconditionally. Result: Qampi showed leads as invited while
+ * LinkedIn showed no pending invite. This is the cheap, browser-free way to
+ * check the claim, exactly as it should have been done from the start.
+ *
+ * Returns null on ANY uncertainty (endpoint shape changed, fetch failed,
+ * unparseable payload). Callers must treat null as "don't know" and fall back
+ * to another signal — never as "not sent" — so a Voyager change can never
+ * mass-fail genuine connects.
+ */
+export async function hasPendingSentInvite(
+    userId: string,
+    vanityOrFsd: string,
+    page?: Page | null,
+    apiRequest?: APIRequestContext,
+): Promise<boolean | null> {
+    const target = vanityOrFsd.toLowerCase();
+    // start=0&count=100 covers far more than the 18/day invite cap, so a
+    // recently-sent invite is always inside the first page.
+    const url = 'https://www.linkedin.com/voyager/api/relationships/invitationViews'
+        + '?q=sentInvitation&start=0&count=100';
+
+    const r = await voyagerFetch<any>(userId, url, { page: page ?? undefined, apiRequest });
+    if (!r.ok || !r.data) return null;
+
+    const elements = (r.data as any)?.elements;
+    if (!Array.isArray(elements)) return null;
+
+    // Shape varies by API revision, so match on the serialised element rather
+    // than a brittle nested path — we only need "does this person appear".
+    for (const el of elements) {
+        try {
+            const blob = JSON.stringify(el).toLowerCase();
+            if (blob.includes(target)) return true;
+        } catch { /* skip unserialisable element */ }
+    }
+    return false;
+}
+
 // ---- Messaging ----
 
 export interface MailboxCount {

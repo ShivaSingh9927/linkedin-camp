@@ -2,6 +2,7 @@ import { NodeHandler, NodeResult, ConnectOutput } from '../types';
 import { prisma } from '@repo/db';
 import { detectConnectionState, extractSlug, isOnLeadProfile } from '../connection-state';
 import { syncLeadStatus } from '../safety/lifecycle';
+import { hasPendingSentInvite } from '../../services/voyager-api.service';
 
 const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
 const randomRange = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1) + min);
@@ -19,7 +20,7 @@ async function safeGoto(page: any, url: string, retries = 3) {
 }
 
 export const connect: NodeHandler = async (ctx): Promise<NodeResult> => {
-    const { page, lead, campaignId } = ctx;
+    const { page, lead, campaignId, userId, apiRequest } = ctx;
 
     const output: ConnectOutput = { status: 'failed' };
 
@@ -140,31 +141,64 @@ export const connect: NodeHandler = async (ctx): Promise<NodeResult> => {
                 'button:has-text("Send now")'
             ).first();
 
-            if (await sendBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
-                await sendBtn.evaluate((el: any) => el.click());
-                console.log('[CONNECT] Connection request sent.');
-                output.status = 'sent';
-                
-                if (campaignId) {
-                    await updateConnectionStatus(campaignId, lead.id, 'pending');
-                }
-                return { success: true, output };
-            } else {
-                // Try pressing Enter as fallback
-                await page.keyboard.press('Enter');
-                await wait(2000);
-                const url = page.url();
-                if (!url.includes('connect') && !url.includes('invitation')) {
-                    console.log('[CONNECT] Connection sent (URL changed).');
-                    output.status = 'sent';
-                    
-                    if (campaignId) {
-                        await updateConnectionStatus(campaignId, lead.id, 'pending');
-                    }
-                    return { success: true, output };
-                }
+            if (!(await sendBtn.isVisible({ timeout: 5000 }).catch(() => false))) {
+                // The old code pressed Enter here and then called it sent when
+                // the URL lacked "connect"/"invitation" — words a profile URL
+                // never contains, so that branch passed unconditionally and
+                // invented invitations that were never sent. No Send button is
+                // simply a failure.
                 return { success: false, error: 'Connect modal opened but Send button not found' };
             }
+
+            await sendBtn.evaluate((el: any) => el.click());
+            await wait(randomRange(2500, 4000));
+
+            // PROVE it. Clicking Send is not evidence the invite exists —
+            // Qampi showed leads as invited while LinkedIn showed no pending
+            // invitation. Ask LinkedIn instead, browser-free.
+            //
+            // null means "couldn't determine" (endpoint shape drift, fetch
+            // failure) and must NEVER be read as "not sent" — that would
+            // mass-fail genuine invites. So: true → sent; false → LinkedIn
+            // says no such invite, report failure; null → fall back to the
+            // DOM, which is right here on screen.
+            const vanity = slug;
+            let confirmed: boolean | null = null;
+            try {
+                confirmed = await hasPendingSentInvite(userId, vanity, page, apiRequest);
+            } catch (e: any) {
+                console.log(`[CONNECT] Sent-invite check errored (${e?.message}) — falling back to DOM.`);
+            }
+
+            if (confirmed === null) {
+                // DOM fallback: after a successful invite LinkedIn swaps the
+                // action to a Pending state on the profile.
+                const pendingVisible = await page
+                    .locator('button:has-text("Pending"), span:text-is("Pending"), button[aria-label*="Pending"]')
+                    .first()
+                    .isVisible({ timeout: 6000 })
+                    .catch(() => false);
+                confirmed = pendingVisible ? true : null;
+                console.log(`[CONNECT] Voyager inconclusive; DOM pending indicator: ${pendingVisible}`);
+            }
+
+            if (confirmed === false) {
+                console.log('[CONNECT] LinkedIn reports no pending invitation after Send — reporting failure.');
+                return { success: false, error: 'Invite not found on LinkedIn after sending' };
+            }
+
+            // confirmed === true, or genuinely inconclusive after both checks.
+            // Record what we actually know rather than asserting more.
+            (output as any).verified = confirmed === true;
+            output.status = 'sent';
+            console.log(confirmed === true
+                ? '[CONNECT] Connection request sent (verified on LinkedIn).'
+                : '[CONNECT] Connection request sent (UNVERIFIED — could not confirm).');
+
+            if (campaignId) {
+                await updateConnectionStatus(campaignId, lead.id, 'pending');
+            }
+            return { success: true, output };
         } else {
             return { success: false, error: 'Connect button not found on profile' };
         }
