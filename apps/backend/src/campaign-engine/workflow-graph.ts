@@ -302,7 +302,17 @@ export function flattenDagToFlow(workflow: WorkflowGraph): any[] {
             }
 
             const engineNode = CANONICAL_TO_ENGINE_NODE[stepType];
-            if (engineNode) {
+            if (engineNode === 'delay') {
+                // The engine reads `hours` (`nodeConfig.hours ?? 24`), but the
+                // builder and every template author a wait as `delayDays`. The
+                // spread below carried delayDays through untouched, so `hours`
+                // was always undefined and EVERY wait silently collapsed to 24h
+                // — a "Wait 3d" before the acceptance check actually waited one
+                // day. Observed 2026-09-14 on rajaji: connect at 09-15 07:36,
+                // next action 09-16 07:36 instead of 09-18. Derive hours from
+                // the same helper the DAG walker uses so both paths agree.
+                out.push({ ...data, node: engineNode, hours: delayMsFromNode(node) / 3_600_000 });
+            } else if (engineNode) {
                 out.push({ ...data, node: engineNode });
             } else {
                 // UNKNOWN — skip but log so we notice templates with

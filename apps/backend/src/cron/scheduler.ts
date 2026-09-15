@@ -137,43 +137,53 @@ const isUserActive = redisPresence === 'ACTIVE' || (now - lastActivity < twoMins
 
         console.log(`[Scheduler] User ${user.id}: Found ${userPendingTasks.length} pending tasks.`);
 
+        // ONE job per CAMPAIGN, not per pending task.
+        //
+        // processCampaignJob reads only { userId, campaignId } — it ignores
+        // campaignLeadId/leadId/currentStepId entirely and runs the campaign's
+        // whole matured-lead set. So enqueuing a job per task meant N jobs each
+        // replaying the ENTIRE campaign. Observed 2026-09-14 on rajaji: one
+        // lead was profile-visited, liked AND commented twice inside four
+        // minutes, and a lead already retired with 'no recent post' was re-run
+        // and failed again. Per-task jobIds made those duplicates invisible to
+        // the campaign-level dedup added in 807582af.
+        //
+        // Collapse to one job per campaign, keyed with the SAME jobId
+        // enqueueCampaign uses, so a scheduler tick cannot stack a second full
+        // pass on top of a campaign run already waiting/active/delayed.
+        const pendingByCampaign = new Map<string, typeof userPendingTasks>();
         for (const task of userPendingTasks) {
-          // Resolve from the already-fetched campaigns (no per-task DB round-trip)
-          const campaign = campaignById.get(task.campaignId);
+          const bucket = pendingByCampaign.get(task.campaignId);
+          if (bucket) bucket.push(task);
+          else pendingByCampaign.set(task.campaignId, [task]);
+        }
 
+        for (const [pendingCampaignId, tasks] of pendingByCampaign) {
+          const campaign = campaignById.get(pendingCampaignId);
           if (!campaign) continue;
-          
-          let jobPriority = 5;
 
-          // Parse workflow to determine if this step is a MESSAGE
+          // Message steps still jump the queue; a campaign qualifies when ANY
+          // of its matured leads is sitting on a MESSAGE node.
+          let jobPriority = 5;
           try {
             const parsedWorkflow = typeof campaign.workflowJson === 'string'
               ? JSON.parse(campaign.workflowJson)
               : campaign.workflowJson;
-
-            const currentNode = parsedWorkflow?.nodes?.find((n: any) => n.id === task.currentStepId);
-            if (currentNode && getStepType(currentNode) === 'MESSAGE') {
-              jobPriority = 2;
-            }
+            const nodes = parsedWorkflow?.nodes || [];
+            const hasMessageStep = tasks.some((t) => {
+              const node = nodes.find((n: any) => n.id === t.currentStepId);
+              return node && getStepType(node) === 'MESSAGE';
+            });
+            if (hasMessageStep) jobPriority = 2;
           } catch (e) {
             console.error('Failed to parse workflow for priority detection', e);
           }
 
-          // Generate a unique deduplication id so we don't double queue the same step
-          const jobId = `task_${task.id}_step_${task.currentStepId}`;
-
           await actionQueue.add(
             'execute-workflow-step',
+            { userId: campaign.userId, campaignId: pendingCampaignId },
             {
-              campaignLeadId: task.id,
-              userId: campaign.userId,
-              leadId: task.leadId,
-              campaignId: task.campaignId,
-              currentStepId: task.currentStepId,
-              workflowJson: campaign.workflowJson,
-            },
-            {
-              jobId,
+              jobId: `campaign-${pendingCampaignId}`,
               removeOnComplete: true,
               priority: jobPriority,
             }
