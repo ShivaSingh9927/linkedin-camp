@@ -17,6 +17,13 @@ async function safeGoto(page: any, url: string, retries = 3) {
 
 export interface DeliverResult {
     sent: boolean;
+    /**
+     * Did we SEE the message land in the thread? `sent: true, verified: false`
+     * means we clicked send and could not confirm — an honest "probably", not a
+     * fact. Deliberately not a failure: a false failure risks re-sending, and a
+     * duplicate DM to a prospect is worse than one we're unsure about.
+     */
+    verified?: boolean;
     skipped?: boolean;
     skipReason?: 'not_connected' | 'no_message_ui';
     error?: string;
@@ -190,31 +197,48 @@ export async function deliverDirectMessage(
     await page.keyboard.press('Backspace');
     await wait(1000);
 
+    // Poll for the bubble instead of checking once. A single check 5s after the
+    // click called plenty of real sends "unverifiable" purely because the thread
+    // hadn't re-rendered yet, which is how a genuine signal got written off as
+    // noise and the result reported as sent regardless.
+    const bubbleAppeared = async (attempts = 4, gapMs = 2500): Promise<boolean> => {
+        for (let i = 0; i < attempts; i++) {
+            const seen = await page.evaluate((text: string) => {
+                const msgs = document.querySelectorAll('.msg-s-event-listitem__body, .msg-s-message-list__event');
+                for (const m of msgs) {
+                    if (m.textContent?.includes(text.substring(0, 20))) return true;
+                }
+                return false;
+            }, messageText).catch(() => false);
+            if (seen) return true;
+            if (i < attempts - 1) await wait(gapMs);
+        }
+        return false;
+    };
+
     const sendBtn = page.locator('button.msg-form__send-button').first();
 
     if (await sendBtn.isVisible({ timeout: 10000 }).catch(() => false)) {
         await sendBtn.click({ force: true });
-        await wait(5000);
+        await wait(2500);
 
-        const messageAppeared = await page.evaluate((text: string) => {
-            const msgs = document.querySelectorAll('.msg-s-event-listitem__body, .msg-s-message-list__event');
-            for (const m of msgs) {
-                if (m.textContent?.includes(text.substring(0, 20))) return true;
-            }
-            return false;
-        }, messageText).catch(() => false);
-
-        if (messageAppeared) {
-            console.log('[DELIVER-DM] Message verified in chat.');
-        } else {
-            console.log('[DELIVER-DM] Send button clicked. Could not verify bubble (may still have sent).');
-        }
-        return { sent: true };
+        const verified = await bubbleAppeared();
+        console.log(verified
+            ? '[DELIVER-DM] Message verified in chat.'
+            : '[DELIVER-DM] Send clicked but bubble never appeared (UNVERIFIED — may not have sent).');
+        return { sent: true, verified };
     }
 
-    // Try Enter as fallback
+    // Enter fallback. This used to press Enter and return sent:true with no
+    // check whatsoever — the same shape as the connect node's fallback, which
+    // invented invitations that were never sent. Enter IS a legitimate way to
+    // send in LinkedIn's composer, so keep it, but hold it to the same evidence
+    // as the button path.
     await page.keyboard.press('Enter');
-    await wait(3000);
-    console.log('[DELIVER-DM] Message sent via Enter.');
-    return { sent: true };
+    await wait(2500);
+    const verifiedViaEnter = await bubbleAppeared();
+    console.log(verifiedViaEnter
+        ? '[DELIVER-DM] Message verified in chat (sent via Enter).'
+        : '[DELIVER-DM] Enter pressed but bubble never appeared (UNVERIFIED — may not have sent).');
+    return { sent: true, verified: verifiedViaEnter };
 }

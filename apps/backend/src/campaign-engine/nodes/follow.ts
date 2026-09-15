@@ -93,12 +93,15 @@ export const follow: NodeHandler = async (ctx): Promise<NodeResult> => {
         ).first().isVisible({ timeout: 4000 }).catch(() => false);
 
         if (!confirmed) {
-            // Don't fail hard — LinkedIn sometimes lazy-renders the swap.
-            // Click registered; downstream nodes shouldn't block on this.
-            console.log('[FOLLOW] Click registered but Following indicator not yet visible.');
+            // Still not a hard failure — LinkedIn does lazy-render the swap, and
+            // failing here would re-follow someone we may already follow. But the
+            // uncertainty is now recorded instead of being flattened into a
+            // confident "followed", which is the pattern that let unsent
+            // comments and invites report success across the engine.
+            console.log('[FOLLOW] Clicked but Following indicator never appeared (UNVERIFIED — may not have registered).');
         }
 
-        return { success: true, output: { followed: true, alreadyFollowing: false } };
+        return { success: true, output: { followed: true, verified: confirmed, alreadyFollowing: false } };
     } catch (err: any) {
         return { success: false, error: err.message };
     }
