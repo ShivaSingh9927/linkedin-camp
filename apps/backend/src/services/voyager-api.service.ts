@@ -777,6 +777,62 @@ export async function getInvitationsSummary(userId: string, page?: Page): Promis
     };
 }
 
+/** Degree + invite state for another member, read browser-free. */
+export interface MemberRelationship {
+    /** 1 | 2 | 3 from memberDistance; null when absent. */
+    distance: number | null;
+    /** distance === 1. */
+    connected: boolean;
+    /** true = an outgoing/incoming invitation exists; false = LinkedIn says none; null = couldn't tell. */
+    pendingInvite: boolean | null;
+}
+
+/**
+ * Ask LinkedIn what our relationship with someone actually is — no Chromium.
+ *
+ * The profile topcard carries BOTH signals in one 200 response:
+ *   memberDistance      → DISTANCE_1 / _2 / _3
+ *   invitationUnion     → { noInvitation: … } when nothing is pending
+ *
+ * This is the check the connect node always needed. Its absence is why Qampi
+ * displayed leads as invited while LinkedIn showed nothing: verified on
+ * 2026-09-15, all three "successfully invited" leads came back DISTANCE_2 with
+ * NoConnection + NoInvitation.
+ *
+ * Note the endpoint: the dash topcard (WebTopCardCore-6) answers 200, while the
+ * legacy routes this was first attempted against are retired — profileView and
+ * networkinfo both 410, and every relationships/invitationViews variant 400.
+ *
+ * Returns null (not false) on any uncertainty so callers can distinguish
+ * "LinkedIn says no" from "we couldn't ask".
+ */
+export async function getMemberRelationship(
+    userId: string,
+    vanity: string,
+    page?: Page | null,
+    apiRequest?: APIRequestContext,
+): Promise<MemberRelationship | null> {
+    const url = 'https://www.linkedin.com/voyager/api/identity/dash/profiles'
+        + `?q=memberIdentity&memberIdentity=${encodeURIComponent(vanity)}`
+        + '&decorationId=com.linkedin.voyager.dash.deco.identity.profile.WebTopCardCore-6';
+
+    const r = await voyagerFetch<any>(userId, url, { page: page ?? undefined, apiRequest });
+    if (!r.ok || !r.data) return null;
+
+    let blob: string;
+    try { blob = JSON.stringify(r.data); } catch { return null; }
+
+    const dm = blob.match(/"memberDistance":\s*"?(?:[A-Za-z.]*\$)?(DISTANCE_[123])/);
+    const distance = dm ? Number(dm[1].slice(-1)) : null;
+
+    // The union names the state directly: NoInvitation when nothing is pending.
+    let pendingInvite: boolean | null = null;
+    if (/"noInvitation"|NoInvitation/.test(blob)) pendingInvite = false;
+    else if (/invitationUnion/.test(blob)) pendingInvite = true;
+
+    return { distance, connected: distance === 1, pendingInvite };
+}
+
 // ---- Messaging ----
 
 export interface MailboxCount {

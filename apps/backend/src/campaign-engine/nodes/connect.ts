@@ -2,6 +2,7 @@ import { NodeHandler, NodeResult, ConnectOutput } from '../types';
 import { prisma } from '@repo/db';
 import { detectConnectionState, extractSlug, isOnLeadProfile } from '../connection-state';
 import { syncLeadStatus } from '../safety/lifecycle';
+import { getMemberRelationship } from '../../services/voyager-api.service';
 
 const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
 const randomRange = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1) + min);
@@ -19,7 +20,7 @@ async function safeGoto(page: any, url: string, retries = 3) {
 }
 
 export const connect: NodeHandler = async (ctx): Promise<NodeResult> => {
-    const { page, lead, campaignId } = ctx;
+    const { page, lead, campaignId, userId, apiRequest } = ctx;
 
     const output: ConnectOutput = { status: 'failed' };
 
@@ -153,44 +154,48 @@ export const connect: NodeHandler = async (ctx): Promise<NodeResult> => {
             await wait(randomRange(2500, 4000));
 
             // PROVE it. Clicking Send is not evidence the invite exists —
-            // Qampi showed leads as invited while LinkedIn showed no pending
-            // invitation.
+            // Qampi showed leads as invited while LinkedIn showed nothing.
             //
-            // This was written to ask Voyager (browser-free), but every
-            // invitation REST route is gone: invitationViews?q=sentInvitation,
-            // sentInvitationViewsV2, normInvitations and relationships/invitations
-            // all 400, and the profileView/networkinfo routes 410 — verified
-            // against a live session on 2026-09-15. What remains is GraphQL
-            // behind rotating queryIds, the same unreliable dependency
-            // post-discovery already refuses to take. So the evidence is the
-            // profile itself, which is already on screen: after a successful
-            // invite LinkedIn swaps the action to a Pending state.
+            // Ask LinkedIn, browser-free: the dash topcard returns the
+            // invitation union, which names the state outright (NoInvitation
+            // when nothing is pending). Verified 2026-09-15 — the three leads
+            // this node had reported as "sent" all came back NoConnection +
+            // NoInvitation, i.e. the invites were never created.
             //
-            // Polled rather than checked once — the swap is a client-side
-            // re-render and a single immediate look reports a false negative.
-            let pending = false;
-            for (let attempt = 0; attempt < 4 && !pending; attempt++) {
-                pending = await page
-                    .locator('button:has-text("Pending"), span:text-is("Pending"), button[aria-label*="Pending"]')
-                    .first()
-                    .isVisible({ timeout: 2500 })
-                    .catch(() => false);
-                if (!pending && attempt < 3) await wait(2000);
+            // Polled: the relationship read is eventually consistent, so one
+            // immediate look can miss an invite that did land.
+            let confirmed: boolean | null = null;
+            for (let attempt = 0; attempt < 3; attempt++) {   // breaks out on a confirmed invite
+                await wait(attempt === 0 ? 1500 : 2500);
+                const rel = await getMemberRelationship(userId, slug, page, apiRequest).catch(() => null);
+                if (!rel) continue;                      // couldn't ask
+                if (rel.connected) { confirmed = true; break; }   // already 1st-degree
+                if (rel.pendingInvite === true) { confirmed = true; break; }
+                if (rel.pendingInvite === false) confirmed = false;
             }
 
-            if (!pending) {
-                // No Pending state means LinkedIn did not register an invite.
-                // Reporting failure is safe to retry: the node's own
-                // already-pending/connected guard makes a later re-run a no-op
-                // if the invite did in fact land, and only SUCCESS rows count
-                // against the daily invite cap.
-                console.log('[CONNECT] Send clicked but profile never showed Pending — reporting failure.');
-                return { success: false, error: 'Invite not confirmed (no Pending state after sending)' };
+            if (confirmed === null) {
+                // Voyager unavailable — fall back to the profile in front of us.
+                const pendingVisible = await page
+                    .locator('button:has-text("Pending"), span:text-is("Pending"), button[aria-label*="Pending"]')
+                    .first()
+                    .isVisible({ timeout: 4000 })
+                    .catch(() => false);
+                confirmed = pendingVisible ? true : null;
+                console.log(`[CONNECT] Voyager inconclusive; DOM pending indicator: ${pendingVisible}`);
+            }
+
+            if (confirmed !== true) {
+                // Safe to fail: the node's own already-pending/connected guard
+                // makes a later re-run a no-op if the invite did land, and only
+                // SUCCESS rows count toward the daily invite cap.
+                console.log('[CONNECT] LinkedIn shows no pending invitation after Send — reporting failure.');
+                return { success: false, error: 'Invite not confirmed on LinkedIn after sending' };
             }
 
             (output as any).verified = true;
             output.status = 'sent';
-            console.log('[CONNECT] Connection request sent (Pending confirmed on profile).');
+            console.log('[CONNECT] Connection request sent (confirmed on LinkedIn).');
 
             if (campaignId) {
                 await updateConnectionStatus(campaignId, lead.id, 'pending');
