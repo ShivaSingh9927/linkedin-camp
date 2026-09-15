@@ -79,27 +79,47 @@ export const likeNthPost: NodeHandler = async (ctx, config): Promise<NodeResult>
         // "Recent post" panel populated. Fire-and-forget.
         persistDiscoveredPost(lead.id, output.postUrl, output.postContent).catch(() => {});
 
-        // SCOPE the Like button to the target post's own container.
+        // Resolve the Like control STRUCTURALLY, for the same reason as the
+        // comment submit: LinkedIn serves two frontend builds and one of them
+        // uses obfuscated hashed class names, so class-based selectors match
+        // nothing there. Accounts are pinned to a variant — which is why this
+        // node worked on shivasingh9927 and never on rajaji.
         //
-        // /feed/update/<urn>/ is a FEED route: LinkedIn renders the focused post
-        // and then keeps listing more posts beneath it. A page-wide
-        // `.first()` therefore matches whichever Like button comes first in the
-        // DOM, which is not necessarily the post we came for. Screenshots on
-        // 2026-09-15 showed the click landing among unrelated feed posts while
-        // the URL and title were correctly "Post | LinkedIn" — and because the
-        // surrounding feed differs per account, the same code looked account-
-        // specific and sent me chasing an imaginary write-block.
-        //
-        // The container carries data-urn, so bind to the target explicitly and
-        // fall back to the old page-wide lookup only if LinkedIn stops
-        // rendering that attribute.
-        const scoped = page.locator(`[data-urn="${discovered.urn}"]`).first();
-        const haveScope = (await scoped.count().catch(() => 0)) > 0;
-        if (!haveScope) {
-            console.log(`[LIKE-NTH-POST] No [data-urn="${discovered.urn}"] container — falling back to page-wide lookup.`);
+        // [data-urn] is NOT present on the post permalink page (only on the
+        // activity feed we discovered from), so scope instead to the FIRST post
+        // container on the page — the focused post — and take its Like control.
+        // The button may be labelled by text or only by aria-label, so accept
+        // either, and tag the match so Playwright performs the real click.
+        const LIKE_MARK = 'data-qampi-like';
+        const likeLocated = await page.evaluate((mark: string) => {
+            document.querySelectorAll(`[${mark}]`).forEach((e) => e.removeAttribute(mark));
+            const isLike = (b: any) => {
+                const t = (b.textContent || '').trim().toLowerCase();
+                const a = (b.getAttribute('aria-label') || '').trim().toLowerCase();
+                return t === 'like' || a === 'like' || a.startsWith('react like');
+            };
+            // Prefer a button inside the first post container; fall back to the
+            // first Like on the page only if no container is recognisable.
+            const container = document.querySelector(
+                'div.feed-shared-update-v2, article, div[class*="feed-shared-update"], main',
+            );
+            const scopes = [container, document].filter(Boolean) as any[];
+            for (const scope of scopes) {
+                const btn = Array.from(scope.querySelectorAll('button')).find(isLike);
+                if (btn) {
+                    (btn as any).setAttribute(mark, '1');
+                    return (btn as any).getAttribute('aria-pressed') === 'true' ? 'already' : 'found';
+                }
+            }
+            return 'none';
+        }, LIKE_MARK).catch(() => 'error');
+
+        if (likeLocated === 'none' || likeLocated === 'error') {
+            console.log(`[LIKE-NTH-POST] No Like control found on the post (${likeLocated}).`);
+            return { success: false, error: 'Like button not found on post' };
         }
-        const root: any = haveScope ? scoped : page;
-        const likeBtn = root.locator('button:has(span:text-is("Like")), button[aria-label^="React Like"]').first();
+
+        const likeBtn = page.locator(`[${LIKE_MARK}="1"]`).first();
         const btnVisible = await likeBtn.isVisible({ timeout: 5000 }).catch(() => false);
 
         // Truthful reporting: if the Like button isn't on the page we did NOT

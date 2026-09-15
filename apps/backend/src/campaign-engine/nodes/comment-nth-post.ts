@@ -220,32 +220,59 @@ export const commentNthPost: NodeHandler = async (ctx, config): Promise<NodeResu
                 .first();
             const scope = (await commentForm.count().catch(() => 0)) ? commentForm : page;
 
-            // Selectors lifted verbatim from testscripts/phase2_nth_recent_post_
-            // like&comment.js, which demonstrably posts comments. The detail I had
-            // wrong: the submit control is
-            // `button.artdeco-button--primary:has-text("Comment")` — the CLASS AND
-            // the text TOGETHER. The post's action-bar Comment button is not
-            // artdeco-button--primary, so the pair excludes it, while either half
-            // alone fails: the class alone matches any primary button on the page,
-            // and the text alone matches the action bar. The engine shipped both
-            // halves as SEPARATE entries and kept clicking the action bar; my
-            // previous fix then deleted the text half and matched nothing at all.
-            const submitSelectors = [
-                'button.comments-comment-box__submit-button',
-                'button.artdeco-button--primary:has-text("Comment")',
-                'button.artdeco-button--primary:has-text("Post")',
-            ];
+            // Find submit by STRUCTURE, not class names.
+            //
+            // LinkedIn serves at least two frontend builds. One has the semantic
+            // classes every selector here assumed (artdeco-button--primary,
+            // comments-comment-box__submit-button); the other ships OBFUSCATED
+            // hashed classes ("_5dfaadcf _11c561b9 …") where none of them exist.
+            // Accounts appear pinned to a variant, which is why identical code
+            // worked on shivasingh9927 and never on rajaji, and why that looked
+            // for most of a day like LinkedIn was blocking one account's writes.
+            //
+            // Text is stable across both builds, but "Comment" alone also matches
+            // the post's action-bar button. So anchor on the editor — the one
+            // element we have already located — and walk up to the nearest
+            // ancestor that contains a Comment/Post/Reply button. That button is
+            // the composer's own submit in either build.
+            //
+            // The match is tagged with a data attribute so the actual click still
+            // goes through Playwright: the working test script notes React's form
+            // handler accepts a trusted click and ignores evaluate()-dispatched
+            // ones.
+            const MARK = 'data-qampi-submit';
+            const located = await page.evaluate((mark: string) => {
+                const editor = document.querySelector(
+                    'div.tiptap.ProseMirror[contenteditable="true"], '
+                    + 'div[role="textbox"][aria-label*="Add a comment"], '
+                    + 'div[data-placeholder*="Add a comment"]',
+                );
+                if (!editor) return 'no-editor';
+                document.querySelectorAll(`[${mark}]`).forEach((e) => e.removeAttribute(mark));
+
+                let node: any = editor;
+                for (let depth = 0; depth < 8 && node; depth++) {
+                    node = node.parentElement;
+                    if (!node) break;
+                    const btn = Array.from(node.querySelectorAll('button')).find((b: any) => {
+                        const t = (b.textContent || '').trim().toLowerCase();
+                        const a = (b.getAttribute('aria-label') || '').trim().toLowerCase();
+                        const isSubmitWord = ['comment', 'post', 'reply'].includes(t)
+                            || a.includes('submit comment') || a.includes('post comment');
+                        return isSubmitWord && !(b as any).disabled;
+                    });
+                    if (btn) { (btn as any).setAttribute(mark, '1'); return 'found'; }
+                }
+                return 'no-button';
+            }, MARK).catch(() => 'error');
 
             let submitBtn: any = null;
-            for (const sel of submitSelectors) {
-                try {
-                    const btn = page.locator(sel).first();
-                    if (await btn.isVisible({ timeout: 3000 }).catch(() => false)) {
-                        submitBtn = btn;
-                        console.log(`[COMMENT-NTH-POST] Submit button found: ${sel}`);
-                        break;
-                    }
-                } catch { /* try the next */ }
+            if (located === 'found') {
+                submitBtn = page.locator(`[${MARK}="1"]`).first();
+                const label = ((await submitBtn.textContent().catch(() => '')) || '').trim();
+                console.log(`[COMMENT-NTH-POST] Submit resolved from the editor's container (label: "${label}").`);
+            } else {
+                console.log(`[COMMENT-NTH-POST] Structural submit lookup: ${located}`);
             }
 
             if (!submitBtn) {
