@@ -241,6 +241,90 @@ export async function handleCheckpoint(args: HandleCheckpointArgs): Promise<void
 }
 
 /**
+ * Actions whose success is RELIABLY verifiable, and so whose repeated failure
+ * means something is wrong with the account rather than the selector.
+ *
+ * Measured 2026-09-15 across two accounts running identical code: on a healthy
+ * account both landed every time (like 3/3 with aria-pressed flipping, connect
+ * 3/3 confirmed against Voyager); on a write-blocked one, 0/2 and 0/3.
+ * comment-nth-post is deliberately EXCLUDED — it is genuinely flaky (1/3 on the
+ * healthy account), so its failures say nothing about account state.
+ */
+const VERIFIABLE_WRITES = ['like-nth-post', 'connect'] as const;
+
+/** Consecutive verifiable-write failures before we stop believing it's the code. */
+const WRITE_BLOCK_STREAK = 4;
+
+/**
+ * Detect a SILENT WRITE-BLOCK: LinkedIn keeps serving reads normally while
+ * quietly discarding every write.
+ *
+ * This state is invisible to every other health check. The session is genuinely
+ * valid, so no authwall, no checkpoint, no 401 — `accountHealth` sits at HEALTHY
+ * while campaigns run for hours accomplishing nothing, burning daily-cap budget
+ * against an account LinkedIn has already decided to restrict. Observed on
+ * rajaji after its session was force-expired on 2026-09-13.
+ *
+ * The signal is a streak of failures in actions that otherwise never fail, on an
+ * account whose session is fine. Marked RESTRICTED (already non-healable, so a
+ * successful read cannot clear it) rather than a new enum value, and left for a
+ * human: the remedy is on LinkedIn's side, not ours.
+ */
+export async function checkWriteBlock(userId: string): Promise<boolean> {
+    const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { accountHealth: true },
+    });
+    // Only meaningful while everything else believes the account is fine — the
+    // other states already have their own handling and their own remedies.
+    if (user?.accountHealth !== 'HEALTHY') return false;
+
+    const recent = await prisma.actionLog.findMany({
+        where: {
+            userId,
+            actionType: { in: [...VERIFIABLE_WRITES] },
+            executedAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+        },
+        orderBy: { executedAt: 'desc' },
+        take: WRITE_BLOCK_STREAK,
+        select: { status: true },
+    }).catch(() => []);
+
+    if (recent.length < WRITE_BLOCK_STREAK) return false;
+    if (!recent.every((r) => r.status === 'FAILED')) return false;
+
+    console.warn(
+        `[checkpoint] user=${userId} — ${WRITE_BLOCK_STREAK} consecutive verifiable writes failed on a valid session. ` +
+        'Treating as a LinkedIn write-block and pausing.'
+    );
+
+    await prisma.user.update({
+        where: { id: userId },
+        data: {
+            accountHealth: 'RESTRICTED',
+            accountHealthReason: 'write_block_suspected',
+            accountHealthAt: new Date(),
+        },
+    }).catch((e) => console.error(`[checkpoint] write-block flip failed: ${e.message}`));
+
+    await prisma.notification.create({
+        data: {
+            userId,
+            type: 'ACCOUNT_HEALTH',
+            title: 'LinkedIn is not applying your actions',
+            body:
+                'Your session is valid and Qampi can read LinkedIn normally, but recent likes and invites did not take effect — '
+                + 'which usually means LinkedIn has temporarily restricted the account. Campaigns are paused so they stop consuming '
+                + 'your daily limits. Try performing a like or invite manually on linkedin.com; if that also does nothing, the '
+                + 'restriction has to lift on LinkedIn\'s side before automation can resume.',
+            meta: { health: 'RESTRICTED', reason: 'write_block_suspected', detectedAt: new Date().toISOString() },
+        },
+    }).catch((e) => console.error(`[checkpoint] write-block notification failed: ${e.message}`));
+
+    return true;
+}
+
+/**
  * Auto-pause a campaign because LinkedIn served a challenge / killed the
  * session mid-run. Tagged with pausedReason='session_expired' so
  * markAccountHealthy() can auto-resume exactly the campaigns WE paused and

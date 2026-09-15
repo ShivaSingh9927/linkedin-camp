@@ -87,16 +87,21 @@ export const likeNthPost: NodeHandler = async (ctx, config): Promise<NodeResult>
                 .first()
                 .getAttribute('aria-pressed')
                 .catch(() => null);
+            // Unverified means it did NOT happen. I previously kept this as a
+            // success on the theory that LinkedIn might not always expose
+            // aria-pressed — the A/B killed that theory: on a healthy account
+            // (shivasingh9927) the attribute flipped on 3 of 3 likes, while on a
+            // write-blocked one (rajaji) it flipped on 0 of 2 and the user
+            // confirmed no like existed on either post. So the attribute is
+            // reliable, and "couldn't confirm" is the signature of a like that
+            // never registered — not of a missing attribute.
+            if (nowPressed !== 'true') {
+                console.log('[LIKE-NTH-POST] Like clicked but never registered — reporting failure.');
+                return { success: false, error: 'Like did not register' };
+            }
             output.liked = true;
-            // Record whether the click was actually CONFIRMED. Not a failure when
-            // unconfirmed — LinkedIn does not always expose aria-pressed, and
-            // failing here would retry a like that may well have landed. But the
-            // distinction has to be visible: the comment node's equivalent
-            // "couldn't verify" state turned out to mean the action never
-            // happened at all, so an unverified like is a claim we should be able
-            // to audit rather than quietly call success.
-            (output as any).verified = nowPressed === 'true';
-            console.log(nowPressed === 'true' ? '[LIKE-NTH-POST] Liked (verified).' : '[LIKE-NTH-POST] Like clicked (UNVERIFIED — may not have registered).');
+            (output as any).verified = true;
+            console.log('[LIKE-NTH-POST] Liked (verified).');
         }
 
         return { success: true, output };

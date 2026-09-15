@@ -42,7 +42,7 @@ import { profileVisitDispatch, inboxSyncDispatch, profileVisitNeedsDom, postsCov
 import { readNodeOutputs, writeNodeOutput, updateLeadEnrichment } from './storage';
 import { checkQuota, checkInviteQuota, nextDayRetryAt, DAILY_CAPS, GovernedAction, isWithinWorkingHours, nextWorkingHourAt } from './safety/quota';
 import { transitionLead, recomputeCampaignStatus, syncLeadStatus } from './safety/lifecycle';
-import { classifyPage, handleCheckpoint, isCheckpoint, pauseCampaignForSessionExpiry } from './safety/checkpoint';
+import { classifyPage, handleCheckpoint, isCheckpoint, pauseCampaignForSessionExpiry, checkWriteBlock } from './safety/checkpoint';
 import { uploadScreenshotToS3 } from '../services/s3-upload.service';
 import { isFirstDegree, getAllConnections, getBrowserlessVoyagerContext } from '../services/voyager-api.service';
 import { stageRequiresConnection, nextStageRequiresConnection } from './linkedin-permissions';
@@ -799,6 +799,23 @@ async function runLead(
                 }
 
                 console.log(`[ENGINE] Lead ${lead.firstName}: ${nodeType} FAILED (non-fatal). Continuing to next node.`);
+
+                // A like or invite that fails is nearly always the account, not
+                // the page — those two verify reliably when LinkedIn is applying
+                // our actions. A streak of them means writes are being silently
+                // discarded, which no other health check can see because the
+                // session is perfectly valid. Stop the campaign rather than
+                // spend the rest of the day's cap on actions that do nothing.
+                if (nodeType === 'like-nth-post' || nodeType === 'connect') {
+                    const blocked = await checkWriteBlock(userId).catch(() => false);
+                    if (blocked) {
+                        await pauseCampaignForSessionExpiry(campaignId).catch(() => {});
+                        execResult.status = 'paused';
+                        execResult.pausedReason = 'stalled';
+                        execResult.error = 'LinkedIn is not applying actions from this account (write-block suspected)';
+                        return execResult;
+                    }
+                }
             }
 
             // ---- Delay = stage boundary. Park the lead and resume later. ----
