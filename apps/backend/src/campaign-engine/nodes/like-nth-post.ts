@@ -147,10 +147,22 @@ export const likeNthPost: NodeHandler = async (ctx, config): Promise<NodeResult>
             const pressed = await likeBtn.getAttribute('aria-pressed').catch(() => null);
             return `${t}|${a}|${pressed ?? ''}`;
         };
-        const looksLiked = (state: string) => state.includes('|true') || /unreact|unlike|liked/.test(state);
+        // Is a reaction currently ON? Decide by the state the label REPORTS, and
+        // note the negative case first: this build writes
+        // "reaction button state: no reaction" when nothing is set and
+        // "reaction button state: like" when it is. A previous version tested for
+        // /liked/ — with a d — which never matches "state: like", so an
+        // already-liked post read as unliked, got clicked, and the like was
+        // REMOVED while the node logged "Liked (verified)".
+        const isLiked = (state: string): boolean => {
+            if (/no reaction/.test(state)) return false;
+            if (state.includes('|true')) return true;
+            if (/unreact|unlike/.test(state)) return true;
+            return /reaction button state:\s*(like|celebrate|support|love|insightful|funny|curious)/.test(state);
+        };
 
         const before = await readState();
-        if (looksLiked(before)) {
+        if (isLiked(before)) {
             output.liked = true;
             (output as any).verified = true;
             console.log(`[LIKE-NTH-POST] Already liked (state="${before}") — leaving it alone.`);
@@ -161,13 +173,16 @@ export const likeNthPost: NodeHandler = async (ctx, config): Promise<NodeResult>
         await likeBtn.click({ force: true });
         await wait(2500);
 
+        // Success means the post ends up LIKED — not merely that something
+        // changed. A bare change test called an un-like a success, which is how
+        // this node removed a real like and reported it as verified.
         const after = await readState();
-        output.liked = true;
-        (output as any).verified = after !== before;
-        if (after === before) {
-            console.log(`[LIKE-NTH-POST] Clicked but state never changed (state="${after}") — reporting failure.`);
+        if (!isLiked(after)) {
+            console.log(`[LIKE-NTH-POST] Post is not liked after clicking ("${before}" → "${after}") — reporting failure.`);
             return { success: false, error: 'Like did not register' };
         }
+        output.liked = true;
+        (output as any).verified = true;
         console.log(`[LIKE-NTH-POST] Liked (verified: "${before}" → "${after}").`);
 
         return { success: true, output };
