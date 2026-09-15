@@ -25,7 +25,15 @@ export async function actionShot(
 ): Promise<void> {
     if (!actionShotsEnabled()) return;
     try {
+        // The URL is the fact the images can't show. A headless screenshot has
+        // no address bar, so when the like shots turned out to be the home feed
+        // there was no way to tell whether the page had been redirected there or
+        // simply hadn't finished routing — the difference between "LinkedIn sent
+        // us away" and "we looked too early".
+        const url = (() => { try { return page.url(); } catch { return '(unknown)'; } })();
+        const title = await page.title().catch(() => '(unknown)');
         const res = await uploadScreenshotToS3(page, userId, label);
+        console.log(`[ACTION-SHOT] ${label} url=${String(url).slice(0, 110)} title="${String(title).slice(0, 60)}"`);
         if (res) console.log(`[ACTION-SHOT] ${label} → ${res.key}`);
     } catch (e: any) {
         // Diagnostics must never break the action they are observing.
