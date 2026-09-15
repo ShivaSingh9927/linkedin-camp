@@ -201,13 +201,26 @@ export const commentNthPost: NodeHandler = async (ctx, config): Promise<NodeResu
                 .first();
             const scope = (await commentForm.count().catch(() => 0)) ? commentForm : page;
 
+            // ONLY the composer's own submit control.
+            //
+            // `button:has-text("Comment")` and `button[aria-label="Comment"]`
+            // were in this list and they match the POST'S ACTION BAR button
+            // (Like | Comment | Repost | Send) — the one that merely focuses the
+            // composer. Screenshots on 2026-09-15 caught it: after "submitting",
+            // the action-bar Comment button is highlighted and the typed comment
+            // is still sitting in the editor, unsent. The one comment that DID
+            // post that day was the run where the selector list happened to
+            // match comments-comment-box__submit first.
+            //
+            // So match the submit control by its own identity, never by the word
+            // "Comment", which LinkedIn also uses for an unrelated button.
             const submitSelectors = [
                 'button.comments-comment-box__submit-button',
                 'button[class*="comments-comment-box__submit"]',
-                'button[aria-label="Comment"]',
-                'button:has-text("Comment")',
-                'button:has-text("Post")',
-                'button:has-text("Reply")',
+                'button[class*="comments-comment-box"][type="submit"]',
+                'form[class*="comments-comment-box"] button[type="submit"]',
+                'button[aria-label="Submit comment"]',
+                'button[aria-label="Post comment"]',
             ];
 
             let submitBtn: any = null;

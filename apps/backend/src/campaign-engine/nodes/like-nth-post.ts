@@ -42,7 +42,27 @@ export const likeNthPost: NodeHandler = async (ctx, config): Promise<NodeResult>
         console.log(`[LIKE-NTH-POST] Found post #${n}. Navigating...`);
 
         await safeGoto(page, postLink);
-        await wait(5000);
+
+        // CONFIRM we are actually on the post before touching any button.
+        //
+        // LinkedIn is a SPA: domcontentloaded fires while the previous view is
+        // still mounted, so a fixed wait can leave us looking at the HOME FEED.
+        // Screenshots on 2026-09-15 caught exactly that — the "like" ran against
+        // rajaji's feed, matched the first Like button on a stranger's post, and
+        // reported a failure that looked like an account write-block. Worse than
+        // failing: that click was aimed at someone who was never a target.
+        const activityId = (discovered.urn.match(/(\d{6,})/) || [])[1] || '';
+        let onPost = false;
+        for (let attempt = 0; attempt < 6 && !onPost; attempt++) {
+            await wait(1500);
+            const url = page.url();
+            onPost = url.includes('/feed/update/') && (!activityId || url.includes(activityId));
+        }
+        if (!onPost) {
+            console.log(`[LIKE-NTH-POST] Never landed on the post (url=${page.url().slice(0, 90)}) — refusing to click.`);
+            return { success: false, error: 'Post page did not load — refused to like the wrong post' };
+        }
+        await wait(2000);
 
         // Extract post content
         try {
