@@ -284,6 +284,32 @@ export const commentNthPost: NodeHandler = async (ctx, config): Promise<NodeResu
             // Captured with the comment typed and the button about to be
             // clicked — this frame is what shows whether the draft actually
             // made it into the editor.
+            // REMOVE the messaging overlay before clicking — do not merely
+            // dismiss it.
+            //
+            // Before/after captures on 2026-09-15 showed the overlay's "…" menu
+            // CLOSED before the click and OPEN after it: our click was landing on
+            // the overlay's overflow control, which docks bottom-right exactly
+            // over the submit button. Pressing Escape beforehand cannot help,
+            // because the click that follows re-opens it. The overlay has to stop
+            // occupying that space at all.
+            await page.evaluate(() => {
+                const sels = [
+                    '#msg-overlay', 'aside#msg-overlay', 'div.msg-overlay-container',
+                    'div[class*="msg-overlay"]', 'section[class*="msg-overlay"]',
+                    'div[class*="msg-overlay-list-bubble"]',
+                ];
+                for (const sel of sels) {
+                    document.querySelectorAll(sel).forEach((el: any) => {
+                        el.style.setProperty('display', 'none', 'important');
+                        el.style.setProperty('pointer-events', 'none', 'important');
+                    });
+                }
+            }).catch(() => {});
+            await wait(400);
+            await submitBtn.scrollIntoViewIfNeeded().catch(() => {});
+            await wait(300);
+
             await actionShot(page, userId, `comment_before_${lead.id}`);
             // Jiggle only when the control is actually disabled, then use a
             // TRUSTED Playwright click — the working script's own note is that
@@ -297,7 +323,19 @@ export const commentNthPost: NodeHandler = async (ctx, config): Promise<NodeResu
                 await wait(1000);
             }
 
-            await submitBtn.click({ force: true });
+            // NO blind force. force:true skips Playwright's actionability check
+            // — the very check that raises "element is covered by another
+            // element". That silence is how a click on the overlay passed for a
+            // click on submit across five attempts. Let an ordinary click throw
+            // if something still covers the button, and only then fall back to
+            // force, with the reason logged.
+            try {
+                await submitBtn.click({ timeout: 8000 });
+            } catch (e: any) {
+                const why = (e?.message || '').split('\n')[0];
+                console.log(`[COMMENT-NTH-POST] Normal click refused (${why}) — retrying forced.`);
+                await submitBtn.click({ force: true });
+            }
             await wait(5000);
             await actionShot(page, userId, `comment_after_${lead.id}`);
 
