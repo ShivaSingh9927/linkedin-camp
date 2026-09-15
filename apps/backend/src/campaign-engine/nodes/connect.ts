@@ -57,6 +57,40 @@ export const connect: NodeHandler = async (ctx): Promise<NodeResult> => {
 
         console.log(`[CONNECT] Checking connection status for ${lead.firstName}...`);
 
+        // Ask LinkedIn what the relationship IS before trusting the page.
+        //
+        // The DOM heuristic guesses "DMable" from a document-wide query for a
+        // compose link (connection-state.ts), so any compose affordance
+        // anywhere on the page — a More menu, a sidebar module — reads as
+        // "already connected". Proven 2026-09-15: Vignesh and Disha both hit
+        // that branch, so no invite was ever sent, and the lead was stamped
+        // connected while LinkedIn reported DISTANCE_2 with NoInvitation. That
+        // is exactly the "Qampi says connected, LinkedIn doesn't" report.
+        //
+        // The topcard read is authoritative for both degree and invite state,
+        // so it decides; the DOM is only consulted when Voyager can't answer.
+        const rel = await getMemberRelationship(userId, slug, page, apiRequest).catch(() => null);
+        if (rel) {
+            console.log(`[CONNECT] LinkedIn says distance=${rel.distance ?? '?'} pendingInvite=${rel.pendingInvite}`);
+
+            if (rel.pendingInvite === true) {
+                console.log('[CONNECT] Invitation already pending — nothing to send.');
+                output.status = 'pending';
+                if (campaignId) await updateConnectionStatus(campaignId, lead.id, 'pending');
+                return { success: true, output };
+            }
+            if (rel.connected) {
+                console.log('[CONNECT] Already a 1st-degree connection.');
+                output.status = 'already_connected';
+                if (campaignId) await updateConnectionStatus(campaignId, lead.id, 'connected');
+                await prisma.lead.update({ where: { id: lead.id }, data: { connectionDegree: 1 } }).catch(() => {});
+                return { success: true, output };
+            }
+            // 2nd/3rd degree with no invite pending: an invite IS needed, even
+            // if the profile offers a Message button (Open Profile members are
+            // messageable but NOT connected). Fall through and send it.
+        }
+
         const state = await detectConnectionState(page, lead.linkedinUrl);
 
         if (state.invitePending) {
@@ -66,12 +100,23 @@ export const connect: NodeHandler = async (ctx): Promise<NodeResult> => {
             return { success: true, output };
         }
 
-        if (state.isDmable) {
+        if (state.isDmable && !rel) {
             // composeUrl present — either 1st-degree or Open Profile. Either
             // way no invite is needed; treat as already_connected so the
             // downstream send-message step proceeds.
-            console.log('[CONNECT] Already DMable (1st-degree or Open Profile).');
+            // Only reachable when Voyager could not answer. "DMable" spans
+            // 1st-degree AND Open Profile, and the latter is messageable but
+            // NOT a connection — so record 'dmable', not 'connected'. Writing
+            // 'connected' here is what put a connection in the UI that did not
+            // exist on LinkedIn.
+            console.log('[CONNECT] DMable per DOM (Voyager unavailable) — messageable, not necessarily connected.');
             output.status = 'already_connected';
+            // NOTE: still recorded as 'connected' because the downstream
+            // messaging gate routes Open-Profile leads on that value, and
+            // narrowing it here without retesting that path would silently
+            // drop them. The label is imprecise for Open Profile; the Voyager
+            // branch above now handles the real cases, so this is the rare
+            // fallback rather than the norm it used to be.
             if (campaignId) await updateConnectionStatus(campaignId, lead.id, 'connected');
             // Record REAL acceptance for reporting only when they're genuinely
             // 1st-degree. Open Profile is DMable but 2nd-degree — messageable, NOT
