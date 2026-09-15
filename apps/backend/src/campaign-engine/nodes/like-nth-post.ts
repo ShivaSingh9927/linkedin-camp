@@ -88,7 +88,15 @@ export const likeNthPost: NodeHandler = async (ctx, config): Promise<NodeResult>
                 .getAttribute('aria-pressed')
                 .catch(() => null);
             output.liked = true;
-            console.log(nowPressed === 'true' ? '[LIKE-NTH-POST] Liked (verified).' : '[LIKE-NTH-POST] Like clicked (unverified).');
+            // Record whether the click was actually CONFIRMED. Not a failure when
+            // unconfirmed — LinkedIn does not always expose aria-pressed, and
+            // failing here would retry a like that may well have landed. But the
+            // distinction has to be visible: the comment node's equivalent
+            // "couldn't verify" state turned out to mean the action never
+            // happened at all, so an unverified like is a claim we should be able
+            // to audit rather than quietly call success.
+            (output as any).verified = nowPressed === 'true';
+            console.log(nowPressed === 'true' ? '[LIKE-NTH-POST] Liked (verified).' : '[LIKE-NTH-POST] Like clicked (UNVERIFIED — may not have registered).');
         }
 
         return { success: true, output };

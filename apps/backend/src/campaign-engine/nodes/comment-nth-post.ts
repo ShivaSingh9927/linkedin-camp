@@ -183,58 +183,78 @@ export const commentNthPost: NodeHandler = async (ctx, config): Promise<NodeResu
             await page.mouse.click(10, 10);
             await wait(500);
 
-            // Submit button selectors
+            // Submit button. SCOPED to the comment form and required to carry a
+            // real label — the old list had a bare `button.artdeco-button--primary`
+            // second, which matches any primary button on a LinkedIn post page
+            // (Follow, Connect, a modal's CTA...). Proven on 2026-09-14: it
+            // matched a button whose text was EMPTY, we "clicked" it, and not one
+            // of the four comments actually posted.
+            const commentForm = page
+                .locator('form.comments-comment-box__form, div.comments-comment-box, div[class*="comments-comment-box"]')
+                .first();
+            const scope = (await commentForm.count().catch(() => 0)) ? commentForm : page;
+
             const submitSelectors = [
                 'button.comments-comment-box__submit-button',
-                'button.artdeco-button--primary',
+                'button[class*="comments-comment-box__submit"]',
                 'button[aria-label="Comment"]',
                 'button:has-text("Comment")',
-                'button:has-text("Post")'
+                'button:has-text("Post")',
+                'button:has-text("Reply")',
             ];
 
             let submitBtn: any = null;
             for (const sel of submitSelectors) {
                 try {
-                    const btn = page.locator(sel).first();
-                    if (await btn.isVisible({ timeout: 2000 }).catch(() => false)) {
-                        submitBtn = btn;
-                        console.log(`[COMMENT-NTH-POST] Submit button found: ${sel}`);
-                        break;
+                    const btn = scope.locator(sel).first();
+                    if (!(await btn.isVisible({ timeout: 2000 }).catch(() => false))) continue;
+                    if (await btn.isDisabled().catch(() => false)) continue;
+                    // A submit control with neither text nor aria-label is not the
+                    // one we want — that is precisely the empty-text button that
+                    // silently ate four comments.
+                    const label = ((await btn.textContent().catch(() => '')) || '').trim()
+                        || ((await btn.getAttribute('aria-label').catch(() => '')) || '').trim();
+                    if (!label) {
+                        console.log(`[COMMENT-NTH-POST] Ignoring unlabelled control matched by ${sel}`);
+                        continue;
                     }
+                    submitBtn = btn;
+                    console.log(`[COMMENT-NTH-POST] Submit button found: ${sel} (label: "${label}")`);
+                    break;
                 } catch {}
             }
 
-            if (submitBtn) {
-                // Check button text
-                const btnText = await submitBtn.textContent().catch(() => 'unknown');
-                console.log(`[COMMENT-NTH-POST] Button text: ${btnText}`);
-
-                // Click directly
-                await submitBtn.click({ force: true });
-                await wait(5000);
-
-                // await page.screenshot({ path: '/root/linkedin-camp/step_screenshots/comment_after_submit.png' }).catch(() => {});
-
-                // Verify comment appeared
-                const commentAppeared = await page.evaluate((text: string) => {
-                    const comments = document.querySelectorAll('.comments-comment-item__main-content');
-                    for (const c of comments) {
-                        if (c.textContent?.includes(text.substring(0, 30))) return true;
-                    }
-                    return false;
-                }, commentText).catch(() => false);
-
-                if (commentAppeared) {
-                    output.commented = true;
-                    console.log('[COMMENT-NTH-POST] Comment verified in DOM.');
-                } else {
-                    output.commented = true;
-                    console.log('[COMMENT-NTH-POST] Submit clicked. Could not verify in DOM.');
-                }
-            } else {
-                console.log('[COMMENT-NTH-POST] Submit button not visible after typing.');
+            if (!submitBtn) {
+                console.log('[COMMENT-NTH-POST] No labelled submit button in the comment box.');
                 return { success: false, error: 'Comment submit button not found' };
             }
+
+            await submitBtn.click({ force: true });
+            await wait(5000);
+
+            // Verify the comment actually rendered. This is the ONLY evidence the
+            // comment posted, so it decides the node's result: an unverified
+            // submit is reported as a failure, not a success. Previously both
+            // branches set commented=true and returned success, so ActionLog
+            // showed four SUCCESS comments that did not exist on LinkedIn.
+            const commentAppeared = await page.evaluate((text: string) => {
+                const needle = text.substring(0, 30);
+                const items = document.querySelectorAll(
+                    '.comments-comment-item__main-content, .comments-comment-item, article[class*="comments-comment"]',
+                );
+                for (const c of items) {
+                    if (c.textContent?.includes(needle)) return true;
+                }
+                return false;
+            }, commentText).catch(() => false);
+
+            if (!commentAppeared) {
+                console.log('[COMMENT-NTH-POST] Submit clicked but the comment never appeared — reporting failure.');
+                return { success: false, error: 'Comment did not appear after submit' };
+            }
+
+            output.commented = true;
+            console.log('[COMMENT-NTH-POST] Comment verified in DOM.');
         } else {
             return { success: false, error: 'Comment box not found on post' };
         }
