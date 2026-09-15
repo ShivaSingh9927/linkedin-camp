@@ -79,6 +79,29 @@ const GROUP_TABS: { key: string; label: string }[] = [
   { key: 'objective-based', label: 'Objective-Based' },
 ];
 
+/**
+ * "Active" alone doesn't tell a user whether anything is happening. A campaign
+ * whose leads are all parked at a multi-day wait looks identical to one that is
+ * mid-run, which reads as broken. The backend derives this state (see
+ * campaign-activity.service) and we surface it verbatim so the UI, API and
+ * scheduler logs all say the same thing.
+ */
+function CampaignRunNote({ activity }: { activity?: { state?: string; label?: string } | null }) {
+    if (!activity?.label) return null;
+    const waiting = activity.state === 'WAITING';
+    return (
+        <span
+            className={cn(
+                'inline-flex items-center gap-1 text-[11px] font-medium',
+                waiting ? 'text-amber-600' : 'text-ink-400',
+            )}
+        >
+            {waiting && <ClockIcon className="w-3 h-3 shrink-0" />}
+            {activity.label}
+        </span>
+    );
+}
+
 interface CampaignActivity {
     campaignId: string;
     leadId: string;
@@ -772,7 +795,10 @@ const removeLeadFromCampaign = async (campaignId: string, leadId: string) => {
                                                 <Badge tone={tone} dot>{campaign.status.charAt(0) + campaign.status.slice(1).toLowerCase()}</Badge>
                                             </div>
                                             <div className="mt-3 flex items-center justify-between gap-2">
-                                                <div className="min-w-0">{(campaign.status === 'ACTIVE' || campaign.status === 'QUEUED') && <CampaignEta campaignId={campaign.id} />}</div>
+                                                <div className="min-w-0 flex flex-col gap-0.5">
+                                                    {(campaign.status === 'ACTIVE' || campaign.status === 'QUEUED') && <CampaignEta campaignId={campaign.id} />}
+                                                    <CampaignRunNote activity={campaign.activity} />
+                                                </div>
                                                 <div className="flex shrink-0 gap-1">
                                                     <button onClick={() => toggleStatus(campaign.id, campaign.status)} aria-label={campaign.status === 'ACTIVE' ? 'Pause campaign' : 'Start campaign'} className={cn('w-10 h-10 rounded-control grid place-items-center', campaign.status === 'ACTIVE' ? 'text-amber-600 bg-amber-50' : 'text-emerald-600 bg-emerald-50')}>{campaign.status === 'ACTIVE' ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}</button>
                                                     <Link href={`/campaigns/${campaign.id}/builder`} aria-label="Edit campaign" className="w-10 h-10 rounded-control grid place-items-center bg-surface text-ink-500"><Wrench className="w-4 h-4" /></Link>
@@ -812,6 +838,7 @@ const removeLeadFromCampaign = async (campaignId: string, leadId: string) => {
                                                         </Badge>
                                                         {(campaign.status === 'ACTIVE' || campaign.status === 'QUEUED') && <CampaignEta campaignId={campaign.id} />}
                                                     </div>
+                                                    <CampaignRunNote activity={campaign.activity} />
                                                 </td>
                                                 <td className="px-5 py-4 num hidden sm:table-cell">{leadCount ?? '—'}</td>
                                                 <td className="px-5 py-4">

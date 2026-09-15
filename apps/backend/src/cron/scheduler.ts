@@ -7,6 +7,7 @@ import { withdrawOldInvites } from '../workers/withdraw.worker';
 import { sessionValidator } from '../services/session-validator.service';
 import { getStepType } from '../campaign-engine/workflow-graph';
 import { mailService } from '../services/mail.service';
+import { getCampaignActivity } from '../services/campaign-activity.service';
 
 let redisConnection: any;
 let actionQueue: any;
@@ -135,7 +136,23 @@ const isUserActive = redisPresence === 'ACTIVE' || (now - lastActivity < twoMins
           take: 5,
         })).filter((t) => !terminalKeys.has(`${t.campaignId}:${t.leadId}`));
 
-        console.log(`[Scheduler] User ${user.id}: Found ${userPendingTasks.length} pending tasks.`);
+        // Say WHY there's nothing to do. "Found 0 pending tasks" every minute
+        // reads like a stuck campaign when the real answer is usually "every
+        // lead is parked at a wait node until Thursday" — the same confusion
+        // the API's `activity` field fixes for the UI.
+        if (userPendingTasks.length > 0) {
+            console.log(`[Scheduler] User ${user.id}: Found ${userPendingTasks.length} pending tasks.`);
+        } else {
+            const activity = await getCampaignActivity(campaignIds);
+            const waiting = Object.entries(activity).filter(([, a]) => a.state === 'WAITING');
+            if (waiting.length) {
+                for (const [cid, a] of waiting) {
+                    console.log(`[Scheduler] User ${user.id}: campaign ${cid} ${a.label} (until ${a.waitingUntil}).`);
+                }
+            } else {
+                console.log(`[Scheduler] User ${user.id}: nothing due — no leads waiting either.`);
+            }
+        }
 
         // ONE job per CAMPAIGN, not per pending task.
         //

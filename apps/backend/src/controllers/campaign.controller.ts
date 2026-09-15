@@ -5,6 +5,7 @@ import { enqueueCampaign } from '../workers/campaign-worker';
 import { leadCapForTier } from '../config/plans';
 import { featureAllowed } from '../campaign-engine/safety/quota';
 import { queueCampaign as queueCampaignSvc, unqueueCampaign as unqueueCampaignSvc, reorderQueue } from '../services/campaign-queue.service';
+import { getCampaignActivity, getOneCampaignActivity } from '../services/campaign-activity.service';
 import { estimateCampaignEta } from '../campaign-engine/safety/eta';
 import { syncLeadToCRMs } from '../services/crmService';
 import { emitCrmEvent, ensureCampaignCrmPolicy } from '../services/crm-events';
@@ -97,7 +98,14 @@ export const getCampaigns = async (req: any, res: Response) => {
             where: { userId },
             orderBy: { createdAt: 'desc' },
         });
-        res.json(campaigns);
+
+        // Attach the derived activity state. `status: ACTIVE` alone can't tell
+        // "working" from "every lead parked at a 3-day wait", which is exactly
+        // the confusion this answers. Only ACTIVE campaigns have a meaningful
+        // activity state — the rest are described by status already.
+        const activeIds = campaigns.filter(c => c.status === 'ACTIVE').map(c => c.id);
+        const activity = await getCampaignActivity(activeIds);
+        res.json(campaigns.map(c => ({ ...c, activity: activity[c.id] ?? null })));
     } catch (error) {
         res.status(500).json({ error: 'Failed to fetch campaigns' });
     }
@@ -114,7 +122,10 @@ export const getCampaignById = async (req: any, res: Response) => {
         if (!campaign) {
             return res.status(404).json({ error: 'Campaign not found' });
         }
-        res.json(campaign);
+        const activity = campaign.status === 'ACTIVE'
+            ? await getOneCampaignActivity(campaign.id)
+            : null;
+        res.json({ ...campaign, activity });
     } catch (error) {
         res.status(500).json({ error: 'Failed to fetch campaign' });
     }

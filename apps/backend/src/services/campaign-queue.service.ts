@@ -5,6 +5,26 @@ import { enqueueCampaign } from '../workers/campaign-worker';
 // QUEUED campaigns wait, ordered by queuePosition (lower = next up).
 // Auto-promotion fires only on COMPLETED — PAUSED/CANCELLED/FAILED keep
 // the slot vacant on purpose (those usually need user intervention).
+//
+// The single-ACTIVE rule is not an infrastructure limit: one LinkedIn account
+// is the real bottleneck, and running several campaigns at once against it
+// multiplies actions per hour on a single identity — the pattern that gets
+// accounts restricted. Campaigns therefore run one at a time, in order.
+
+/**
+ * Most campaigns a user can have in flight: 1 ACTIVE + 3 QUEUED. The queue is
+ * a promise about what runs next, and a queue long enough to stretch weeks
+ * into the future is a worse experience than being told to come back — so the
+ * backlog is bounded rather than unlimited.
+ */
+export const MAX_CAMPAIGNS_IN_FLIGHT = 4;
+
+/** ACTIVE + QUEUED for this user — what counts against the cap. */
+export async function countCampaignsInFlight(userId: string): Promise<number> {
+    return prisma.campaign.count({
+        where: { userId, status: { in: ['ACTIVE', 'QUEUED'] } },
+    });
+}
 
 async function nextQueuePosition(userId: string): Promise<number> {
     const top = await prisma.campaign.findFirst({
@@ -26,6 +46,15 @@ export async function queueCampaign(userId: string, campaignId: string) {
     });
     if (!campaign) throw new Error('Campaign not found');
     if (campaign.status === 'ACTIVE' || campaign.status === 'QUEUED') return campaign;
+
+    // Cap the backlog. Checked here (not only at the API edge) so every caller
+    // — REST, copilot, public API — obeys the same limit.
+    const inFlight = await countCampaignsInFlight(userId);
+    if (inFlight >= MAX_CAMPAIGNS_IN_FLIGHT) {
+        throw new Error(
+            `You can have ${MAX_CAMPAIGNS_IN_FLIGHT} campaigns in flight at once (1 running + ${MAX_CAMPAIGNS_IN_FLIGHT - 1} queued). Finish or cancel one first.`,
+        );
+    }
 
     return prisma.campaign.update({
         where: { id: campaignId },
