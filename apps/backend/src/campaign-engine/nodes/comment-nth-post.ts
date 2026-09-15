@@ -196,24 +196,13 @@ export const commentNthPost: NodeHandler = async (ctx, config): Promise<NodeResu
             // (Follow, Connect, a modal's CTA...). Proven on 2026-09-14: it
             // matched a button whose text was EMPTY, we "clicked" it, and not one
             // of the four comments actually posted.
-            // Get the Messaging overlay out of the way first. It docks to the
-            // BOTTOM-RIGHT — exactly where the composer's submit button sits —
-            // and the 2026-09-15 screenshots show it overlapping that button in
-            // every failed run. An overlay on top of the target intercepts the
-            // click even when Playwright considers the button visible.
-            try {
-                const msgToggle = page
-                    .locator('button[aria-label*="Messaging"], header.msg-overlay-bubble-header button')
-                    .first();
-                if (await msgToggle.isVisible({ timeout: 2000 }).catch(() => false)) {
-                    const expanded = await msgToggle.getAttribute('aria-expanded').catch(() => null);
-                    if (expanded !== 'false') {
-                        await msgToggle.click({ force: true }).catch(() => {});
-                        await wait(800);
-                        console.log('[COMMENT-NTH-POST] Collapsed the messaging overlay.');
-                    }
-                }
-            } catch { /* overlay absent — nothing to move */ }
+            // NOTE: an earlier attempt here clicked a "Messaging" control to move
+            // the bottom-right overlay away from the composer. It matched the
+            // overlay's OVERFLOW menu instead and opened it, covering MORE of the
+            // submit area than the overlay did — visible in the 2026-09-15
+            // comment_after capture. Removed: the structural submit lookup below
+            // dispatches the click to the element itself, so nothing needs that
+            // region to be clear.
 
             const commentForm = page
                 .locator('form.comments-comment-box__form, div.comments-comment-box, div[class*="comments-comment-box"]')

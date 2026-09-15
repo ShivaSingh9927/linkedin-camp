@@ -133,38 +133,42 @@ export const likeNthPost: NodeHandler = async (ctx, config): Promise<NodeResult>
             return { success: false, error: 'Like button not found on post' };
         }
 
-        const isPressed = await likeBtn.getAttribute('aria-pressed');
-        if (isPressed === 'true') {
-            output.liked = true;
-            console.log('[LIKE-NTH-POST] Already liked.');
-        } else {
-            await actionShot(page, userId, `like_before_${lead.id}`);
-            await likeBtn.evaluate((el: any) => el.click());
-            await wait(2000);
-            await actionShot(page, userId, `like_after_${lead.id}`);
-            // Re-read on a FRESH locator — the post-click DOM swap can leave the
-            // old handle stale and report the pre-click state.
-            const nowPressed = await page
-                .locator('button:has(span:text-is("Like")), button:has(span:text-is("Liked"))')
-                .first()
-                .getAttribute('aria-pressed')
-                .catch(() => null);
-            // Unverified means it did NOT happen. I previously kept this as a
-            // success on the theory that LinkedIn might not always expose
-            // aria-pressed — the A/B killed that theory: on a healthy account
-            // (shivasingh9927) the attribute flipped on 3 of 3 likes, while on a
-            // write-blocked one (rajaji) it flipped on 0 of 2 and the user
-            // confirmed no like existed on either post. So the attribute is
-            // reliable, and "couldn't confirm" is the signature of a like that
-            // never registered — not of a missing attribute.
-            if (nowPressed !== 'true') {
-                console.log('[LIKE-NTH-POST] Like clicked but never registered — reporting failure.');
-                return { success: false, error: 'Like did not register' };
-            }
+        // Read the control's own LABEL, not aria-pressed alone.
+        //
+        // aria-pressed is absent on the obfuscated-class build, so it reads null
+        // whether or not the post is already liked. The node therefore never took
+        // the "already liked" branch, clicked anyway, and TOGGLED AN EXISTING LIKE
+        // OFF: the reaction count on Vignesh's post went 1,046 → 1,045 between two
+        // runs. The clicks were landing the whole time — this was a state-reading
+        // bug reported as a click failure, and it was quietly un-liking posts.
+        const readState = async (): Promise<string> => {
+            const t = ((await likeBtn.textContent().catch(() => '')) || '').trim().toLowerCase();
+            const a = ((await likeBtn.getAttribute('aria-label').catch(() => '')) || '').trim().toLowerCase();
+            const pressed = await likeBtn.getAttribute('aria-pressed').catch(() => null);
+            return `${t}|${a}|${pressed ?? ''}`;
+        };
+        const looksLiked = (state: string) => state.includes('|true') || /unreact|unlike|liked/.test(state);
+
+        const before = await readState();
+        if (looksLiked(before)) {
             output.liked = true;
             (output as any).verified = true;
-            console.log('[LIKE-NTH-POST] Liked (verified).');
+            console.log(`[LIKE-NTH-POST] Already liked (state="${before}") — leaving it alone.`);
+            return { success: true, output };
         }
+
+        await likeBtn.scrollIntoViewIfNeeded().catch(() => {});
+        await likeBtn.click({ force: true });
+        await wait(2500);
+
+        const after = await readState();
+        output.liked = true;
+        (output as any).verified = after !== before;
+        if (after === before) {
+            console.log(`[LIKE-NTH-POST] Clicked but state never changed (state="${after}") — reporting failure.`);
+            return { success: false, error: 'Like did not register' };
+        }
+        console.log(`[LIKE-NTH-POST] Liked (verified: "${before}" → "${after}").`);
 
         return { success: true, output };
 
