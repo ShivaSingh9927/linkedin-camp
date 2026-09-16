@@ -21,11 +21,19 @@ import { resolveVariables } from '../variables';
 import { generateAIMessage } from '../ai-service';
 import { NodeContext, CampaignFlowNode } from '../types';
 
-/** LinkedIn's own ceiling. The textarea's maxlength wins when it's lower. */
+/** Absolute ceiling. The textarea's maxlength wins when it's lower. */
 export const NOTE_HARD_LIMIT = 300;
 
+/**
+ * What to assume when the textarea carries NO maxlength. Measured, not guessed:
+ * on rajaji (2026-09-16) the field advertised no cap, accepted 237 characters
+ * of text, and simply left "Send invitation" DISABLED — 200 was the first
+ * length it would send. 300 is still allowed when a build says so explicitly.
+ */
+const ASSUMED_CAP_WHEN_UNDECLARED = 200;
+
 /** Leave headroom under the cap so the AI's last sentence survives intact. */
-const AI_TARGET_CHARS = 280;
+const AI_TARGET_CHARS = 190;
 
 const NOTE_INSTRUCTION =
     'This is a LinkedIn CONNECTION REQUEST NOTE, not a direct message. '
@@ -74,7 +82,11 @@ export async function buildInviteNote(ctx: NodeContext, config: CampaignFlowNode
     if (!aiEnabled) return authored || null;
 
     try {
-        const pv = (storedOutputs['profile-visit'] || {}) as any;
+        // Either profile-visit variant may have run — the engine keys
+        // storedOutputs by node type, so the Voyager path lands under its own
+        // name and reading only 'profile-visit' would silently un-ground the
+        // note on every template that uses the API visit.
+        const pv = (storedOutputs['profile-visit'] || storedOutputs['profile-visit-voyager'] || {}) as any;
         const profileName = `${lead.firstName || ''} ${lead.lastName || ''}`.trim() || 'there';
 
         const aiResult = await generateAIMessage({
@@ -122,11 +134,32 @@ export interface NoteAttachResult {
     text?: string;
     /**
      * Why no note is attached:
-     *   'no-note-ui'  — LinkedIn offered no note affordance (allowance spent,
-     *                   or this build doesn't support notes for this member).
-     *   'not-typed'   — the textarea was there but ended up empty.
+     *   'no-note-ui'    — LinkedIn offered no note affordance (allowance spent,
+     *                     or this build doesn't support notes for this member).
+     *   'not-typed'     — the textarea was there but ended up empty.
+     *   'send-disabled' — text went in, but LinkedIn kept Send disabled even at
+     *                     the shortest length we try, so the note was cleared
+     *                     and the invite should go bare.
      */
-    reason?: 'no-note-ui' | 'not-typed';
+    reason?: 'no-note-ui' | 'not-typed' | 'send-disabled';
+}
+
+/**
+ * The modal's Send control. Matched by aria-label first — that's what this
+ * build labels it (confirmed live), and it's the only identifier that doesn't
+ * also match the messaging overlay's Send button sitting on every page.
+ */
+const SEND_SELECTOR =
+    'button[aria-label="Send invitation"], button[aria-label="Send now"], button:has(span:text-is("Send"))';
+
+/** null when the control can't be read at all. */
+async function sendIsDisabled(page: any): Promise<boolean | null> {
+    const btn = page.locator(SEND_SELECTOR).first();
+    if (!(await btn.isVisible({ timeout: 3000 }).catch(() => false))) return null;
+    const state = await btn.evaluate((el: any) =>
+        el.disabled === true || el.getAttribute('aria-disabled') === 'true' || el.classList.contains('artdeco-button--disabled'),
+    ).catch(() => null);
+    return state as boolean | null;
 }
 
 /**
@@ -173,21 +206,54 @@ export async function attachInviteNote(page: any, note: string): Promise<NoteAtt
     // Trust LinkedIn's own cap over our constant: builds differ (300 vs 200),
     // and overflow is silently truncated mid-word.
     const maxAttr = parseInt(String(await textarea.getAttribute('maxlength').catch(() => '')) || '', 10);
-    const limit = Number.isFinite(maxAttr) && maxAttr > 0 ? Math.min(maxAttr, NOTE_HARD_LIMIT) : NOTE_HARD_LIMIT;
-    const text = clampNote(note, limit);
+    const limit = Number.isFinite(maxAttr) && maxAttr > 0
+        ? Math.min(maxAttr, NOTE_HARD_LIMIT)
+        : ASSUMED_CAP_WHEN_UNDECLARED;
+    console.log(`[CONNECT] Note field: maxlength=${Number.isFinite(maxAttr) ? maxAttr : 'absent'} → using ${limit}.`);
 
-    await textarea.fill(text).catch(() => {});
-    let value = String(await textarea.inputValue().catch(() => '') || '');
+    const type = async (text: string): Promise<string> => {
+        await textarea.fill(text).catch(() => {});
+        let v = String(await textarea.inputValue().catch(() => '') || '');
+        if (!v.trim() && text) {
+            // fill() sets the value directly; a React-controlled textarea that
+            // ignores it still responds to real keystrokes.
+            await textarea.click({ timeout: 5000 }).catch(() => {});
+            await page.keyboard.type(text, { delay: 12 }).catch(() => {});
+            v = String(await textarea.inputValue().catch(() => '') || '');
+        }
+        await new Promise(res => setTimeout(res, 800));
+        return v;
+    };
 
-    if (!value.trim()) {
-        // fill() sets the value directly; a React-controlled textarea that
-        // ignores it still responds to real keystrokes.
-        await textarea.click({ timeout: 5000 }).catch(() => {});
-        await page.keyboard.type(text, { delay: 12 }).catch(() => {});
-        value = String(await textarea.inputValue().catch(() => '') || '');
+    // Length ladder. When `maxlength` is absent, the page still enforces a cap
+    // by DISABLING Send — proven live 2026-09-16: a 237-char note on a build
+    // with no maxlength left "Send invitation" disabled, the click timed out,
+    // and the invite was never created. So don't just type and hope: type,
+    // then ask the Send button whether LinkedIn accepted it, and shorten until
+    // it does. 200 is LinkedIn's documented free-account note cap.
+    const ladder = [limit, ASSUMED_CAP_WHEN_UNDECLARED, 140]
+        .filter((n, i, a) => n > 0 && a.indexOf(n) === i)
+        .sort((a, b) => b - a);
+
+    let value = '';
+    for (const cap of ladder) {
+        value = await type(clampNote(note, cap));
+        if (!value.trim()) continue;
+
+        const disabled = await sendIsDisabled(page);
+        if (disabled !== true) {
+            if (cap !== ladder[0]) console.log(`[CONNECT] Note accepted after shortening to ${cap} chars.`);
+            return { attached: true, text: value };
+        }
+        console.log(`[CONNECT] Send still disabled at ${value.length} chars — shortening.`);
     }
 
     if (!value.trim()) return { attached: false, reason: 'not-typed' };
 
-    return { attached: true, text: value };
+    // Every length was rejected. Clear the field so the invite can still go:
+    // a non-empty note LinkedIn won't accept blocks Send entirely, which would
+    // turn a "no note" situation into "no invite".
+    await textarea.fill('').catch(() => {});
+    await new Promise(res => setTimeout(res, 800));
+    return { attached: false, reason: 'send-disabled' };
 }

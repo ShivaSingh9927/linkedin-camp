@@ -1,7 +1,7 @@
 import { defineConfig } from 'tsup';
 
 export default defineConfig({
-    entry: ['src/server.ts', 'src/worker-entry.ts', 'src/scripts/prod-warm-login.ts', 'src/scripts/prod-run-sequential.ts', 'src/scripts/prod-crm-smoke.ts', 'src/scripts/prod-reenrich.ts'],
+    entry: ['src/server.ts', 'src/worker-entry.ts', 'src/scripts/prod-warm-login.ts', 'src/scripts/prod-run-sequential.ts', 'src/scripts/prod-crm-smoke.ts', 'src/scripts/prod-reenrich.ts', 'src/scripts/prod-connect-note.ts'],
     format: ['cjs'],
     splitting: false,
     sourcemap: true,

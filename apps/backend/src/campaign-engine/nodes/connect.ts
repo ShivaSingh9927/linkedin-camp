@@ -198,29 +198,55 @@ export const connect: NodeHandler = async (ctx, config): Promise<NodeResult> => 
                     .catch(() => ({ attached: false, reason: 'not-typed' as const }));
                 noteAttached = res.attached;
                 noteSent = res.text;
+                const why = res.reason === 'no-note-ui'
+                    ? 'LinkedIn offered no note field — note allowance likely spent'
+                    : res.reason === 'send-disabled'
+                        ? 'LinkedIn refused the note at every length and kept Send disabled — note cleared'
+                        : 'note field would not accept text';
                 console.log(res.attached
                     ? `[CONNECT] Note attached (${res.text?.length} chars after LinkedIn's cap).`
-                    : `[CONNECT] Sending WITHOUT a note (${res.reason === 'no-note-ui' ? 'LinkedIn offered no note field — note allowance likely spent' : 'note field would not accept text'}).`);
+                    : `[CONNECT] Sending WITHOUT a note (${why}).`);
             }
 
-            // Handle the modal — click Send (like testscripts pattern).
-            // With a note typed, "Send without a note" must NOT be in the
-            // selector list: it's still in the DOM on some builds, matches
-            // first, and would discard the note we just wrote.
-            const sendBtn = (noteAttached
-                ? page.locator(
-                    'button[aria-label="Send invitation"], ' +
-                    'button[aria-label="Send now"], ' +
-                    'button:has(span:text-is("Send")), ' +
-                    'button:has-text("Send now")'
-                )
-                : page.locator(
-                    'button[aria-label="Send now"], ' +
-                    'button:has(span:text-is("Send without a note")), ' +
-                    'button:has(span:text-is("Send")), ' +
-                    'button[aria-label="Send invitation"], ' +
-                    'button:has-text("Send now")'
-                )).first();
+            // Handle the modal — click Send.
+            //
+            // SCOPE THIS TO THE DIALOG. A page-wide `button:has(span:text-is
+            // ("Send"))` also matches the messaging overlay's Send button,
+            // which sits in the DOM on every page and is not clickable here.
+            // Proven 2026-09-16 on Vrinda: note attached fine, then the click
+            // timed out at 8s and the invite never existed — the same
+            // wrong-element failure the comment node had. The old no-note path
+            // was accidentally immune because "Send without a note" exists
+            // only inside this dialog.
+            //
+            // With a note typed, "Send without a note" must also NOT be in the
+            // list: it's still in the DOM on some builds and would discard the
+            // note we just wrote.
+            const sendSelector = noteAttached
+                ? 'button[aria-label="Send invitation"], '
+                    + 'button[aria-label="Send now"], '
+                    + 'button:has(span:text-is("Send")), '
+                    + 'button:has-text("Send now")'
+                : 'button[aria-label="Send now"], '
+                    + 'button:has(span:text-is("Send without a note")), '
+                    + 'button:has(span:text-is("Send")), '
+                    + 'button[aria-label="Send invitation"], '
+                    + 'button:has-text("Send now")';
+
+            const dialog = page.locator('div[role="dialog"], .artdeco-modal').first();
+            const inDialog = await dialog.isVisible({ timeout: 5000 }).catch(() => false);
+            const sendBtn = (inDialog ? dialog.locator(sendSelector) : page.locator(sendSelector)).first();
+            if (!inDialog) console.log('[CONNECT] No invite dialog found — falling back to a page-wide Send lookup.');
+
+            // Say WHICH control we're about to click. When this fails again,
+            // the log should name the element rather than leave us guessing
+            // between "wrong button" and "right button, blocked".
+            const btnDesc = await sendBtn.evaluate((el: any) => {
+                const r = el.getBoundingClientRect();
+                return `text="${(el.textContent || '').trim().slice(0, 30)}" aria="${el.getAttribute('aria-label') || ''}" `
+                    + `disabled=${!!el.disabled} box=${Math.round(r.width)}x${Math.round(r.height)}`;
+            }).catch(() => 'unreadable');
+            console.log(`[CONNECT] Send target: ${btnDesc}`);
 
             if (!(await sendBtn.isVisible({ timeout: 5000 }).catch(() => false))) {
                 // The old code pressed Enter here and then called it sent when
