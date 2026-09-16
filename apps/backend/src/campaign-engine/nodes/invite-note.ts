@@ -137,9 +137,46 @@ export interface NoteAttachResult {
      *   'send-disabled' — text went in, but LinkedIn kept Send disabled even at
      *                     the shortest length we try, so the note was cleared
      *                     and the invite should go bare.
+     *   'notes-exhausted' — "Add a note" opened the Premium upsell instead of a
+     *                     textarea. CRITICAL for the caller: the upsell REPLACES
+     *                     the invite modal, so the invite cannot be sent until
+     *                     the modal is reopened. We dismiss the upsell; the
+     *                     caller must re-click Connect.
      */
-    reason?: 'no-note-ui' | 'not-typed' | 'send-disabled';
+    reason?: 'no-note-ui' | 'not-typed' | 'send-disabled' | 'notes-exhausted';
 }
+
+/**
+ * Free custom notes are exhausted for this account.
+ *
+ * Proven live 2026-09-16 (DOM captured): clicking "Add a note" with none left
+ * opens data-test-modal-id="modal-upsell" — "You're out of free custom notes.
+ * Bypass the limit with Premium" — and that modal REPLACES the invite dialog.
+ * It has a Dismiss button and a Get-Premium link, and no Send, so the invite is
+ * dead until Connect is clicked again. Triggering that once per lead is both
+ * wasted work and a needless upsell-impression pattern, so remember it for the
+ * process and stop offering notes.
+ *
+ * In-memory with a TTL rather than a DB column: the allowance resets on
+ * LinkedIn's schedule, which we can't see, so the honest model is "assume spent
+ * for a while, then try again and find out".
+ */
+const NOTES_EXHAUSTED_TTL_MS = 12 * 60 * 60 * 1000;
+const notesExhaustedAt = new Map<string, number>();
+
+export function notesExhausted(userId: string): boolean {
+    const at = notesExhaustedAt.get(userId);
+    if (!at) return false;
+    if (Date.now() - at > NOTES_EXHAUSTED_TTL_MS) { notesExhaustedAt.delete(userId); return false; }
+    return true;
+}
+
+export function markNotesExhausted(userId: string): void {
+    notesExhaustedAt.set(userId, Date.now());
+}
+
+/** The Premium upsell that replaces the invite modal when notes run out. */
+const UPSELL_SELECTOR = 'div[data-test-modal-id="modal-upsell"], div.modal-upsell';
 
 /**
  * The modal's Send control. Matched by aria-label first — that's what this
@@ -193,10 +230,21 @@ export async function attachInviteNote(page: any, note: string): Promise<NoteAtt
         }
         await new Promise(res => setTimeout(res, 1500));
 
+        // Did we get a note field, or the Premium upsell?
+        const upsell = page.locator(UPSELL_SELECTOR).first();
+        if (await upsell.isVisible({ timeout: 2000 }).catch(() => false)) {
+            // Clear it so the profile is usable again. The invite modal is gone
+            // with it — the caller has to reopen Connect.
+            const dismiss = upsell.locator('button[aria-label="Dismiss"], button.artdeco-modal__dismiss').first();
+            if (!(await dismiss.click({ timeout: 4000 }).then(() => true).catch(() => false))) {
+                await page.keyboard.press('Escape').catch(() => {});
+            }
+            await new Promise(res => setTimeout(res, 1200));
+            return { attached: false, reason: 'notes-exhausted' };
+        }
+
         textarea = page.locator(textareaSel).first();
         visible = await textarea.isVisible({ timeout: 5000 }).catch(() => false);
-        // Clicking "Add a note" with no allowance left lands on an upsell
-        // dialog instead of a textarea — same outcome, send it bare.
         if (!visible) return { attached: false, reason: 'no-note-ui' };
     }
 

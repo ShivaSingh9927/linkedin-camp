@@ -3,7 +3,7 @@ import { prisma } from '@repo/db';
 import { detectConnectionState, extractSlug, isOnLeadProfile } from '../connection-state';
 import { syncLeadStatus } from '../safety/lifecycle';
 import { getMemberRelationship } from '../../services/voyager-api.service';
-import { buildInviteNote, attachInviteNote, NoteAttachResult } from './invite-note';
+import { buildInviteNote, attachInviteNote, notesExhausted, markNotesExhausted, NoteAttachResult } from './invite-note';
 
 const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
 const randomRange = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1) + min);
@@ -177,8 +177,14 @@ export const connect: NodeHandler = async (ctx, config): Promise<NodeResult> => 
             // dialog is short-lived and an AI round-trip inside it invites a
             // stale-handle click. Null means this step is configured for a bare
             // invite, which is a legitimate (often better-converting) choice.
-            const note = await buildInviteNote(ctx, config || {}).catch(() => null);
+            // Don't even generate one if this account is known to be out of free
+            // custom notes — that costs an LLM call and then trips the upsell,
+            // which destroys the invite modal (see below).
+            const note = notesExhausted(userId)
+                ? null
+                : await buildInviteNote(ctx, config || {}).catch(() => null);
             if (note) console.log(`[CONNECT] Invite note ready (${note.length} chars): "${note.slice(0, 60)}..."`);
+            else if (notesExhausted(userId)) console.log('[CONNECT] Skipping the note — this account is out of free custom notes.');
 
             // Use evaluate to bypass sticky headers (like testscripts)
             await connectBtn.evaluate((el: any) => el.click());
@@ -202,10 +208,24 @@ export const connect: NodeHandler = async (ctx, config): Promise<NodeResult> => 
                     ? 'LinkedIn offered no note field — note allowance likely spent'
                     : res.reason === 'send-disabled'
                         ? 'LinkedIn refused the note at every length and kept Send disabled — note cleared'
-                        : 'note field would not accept text';
+                        : res.reason === 'notes-exhausted'
+                            ? 'out of free custom notes — LinkedIn offered Premium instead'
+                            : 'note field would not accept text';
                 console.log(res.attached
                     ? `[CONNECT] Note attached (${res.text?.length} chars after LinkedIn's cap).`
                     : `[CONNECT] Sending WITHOUT a note (${why}).`);
+
+                // The upsell REPLACED the invite modal — there is no Send button
+                // on the page any more, so without reopening, this invite (and
+                // every later one) fails. Live 2026-09-16: 8 of 10 leads failed
+                // exactly here, each reported honestly as "Send button not
+                // found" with no invite created.
+                if (res.reason === 'notes-exhausted') {
+                    markNotesExhausted(userId);
+                    console.log('[CONNECT] Upsell dismissed — reopening the invite to send it bare.');
+                    await connectBtn.evaluate((el: any) => el.click()).catch(() => {});
+                    await wait(randomRange(2500, 3500));
+                }
             }
 
             // Handle the modal — click Send.
@@ -249,6 +269,28 @@ export const connect: NodeHandler = async (ctx, config): Promise<NodeResult> => 
             console.log(`[CONNECT] Send target: ${btnDesc}`);
 
             if (!(await sendBtn.isVisible({ timeout: 5000 }).catch(() => false))) {
+                // SAY WHAT LINKEDIN IS ACTUALLY SHOWING. "Send button not
+                // found" is the same unhelpful sentence whether the modal is an
+                // invite dialog that rendered oddly, a weekly-invite-limit
+                // notice, or a premium upsell — and those need completely
+                // different responses. Dump the modal's text and its buttons so
+                // the next failure is diagnosable from logs alone.
+                // NOTE: read this through Playwright locators, not
+                // page.evaluate + document.querySelector. LinkedIn renders the
+                // invite modal inside #interop-outlet's OPEN SHADOW ROOT, which
+                // document.querySelector does not pierce (Playwright's CSS
+                // engine does) — an evaluate-based dump reports an empty page
+                // and sends you hunting for the wrong bug.
+                const dlg = page.locator('div[role="dialog"], .artdeco-modal').first();
+                const dlgText = ((await dlg.innerText({ timeout: 3000 }).catch(() => '')) || '')
+                    .replace(/\s+/g, ' ').trim().slice(0, 240);
+                const labels = await page.locator('div[role="dialog"] button, .artdeco-modal button')
+                    .evaluateAll((els: any[]) => els.slice(0, 12).map((b: any) =>
+                        `${(b.textContent || '').trim().slice(0, 28)}|${b.getAttribute('aria-label') || ''}|${b.disabled ? 'disabled' : 'enabled'}`))
+                    .catch(() => [] as string[]);
+                console.log(`[CONNECT] No Send control. Modal text: "${dlgText || '(none)'}"`);
+                console.log(`[CONNECT] Modal buttons: ${JSON.stringify(labels)}`);
+
                 // The old code pressed Enter here and then called it sent when
                 // the URL lacked "connect"/"invitation" — words a profile URL
                 // never contains, so that branch passed unconditionally and
