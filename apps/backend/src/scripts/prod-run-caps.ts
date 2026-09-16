@@ -11,7 +11,8 @@
 
 import { PrismaClient } from '@repo/db';
 import { runCampaign } from '../campaign-engine';
-import { DAILY_CAPS, HOURLY_CAPS, HOURLY_TOTAL_CAP, getHourlyCount, getDailyCount } from '../campaign-engine/safety/quota';
+import { DAILY_CAPS, HOURLY_CAPS, HOURLY_TOTAL_CAP, WEEKLY_CAPS, getHourlyCount, getDailyCount, getWeeklyCount, rampedDailyCap } from '../campaign-engine/safety/quota';
+import { getRampState, resetRampCache } from '../campaign-engine/safety/rampup';
 
 const prisma = new PrismaClient();
 
@@ -23,6 +24,15 @@ async function budget(userId: string, label: string) {
     }
     const total = await getHourlyCount(userId);
     console.log(`[caps] ${label} — ${rows.join(' | ')} | combined ${total}/${HOURLY_TOTAL_CAP}h`);
+
+    const week = await getWeeklyCount(userId, 'connect');
+    resetRampCache();
+    const ramp = await getRampState(userId);
+    const todayCap = await rampedDailyCap(userId, 'connect');
+    console.log(`[caps] ${label} — connect week ${week}/${WEEKLY_CAPS['connect']} | RAMP cap=${ramp.cap} `
+        + `(reason=${ramp.reason}, day=${ramp.daysActive}, schedule=${ramp.scheduled}, pace=${ramp.paceCeiling}, `
+        + `acceptance=${ramp.acceptanceRate === null ? 'n/a' : Math.round(ramp.acceptanceRate * 100) + '%'}) `
+        + `→ today's effective cap ${todayCap} (ceiling ${DAILY_CAPS['connect']})`);
 }
 
 async function main() {

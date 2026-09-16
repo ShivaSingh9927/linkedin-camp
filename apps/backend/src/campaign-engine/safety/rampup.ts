@@ -20,6 +20,11 @@
 
 import { prisma } from '@repo/db';
 
+function startOfTodayUTC(): Date {
+    const d = new Date();
+    return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+}
+
 /** Where a fully warmed, healthy account lands. */
 export const RAMP_CEILING = 40;
 
@@ -45,7 +50,10 @@ export interface RampState {
     cap: number;
     daysActive: number;
     scheduled: number;
-    /** Ceiling derived from the account's own recent pace (the anti-spike rule). */
+    /**
+     * Ceiling derived from the account's own recent pace (the anti-spike rule),
+     * measured over the 7 days BEFORE today so it can't move during the day.
+     */
     paceCeiling: number;
     /** accepted / (accepted + outstanding), or null when there isn't enough signal. */
     acceptanceRate: number | null;
@@ -85,10 +93,19 @@ export async function getRampState(userId: string): Promise<RampState> {
             select: { executedAt: true },
         }).catch(() => null),
         prisma.user.findUnique({ where: { id: userId }, select: { accountHealth: true } }).catch(() => null),
+        // The 7 full days BEFORE today — today is deliberately excluded.
+        //
+        // Counting today made the day's own invites raise the day's own
+        // ceiling: caught live 2026-09-16, where a run hit "9/9", then sent
+        // another invite anyway once the pace ceiling had crept to 12. It
+        // converges rather than running away (used grows 1 per send, the cap
+        // only 2/7), but a daily cap that today's activity can move is not a
+        // cap — and it makes "why did it stop at 9?" unanswerable. Yesterday's
+        // pace is fixed, so today's number is now stable all day.
         prisma.actionLog.count({
             where: {
                 userId, actionType: 'connect', status: 'SUCCESS',
-                executedAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
+                executedAt: { gte: new Date(startOfTodayUTC().getTime() - 7 * 86_400_000), lt: startOfTodayUTC() },
             },
         }).catch(() => 0),
         campaignIds.length
@@ -109,7 +126,7 @@ export async function getRampState(userId: string): Promise<RampState> {
     const scheduled = scheduledCap(daysActive);
 
     // Anti-spike: never allow much more than the account's own recent pace.
-    // ~2x the last 7 days' daily average, plus a small constant so a quiet
+    // ~2x the PRIOR 7 days' daily average, plus a small constant so a quiet
     // account can still restart. This is what actually keeps the curve smooth —
     // the calendar alone would hand day-28 an allowance of 32 even if the
     // account had sent nothing for three weeks.
