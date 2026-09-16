@@ -1,5 +1,6 @@
 import { prisma } from '@repo/db';
 import { planFor, tierAllows, type PlanFeatures } from '../../config/plans';
+import { getRampState, RAMP_CEILING } from './rampup';
 
 // Per-user daily caps on LinkedIn write actions.
 //
@@ -19,7 +20,13 @@ import { planFor, tierAllows, type PlanFeatures } from '../../config/plans';
 // 150 sits well under it while still covering a large campaign day.
 export const DAILY_CAPS: Record<string, number> = {
     // Outreach — LinkedIn polices these hardest.
-    'connect': 18,
+    //
+    // 40 is the ceiling for a WARMED account, not a starting allowance: the
+    // ramp (safety/rampup.ts) holds new accounts near 10/day and climbs over
+    // ~5 weeks, and the rolling 200/week cap binds before 40/day ever does.
+    // Waalaxy runs 80-100/day, but our accounts also spend budget on visits,
+    // likes and comments that feed the same activity picture.
+    'connect': RAMP_CEILING,
     // 120/day matches what Waalaxy runs on its Advanced/Business tiers; our
     // previous 40 was a guess with nothing behind it. Messages to existing
     // 1st-degree connections are far less policed than invitations.
@@ -91,12 +98,28 @@ function dailyJitterFraction(userId: string, actionType: string, dayKey: string)
     return 0.8 + ((h >>> 0) % 2001) / 10000;  // 0.80 … 1.00
 }
 
-export function effectiveDailyCap(userId: string, actionType: GovernedAction): number {
-    const nominal = DAILY_CAPS[actionType];
+export function effectiveDailyCap(userId: string, actionType: GovernedAction, nominalOverride?: number): number {
+    const nominal = nominalOverride ?? DAILY_CAPS[actionType];
     if (nominal == null) return Infinity;
     const dayKey = startOfTodayUTC().toISOString().slice(0, 10);
     // Floor, but never below 1 — a tiny cap must not round to zero actions.
     return Math.max(1, Math.floor(nominal * dailyJitterFraction(userId, actionType, dayKey)));
+}
+
+/**
+ * Today's cap including the invite ramp. Invites are the only ramped action:
+ * they're what LinkedIn restricts, and engagement actions don't carry the same
+ * "new account behaving like a bot" signature.
+ */
+export async function rampedDailyCap(userId: string, actionType: GovernedAction): Promise<number> {
+    const nominal = DAILY_CAPS[actionType];
+    if (nominal == null) return Infinity;
+    if (actionType !== 'connect') return effectiveDailyCap(userId, actionType);
+
+    const ramp = await getRampState(userId).catch(() => null);
+    // A failed ramp read must not silently unlock the full ceiling.
+    const base = ramp ? Math.min(nominal, ramp.cap) : Math.min(nominal, 10);
+    return effectiveDailyCap(userId, actionType, base);
 }
 
 function startOfTodayUTC(): Date {
@@ -147,7 +170,7 @@ export async function checkQuota(userId: string, actionType: GovernedAction): Pr
     if (DAILY_CAPS[actionType] == null) {
         return { allowed: true, used: 0, cap: Infinity, remaining: Infinity };
     }
-    const cap = effectiveDailyCap(userId, actionType);
+    const cap = await rampedDailyCap(userId, actionType);
     const used = await getDailyCount(userId, actionType);
     const remaining = Math.max(0, cap - used);
     return { allowed: used < cap, used, cap, remaining };

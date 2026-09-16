@@ -42,6 +42,7 @@ import { profileVisitDispatch, inboxSyncDispatch, profileVisitNeedsDom, postsCov
 import { readNodeOutputs, writeNodeOutput, updateLeadEnrichment } from './storage';
 import { checkQuota, checkBurst, checkWeeklyQuota, checkInviteQuota, nextDayRetryAt, nextHourRetryAt, DAILY_CAPS, HOURLY_CAPS, WEEKLY_CAPS, GovernedAction, isWithinWorkingHours, nextWorkingHourAt } from './safety/quota';
 import { paceAction, markActionAt } from './safety/pacing';
+import { getRampState } from './safety/rampup';
 import { transitionLead, recomputeCampaignStatus, syncLeadStatus } from './safety/lifecycle';
 import { classifyPage, handleCheckpoint, isCheckpoint, pauseCampaignForSessionExpiry, checkWriteBlock } from './safety/checkpoint';
 import { uploadScreenshotToS3 } from '../services/s3-upload.service';
@@ -551,7 +552,15 @@ async function runLead(
                 const quota = await checkQuota(userId, nodeType as GovernedAction);
                 if (!quota.allowed) {
                     const retryAt = nextDayRetryAt();
-                    console.log(`[ENGINE] Lead ${lead.firstName}: daily cap reached for ${nodeType} (${quota.used}/${quota.cap}). Rescheduling to ${retryAt.toISOString()}.`);
+                    // For invites the cap is RAMPED, so "18/18" alone is
+                    // unexplainable — say which rule set today's number.
+                    let why = '';
+                    if (nodeType === 'connect') {
+                        const r = await getRampState(userId).catch(() => null);
+                        if (r) why = ` [ramp: ${r.reason}, day ${r.daysActive}, schedule ${r.scheduled}, pace ${r.paceCeiling}`
+                            + `${r.acceptanceRate !== null ? `, acceptance ${Math.round(r.acceptanceRate * 100)}%` : ''}]`;
+                    }
+                    console.log(`[ENGINE] Lead ${lead.firstName}: daily cap reached for ${nodeType} (${quota.used}/${quota.cap})${why}. Rescheduling to ${retryAt.toISOString()}.`);
                     const t = await transitionLead(campaignId, lead.id, 'DEFERRED', {
                         reason: 'daily_cap',
                         nextRetryAt: retryAt,
