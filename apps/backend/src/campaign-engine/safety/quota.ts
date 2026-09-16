@@ -20,16 +20,34 @@ import { planFor, tierAllows, type PlanFeatures } from '../../config/plans';
 export const DAILY_CAPS: Record<string, number> = {
     // Outreach — LinkedIn polices these hardest.
     'connect': 18,
-    'send-message': 40,
+    // 120/day matches what Waalaxy runs on its Advanced/Business tiers; our
+    // previous 40 was a guess with nothing behind it. Messages to existing
+    // 1st-degree connections are far less policed than invitations.
+    'send-message': 120,
     // Engagement.
     'like-nth-post': 60,
     'comment-nth-post': 30,
-    'follow': 40,
+    'follow': 80,
     'profile-visit': 150,
     'profile-visit-voyager': 150,
 };
 
 export type GovernedAction = keyof typeof DAILY_CAPS;
+
+// ---- Weekly ceilings (rolling 7 days) ----
+//
+// THE interval LinkedIn actually enforces for invitations. Its help pages
+// confirm limits exist, that "all LinkedIn members (Basic and Premium) are
+// subject to invitation limits", that Premium cannot buy more, and that a
+// restriction typically lasts ONE WEEK — but LinkedIn publishes no number.
+// Waalaxy, which has run this at scale for years, treats 200/week as the hard
+// platform stop that overrides their own per-plan quotas, so we adopt it.
+//
+// This is the binding constraint: 18/day unchecked is 126/week, and a daily cap
+// alone can't see the week at all.
+export const WEEKLY_CAPS: Record<string, number> = {
+    'connect': 200,
+};
 
 // ---- Hourly burst ceilings (rolling 60 minutes) ----
 //
@@ -55,6 +73,31 @@ export const HOURLY_CAPS: Record<string, number> = {
 // stays under every individual cap while still producing a burst of activity
 // no person would generate. This is the backstop for total volume.
 export const HOURLY_TOTAL_CAP = 60;
+
+// Deterministic 80–100% of the nominal cap for this user/action/day.
+//
+// Waalaxy randomises each day's quota to 80–100% of the maximum so the ceiling
+// isn't a flat repeating number — an account that stops at exactly 18 every
+// single day is itself a pattern. DETERMINISTIC on (user, action, UTC day) on
+// purpose: re-rolling per check would let the cap drift upward within a day and
+// make "why did it stop at 15?" unanswerable after the fact.
+function dailyJitterFraction(userId: string, actionType: string, dayKey: string): number {
+    const seed = `${userId}|${actionType}|${dayKey}`;
+    let h = 2166136261;                       // FNV-1a
+    for (let i = 0; i < seed.length; i++) {
+        h ^= seed.charCodeAt(i);
+        h = Math.imul(h, 16777619);
+    }
+    return 0.8 + ((h >>> 0) % 2001) / 10000;  // 0.80 … 1.00
+}
+
+export function effectiveDailyCap(userId: string, actionType: GovernedAction): number {
+    const nominal = DAILY_CAPS[actionType];
+    if (nominal == null) return Infinity;
+    const dayKey = startOfTodayUTC().toISOString().slice(0, 10);
+    // Floor, but never below 1 — a tiny cap must not round to zero actions.
+    return Math.max(1, Math.floor(nominal * dailyJitterFraction(userId, actionType, dayKey)));
+}
 
 function startOfTodayUTC(): Date {
     const d = new Date();
@@ -101,13 +144,33 @@ export interface QuotaCheck {
 }
 
 export async function checkQuota(userId: string, actionType: GovernedAction): Promise<QuotaCheck> {
-    const cap = DAILY_CAPS[actionType];
-    if (cap == null) {
+    if (DAILY_CAPS[actionType] == null) {
         return { allowed: true, used: 0, cap: Infinity, remaining: Infinity };
     }
+    const cap = effectiveDailyCap(userId, actionType);
     const used = await getDailyCount(userId, actionType);
     const remaining = Math.max(0, cap - used);
     return { allowed: used < cap, used, cap, remaining };
+}
+
+function sevenDaysAgo(): Date {
+    return new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+}
+
+// Successful actions in the last rolling 7 days. Rolling, not calendar-week:
+// LinkedIn's restriction window slides, and a Monday reset would let an account
+// spend its whole allowance Sunday night and again Monday morning.
+export async function getWeeklyCount(userId: string, actionType: GovernedAction): Promise<number> {
+    return prisma.actionLog.count({
+        where: { userId, actionType, status: 'SUCCESS', executedAt: { gte: sevenDaysAgo() } },
+    }).catch(() => 0);
+}
+
+export async function checkWeeklyQuota(userId: string, actionType: GovernedAction): Promise<QuotaCheck> {
+    const cap = WEEKLY_CAPS[actionType];
+    if (cap == null) return { allowed: true, used: 0, cap: Infinity, remaining: Infinity };
+    const used = await getWeeklyCount(userId, actionType);
+    return { allowed: used < cap, used, cap, remaining: Math.max(0, cap - used) };
 }
 
 export interface BurstCheck extends QuotaCheck {

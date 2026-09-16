@@ -550,6 +550,7 @@ export async function getLeadInfo(userId: string, leadId: string): Promise<LeadI
 const REASON_LABELS: Record<string, string> = {
     daily_cap: 'daily invite limit reached',
     hourly_cap: 'pacing — hit the hourly action limit, resumes shortly',
+    weekly_cap: 'weekly invite limit reached — resumes as the 7-day window slides',
     hourly_cap_total: 'pacing — hit the hourly activity limit, resumes shortly',
     monthly_cap: 'monthly invite allowance reached',
     off_hours: 'outside sending hours',

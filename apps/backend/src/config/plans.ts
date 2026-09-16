@@ -114,7 +114,7 @@ const CORE: Plan = {
 const PRO: Plan = {
     key: 'PRO',
     label: 'Pro',
-    monthlyInvites: 500, // capped at what ~18/day safely delivers
+    monthlyInvites: 800, // matches Waalaxy Advanced/Business packaging
     dailyInviteCap: SAFETY_DAILY_CONNECT,
     dailyMessageCap: SAFETY_DAILY_MESSAGE,
     leadsStored: 2500,
@@ -130,7 +130,7 @@ const PRO: Plan = {
 const BUSINESS: Plan = {
     key: 'BUSINESS',
     label: 'Business',
-    monthlyInvites: 500,
+    monthlyInvites: 800, // matches Waalaxy Advanced/Business packaging
     dailyInviteCap: SAFETY_DAILY_CONNECT,
     dailyMessageCap: SAFETY_DAILY_MESSAGE,
     leadsStored: 5000,

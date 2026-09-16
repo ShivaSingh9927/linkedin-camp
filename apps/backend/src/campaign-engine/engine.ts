@@ -40,7 +40,8 @@ import { emailFinder } from './nodes/email-finder';
 import { follow } from './nodes/follow';
 import { profileVisitDispatch, inboxSyncDispatch, profileVisitNeedsDom, postsCoveredLater } from './nodes/read-backend';
 import { readNodeOutputs, writeNodeOutput, updateLeadEnrichment } from './storage';
-import { checkQuota, checkBurst, checkInviteQuota, nextDayRetryAt, nextHourRetryAt, DAILY_CAPS, HOURLY_CAPS, GovernedAction, isWithinWorkingHours, nextWorkingHourAt } from './safety/quota';
+import { checkQuota, checkBurst, checkWeeklyQuota, checkInviteQuota, nextDayRetryAt, nextHourRetryAt, DAILY_CAPS, HOURLY_CAPS, WEEKLY_CAPS, GovernedAction, isWithinWorkingHours, nextWorkingHourAt } from './safety/quota';
+import { paceAction, markActionAt } from './safety/pacing';
 import { transitionLead, recomputeCampaignStatus, syncLeadStatus } from './safety/lifecycle';
 import { classifyPage, handleCheckpoint, isCheckpoint, pauseCampaignForSessionExpiry, checkWriteBlock } from './safety/checkpoint';
 import { uploadScreenshotToS3 } from '../services/s3-upload.service';
@@ -565,6 +566,30 @@ async function runLead(
                 }
             }
 
+            // Weekly gate. This is the window LinkedIn actually enforces for
+            // invitations — its own help pages say a restriction "typically
+            // lasts one week" — and 18/day unchecked is 126/week with nothing
+            // watching. Rolling 7 days, so it frees up gradually rather than
+            // all at once on a Monday.
+            if (nodeType in WEEKLY_CAPS) {
+                const week = await checkWeeklyQuota(userId, nodeType as GovernedAction);
+                if (!week.allowed) {
+                    const retryAt = nextDayRetryAt();
+                    console.log(`[ENGINE] Lead ${lead.firstName}: WEEKLY cap reached for ${nodeType} (${week.used}/${week.cap}). Rescheduling to ${retryAt.toISOString()}.`);
+                    const t = await transitionLead(campaignId, lead.id, 'DEFERRED', {
+                        reason: 'weekly_cap',
+                        nextRetryAt: retryAt,
+                        currentNodeIndex: i,
+                    }).catch(err => {
+                        console.error(`[ENGINE] transitionLead DEFERRED (weekly_cap) failed: ${err.message}`);
+                        return null;
+                    });
+                    execResult.status = 'paused';
+                    execResult.pausedReason = t?.to === 'STALLED' ? 'stalled' : 'weekly_cap';
+                    return execResult;
+                }
+            }
+
             // Hourly burst gate. The daily cap bounds VOLUME; this bounds RATE.
             // 40 messages inside four minutes is within the daily budget and
             // looks nothing like a person, so a lead that would exceed the
@@ -685,10 +710,20 @@ async function runLead(
             // network) while letting DB-only nodes (delay, if-else) run real so
             // parking + branching behave exactly as in prod. The engine's
             // post-node DB writes below are unchanged either way.
+            // Human interval between actions of the same type (Waalaxy's queue
+            // delays: 2m30 for invites/messages, 1m for visits/likes/follows,
+            // ±20%). Skipped under mock, which exists to run fast.
+            if (!isMockLinkedIn()) await paceAction(userId, nodeType);
+
             const result: NodeResult = (isMockLinkedIn() && !MOCK_PASSTHROUGH.has(nodeType))
                 ? await mockNode(nodeCtx, nodeConfig)
                 : await handler(nodeCtx, nodeConfig);
             currentNodeName = null;
+
+            // Start the cooldown from a real action only. A failed node often
+            // didn't touch LinkedIn at all, and making failures pace the queue
+            // would slow a campaign down precisely when it's achieving nothing.
+            if (result.success) markActionAt(userId, nodeType);
 
             // Carry a connection-state refresh (CHECK_CONNECTION mutates its
             // own ctx) forward to the next node — nodeCtx is rebuilt per node,
