@@ -97,6 +97,12 @@ function CampaignBuilderInner({
   // one that requires a 1st-degree connection (MESSAGE / EMAIL_FINDER) AND
   // there is no upstream CONNECT or CHECK_CONNECTION reachable via reverse
   // graph walk. Used by the warning banner + B.5 auto-insert button.
+  // CONNECT steps get the message box too — it's the invite NOTE, not a DM,
+  // and it has its own cap + monthly allowance (see the helper text below).
+  const isConnectNode = ['CONNECT', 'INVITE'].includes(
+    String((selectedNode?.data as any)?.subType || '').toUpperCase(),
+  );
+
   const gapAnalysis = useMemo(() => {
     if (!selectedNode) return { needsGate: false, hasUpstreamGate: false };
     const sub = String((selectedNode.data as any).subType || '').toUpperCase();
@@ -509,7 +515,7 @@ function CampaignBuilderInner({
               )}
 
             {(
-              ['MESSAGE', 'SEND MESSAGE', 'COMMENT_POST', 'EMAIL', 'SEND EMAIL'].includes((((selectedNode.data as any).subType || '') as string).toUpperCase()) ||
+              ['MESSAGE', 'SEND MESSAGE', 'COMMENT_POST', 'EMAIL', 'SEND EMAIL', 'CONNECT', 'INVITE'].includes((((selectedNode.data as any).subType || '') as string).toUpperCase()) ||
               ((selectedNode.data as any).label || '').toUpperCase().includes('MESSAGE') ||
               ((selectedNode.data as any).label || '').toUpperCase().includes('COMMENT') ||
               ((selectedNode.data as any).label || '').toUpperCase().includes('EMAIL')
@@ -518,7 +524,8 @@ function CampaignBuilderInner({
                   <label className="text-xs font-bold text-slate-600 flex items-center gap-2">
                     <Mail className="w-3 h-3 text-indigo-500" />
                     {((selectedNode.data as any).subType === 'COMMENT_POST' ? 'Comment Content' :
-                      (selectedNode.data as any).subType === 'EMAIL' ? 'Email Body' : 'Message Content')}
+                      (selectedNode.data as any).subType === 'EMAIL' ? 'Email Body' :
+                      isConnectNode ? 'Invite Note (optional)' : 'Message Content')}
                   </label>
                   <textarea
                     ref={messageRef}
@@ -531,8 +538,19 @@ function CampaignBuilderInner({
                       updateNodeData(selectedNode.id, patch);
                     }}
                     className="w-full h-40 p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all resize-none"
-                    placeholder={(selectedNode.data as any).aiEnabled ? 'AI is writing this step. Start typing to write it yourself instead…' : 'e.g. Hi {firstName}, saw your work at {company}…'}
+                    placeholder={(selectedNode.data as any).aiEnabled
+                      ? 'AI is writing this step. Start typing to write it yourself instead…'
+                      : isConnectNode
+                        ? 'Leave blank to send a bare invite. e.g. Hi {firstName}, enjoyed your post on…'
+                        : 'e.g. Hi {firstName}, saw your work at {company}…'}
                   />
+                  {isConnectNode && (
+                    <p className="text-[9px] text-slate-400 leading-relaxed">
+                      LinkedIn caps invite notes at 300 characters, and free accounts get a limited number of
+                      note-invites each month. When that runs out the invite still goes — just without the note.
+                      Leave this blank (and AI off) to always send a bare invite.
+                    </p>
+                  )}
                   <div className="space-y-1.5">
                     <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Insert Tag</div>
                     <div className="flex flex-wrap gap-1.5">
@@ -556,7 +574,7 @@ function CampaignBuilderInner({
               )}
 
             {(
-              ['MESSAGE', 'COMMENT_POST', 'EMAIL'].includes((((selectedNode.data as any).subType || '') as string).toUpperCase()) ||
+              ['MESSAGE', 'COMMENT_POST', 'EMAIL', 'CONNECT', 'INVITE'].includes((((selectedNode.data as any).subType || '') as string).toUpperCase()) ||
               ((selectedNode.data as any).label || '').toUpperCase().includes('EMAIL')
             ) && (
                 <div className="space-y-3">
@@ -567,7 +585,7 @@ function CampaignBuilderInner({
                       <div className="p-1.5 bg-purple-100 rounded text-purple-600"><Sparkles className="w-3 h-3" /></div>
                       <div>
                         <p className="text-xs font-bold text-slate-800">AI Generate</p>
-                        <p className="text-[9px] text-slate-400 uppercase font-bold">Auto-write message</p>
+                        <p className="text-[9px] text-slate-400 uppercase font-bold">{isConnectNode ? 'Auto-write invite note' : 'Auto-write message'}</p>
                       </div>
                     </div>
                     <input 

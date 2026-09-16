@@ -3,6 +3,7 @@ import { prisma } from '@repo/db';
 import { detectConnectionState, extractSlug, isOnLeadProfile } from '../connection-state';
 import { syncLeadStatus } from '../safety/lifecycle';
 import { getMemberRelationship } from '../../services/voyager-api.service';
+import { buildInviteNote, attachInviteNote, NoteAttachResult } from './invite-note';
 
 const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
 const randomRange = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1) + min);
@@ -19,7 +20,7 @@ async function safeGoto(page: any, url: string, retries = 3) {
     }
 }
 
-export const connect: NodeHandler = async (ctx): Promise<NodeResult> => {
+export const connect: NodeHandler = async (ctx, config): Promise<NodeResult> => {
     const { page, lead, campaignId, userId, apiRequest } = ctx;
 
     const output: ConnectOutput = { status: 'failed' };
@@ -172,19 +173,54 @@ export const connect: NodeHandler = async (ctx): Promise<NodeResult> => {
         }
 
         if (await connectBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
+            // Resolve the note BEFORE opening the modal — LinkedIn's invite
+            // dialog is short-lived and an AI round-trip inside it invites a
+            // stale-handle click. Null means this step is configured for a bare
+            // invite, which is a legitimate (often better-converting) choice.
+            const note = await buildInviteNote(ctx, config || {}).catch(() => null);
+            if (note) console.log(`[CONNECT] Invite note ready (${note.length} chars): "${note.slice(0, 60)}..."`);
+
             // Use evaluate to bypass sticky headers (like testscripts)
             await connectBtn.evaluate((el: any) => el.click());
             console.log('[CONNECT] Connect button clicked, waiting for modal...');
             await wait(randomRange(3000, 4000));
 
-            // Handle the modal — click Send (like testscripts pattern)
-            const sendBtn = page.locator(
-                'button[aria-label="Send now"], ' +
-                'button:has(span:text-is("Send without a note")), ' +
-                'button:has(span:text-is("Send")), ' +
-                'button[aria-label="Send invitation"], ' +
-                'button:has-text("Send now")'
-            ).first();
+            // Type the note into the modal, when there is one to type. Failure
+            // to attach is NOT a failure to invite: note-invites are rationed on
+            // free accounts, and when the allowance is gone LinkedIn just stops
+            // offering the field. Record what actually happened either way —
+            // claiming a note that never attached is the same class of lie as
+            // claiming an invite that was never sent.
+            let noteAttached = false;
+            let noteSent: string | undefined;
+            if (note) {
+                const res: NoteAttachResult = await attachInviteNote(page, note)
+                    .catch(() => ({ attached: false, reason: 'not-typed' as const }));
+                noteAttached = res.attached;
+                noteSent = res.text;
+                console.log(res.attached
+                    ? `[CONNECT] Note attached (${res.text?.length} chars after LinkedIn's cap).`
+                    : `[CONNECT] Sending WITHOUT a note (${res.reason === 'no-note-ui' ? 'LinkedIn offered no note field — note allowance likely spent' : 'note field would not accept text'}).`);
+            }
+
+            // Handle the modal — click Send (like testscripts pattern).
+            // With a note typed, "Send without a note" must NOT be in the
+            // selector list: it's still in the DOM on some builds, matches
+            // first, and would discard the note we just wrote.
+            const sendBtn = (noteAttached
+                ? page.locator(
+                    'button[aria-label="Send invitation"], ' +
+                    'button[aria-label="Send now"], ' +
+                    'button:has(span:text-is("Send")), ' +
+                    'button:has-text("Send now")'
+                )
+                : page.locator(
+                    'button[aria-label="Send now"], ' +
+                    'button:has(span:text-is("Send without a note")), ' +
+                    'button:has(span:text-is("Send")), ' +
+                    'button[aria-label="Send invitation"], ' +
+                    'button:has-text("Send now")'
+                )).first();
 
             if (!(await sendBtn.isVisible({ timeout: 5000 }).catch(() => false))) {
                 // The old code pressed Enter here and then called it sent when
@@ -252,7 +288,9 @@ export const connect: NodeHandler = async (ctx): Promise<NodeResult> => {
 
             (output as any).verified = true;
             output.status = 'sent';
-            console.log('[CONNECT] Connection request sent (confirmed on LinkedIn).');
+            output.noteAttached = noteAttached;
+            if (noteAttached) output.note = noteSent;
+            console.log(`[CONNECT] Connection request sent (confirmed on LinkedIn)${noteAttached ? ' with a note' : ''}.`);
 
             if (campaignId) {
                 await updateConnectionStatus(campaignId, lead.id, 'pending');

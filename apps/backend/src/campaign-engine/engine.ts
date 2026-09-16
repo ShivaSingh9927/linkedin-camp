@@ -608,8 +608,9 @@ async function runLead(
             // Phase C — sequence awareness for AI-capable nodes. Only assembled
             // when the node will actually call the AI service (saves a DB
             // round-trip on warmup / delay / profile-visit etc.). MESSAGE,
-            // EMAIL, and COMMENT all gate AI on config.aiEnabled.
-            const aiCapableNodes = new Set(['send-message', 'email', 'comment-nth-post']);
+            // EMAIL, COMMENT and CONNECT (invite note) all gate AI on
+            // config.aiEnabled.
+            const aiCapableNodes = new Set(['send-message', 'email', 'comment-nth-post', 'connect']);
             if (aiCapableNodes.has(nodeType) && (nodeConfig as any).aiEnabled) {
                 (nodeCtx as any).campaignProgress = buildCampaignProgress(flow, i, execResult);
                 (nodeCtx as any).messageHistory = await loadMessageHistory(campaignId, lead.id);

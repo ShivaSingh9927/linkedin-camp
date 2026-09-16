@@ -133,6 +133,16 @@ export interface Education {
 
 export interface ConnectOutput {
     status: 'sent' | 'pending' | 'already_connected' | 'failed';
+    /**
+     * True only when the note text was verified sitting in LinkedIn's note
+     * field at the moment Send was clicked. False means the invite went out
+     * bare — either the step wanted no note, or LinkedIn offered no note field
+     * (the note allowance on free accounts is finite). Never inferred from the
+     * click succeeding.
+     */
+    noteAttached?: boolean;
+    /** The note as LinkedIn actually held it, after its own maxlength cap. */
+    note?: string;
 }
 
 export interface PostOutput {
