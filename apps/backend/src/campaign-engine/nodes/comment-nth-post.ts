@@ -4,6 +4,7 @@ import { generateAIComment } from '../ai-service';
 import { persistDiscoveredPost } from '../storage';
 import { getOrDiscoverNthPost } from './post-discovery';
 import { actionShot } from './action-shot';
+import { profileVisitOutput } from '../profile-output';
 
 const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
 const randomRange = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1) + min);
@@ -94,16 +95,16 @@ export const commentNthPost: NodeHandler = async (ctx, config): Promise<NodeResu
             try {
                 const profileName = `${lead.firstName || ''} ${lead.lastName || ''}`.trim() || 'User';
                 
-                const profileVisitOutput = storedOutputs['profile-visit'];
+                const pv = profileVisitOutput(storedOutputs);
                 
                 // Extract all available profile data
                 const profileData = {
                     name: profileName,
-                    headline: profileVisitOutput?.headline || profileVisitOutput?.jobTitle || null,
-                    company: profileVisitOutput?.company || null,
-                    jobTitle: profileVisitOutput?.jobTitle || null,
-                    location: profileVisitOutput?.location || null,
-                    about: profileVisitOutput?.about || null,
+                    headline: pv.headline || pv.jobTitle || null,
+                    company: pv.company || null,
+                    jobTitle: pv.jobTitle || null,
+                    location: pv.location || null,
+                    about: pv.about || null,
                 };
                 
                 // Campaign context

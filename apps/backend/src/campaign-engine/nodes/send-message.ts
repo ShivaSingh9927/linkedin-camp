@@ -3,6 +3,7 @@ import { resolveVariables } from '../variables';
 import { generateAIMessage } from '../ai-service';
 import { buildRationale } from '../ai-rationale';
 import { deliverDirectMessage } from './deliver-dm';
+import { profileVisitOutput } from '../profile-output';
 
 /**
  * Converts single-brace {variable} to double-brace {{variable}} for resolveVariables.
@@ -33,7 +34,7 @@ export const sendMessage: NodeHandler = async (ctx, config): Promise<NodeResult>
                 // same workflow; fall back to whatever's on the Lead row (set at
                 // import / from prior runs) so AI generation isn't blank-slate
                 // when the workflow has no profile-visit step.
-                const pv = storedOutputs['profile-visit'] || {};
+                const pv = profileVisitOutput(storedOutputs);
                 // Recent post is a soft personalization hook. It's only present
                 // when the profile-visit step ran with enrichPosts — so passing
                 // it is implicitly gated by the template opting in. Absent →

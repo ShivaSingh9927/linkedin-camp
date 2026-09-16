@@ -3,6 +3,7 @@ import { prisma } from '@repo/db';
 import { findEmail } from '../../services/email-finder.service';
 import { getEmailFinderHealth } from '../../services/email-finder-health';
 import { checkEmailFinderQuota, logEmailFinderAction } from '../safety/quota';
+import { profileVisitOutput } from '../profile-output';
 
 /**
  * EMAIL_FINDER — resolves a sendable email for the lead.
@@ -24,7 +25,8 @@ import { checkEmailFinderQuota, logEmailFinderAction } from '../safety/quota';
 export const emailFinder: NodeHandler = async (ctx): Promise<NodeResult> => {
     const { lead, storedOutputs } = ctx;
 
-    const pvEmail = (storedOutputs['profile-visit']?.email as string | undefined) || null;
+    const pv = profileVisitOutput(storedOutputs);
+    const pvEmail = (pv.email as string | undefined) || null;
     const leadEmail = lead.email || null;
 
     // 0: not configured — never make the call.
@@ -50,7 +52,7 @@ export const emailFinder: NodeHandler = async (ctx): Promise<NodeResult> => {
 
     // 3: nothing on file — try the external finder, if we have a company.
     const company =
-        (storedOutputs['profile-visit']?.company as string | undefined) || lead.company || null;
+        (pv.company as string | undefined) || lead.company || null;
     if (!company) {
         console.log(`[EMAIL-FINDER] No email and no company for ${lead.firstName || lead.linkedinUrl} — cannot search.`);
         return { success: true, output: { email: null, source: null, found: false, reason: 'no_company' } };
@@ -59,8 +61,8 @@ export const emailFinder: NodeHandler = async (ctx): Promise<NodeResult> => {
     // Prefer the Voyager-resolved names over the raw CSV-imported lead row —
     // they're cleaner (no pronouns/emojis/multi-token noise), which makes the
     // finder's permutations far more accurate.
-    const firstName = (storedOutputs['profile-visit']?.firstName as string | undefined) || lead.firstName || '';
-    const lastName = (storedOutputs['profile-visit']?.lastName as string | undefined) || lead.lastName || '';
+    const firstName = (pv.firstName as string | undefined) || lead.firstName || '';
+    const lastName = (pv.lastName as string | undefined) || lead.lastName || '';
 
     // Tier credit budget (real box cost). No-op unless ENFORCE_TIER_QUOTAS=1.
     const credits = await checkEmailFinderQuota(ctx.userId);
@@ -74,7 +76,7 @@ export const emailFinder: NodeHandler = async (ctx): Promise<NodeResult> => {
         firstName,
         lastName,
         company,
-        jobTitle: (storedOutputs['profile-visit']?.jobTitle as string | undefined) || lead.jobTitle || undefined,
+        jobTitle: (pv.jobTitle as string | undefined) || lead.jobTitle || undefined,
     });
     // One lookup consumed (the box did work regardless of hit/miss).
     await logEmailFinderAction(ctx.userId);

@@ -20,6 +20,7 @@
 import { resolveVariables } from '../variables';
 import { generateAIMessage } from '../ai-service';
 import { NodeContext, CampaignFlowNode } from '../types';
+import { profileVisitOutput } from '../profile-output';
 
 /** Absolute ceiling. The textarea's maxlength wins when it's lower. */
 export const NOTE_HARD_LIMIT = 300;
@@ -82,11 +83,7 @@ export async function buildInviteNote(ctx: NodeContext, config: CampaignFlowNode
     if (!aiEnabled) return authored || null;
 
     try {
-        // Either profile-visit variant may have run — the engine keys
-        // storedOutputs by node type, so the Voyager path lands under its own
-        // name and reading only 'profile-visit' would silently un-ground the
-        // note on every template that uses the API visit.
-        const pv = (storedOutputs['profile-visit'] || storedOutputs['profile-visit-voyager'] || {}) as any;
+        const pv = profileVisitOutput(storedOutputs) as any;
         const profileName = `${lead.firstName || ''} ${lead.lastName || ''}`.trim() || 'there';
 
         const aiResult = await generateAIMessage({

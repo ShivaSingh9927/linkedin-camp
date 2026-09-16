@@ -4,6 +4,8 @@
  * Also supports lead fields: {{firstName}}, {{lastName}}
  */
 
+import { profileVisitOutput } from './profile-output';
+
 interface ResolveContext {
     storedOutputs: Record<string, Record<string, any>>;
     lead: {
@@ -13,15 +15,15 @@ interface ResolveContext {
 }
 
 const VARIABLE_MAP: Record<string, (ctx: ResolveContext) => string> = {
-    '{{name}}':       (ctx) => ctx.storedOutputs['profile-visit']?.name || ctx.lead.firstName || '',
+    '{{name}}':       (ctx) => profileVisitOutput(ctx.storedOutputs).name || ctx.lead.firstName || '',
     '{{firstName}}':  (ctx) => ctx.lead.firstName || '',
     '{{lastName}}':   (ctx) => ctx.lead.lastName || '',
-    '{{company}}':    (ctx) => ctx.storedOutputs['profile-visit']?.company || '',
-    '{{jobTitle}}':   (ctx) => ctx.storedOutputs['profile-visit']?.jobTitle || '',
-    '{{companyUrl}}': (ctx) => ctx.storedOutputs['profile-visit']?.companyUrl || '',
-    '{{about}}':      (ctx) => ctx.storedOutputs['profile-visit']?.about || '',
-    '{{email}}':      (ctx) => ctx.storedOutputs['profile-visit']?.email || '',
-    '{{phone}}':      (ctx) => ctx.storedOutputs['profile-visit']?.phone || '',
+    '{{company}}':    (ctx) => profileVisitOutput(ctx.storedOutputs).company || '',
+    '{{jobTitle}}':   (ctx) => profileVisitOutput(ctx.storedOutputs).jobTitle || '',
+    '{{companyUrl}}': (ctx) => profileVisitOutput(ctx.storedOutputs).companyUrl || '',
+    '{{about}}':      (ctx) => profileVisitOutput(ctx.storedOutputs).about || '',
+    '{{email}}':      (ctx) => profileVisitOutput(ctx.storedOutputs).email || '',
+    '{{phone}}':      (ctx) => profileVisitOutput(ctx.storedOutputs).phone || '',
 };
 
 export function resolveVariables(text: string, ctx: ResolveContext): string {

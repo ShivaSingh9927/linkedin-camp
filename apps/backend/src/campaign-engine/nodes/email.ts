@@ -3,6 +3,7 @@ import { resolveVariables } from '../variables';
 import { sendEmail } from '../../services/email.service';
 import { generateAIMessage } from '../ai-service';
 import { buildRationale } from '../ai-rationale';
+import { profileVisitOutput } from '../profile-output';
 
 function normalizeBraces(text: string): string {
     return text.replace(/\{([^{}]+)\}/g, '{{$1}}');
@@ -55,7 +56,7 @@ export const emailNode: NodeHandler = async (ctx, config): Promise<NodeResult> =
         console.log('[EMAIL] Generating AI subject + body...');
         try {
             const profileName = `${lead.firstName || ''} ${lead.lastName || ''}`.trim() || 'User';
-            const pv = storedOutputs['profile-visit'] || {};
+            const pv = profileVisitOutput(storedOutputs);
             const aiResult = await generateAIMessage({
                 profileName,
                 profileHeadline: pv.headline || pv.jobTitle || lead.headline || lead.jobTitle || undefined,
@@ -103,7 +104,7 @@ export const emailNode: NodeHandler = async (ctx, config): Promise<NodeResult> =
     console.log(`[EMAIL] Sending to ${recipient}: "${subject.substring(0, 60)}..."`);
 
     // "Why this message" — only meaningful when the body was AI-generated.
-    const pvForRationale = storedOutputs['profile-visit'] || {};
+    const pvForRationale = profileVisitOutput(storedOutputs);
     const rationale = aiGeneratedOk ? buildRationale({
         latestPost: pvForRationale.latestPost,
         company: pvForRationale.company || lead.company,
