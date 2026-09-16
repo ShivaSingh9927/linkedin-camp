@@ -40,7 +40,7 @@ import { emailFinder } from './nodes/email-finder';
 import { follow } from './nodes/follow';
 import { profileVisitDispatch, inboxSyncDispatch, profileVisitNeedsDom, postsCoveredLater } from './nodes/read-backend';
 import { readNodeOutputs, writeNodeOutput, updateLeadEnrichment } from './storage';
-import { checkQuota, checkInviteQuota, nextDayRetryAt, DAILY_CAPS, GovernedAction, isWithinWorkingHours, nextWorkingHourAt } from './safety/quota';
+import { checkQuota, checkBurst, checkInviteQuota, nextDayRetryAt, nextHourRetryAt, DAILY_CAPS, HOURLY_CAPS, GovernedAction, isWithinWorkingHours, nextWorkingHourAt } from './safety/quota';
 import { transitionLead, recomputeCampaignStatus, syncLeadStatus } from './safety/lifecycle';
 import { classifyPage, handleCheckpoint, isCheckpoint, pauseCampaignForSessionExpiry, checkWriteBlock } from './safety/checkpoint';
 import { uploadScreenshotToS3 } from '../services/s3-upload.service';
@@ -561,6 +561,32 @@ async function runLead(
                     });
                     execResult.status = 'paused';
                     execResult.pausedReason = t?.to === 'STALLED' ? 'stalled' : 'daily_cap';
+                    return execResult;
+                }
+            }
+
+            // Hourly burst gate. The daily cap bounds VOLUME; this bounds RATE.
+            // 40 messages inside four minutes is within the daily budget and
+            // looks nothing like a person, so a lead that would exceed the
+            // rolling-hour ceiling is parked for ~20–45 minutes and picked up
+            // after — the campaign keeps running, just paced. Deliberately a
+            // short pause, not the next-day deferral a daily cap earns.
+            if (nodeType in HOURLY_CAPS) {
+                const burst = await checkBurst(userId, nodeType as GovernedAction);
+                if (!burst.allowed) {
+                    const retryAt = nextHourRetryAt();
+                    const which = burst.limit === 'total' ? 'combined hourly' : `hourly ${nodeType}`;
+                    console.log(`[ENGINE] Lead ${lead.firstName}: ${which} cap reached (${burst.used}/${burst.cap}). Pausing until ${retryAt.toISOString()}.`);
+                    const t = await transitionLead(campaignId, lead.id, 'DEFERRED', {
+                        reason: burst.limit === 'total' ? 'hourly_cap_total' : 'hourly_cap',
+                        nextRetryAt: retryAt,
+                        currentNodeIndex: i,
+                    }).catch(err => {
+                        console.error(`[ENGINE] transitionLead DEFERRED (hourly_cap) failed: ${err.message}`);
+                        return null;
+                    });
+                    execResult.status = 'paused';
+                    execResult.pausedReason = t?.to === 'STALLED' ? 'stalled' : 'hourly_cap';
                     return execResult;
                 }
             }

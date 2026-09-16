@@ -549,6 +549,9 @@ export async function getLeadInfo(userId: string, leadId: string): Promise<LeadI
 // back to a tidied version of the raw reason for anything unseen.
 const REASON_LABELS: Record<string, string> = {
     daily_cap: 'daily invite limit reached',
+    hourly_cap: 'pacing — hit the hourly action limit, resumes shortly',
+    hourly_cap_total: 'pacing — hit the hourly activity limit, resumes shortly',
+    monthly_cap: 'monthly invite allowance reached',
     off_hours: 'outside sending hours',
     delay_node: 'waiting out a scheduled delay',
     lead_replied: 'replied 🎉',

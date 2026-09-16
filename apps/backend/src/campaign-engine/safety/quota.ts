@@ -9,12 +9,52 @@ import { planFor, tierAllows, type PlanFeatures } from '../../config/plans';
 // Values err well below LinkedIn's known cliffs (invites: anecdotal ~100/wk
 // before warning, ~80/wk safer; messages to 1st-degree: ~100/day theoretical,
 // ~40/day safer). Tighten further if account-warning telemetry ever fires.
+//
+// ENGAGEMENT actions (like/comment/follow/visit) are governed too, but loosely:
+// they are ordinary browsing behaviour, not outreach, and a human genuinely
+// does 20–30 profile visits in an hour. These ceilings exist to bound a runaway
+// campaign — a template that loops, or 200 leads launched at once — not to
+// model a limit LinkedIn is known to enforce at these volumes. Profile views
+// are the one engagement action with a documented cliff (~500/day free), so
+// 150 sits well under it while still covering a large campaign day.
 export const DAILY_CAPS: Record<string, number> = {
+    // Outreach — LinkedIn polices these hardest.
     'connect': 18,
     'send-message': 40,
+    // Engagement.
+    'like-nth-post': 60,
+    'comment-nth-post': 30,
+    'follow': 40,
+    'profile-visit': 150,
+    'profile-visit-voyager': 150,
 };
 
 export type GovernedAction = keyof typeof DAILY_CAPS;
+
+// ---- Hourly burst ceilings (rolling 60 minutes) ----
+//
+// The daily cap alone permits a very unhuman shape: 40 messages in four
+// minutes is within budget and looks nothing like a person. These bound the
+// RATE. Hitting one is not a problem — the lead is parked for the remainder of
+// the hour and picked up after, so the campaign keeps running, just paced.
+//
+// Deliberately ~1/4 to 1/3 of the daily figure: enough that a normal day never
+// touches them, tight enough that a stampede gets spread out.
+export const HOURLY_CAPS: Record<string, number> = {
+    'connect': 6,
+    'send-message': 12,
+    'like-nth-post': 15,
+    'comment-nth-post': 8,
+    'follow': 10,
+    'profile-visit': 35,
+    'profile-visit-voyager': 35,
+};
+
+// Ceiling on ALL governed actions combined in a rolling hour. Per-action caps
+// can't see each other, so a flow doing visit+like+comment+connect per lead
+// stays under every individual cap while still producing a burst of activity
+// no person would generate. This is the backstop for total volume.
+export const HOURLY_TOTAL_CAP = 60;
 
 function startOfTodayUTC(): Date {
     const d = new Date();
@@ -35,6 +75,24 @@ export async function getDailyCount(userId: string, actionType: GovernedAction):
     }).catch(() => 0);
 }
 
+function oneHourAgo(): Date {
+    return new Date(Date.now() - 60 * 60 * 1000);
+}
+
+// Successful actions in the last rolling 60 minutes. Rolling, not clock-hour:
+// a clock-hour bucket lets a campaign fire its whole allowance at 10:59 and the
+// next allowance at 11:00, which is the burst we're trying to prevent.
+export async function getHourlyCount(userId: string, actionType?: GovernedAction): Promise<number> {
+    return prisma.actionLog.count({
+        where: {
+            userId,
+            status: 'SUCCESS',
+            executedAt: { gte: oneHourAgo() },
+            ...(actionType ? { actionType } : { actionType: { in: Object.keys(HOURLY_CAPS) } }),
+        },
+    }).catch(() => 0);
+}
+
 export interface QuotaCheck {
     allowed: boolean;
     used: number;
@@ -50,6 +108,42 @@ export async function checkQuota(userId: string, actionType: GovernedAction): Pr
     const used = await getDailyCount(userId, actionType);
     const remaining = Math.max(0, cap - used);
     return { allowed: used < cap, used, cap, remaining };
+}
+
+export interface BurstCheck extends QuotaCheck {
+    /** 'action' = this action type's own ceiling; 'total' = the combined one. */
+    limit?: 'action' | 'total';
+}
+
+// Is this action within BOTH its own hourly ceiling and the combined one?
+// Two counts, not one query per action type — cheap enough at this cadence and
+// far clearer than trying to derive both from a single group-by.
+export async function checkBurst(userId: string, actionType: GovernedAction): Promise<BurstCheck> {
+    const cap = HOURLY_CAPS[actionType];
+    if (cap == null) return { allowed: true, used: 0, cap: Infinity, remaining: Infinity };
+
+    const [usedAction, usedTotal] = await Promise.all([
+        getHourlyCount(userId, actionType),
+        getHourlyCount(userId),
+    ]);
+
+    if (usedAction >= cap) {
+        return { allowed: false, used: usedAction, cap, remaining: 0, limit: 'action' };
+    }
+    if (usedTotal >= HOURLY_TOTAL_CAP) {
+        return { allowed: false, used: usedTotal, cap: HOURLY_TOTAL_CAP, remaining: 0, limit: 'total' };
+    }
+    return { allowed: true, used: usedAction, cap, remaining: cap - usedAction };
+}
+
+// Short pause for a burst ceiling — NOT the next-day deferral a daily cap
+// gets. The point is to keep the campaign running at a human pace, so wait out
+// the rest of the hour (plus jitter so every capped user doesn't resume on the
+// same minute) and continue today.
+export function nextHourRetryAt(): Date {
+    const base = 20 * 60 * 1000;                                  // 20 min
+    const jitter = Math.floor(Math.random() * 25 * 60 * 1000);    // + 0–25 min
+    return new Date(Date.now() + base + jitter);
 }
 
 // ---- Monthly INVITE entitlement (Qampi subscription tier) ----

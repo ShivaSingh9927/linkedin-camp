@@ -315,6 +315,10 @@ export interface LeadExecutionResult {
     //   'daily_cap'    — the next governed action would exceed today's per-user
     //                    cap (see safety/quota.ts). Lead is rescheduled, not
     //                    failed; engine returns paused so the worker can move on.
+    //   'hourly_cap'   — the next action would exceed the rolling-hour burst
+    //                    ceiling (per-action or combined). Same shape as
+    //                    daily_cap but a ~20–45min pause, not a next-day one:
+    //                    this paces the campaign, it doesn't stop it for today.
     //   'off_hours'    — outside the working-hours window; lead deferred to
     //                    next 09:00 IST + jitter.
     //   'stalled'      — exceeded the deferral ceiling; needs human review.
@@ -323,7 +327,7 @@ export interface LeadExecutionResult {
     //   'not_accepted' — resumed into a 1st-degree-only stage but the invite
     //                    was never accepted; sequence gives up (soft terminal,
     //                    recorded as COMPLETED+reason, not FAILED).
-    pausedReason?: 'lead_replied' | 'daily_cap' | 'off_hours' | 'stalled' | 'delay' | 'not_accepted';
+    pausedReason?: 'lead_replied' | 'daily_cap' | 'hourly_cap' | 'off_hours' | 'stalled' | 'delay' | 'not_accepted';
     // Set when the sequence ended early because a gate declined to proceed
     // (e.g. connection could not be confirmed). The lead still finishes as
     // COMPLETED — it is a soft terminal, not a failure, and is never retried —
