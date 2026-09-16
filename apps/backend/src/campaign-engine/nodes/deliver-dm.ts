@@ -219,7 +219,17 @@ export async function deliverDirectMessage(
     const sendBtn = page.locator('button.msg-form__send-button').first();
 
     if (await sendBtn.isVisible({ timeout: 10000 }).catch(() => false)) {
-        await sendBtn.click({ force: true });
+        // Same reasoning as connect/comment: force:true suppresses the
+        // "covered by another element" error, which is how an intercepted click
+        // passes for a real one. The overlays that cause it (messaging bubbles,
+        // dropdowns) live exactly where LinkedIn docks this composer.
+        try {
+            await sendBtn.click({ timeout: 8000 });
+        } catch (e: any) {
+            const why = (e?.message || '').split('\n')[0];
+            console.log(`[DELIVER-DM] Send click refused (${why}) — retrying forced.`);
+            await sendBtn.click({ force: true });
+        }
         await wait(2500);
 
         const verified = await bubbleAppeared();

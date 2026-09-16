@@ -195,7 +195,19 @@ export const connect: NodeHandler = async (ctx): Promise<NodeResult> => {
                 return { success: false, error: 'Connect modal opened but Send button not found' };
             }
 
-            await sendBtn.evaluate((el: any) => el.click());
+            // Trusted click WITH the actionability check. evaluate()-dispatched
+            // clicks are untrusted and React form handlers can ignore them, and
+            // force:true would skip the "element is covered by another element"
+            // check — the exact combination that let the comment node click a
+            // messaging overlay for five attempts while reporting success. Let an
+            // interception throw and say so; force only as a logged fallback.
+            try {
+                await sendBtn.click({ timeout: 8000 });
+            } catch (e: any) {
+                const why = (e?.message || '').split('\n')[0];
+                console.log(`[CONNECT] Send click refused (${why}) — retrying forced.`);
+                await sendBtn.click({ force: true });
+            }
             await wait(randomRange(2500, 4000));
 
             // PROVE it. Clicking Send is not evidence the invite exists —
