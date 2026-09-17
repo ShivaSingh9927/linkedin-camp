@@ -1,15 +1,16 @@
 {
   "name": "@qampi/mcp-server",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Qampi MCP server \u2014 drive LinkedIn outreach from Claude Code, Codex, Cursor or any MCP client.",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "type": "module",
   "bin": {
     "qampi-mcp": "dist/index.js"
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "engines": {
     "node": ">=18"
@@ -52,5 +53,6 @@
   },
   "publishConfig": {
     "access": "public"
-  }
+  },
+  "author": "Qampi"
 }
