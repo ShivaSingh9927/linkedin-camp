@@ -18,7 +18,8 @@
     "build": "esbuild src/index.ts --bundle --platform=node --target=node18 --format=esm --packages=external --outfile=dist/index.js",
     "start": "node dist/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "smoke": "node test/smoke.mjs"
+    "smoke": "node test/smoke.mjs",
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.4",
@@ -28,5 +29,28 @@
     "@types/node": "^22.0.0",
     "typescript": "^5.6.0",
     "esbuild": "^0.24.0"
+  },
+  "keywords": [
+    "mcp",
+    "modelcontextprotocol",
+    "linkedin",
+    "outreach",
+    "qampi",
+    "claude-code",
+    "cursor",
+    "codex",
+    "automation"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ShivaSingh9927/linkedin-camp.git",
+    "directory": "packages/mcp-server"
+  },
+  "homepage": "https://github.com/ShivaSingh9927/linkedin-camp/tree/main/packages/mcp-server#readme",
+  "bugs": {
+    "url": "https://github.com/ShivaSingh9927/linkedin-camp/issues"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
