@@ -56,6 +56,21 @@ export const WEEKLY_CAPS: Record<string, number> = {
     'connect': 200,
 };
 
+// ---- Outstanding-invitation ceiling ----
+//
+// LinkedIn lists "many of your invitations have been ignored, left pending, or
+// marked as spam" as a restriction trigger, and says too many OUTSTANDING
+// invitations can cost up to a MONTH — the longest penalty on its page. Volume
+// per day/week is only half the risk; the size of the unanswered pile is the
+// other half, and nothing watched it.
+//
+// No number is published, so this is a judgement call: 300 is well above what a
+// healthy account accumulates (invites that are going to be accepted mostly are
+// within a fortnight) and well below the pile that tools report trouble at.
+// Hitting it means stop inviting and deal with the backlog — either the invites
+// get accepted, or they should be withdrawn.
+export const OUTSTANDING_INVITE_CAP = 300;
+
 // ---- Hourly burst ceilings (rolling 60 minutes) ----
 //
 // The daily cap alone permits a very unhuman shape: 40 messages in four

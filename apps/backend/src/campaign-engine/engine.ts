@@ -40,9 +40,10 @@ import { emailFinder } from './nodes/email-finder';
 import { follow } from './nodes/follow';
 import { profileVisitDispatch, inboxSyncDispatch, profileVisitNeedsDom, postsCoveredLater } from './nodes/read-backend';
 import { readNodeOutputs, writeNodeOutput, updateLeadEnrichment } from './storage';
-import { checkQuota, checkBurst, checkWeeklyQuota, checkInviteQuota, nextDayRetryAt, nextHourRetryAt, DAILY_CAPS, HOURLY_CAPS, WEEKLY_CAPS, GovernedAction, isWithinWorkingHours, nextWorkingHourAt } from './safety/quota';
+import { checkQuota, checkBurst, checkWeeklyQuota, checkInviteQuota, nextDayRetryAt, nextHourRetryAt, DAILY_CAPS, HOURLY_CAPS, WEEKLY_CAPS, OUTSTANDING_INVITE_CAP, GovernedAction, isWithinWorkingHours, nextWorkingHourAt } from './safety/quota';
 import { paceAction, markActionAt } from './safety/pacing';
 import { getRampState } from './safety/rampup';
+import { countOutstandingInvites } from '../services/invite-reconcile.service';
 import { transitionLead, recomputeCampaignStatus, syncLeadStatus } from './safety/lifecycle';
 import { classifyPage, handleCheckpoint, isCheckpoint, pauseCampaignForSessionExpiry, checkWriteBlock } from './safety/checkpoint';
 import { uploadScreenshotToS3 } from '../services/s3-upload.service';
@@ -571,6 +572,30 @@ async function runLead(
                     });
                     execResult.status = 'paused';
                     execResult.pausedReason = t?.to === 'STALLED' ? 'stalled' : 'daily_cap';
+                    return execResult;
+                }
+            }
+
+            // Outstanding-invitation gate. Sending MORE invites while hundreds
+            // sit unanswered is the specific behaviour LinkedIn punishes
+            // hardest (its help page puts "too many outstanding invitations" at
+            // up to a month, versus about a week for everything else). Counted
+            // from our own records, which the nightly reconcile keeps true.
+            if (nodeType === 'connect') {
+                const outstanding = await countOutstandingInvites(userId).catch(() => 0);
+                if (outstanding >= OUTSTANDING_INVITE_CAP) {
+                    const retryAt = nextDayRetryAt();
+                    console.log(`[ENGINE] Lead ${lead.firstName}: ${outstanding} invitations already outstanding (cap ${OUTSTANDING_INVITE_CAP}) — not adding to the pile. Rescheduling to ${retryAt.toISOString()}.`);
+                    const t = await transitionLead(campaignId, lead.id, 'DEFERRED', {
+                        reason: 'outstanding_invites',
+                        nextRetryAt: retryAt,
+                        currentNodeIndex: i,
+                    }).catch(err => {
+                        console.error(`[ENGINE] transitionLead DEFERRED (outstanding_invites) failed: ${err.message}`);
+                        return null;
+                    });
+                    execResult.status = 'paused';
+                    execResult.pausedReason = t?.to === 'STALLED' ? 'stalled' : 'outstanding_invites';
                     return execResult;
                 }
             }

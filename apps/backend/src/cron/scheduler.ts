@@ -316,6 +316,43 @@ const isUserActive = redisPresence === 'ACTIVE' || (now - lastActivity < twoMins
     console.log('[Scheduler] Auto-withdraw cron DISABLED (set ENABLE_AUTO_WITHDRAW=true to re-enable).');
   }
 
+  // 3b. Pending-invite reconciliation (daily, 05:00).
+  //
+  // connectionStatus is only written while a campaign RUNS, so an invite
+  // accepted after the sequence finished stays 'pending' in our DB forever.
+  // That now throttles real outreach: the invite ramp derives its acceptance
+  // rate from these rows, so stale 'pending' makes a healthy account look
+  // ignored and halves its daily allowance. It also feeds the outstanding-invite
+  // ceiling, which LinkedIn punishes harder than any other invite behaviour.
+  //
+  // BROWSER-FREE — the topcard read goes over plain HTTP with saved cookies and
+  // the pinned proxy, so this needs no Chromium, takes no browser slot, and
+  // doesn't care whether the user is on LinkedIn at the time. That's why it can
+  // run across every account nightly where the DOM sweeps cannot.
+  cron.schedule('0 5 * * *', async () => {
+    console.log('[Scheduler] Running nightly invite reconciliation...');
+    try {
+      const { reconcilePendingInvites } = await import('../services/invite-reconcile.service');
+      const users = await prisma.user.findMany({
+        where: { linkedinCookie: { not: null }, sessionInvalid: false, accountHealth: 'HEALTHY' },
+        select: { id: true },
+      });
+
+      let accepted = 0, vanished = 0, checked = 0;
+      for (const u of users) {
+        const r = await reconcilePendingInvites(u.id).catch((e: any) => {
+          console.error(`[Scheduler] Invite reconcile failed for ${u.id}: ${e.message}`);
+          return null;
+        });
+        if (!r) continue;
+        checked += r.checked; accepted += r.accepted; vanished += r.vanished;
+      }
+      console.log(`[Scheduler] Invite reconciliation done: ${checked} checked across ${users.length} account(s) — ${accepted} newly accepted, ${vanished} no longer outstanding.`);
+    } catch (error) {
+      console.error('[Scheduler] Invite reconciliation failed:', error);
+    }
+  });
+
   // 4. Onboarding Reminder Scheduler (Every 12 hours)
   cron.schedule('0 0,12 * * *', async () => {
     console.log('[Scheduler] Running onboarding reminder check...');

@@ -551,6 +551,7 @@ const REASON_LABELS: Record<string, string> = {
     daily_cap: 'daily invite limit reached',
     hourly_cap: 'pacing — hit the hourly action limit, resumes shortly',
     weekly_cap: 'weekly invite limit reached — resumes as the 7-day window slides',
+    outstanding_invites: 'too many invites still unanswered — paused until the backlog clears',
     hourly_cap_total: 'pacing — hit the hourly activity limit, resumes shortly',
     monthly_cap: 'monthly invite allowance reached',
     off_hours: 'outside sending hours',

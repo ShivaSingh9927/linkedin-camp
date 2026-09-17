@@ -318,6 +318,10 @@ export interface LeadExecutionResult {
     //   'weekly_cap'   — the next action would exceed the rolling 7-day
     //                    ceiling (invites: 200/wk, the window LinkedIn itself
     //                    enforces). Retries tomorrow, when the window has slid.
+    //   'outstanding_invites' — too many invitations already sitting
+    //                    unanswered. LinkedIn penalises this harder than any
+    //                    other invite behaviour (up to a month), so we stop
+    //                    adding to the pile until it clears.
     //   'hourly_cap'   — the next action would exceed the rolling-hour burst
     //                    ceiling (per-action or combined). Same shape as
     //                    daily_cap but a ~20–45min pause, not a next-day one:
@@ -330,7 +334,7 @@ export interface LeadExecutionResult {
     //   'not_accepted' — resumed into a 1st-degree-only stage but the invite
     //                    was never accepted; sequence gives up (soft terminal,
     //                    recorded as COMPLETED+reason, not FAILED).
-    pausedReason?: 'lead_replied' | 'daily_cap' | 'hourly_cap' | 'weekly_cap' | 'off_hours' | 'stalled' | 'delay' | 'not_accepted';
+    pausedReason?: 'lead_replied' | 'daily_cap' | 'hourly_cap' | 'weekly_cap' | 'outstanding_invites' | 'off_hours' | 'stalled' | 'delay' | 'not_accepted';
     // Set when the sequence ended early because a gate declined to proceed
     // (e.g. connection could not be confirmed). The lead still finishes as
     // COMPLETED — it is a soft terminal, not a failure, and is never retried —
