@@ -127,11 +127,35 @@ export async function getLead(req: any, res: Response) {
     return res.json({ lead });
 }
 
+const PATCHABLE_LEAD_FIELDS = ['tags', 'info'];
+
 export async function patchLead(req: any, res: Response) {
     const userId = req.user.id;
     const { id } = req.params;
     const owned = await prisma.lead.findFirst({ where: { id, userId }, select: { id: true } });
     if (!owned) return apiError(res, 404, 'NOT_FOUND', 'Lead not found');
+
+    // Reject what we can't honour instead of quietly dropping it.
+    //
+    // This endpoint accepts only `tags` and `info`; everything else used to be
+    // ignored while still returning 200 and the unchanged lead. A caller that
+    // PATCHes `{ jobTitle: "VP Sales" }` got a success response and no change —
+    // the worst possible answer, and the one an LLM-driven client is most
+    // likely to trigger, since it will guess field names from the Lead schema
+    // it just read. Enrichment fields are engine-owned (profile-visit writes
+    // them); status is engine-derived. Say so.
+    const unknown = Object.keys(req.body || {}).filter(k => !PATCHABLE_LEAD_FIELDS.includes(k));
+    if (unknown.length) {
+        return apiError(res, 400, 'VALIDATION_ERROR',
+            `Only ${PATCHABLE_LEAD_FIELDS.join(' and ')} are writable on a lead. `
+            + `Rejected: ${unknown.join(', ')}. Enrichment fields are written by profile-visit, and status is derived by the engine.`,
+            { writable: PATCHABLE_LEAD_FIELDS, rejected: unknown });
+    }
+    if (!Object.keys(req.body || {}).length) {
+        return apiError(res, 400, 'VALIDATION_ERROR',
+            `Nothing to update — provide ${PATCHABLE_LEAD_FIELDS.join(' and/or ')}.`,
+            { writable: PATCHABLE_LEAD_FIELDS });
+    }
 
     // Status is engine-derived (single source of truth) — not writable here.
     if (Array.isArray(req.body?.tags)) {
