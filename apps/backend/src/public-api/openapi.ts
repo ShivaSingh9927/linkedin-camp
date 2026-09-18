@@ -54,7 +54,7 @@ You don't author workflows via the API. List templates, then create a campaign f
 Register a webhook to receive events (\`lead.replied\`, \`lead.connected\`, …). Each delivery is signed — verify \`X-Qampi-Signature: sha256=HMAC(secret, rawBody)\`. See the **Webhooks** section.`,
     },
     servers: [
-        { url: '{baseUrl}/api/public/v1', variables: { baseUrl: { default: 'https://app.qampi.ai' } } },
+        { url: '{baseUrl}/api/public/v1', variables: { baseUrl: { default: 'https://app.qampi.com' } } },
     ],
     security: [{ ApiKeyAuth: [] }],
     tags: [

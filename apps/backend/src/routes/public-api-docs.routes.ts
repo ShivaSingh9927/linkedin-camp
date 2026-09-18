@@ -12,7 +12,7 @@ router.get('/openapi.json', (_req, res) => {
 // Keep the legacy API-domain URL working, but serve the first-party docs UI.
 // The OpenAPI JSON above remains available for tooling and generated clients.
 router.get('/docs', (_req, res) => {
-    const appUrl = (process.env.APP_URL || process.env.FRONTEND_URL || 'https://app.qampi.ai').replace(/\/$/, '');
+    const appUrl = (process.env.APP_URL || process.env.FRONTEND_URL || 'https://app.qampi.com').replace(/\/$/, '');
     res.redirect(302, `${appUrl}/api-reference`);
 });
 
