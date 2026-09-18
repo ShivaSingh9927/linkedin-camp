@@ -11,7 +11,7 @@ const pythonExample = ['import requests', '', 'response = requests.get(', '    "
 const responseExample = ['{', '  "id": "usr_1",', '  "email": "you@company.com",', '  "tier": "PRO",', '  "onboardingComplete": true,', '  "linkedin": { "connected": true, "health": "HEALTHY" }', '}'].join('\n');
 const mcpExample = ['[mcp_servers.qampi]', 'command = "npx"', 'args = ["-y", "@qampi/mcp-server"]', 'env = { QAMPI_API_KEY = "qampi_live_…" }'].join('\n');
 
-const groups = [
+const groups: Array<[string, string[]]> = [
     ['Quick start', ['Your first API call', 'Authentication', 'Rate limits', 'Error codes']],
     ['API guides', ['Campaigns', 'Leads', 'Search & enrich', 'Webhooks']],
     ['AI integrations', ['MCP server', 'Codex', 'Claude Code', 'Cursor']],
