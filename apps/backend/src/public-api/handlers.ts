@@ -74,6 +74,24 @@ const LEAD_SELECT = {
     status: true, createdAt: true,
 } as const;
 
+// Single-lead reads additionally return the two WRITABLE fields.
+//
+// They were missing from every response, so PATCH echoed a lead object without
+// the note or tags it had just written — the caller had no way to confirm its
+// own write, and an agent reasonably reads that as "the write did nothing".
+// Proven 2026-09-18: the note and tag were in the database while the response
+// showed neither. Kept off the LIST select on purpose: notes can be long, and
+// a 100-row page shouldn't carry them.
+const LEAD_DETAIL_SELECT = { ...LEAD_SELECT, info: true } as const;
+
+/** Lead detail + its tags, flattened to a plain string[]. */
+async function leadDetail(id: string, userId: string) {
+    const lead = await prisma.lead.findFirst({ where: { id, userId }, select: LEAD_DETAIL_SELECT });
+    if (!lead) return null;
+    const tags = await prisma.leadTag.findMany({ where: { leadId: id }, select: { tag: true } }).catch(() => []);
+    return { ...lead, tags: tags.map((t: any) => t.tag) };
+}
+
 export async function listLeads(req: any, res: Response) {
     const userId = req.user.id;
     const { limit, offset } = parsePaging(req);
@@ -122,7 +140,7 @@ export async function createLeads(req: any, res: Response) {
 }
 
 export async function getLead(req: any, res: Response) {
-    const lead = await prisma.lead.findFirst({ where: { id: req.params.id, userId: req.user.id }, select: LEAD_SELECT });
+    const lead = await leadDetail(req.params.id, req.user.id);
     if (!lead) return apiError(res, 404, 'NOT_FOUND', 'Lead not found');
     return res.json({ lead });
 }
@@ -166,7 +184,8 @@ export async function patchLead(req: any, res: Response) {
     if (typeof req.body?.info === 'string') {
         await prisma.lead.update({ where: { id }, data: { info: req.body.info } });
     }
-    const lead = await prisma.lead.findFirst({ where: { id, userId }, select: LEAD_SELECT });
+    // Echo what was actually written, tags included, so the caller can verify.
+    const lead = await leadDetail(id, userId);
     return res.json({ lead });
 }
 

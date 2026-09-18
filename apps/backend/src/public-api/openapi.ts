@@ -205,7 +205,7 @@ Register a webhook to receive events (\`lead.replied\`, \`lead.connected\`, …)
             },
             patch: {
                 tags: ['Leads'], summary: 'Update lead tags / notes',
-                description: 'Only `tags` and `info` (notes) are writable — lead **status** is derived by the engine and cannot be set via the API.',
+                description: 'Only `tags` and `info` (notes) are writable — lead **status** is derived by the engine and cannot be set via the API. Any other field is rejected with a 400 rather than silently ignored. The response echoes the lead including its `info` and `tags`.',
                 parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
                 requestBody: { required: true, content: { 'application/json': { example: { tags: ['vip', 'inbound'], info: 'Met at SaaStr' } } } },
                 responses: { '200': { description: 'Success', content: { 'application/json': { schema: { type: 'object', properties: { lead: { $ref: '#/components/schemas/Lead' } } } } } }, ...errResponses },
