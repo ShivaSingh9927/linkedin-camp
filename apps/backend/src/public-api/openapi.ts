@@ -1,5 +1,6 @@
 // OpenAPI 3.1 description of the Qampi public API. Served at
-// GET /api/public/v1/openapi.json and rendered by Redoc at /api/public/v1/docs.
+// GET /api/public/v1/openapi.json. The legacy /docs URL redirects to the
+// first-party API documentation at /api-reference.
 // Hand-maintained — keep in sync with routes/public-api.routes.ts + handlers.ts.
 
 const Error = { $ref: '#/components/schemas/Error' };
