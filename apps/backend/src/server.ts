@@ -121,6 +121,7 @@ const httpServer = app.listen(serverPort, '0.0.0.0', () => {
         try {
             const { prisma } = await import('@repo/db');
             const authRoutes = (await import('./routes/auth.routes')).default;
+            const emailPrefsRoutes = (await import('./routes/email-prefs.routes')).default;
             const leadRoutes = (await import('./routes/lead.routes')).default;
             const campaignRoutes = (await import('./routes/campaign.routes')).default;
             const statsRoutes = (await import('./routes/stats.routes')).default;
@@ -167,6 +168,9 @@ const httpServer = app.listen(serverPort, '0.0.0.0', () => {
             app.use('/api/v1/auth/google', authLimiter);
             app.use('/api/v1/auth/oauth', authLimiter);
             app.use('/api/v1/auth', authRoutes);
+            // Public + unauthenticated by design — an unsubscribe link that
+            // demands a login is why people press "spam" instead.
+            app.use('/api/v1/email', emailPrefsRoutes);
             app.use('/api/v1/leads', leadRoutes);
             app.use('/api/v1/campaigns', campaignRoutes);
             app.use('/api/v1/stats', statsRoutes);

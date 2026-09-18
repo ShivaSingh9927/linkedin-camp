@@ -353,6 +353,77 @@ const isUserActive = redisPresence === 'ACTIVE' || (now - lastActivity < twoMins
     }
   });
 
+  // 3c. Re-engagement sweep (daily, 10:00).
+  //
+  // "You haven't been on Qampi for a while." Keyed off lastSeenAt — the HUMAN
+  // opening the app — because the other two timestamps lie for this purpose:
+  // lastBrowserActivityAt is their LinkedIn session and lastCloudActionAt is
+  // automation, both of which stay fresh while the user has forgotten Qampi
+  // exists. That user is precisely the one worth emailing.
+  //
+  // Skips anyone mid-onboarding: they already get the onboarding reminder, and
+  // two different nudges in one week is how people unsubscribe. Opt-out and the
+  // one-per-30-days cap are enforced inside mailService.sendMarketing, so this
+  // job can stay simple and idempotent — running it twice sends nothing twice.
+  cron.schedule('0 10 * * *', async () => {
+    const INACTIVE_DAYS = parseInt(process.env.REENGAGE_AFTER_DAYS || '14', 10);
+    console.log(`[Scheduler] Running re-engagement sweep (inactive > ${INACTIVE_DAYS}d)...`);
+    try {
+      const { mailService } = await import('../services/mail.service');
+      const cutoff = new Date(Date.now() - INACTIVE_DAYS * 86_400_000);
+
+      const dormant = await prisma.user.findMany({
+        where: {
+          registrationStep: 'COMPLETED',
+          emailOptOut: false,
+          lastSeenAt: { not: null, lt: cutoff },
+        } as any,
+        select: { id: true, email: true, firstName: true, lastSeenAt: true } as any,
+        take: 500,
+      });
+
+      if (!dormant.length) {
+        console.log('[Scheduler] Re-engagement: nobody dormant.');
+        return;
+      }
+
+      let sent = 0;
+      for (const u of dormant as any[]) {
+        // Give the email something true to say. A nudge that names an
+        // unanswered reply is worth sending; "we miss you" is not.
+        const campaigns = await prisma.campaign
+          .findMany({ where: { userId: u.id }, select: { id: true } })
+          .catch(() => [] as Array<{ id: string }>);
+        const campaignIds = campaigns.map((c) => c.id);
+
+        const [waitingReplies, leads] = await Promise.all([
+          campaignIds.length
+            ? prisma.campaignLeadProgress.count({
+                where: { campaignId: { in: campaignIds }, status: 'REPLIED' },
+              }).catch(() => 0)
+            : Promise.resolve(0),
+          prisma.lead.count({ where: { userId: u.id } }).catch(() => 0),
+        ]);
+
+        const daysAway = Math.floor((Date.now() - new Date(u.lastSeenAt).getTime()) / 86_400_000);
+        const res = await mailService.sendReEngagementEmail({
+          userId: u.id,
+          to: u.email,
+          name: u.firstName || '',
+          daysAway,
+          pending: { waitingReplies, leads },
+        }).catch((e: any) => {
+          console.error(`[Scheduler] Re-engagement failed for ${u.email}: ${e?.message}`);
+          return null;
+        });
+        if (res) sent++;
+      }
+      console.log(`[Scheduler] Re-engagement: ${dormant.length} dormant, ${sent} emailed (rest opted out or inside the 30-day cap).`);
+    } catch (error) {
+      console.error('[Scheduler] Re-engagement sweep failed:', error);
+    }
+  });
+
   // 4. Onboarding Reminder Scheduler (Every 12 hours)
   cron.schedule('0 0,12 * * *', async () => {
     console.log('[Scheduler] Running onboarding reminder check...');

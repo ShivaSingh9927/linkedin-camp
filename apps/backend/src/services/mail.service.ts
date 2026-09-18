@@ -1,4 +1,6 @@
 import nodemailer from 'nodemailer';
+import { prisma } from '@repo/db';
+import crypto from 'crypto';
 
 /**
  * Transactional mailer — the welcome / onboarding / reminder emails Qampi
@@ -33,6 +35,49 @@ const SMTP_USER = process.env.SMTP_USER || process.env.OUTLOOK_EMAIL || '';
 const SMTP_PASS = process.env.SMTP_PASS || process.env.OUTLOOK_APP_PASSWORD || '';
 const MAIL_FROM = process.env.MAIL_FROM || (SMTP_USER ? `"Qampi AI" <${SMTP_USER}>` : '');
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+
+
+/** Escape user-supplied text before it goes into an HTML email. */
+function esc(v: string): string {
+    return String(v).replace(/[&<>"']/g, (c) =>
+        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string));
+}
+
+const button = (href: string, label: string) =>
+    `<a href="${href}" style="display:inline-block;margin-top:20px;padding:12px 24px;background-color:#7c3aed;`
+    + `color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;">${label}</a>`;
+
+const statRow = (pairs: Array<[string, number]>) =>
+    `<div style="margin:20px 0;padding:16px;background:#f8fafc;border-radius:8px;">`
+    + pairs.map(([k, v]) =>
+        `<span style="display:inline-block;min-width:110px;"><strong style="font-size:20px;color:#0f172a;">${v}</strong>`
+        + `<br><span style="font-size:11px;color:#64748b;text-transform:uppercase;">${k}</span></span>`).join('')
+    + `</div>`;
+
+const layout = (inner: string, footer = '') =>
+    `<div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px;border:1px solid #e2e8f0;border-radius:12px;">`
+    + inner
+    + (footer ? `<div style="margin-top:28px;padding-top:16px;border-top:1px solid #e2e8f0;">${footer}</div>` : '')
+    + `</div>`;
+
+/**
+ * Unsubscribe token: HMAC of the user id with the app secret. Stateless (no
+ * table, no expiry to manage) and unguessable, so one user's link can't
+ * unsubscribe another.
+ */
+export function unsubscribeToken(userId: string): string {
+    const secret = process.env.JWT_SECRET || 'supersecretkey';
+    return crypto.createHmac('sha256', secret).update(`unsub:${userId}`).digest('hex').slice(0, 32);
+}
+
+const unsubscribeFooter = (userId: string) => {
+    const url = `${process.env.BACKEND_PUBLIC_URL || 'https://api.qampi.com'}`
+        + `/api/v1/email/unsubscribe?u=${encodeURIComponent(userId)}&t=${unsubscribeToken(userId)}`;
+    return `<p style="color:#94a3b8;font-size:12px;margin:0;">`
+        + `You're getting this because you have a Qampi account. `
+        + `<a href="${url}" style="color:#94a3b8;">Unsubscribe from nudges</a> — `
+        + `you'll still get billing and security emails.</p>`;
+};
 
 class MailService {
     private transporter: nodemailer.Transporter | null = null;
@@ -71,20 +116,91 @@ class MailService {
         return true;
     }
 
-    private async send(label: string, mailOptions: nodemailer.SendMailOptions) {
+    /**
+     * Record what happened to every send, including the ones that never left.
+     *
+     * "Did the welcome email go out?" used to be UNANSWERABLE: container logs
+     * die with each deploy, so two signups left no trace either way. A row per
+     * attempt makes delivery a question with an answer — and gives the
+     * frequency caps (one nudge per 30 days) something durable to count, which
+     * an in-memory guard could never survive a restart to provide.
+     *
+     * Best-effort: a logging failure must never fail the send it describes.
+     */
+    private async record(args: {
+        userId?: string | null; to: string; type: string; subject: string;
+        status: 'SENT' | 'FAILED' | 'SKIPPED'; detail?: string;
+    }) {
+        await prisma.emailLog.create({
+            data: {
+                userId: args.userId ?? null,
+                to: args.to,
+                type: args.type,
+                subject: args.subject,
+                status: args.status,
+                detail: args.detail?.slice(0, 500) ?? null,
+            },
+        }).catch((e: any) => console.error('[MAIL] could not record email log:', e?.message));
+    }
+
+    private async send(
+        label: string,
+        mailOptions: nodemailer.SendMailOptions,
+        meta?: { type?: string; userId?: string | null },
+    ) {
+        const to = String(mailOptions.to || '');
+        const subject = String(mailOptions.subject || '');
+        const type = meta?.type || label.toLowerCase().replace(/\s+/g, '_');
+
         if (!this.transporter) {
             console.warn(`[MAIL] ${label} skipped — SMTP not configured.`);
+            await this.record({ userId: meta?.userId, to, type, subject, status: 'SKIPPED', detail: 'smtp_not_configured' });
             return null;
         }
         try {
             const info = await this.transporter.sendMail({ from: MAIL_FROM, ...mailOptions });
             console.log(`[MAIL] ${label} sent:`, info.messageId);
+            await this.record({ userId: meta?.userId, to, type, subject, status: 'SENT', detail: info.messageId });
             return info;
         } catch (error: any) {
             // Fail LOUD — this used to rot silently behind void…catch callers.
             console.error(`[MAIL] ${label} FAILED:`, error?.message || error);
+            await this.record({ userId: meta?.userId, to, type, subject, status: 'FAILED', detail: error?.message || String(error) });
             throw error;
         }
+    }
+
+    /**
+     * Send a NON-transactional email, honouring opt-out and a frequency cap.
+     *
+     * Billing and security mail must never route through here — a user who
+     * unsubscribed from nudges still needs to hear that their payment failed.
+     */
+    private async sendMarketing(
+        label: string,
+        args: { userId: string; to: string; type: string; subject: string; html: string; minDaysBetween: number },
+    ) {
+        const user = await prisma.user.findUnique({
+            where: { id: args.userId }, select: { emailOptOut: true },
+        }).catch(() => null);
+
+        if (user?.emailOptOut) {
+            await this.record({ ...args, status: 'SKIPPED', detail: 'opted_out' });
+            return null;
+        }
+
+        const since = new Date(Date.now() - args.minDaysBetween * 86_400_000);
+        const recent = await prisma.emailLog.findFirst({
+            where: { userId: args.userId, type: args.type, status: 'SENT', createdAt: { gte: since } },
+            select: { id: true },
+        }).catch(() => null);
+
+        if (recent) {
+            await this.record({ ...args, status: 'SKIPPED', detail: `frequency_cap_${args.minDaysBetween}d` });
+            return null;
+        }
+
+        return this.send(label, { to: args.to, subject: args.subject, html: args.html }, { type: args.type, userId: args.userId });
     }
 
     async sendWelcomeEmail(to: string, name: string) {
@@ -181,6 +297,119 @@ class MailService {
                     <p style="color: #94a3b8; font-size: 12px; margin-top: 24px;">This invite expires in 7 days. If you didn't expect it, you can ignore this email.</p>
                 </div>
             `,
+        });
+    }
+
+    // ---- Campaign lifecycle ------------------------------------------------
+
+    /**
+     * A campaign finished. Leads with what it actually produced.
+     *
+     * NOTE there is deliberately no "campaign started" email: the user launched
+     * it themselves seconds earlier, and mail that tells people what they just
+     * did is how a product teaches its users to ignore its mail.
+     */
+    async sendCampaignFinishedEmail(args: {
+        userId: string; to: string; name: string; campaignId: string; campaignName: string;
+        stats: { leads: number; connected: number; replied: number };
+    }) {
+        const { stats } = args;
+        const line = stats.replied > 0
+            ? `${stats.replied} ${stats.replied === 1 ? 'person' : 'people'} replied — those conversations are waiting in your inbox.`
+            : stats.connected > 0
+                ? `${stats.connected} new ${stats.connected === 1 ? 'connection' : 'connections'} accepted. Replies often come later, so keep an eye on the inbox.`
+                : 'No replies yet. Worth a look at the sequence and the lead list before the next run.';
+
+        return this.send('Campaign-finished email', {
+            to: args.to,
+            subject: `"${args.campaignName}" has finished`,
+            html: layout(`
+                <h2 style="color:#0f172a;margin-top:0;">Hi ${args.name || 'there'},</h2>
+                <p style="color:#475569;line-height:1.6;">Your campaign <strong>${esc(args.campaignName)}</strong> has finished.</p>
+                ${statRow([
+                    ['Leads', stats.leads], ['Connected', stats.connected], ['Replied', stats.replied],
+                ])}
+                <p style="color:#475569;line-height:1.6;">${line}</p>
+                ${button(`${APP_URL}/campaigns/${args.campaignId}`, 'See the results')}
+            `),
+        }, { type: 'campaign_finished', userId: args.userId });
+    }
+
+    /**
+     * A campaign stopped and needs a human. This is the one that earns its
+     * place: without it a user discovers a dead campaign days later by logging
+     * in, and the usual cause (an expired LinkedIn session) costs them every
+     * day it goes unnoticed.
+     */
+    async sendCampaignAttentionEmail(args: {
+        userId: string; to: string; name: string; campaignId: string; campaignName: string;
+        reason: 'session_expired' | 'account_restricted' | 'stalled' | string;
+    }) {
+        const copy: Record<string, { what: string; fix: string; cta: string; href: string }> = {
+            session_expired: {
+                what: 'Your LinkedIn session expired, so Qampi can no longer act on your behalf.',
+                fix: 'Reconnecting takes about a minute and the campaign picks up where it stopped.',
+                cta: 'Reconnect LinkedIn', href: `${APP_URL}/settings`,
+            },
+            account_restricted: {
+                what: 'LinkedIn flagged your account, so Qampi paused everything immediately.',
+                fix: 'Open LinkedIn directly and clear whatever it is asking for. Qampi stays paused until you say otherwise — resuming early risks a longer restriction.',
+                cta: 'Open settings', href: `${APP_URL}/settings`,
+            },
+        };
+        const c = copy[args.reason] || {
+            what: 'The campaign stopped before finishing and needs a look.',
+            fix: 'Open it to see which step it stopped on.',
+            cta: 'Open campaign', href: `${APP_URL}/campaigns/${args.campaignId}`,
+        };
+
+        return this.send('Campaign-attention email', {
+            to: args.to,
+            subject: `Action needed: "${args.campaignName}" has paused`,
+            html: layout(`
+                <h2 style="color:#0f172a;margin-top:0;">Hi ${args.name || 'there'},</h2>
+                <p style="color:#475569;line-height:1.6;"><strong>${esc(args.campaignName)}</strong> has paused.</p>
+                <div style="margin:20px 0;padding:16px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;">
+                    <p style="margin:0;color:#991b1b;line-height:1.6;">${c.what}</p>
+                </div>
+                <p style="color:#475569;line-height:1.6;">${c.fix}</p>
+                ${button(c.href, c.cta)}
+            `),
+        }, { type: 'campaign_attention', userId: args.userId });
+    }
+
+    // ---- Re-engagement (non-transactional) ----------------------------------
+
+    /**
+     * "You haven't been on Qampi for a while." Opt-out-able, capped at one per
+     * 30 days, and never sent to someone who hasn't finished onboarding — they
+     * get the onboarding reminder instead, and two nudges about different
+     * things in the same week is how people unsubscribe.
+     */
+    async sendReEngagementEmail(args: {
+        userId: string; to: string; name: string; daysAway: number;
+        pending: { waitingReplies: number; leads: number };
+    }) {
+        const hook = args.pending.waitingReplies > 0
+            ? `${args.pending.waitingReplies} ${args.pending.waitingReplies === 1 ? 'reply is' : 'replies are'} sitting unanswered in your Qampi inbox.`
+            : args.pending.leads > 0
+                ? `You have ${args.pending.leads} leads imported and no campaign running.`
+                : 'Your account is set up and idle — one template is all it takes to start again.';
+
+        return this.sendMarketing('Re-engagement email', {
+            userId: args.userId,
+            to: args.to,
+            type: 'reengagement',
+            minDaysBetween: 30,
+            subject: args.pending.waitingReplies > 0
+                ? `You have ${args.pending.waitingReplies} unanswered ${args.pending.waitingReplies === 1 ? 'reply' : 'replies'}`
+                : 'Your Qampi account has been quiet',
+            html: layout(`
+                <h2 style="color:#0f172a;margin-top:0;">Hi ${args.name || 'there'},</h2>
+                <p style="color:#475569;line-height:1.6;">It's been ${args.daysAway} days since you last opened Qampi.</p>
+                <p style="color:#475569;line-height:1.6;">${hook}</p>
+                ${button(`${APP_URL}`, 'Open Qampi')}
+            `, unsubscribeFooter(args.userId)),
         });
     }
 

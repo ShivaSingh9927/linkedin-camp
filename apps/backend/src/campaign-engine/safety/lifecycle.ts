@@ -254,6 +254,17 @@ export async function recomputeCampaignStatus(campaignId: string): Promise<void>
     });
     console.log(`[lifecycle] campaign ${campaignId} → COMPLETED (all ${terminalRows} leads terminal)`);
 
+    // Tell the owner what it produced. Hooked HERE because this is the single
+    // writer of COMPLETED and it already guards against re-entry (the
+    // status === 'COMPLETED' early-return above), so the email fires exactly
+    // once on the real transition — not once per lead finishing.
+    try {
+        const { notifyCampaignFinished } = await import('../../services/campaign-mail.service');
+        void notifyCampaignFinished(campaignId);
+    } catch (err: any) {
+        console.error(`[lifecycle] finished-notification import failed: ${err.message}`);
+    }
+
     // Promote the user's next queued campaign, if any. Lazy-imported to
     // avoid the worker → engine → worker import cycle at module load.
     try {

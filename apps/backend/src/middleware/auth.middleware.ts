@@ -29,6 +29,22 @@ export const authMiddleware = async (req: AuthRequest, res: Response, next: Next
 
         req.user = decoded;
 
+        // Stamp human presence, throttled to once an hour.
+        //
+        // This is the ONLY signal that the person is using Qampi:
+        // lastBrowserActivityAt is their LinkedIn session and lastCloudActionAt
+        // is automation running — both can be fresh while the user hasn't
+        // opened the app in a month, which is exactly who the re-engagement
+        // email is for. Fire-and-forget: presence is never worth failing a
+        // request over, and one write per user per hour is noise-level load.
+        const lastSeen = (user as any).lastSeenAt as Date | null;
+        if (!lastSeen || Date.now() - new Date(lastSeen).getTime() > 3_600_000) {
+            void prisma.user.update({
+                where: { id: decoded.id },
+                data: { lastSeenAt: new Date() } as any,
+            }).catch(() => {});
+        }
+
         // ACCOUNT SWITCHER / GHOSTING LOGIC
         const operatingUserId = req.headers['x-operating-user-id'] as string;
         if (operatingUserId && operatingUserId !== decoded.id) {

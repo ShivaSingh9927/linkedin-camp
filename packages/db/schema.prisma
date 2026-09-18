@@ -176,6 +176,29 @@ model CampaignLeadProgress {
   @@index([campaignId, status])
 }
 
+/// Every transactional email Qampi sends, and what happened to it.
+///
+/// Added because "did the welcome email go out?" was unanswerable: container
+/// logs vanish on each deploy, so two signups left no trace either way. A row
+/// per send makes delivery a question with an answer, and gives the frequency
+/// caps (one nudge per 30 days) something durable to count.
+model EmailLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  to        String
+  /// welcome | campaign_finished | campaign_attention | reengagement | ...
+  type      String
+  subject   String
+  /// SENT | FAILED | SKIPPED (opt-out, unconfigured SMTP, frequency cap)
+  status    String
+  /// SMTP message id when sent; the error or skip reason otherwise.
+  detail    String?
+  createdAt DateTime @default(now())
+
+  @@index([userId, type, createdAt])
+  @@index([type, createdAt])
+}
+
 model LeadTag {
   id        String   @id @default(cuid())
   leadId    String
@@ -463,6 +486,15 @@ model User {
   actualCountry           String?
   linkedinActiveInBrowser Boolean           @default(false)
   lastBrowserActivityAt   DateTime?
+  // When the HUMAN last used the Qampi app (stamped by auth middleware, ~1/hr).
+  // Deliberately distinct from lastBrowserActivityAt (their LinkedIn session)
+  // and lastCloudActionAt (automation running): a campaign can run for weeks
+  // while the user has forgotten Qampi exists, and that is exactly the person
+  // the re-engagement email is for.
+  lastSeenAt              DateTime?
+  // Opt-out for NON-transactional mail (the re-engagement nudge). Billing and
+  // security emails ignore it.
+  emailOptOut             Boolean           @default(false)
   cloudWorkerActive       Boolean           @default(false)
   lastCloudActionAt       DateTime?
   proxyId                 String?

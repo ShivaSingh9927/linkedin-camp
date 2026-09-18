@@ -331,10 +331,24 @@ export async function checkWriteBlock(userId: string): Promise<boolean> {
  * leave campaigns the user paused by hand untouched. Idempotent.
  */
 export async function pauseCampaignForSessionExpiry(campaignId: string): Promise<void> {
+    const before = await prisma.campaign.findUnique({
+        where: { id: campaignId }, select: { status: true },
+    }).catch(() => null);
+
     await prisma.campaign.update({
         where: { id: campaignId },
         data: { status: 'PAUSED', pausedReason: 'session_expired' },
     }).catch(err => console.error(`[checkpoint] pauseCampaignForSessionExpiry failed: ${err.message}`));
+
+    // Tell the owner — a campaign killed by an expired session otherwise sits
+    // dead until they happen to log in, and every one of those days is outreach
+    // they believe is running. Only on the TRANSITION into paused: this is
+    // idempotent and called on every subsequent lead, which would otherwise
+    // mail them once per lead.
+    if (before && before.status !== 'PAUSED') {
+        const { notifyCampaignNeedsAttention } = await import('../../services/campaign-mail.service');
+        void notifyCampaignNeedsAttention(campaignId, 'session_expired');
+    }
 }
 
 /**
