@@ -31,7 +31,10 @@ export default function TemplatesGalleryPage() {
                 })),
                 edges: template.edges,
             };
-            const res = await api.post('/campaigns', { name, workflowJson });
+            // templateId is what lets the server rebuild the structure from the
+            // verified template instead of trusting this payload. Without it the
+            // create falls back to the legacy unchecked path (and logs as such).
+            const res = await api.post('/campaigns', { name, workflowJson, templateId: template.id });
             router.push(`/campaigns/${res.data.id}/builder`);
         } catch (err) {
             console.error('Failed to create campaign from template:', err);

@@ -98,6 +98,7 @@ export default function FollowUpsPage() {
             const tpl = tplRes.template;
             const { data: camp } = await api.post('/campaigns', {
                 name: tpl.name,
+                templateId,
                 workflowJson: { ...tpl.workflow, locked: true },
                 objective: tpl.aiStrategyHint?.objective,
                 description: tpl.aiStrategyHint?.description,

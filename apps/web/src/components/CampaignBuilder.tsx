@@ -656,6 +656,17 @@ function CampaignBuilderInner({
                   <div className="space-y-3">
                     <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b pb-2 mb-4">Branch Condition</div>
 
+                    {/* Read-only by product decision. A mis-set condition doesn't
+                        error — it silently routes cold leads down a 1st-degree-only
+                        branch, so the campaign looks like it did nothing. The server
+                        ignores condition edits, so showing an editable control here
+                        would be a lie about what saving does. */}
+                    <div className="p-2 bg-amber-50 rounded-lg border border-amber-200 text-[10px] text-amber-800 leading-relaxed">
+                      🔒 Branching is set by the template and can't be edited. Pick a different template if you
+                      need a different flow — everything else on this step is yours to change.
+                    </div>
+
+                    <div className="pointer-events-none opacity-60 space-y-3" aria-disabled="true">
                     <div>
                       <label className="text-[10px] font-bold text-purple-600 uppercase">Source</label>
                       <select
@@ -734,8 +745,11 @@ function CampaignBuilderInner({
                       </div>
                     )}
 
+                    </div>
+
                     <div className="p-2 bg-purple-50 rounded-lg border border-purple-100 text-[10px] text-purple-600 leading-relaxed">
-                      💡 Wire the <strong>true</strong> and <strong>false</strong> handles on this node to different downstream steps. The engine evaluates the condition and only walks one branch per lead.
+                      💡 The engine evaluates this condition and walks only one branch per lead — the template
+                      already wires the <strong>true</strong> and <strong>false</strong> paths to the right steps.
                     </div>
                   </div>
                 );
@@ -826,13 +840,26 @@ function CampaignBuilderInner({
                       type="number"
                       min="1"
                       max="30"
+                      step="1"
                       value={(selectedNode.data as any).days || 1}
-                      onChange={(e) => updateNodeData(selectedNode.id, { days: parseInt(e.target.value) })}
+                      onChange={(e) => {
+                        // min/step are hints the browser doesn't enforce on typed
+                        // input — an empty field yields NaN and "0" sails through.
+                        // The server rejects anything under a day (shorter gaps
+                        // between steps are what get accounts restricted), so
+                        // clamp here rather than let the user discover it on save.
+                        const raw = parseInt(e.target.value, 10);
+                        const days = Number.isFinite(raw) ? Math.min(30, Math.max(1, Math.trunc(raw))) : 1;
+                        updateNodeData(selectedNode.id, { days });
+                      }}
                       className="w-24 p-3 bg-slate-50 border border-slate-200 rounded-xl text-center font-bold text-slate-800"
                     />
                     <span className="text-sm font-bold text-slate-400 uppercase">Days</span>
                   </div>
-                  <p className="text-[10px] text-slate-400 italic">The sequence will pause for this many days before moving to the next step.</p>
+                  <p className="text-[10px] text-slate-400 italic">
+                    The sequence pauses this many days before the next step. Whole days only, minimum 1 —
+                    shorter gaps look automated to LinkedIn and put the account at risk.
+                  </p>
                 </div>
               )}
 

@@ -21,8 +21,7 @@ import { cn } from '@/lib/utils';
 import api from '@/lib/api';
 import { resetAnalytics } from '@/lib/analytics';
 
-// API docs (Redoc) live on the API domain, not the app — open in a new tab.
-const DOCS_URL = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/v1\/?$/, '').replace(/\/$/, '') + '/api/public/v1/docs';
+const DOCS_URL = '/api-reference';
 
 const menuItems: { label: string; icon: any; href: string; badgeKey?: string; external?: boolean }[] = [
   { label: 'Dashboard', icon: LayoutDashboard, href: '/' },
@@ -34,7 +33,7 @@ const menuItems: { label: string; icon: any; href: string; badgeKey?: string; ex
   { label: 'Follow-ups', icon: BellRing, href: '/campaigns/queue', badgeKey: 'followups' },
   { label: 'Crew', icon: UsersRound, href: '/team' },
   { label: 'Pricing', icon: Sparkles, href: '/pricing' },
-  { label: 'API Docs', icon: BookOpen, href: DOCS_URL, external: true },
+  { label: 'API Docs', icon: BookOpen, href: DOCS_URL },
 ];
 
 export function Sidebar() {

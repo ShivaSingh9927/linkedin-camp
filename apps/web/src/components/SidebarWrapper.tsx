@@ -9,7 +9,7 @@ import { AccountHealthBanner } from './AccountHealthBanner';
 
 export function SidebarWrapper({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const isAuthPage = pathname === '/login' || pathname === '/register';
+  const isAuthPage = pathname === '/login' || pathname === '/register' || pathname === '/api-reference';
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   // Close the mobile drawer whenever the route changes (a nav link was tapped).

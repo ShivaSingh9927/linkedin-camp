@@ -13,7 +13,7 @@ export function AuthWrapper({ children }: { children: React.ReactNode }) {
 
     // /auth/callback lands here mid-OAuth with no token yet — it stores the
     // token itself, so it must not be bounced to /login.
-    const authRoutes = ['/login', '/register', '/auth/callback'];
+    const authRoutes = ['/login', '/register', '/auth/callback', '/api-reference'];
     const onboardingRoute = '/onboarding';
 
     useEffect(() => {

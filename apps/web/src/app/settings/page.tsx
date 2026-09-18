@@ -19,6 +19,11 @@ import {
     Send,
     ExternalLink,
     Activity,
+    Bot,
+    Terminal,
+    Eye,
+    ShieldCheck,
+    ChevronRight,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
@@ -30,8 +35,7 @@ import { cn } from '@/lib/utils';
 import api from '@/lib/api';
 import CopilotDiagnostics from '@/components/CopilotDiagnostics';
 
-// API docs (Redoc) are served by the backend on the API domain, not the app.
-const DOCS_URL = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/v1\/?$/, '').replace(/\/$/, '') + '/api/public/v1/docs';
+const DOCS_URL = '/api-reference';
 
 type SectionKey = 'account' | 'safety' | 'copilot' | 'linkedin' | 'email' | 'integrations' | 'billing' | 'api' | 'webhooks';
 
@@ -484,18 +488,49 @@ function ApiKeysSection() {
         if (freshKey) { navigator.clipboard?.writeText(freshKey); toast.success('Copied to clipboard'); }
     }
 
+    function copyText(value: string, label = 'Copied to clipboard') {
+        navigator.clipboard?.writeText(value);
+        toast.success(label);
+    }
+
+    const codexConfig = `[mcp_servers.qampi]\ncommand = "npx"\nargs = ["-y", "@qampi/mcp-server"]\nenv = { QAMPI_API_KEY = "qampi_live_…" }`;
+    const claudeCommand = 'claude mcp add qampi --env QAMPI_API_KEY=qampi_live_… -- npx -y @qampi/mcp-server';
+    const cursorConfig = `{\n  "mcpServers": {\n    "qampi": {\n      "command": "npx",\n      "args": ["-y", "@qampi/mcp-server"],\n      "env": { "QAMPI_API_KEY": "qampi_live_…" }\n    }\n  }\n}`;
+
     return (
-        <Card className="p-6">
-            <div className="flex items-center gap-2 mb-1">
-                <h3 className="text-[15px] font-bold text-ink-900">API keys</h3>
-            </div>
-            <p className="text-[13px] text-ink-500 font-medium mb-5">
-                Use these to connect Qampi to n8n, Zapier, Make, or your own scripts. Send the key as
-                <code className="mx-1 px-1.5 py-0.5 bg-surface rounded text-[12px]">Authorization: Bearer &lt;key&gt;</code>.
-                <a href={DOCS_URL} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 ml-1 text-brand-600 font-semibold hover:underline">
-                    View API docs <ExternalLink className="w-3 h-3" />
-                </a>
-            </p>
+        <div className="space-y-5">
+            <section className="relative overflow-hidden rounded-panel bg-ink-900 px-6 py-7 text-white shadow-soft sm:px-8">
+                <div className="absolute -right-16 -top-20 h-64 w-64 rounded-full bg-brand/30 blur-3xl" />
+                <div className="relative max-w-2xl">
+                    <div className="mb-4 inline-flex items-center gap-2 rounded-chip border border-white/15 bg-white/10 px-3 py-1.5 text-[12px] font-semibold text-brand-100">
+                        <Terminal className="h-3.5 w-3.5" /> Developer access
+                    </div>
+                    <h2 className="text-[26px] font-bold tracking-[-0.035em] sm:text-[30px]">Bring Qampi into your workflow.</h2>
+                    <p className="mt-2 max-w-xl text-[14px] leading-6 text-white/65">
+                        Use the API for custom integrations, or give your AI tools a safe, direct connection to your campaigns and leads.
+                    </p>
+                    <div className="mt-5 flex flex-wrap gap-3">
+                        <a href={DOCS_URL} target="_blank" rel="noreferrer" className="inline-flex h-10 items-center gap-2 rounded-control bg-white px-4 text-[13px] font-semibold text-ink-900 transition hover:bg-brand-50">
+                            Explore API reference <ExternalLink className="h-3.5 w-3.5" />
+                        </a>
+                        <a href="#mcp-setup" className="inline-flex h-10 items-center gap-2 rounded-control border border-white/15 px-4 text-[13px] font-semibold text-white transition hover:bg-white/10">
+                            Set up MCP <ChevronRight className="h-3.5 w-3.5" />
+                        </a>
+                    </div>
+                </div>
+            </section>
+
+            <Card className="overflow-hidden">
+                <div className="border-b border-line px-6 py-5 sm:px-7">
+                    <div className="flex items-start gap-3">
+                        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-control bg-brand-50 text-brand"><KeyRound className="h-4 w-4" /></div>
+                        <div>
+                            <h3 className="text-[15px] font-bold text-ink-900">API keys</h3>
+                            <p className="mt-1 text-[13px] leading-5 text-ink-500">Create a dedicated key for each integration. Keys are only shown once.</p>
+                        </div>
+                    </div>
+                </div>
+                <div className="p-6 sm:p-7">
 
             {/* Freshly created key — shown once */}
             {freshKey && (
@@ -544,6 +579,57 @@ function ApiKeysSection() {
                     ))}
                 </div>
             )}
+                </div>
+            </Card>
+
+            <section id="mcp-setup" className="scroll-mt-6">
+                <div className="mb-3 flex items-center gap-3">
+                    <div className="grid h-9 w-9 place-items-center rounded-control bg-brand-50 text-brand"><Bot className="h-4 w-4" /></div>
+                    <div>
+                        <h3 className="text-[16px] font-bold text-ink-900">Connect Qampi to your AI assistant</h3>
+                        <p className="text-[13px] text-ink-500">The Qampi MCP server lets AI tools read campaign context and, when enabled, act with guardrails.</p>
+                    </div>
+                </div>
+
+                <div className="grid gap-4 lg:grid-cols-[0.82fr_1.18fr]">
+                    <Card className="p-5 sm:p-6">
+                        <div className="flex items-center gap-2 text-[14px] font-bold text-ink-900"><Eye className="h-4 w-4 text-brand" /> Start in read-only mode</div>
+                        <p className="mt-2 text-[13px] leading-5 text-ink-500">By default, your assistant can view account status, templates, leads, campaigns, and search results. It cannot change anything.</p>
+                        <div className="mt-5 space-y-3 border-t border-line pt-4">
+                            {[
+                                ['1', 'Create an API key above'],
+                                ['2', 'Add the Qampi server to your AI client'],
+                                ['3', 'Restart the client and ask for qampi_status'],
+                            ].map(([number, text]) => (
+                                <div key={number} className="flex items-center gap-3 text-[13px] font-medium text-ink-700">
+                                    <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-surface text-[11px] font-bold text-brand">{number}</span>{text}
+                                </div>
+                            ))}
+                        </div>
+                        <div className="mt-5 rounded-control border border-brand-200 bg-brand-50 p-3 text-[12px] leading-5 text-brand-700">
+                            <ShieldCheck className="mr-1 inline h-3.5 w-3.5" /> Set <code className="font-semibold">QAMPI_MODE=full</code> only when you want write tools available. Starting outreach still requires explicit confirmation.
+                        </div>
+                    </Card>
+
+                    <div className="space-y-3">
+                        <McpSnippet title="Codex" location="~/.codex/config.toml" value={codexConfig} onCopy={() => copyText(codexConfig)} />
+                        <McpSnippet title="Claude Code" location="Run in your terminal" value={claudeCommand} onCopy={() => copyText(claudeCommand)} />
+                        <McpSnippet title="Cursor" location=".cursor/mcp.json or ~/.cursor/mcp.json" value={cursorConfig} onCopy={() => copyText(cursorConfig)} />
+                    </div>
+                </div>
+            </section>
+        </div>
+    );
+}
+
+function McpSnippet({ title, location, value, onCopy }: { title: string; location: string; value: string; onCopy: () => void }) {
+    return (
+        <Card className="overflow-hidden">
+            <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3 sm:px-5">
+                <div><div className="text-[13px] font-bold text-ink-900">{title}</div><div className="text-[11px] text-ink-400">{location}</div></div>
+                <Button variant="outline" size="sm" onClick={onCopy}><Copy className="h-3.5 w-3.5" /> Copy config</Button>
+            </div>
+            <pre className="overflow-x-auto bg-surface px-4 py-3 font-mono text-[11px] leading-5 text-ink-700 sm:px-5"><code>{value}</code></pre>
         </Card>
     );
 }

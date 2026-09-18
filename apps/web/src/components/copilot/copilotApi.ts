@@ -344,6 +344,7 @@ export async function launchFromTemplate(templateId: string, leadIds: string[], 
         // description stays templated (not user-edited in the chat flow).
         const { data: campaign } = await api.post('/campaigns', {
             name: t.name,
+            templateId,
             workflow: t.workflow,
             objective: overrides?.objective ?? hint.objective,
             description: hint.description,
