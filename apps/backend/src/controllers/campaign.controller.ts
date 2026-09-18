@@ -1,5 +1,6 @@
 import { Response } from 'express';
 import { prisma } from '@repo/db';
+import { composeCampaignWorkflow, templateIdOf } from '../services/campaign-compose.service';
 import { getOrAssignProxy } from '../services/proxy.service';
 import { enqueueCampaign } from '../workers/campaign-worker';
 import { leadCapForTier } from '../config/plans';
@@ -12,17 +13,44 @@ import { emitCrmEvent, ensureCampaignCrmPolicy } from '../services/crm-events';
 import { preflightCampaign } from '../campaign-engine/launch-preflight';
 
 export const createCampaign = async (req: any, res: Response) => {
-    const { name, workflow, workflowJson, leads, objective, description, cta, toneOverride } = req.body;
+    const { name, workflow, workflowJson, leads, objective, description, cta, toneOverride, templateId } = req.body;
     const userId = req.user.id;
 
-    console.log('createCampaign called:', { name, workflow: !!workflow, workflowJson: !!workflowJson, objective: !!objective, description: !!description });
+    console.log('createCampaign called:', { name, templateId, workflow: !!workflow, workflowJson: !!workflowJson, objective: !!objective, description: !!description });
 
     // Use workflow or workflowJson (frontend sends "workflow")
-    const workflowData = workflow || workflowJson;
+    let workflowData = workflow || workflowJson;
 
     if (!name || !workflowData) {
         console.log('Missing fields:', { name: !!name, workflowData: !!workflowData });
         return res.status(400).json({ error: 'Missing name or workflow' });
+    }
+
+    // Campaign STRUCTURE comes from a template, never from the client.
+    //
+    // A hand-built sequence can get the user's LinkedIn account restricted, and
+    // templates are the shapes we have actually run. When templateId is present
+    // we rebuild the graph from it and copy across only the per-node fields a
+    // user may edit (see campaign-compose.service).
+    //
+    // ROLLOUT: templateId is currently OPTIONAL. The web app has three create
+    // call sites plus the copilot, none of which send it yet — rejecting now
+    // would break campaign creation in the window between the backend deploy
+    // (Hetzner) and the web deploy (Vercel), which never happen together. The
+    // warning below names each remaining caller; when it stops appearing, flip
+    // this to a 400. Do not flip on the assumption that all callers were found.
+    let composeWarnings: string[] = [];
+    if (templateId) {
+        const composed = composeCampaignWorkflow(String(templateId), workflowData);
+        if (!composed.ok) {
+            return res.status(400).json({ error: 'INVALID_CAMPAIGN', message: composed.error });
+        }
+        workflowData = composed.workflow;
+        composeWarnings = composed.warnings;
+        if (composeWarnings.length) console.log(`[CAMPAIGN] compose warnings for ${userId}:`, composeWarnings);
+    } else {
+        console.warn(`[CAMPAIGN] LEGACY CREATE — no templateId (user=${userId}, name="${name}"). `
+            + `Structure taken from the client unchecked. Caller must be updated to send templateId.`);
     }
 
     try {
@@ -73,11 +101,37 @@ export const updateCampaign = async (req: any, res: Response) => {
     const userId = req.user.id;
 
     try {
+        // Re-compose on edit, or the template lock is bypassed in two steps:
+        // create from a template, then PUT an arbitrary graph over it. The
+        // templateId travels inside workflowJson (no column, no migration), so
+        // a campaign that was composed from a template stays composed from it
+        // for the rest of its life — the builder can only ever change the
+        // per-node fields the compose service allows.
+        let nextWorkflow = workflowJson;
+        if (workflowJson) {
+            const existing = await prisma.campaign
+                .findFirst({ where: { id, userId }, select: { workflowJson: true } })
+                .catch(() => null);
+            const templateId = templateIdOf(existing?.workflowJson) || templateIdOf(workflowJson);
+            if (templateId) {
+                const composed = composeCampaignWorkflow(templateId, workflowJson);
+                if (!composed.ok) {
+                    return res.status(400).json({ error: 'INVALID_CAMPAIGN', message: composed.error });
+                }
+                nextWorkflow = composed.workflow;
+                if (composed.warnings.length) {
+                    console.log(`[CAMPAIGN] update compose warnings (${id}):`, composed.warnings);
+                }
+            } else {
+                console.warn(`[CAMPAIGN] LEGACY UPDATE — campaign ${id} has no templateId; graph accepted unchecked.`);
+            }
+        }
+
         const campaign = await prisma.campaign.update({
             where: { id, userId },
             data: {
                 name,
-                workflowJson,
+                workflowJson: nextWorkflow,
                 objective: objective !== undefined ? objective : undefined,
                 description: description !== undefined ? description : undefined,
                 cta: cta !== undefined ? cta : undefined,
