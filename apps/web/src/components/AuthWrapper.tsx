@@ -6,6 +6,8 @@ import { LoadingScreen } from '@/components/ui';
 import api from '@/lib/api';
 import { identifyUser } from '@/lib/analytics';
 
+const AUTH_ROUTES = ['/login', '/register', '/auth/callback'];
+
 export function AuthWrapper({ children }: { children: React.ReactNode }) {
     const router = useRouter();
     const pathname = usePathname();
@@ -13,23 +15,31 @@ export function AuthWrapper({ children }: { children: React.ReactNode }) {
 
     // /auth/callback lands here mid-OAuth with no token yet — it stores the
     // token itself, so it must not be bounced to /login.
-    const authRoutes = ['/login', '/register', '/auth/callback', '/api-reference'];
+    const isPublicDocsRoute = pathname === '/api-reference';
     const onboardingRoute = '/onboarding';
 
     useEffect(() => {
         let cancelled = false;
 
         (async () => {
+            // Documentation is intentionally available to everyone. In
+            // particular, a signed-in user must not be sent to the dashboard
+            // just because the docs page shares the app layout.
+            if (isPublicDocsRoute) {
+                setLoading(false);
+                return;
+            }
+
             const token = localStorage.getItem('token');
 
             if (!token) {
-                if (!authRoutes.includes(pathname)) router.push('/login');
+                if (!AUTH_ROUTES.includes(pathname)) router.push('/login');
                 setLoading(false);
                 return;
             }
 
             // Already authenticated and sitting on a login/register page → home.
-            if (authRoutes.includes(pathname)) {
+            if (AUTH_ROUTES.includes(pathname)) {
                 router.push('/');
                 return;
             }
@@ -74,9 +84,9 @@ export function AuthWrapper({ children }: { children: React.ReactNode }) {
         })();
 
         return () => { cancelled = true; };
-    }, [pathname, router]);
+    }, [isPublicDocsRoute, pathname, router]);
 
-    if (loading && !authRoutes.includes(pathname)) {
+    if (loading && !AUTH_ROUTES.includes(pathname) && !isPublicDocsRoute) {
         return <LoadingScreen fullScreen label="Signing you in…" />;
     }
 
