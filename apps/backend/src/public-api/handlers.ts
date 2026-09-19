@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { prisma } from '@repo/db';
 import { getTemplates, getTemplateById } from '../campaign-templates';
+import { composeCampaignWorkflow } from '../services/campaign-compose.service';
 import { startCampaign } from '../controllers/campaign.controller';
 import { searchPeople } from '../services/people-search.service';
 import { findEmail } from '../services/email-finder.service';
@@ -283,12 +284,24 @@ export async function createFromTemplate(req: any, res: Response) {
     const t = getTemplateById(templateId);
     if (!t) return apiError(res, 404, 'NOT_FOUND', 'Template not found');
 
+    // Compose rather than copy, so the campaign carries its templateId.
+    //
+    // Creation here was already safe (a custom workflow is rejected above), but
+    // writing t.workflow raw left NO provenance — and updateCampaign keys the
+    // template lock on that stamp. A campaign created through this endpoint
+    // would therefore take the "LEGACY UPDATE, graph accepted unchecked" path
+    // on its first edit, which is precisely the hole the lock exists to close.
+    // Composing also deep-clones, so the shared template registry can't be
+    // mutated by a request.
+    const composed = composeCampaignWorkflow(templateId, undefined);
+    if (!composed.ok) return apiError(res, 500, 'TEMPLATE_ERROR', composed.error || 'Could not build the template');
+
     const hint: any = t.aiStrategyHint || {};
     const campaign = await prisma.campaign.create({
         data: {
             userId,
             name,
-            workflowJson: t.workflow as any,
+            workflowJson: composed.workflow as any,
             objective: objective ?? hint.objective ?? undefined,
             description: description ?? hint.description ?? undefined,
             cta: cta ?? hint.cta ?? undefined,
