@@ -120,11 +120,22 @@ for c in backend-api backend-worker; do
 done
 
 # ── 7. health, from outside --------------------------------------------------
+# POLL, don't sample once. The load balancer takes a beat to re-register a
+# recreated backend, so an immediate probe gets a 503 from the LB — which is
+# not a failed deploy, but reads exactly like one. Observed on the very first
+# run of this script: containers already reporting the right SHA, LB still
+# serving 503 for ~20s.
 say "Health"
-HEALTH=$(curl -s --max-time 15 "${HEALTH_URL:-https://api.qampi.com/health}" || echo '{}')
-echo "$HEALTH" | grep -q '"status":"ok"' || die "health is not ok: $HEALTH"
+HEALTH=""
+for _ in $(seq 1 15); do
+    HEALTH=$(curl -s --max-time 10 "${HEALTH_URL:-https://api.qampi.com/health}" || echo '')
+    echo "$HEALTH" | grep -q '"status":"ok"' && break
+    sleep 5
+done
+echo "$HEALTH" | grep -q '"status":"ok"' \
+    || die "health still not ok after 75s: ${HEALTH:0:200}"
 echo "$HEALTH" | grep -q "\"commit\":\"$SHA\"" \
-    || printf '  \033[33m!\033[0m health reports a different commit (proxy cache or a second host?): %s\n' "$HEALTH"
+    || printf '  \033[33m!\033[0m health reports a different commit (proxy cache or a second host?): %s\n' "${HEALTH:0:200}"
 ok "healthy, serving $SHORT"
 
 printf '\n\033[32m✓ %s is live.\033[0m\n' "$SHORT"
