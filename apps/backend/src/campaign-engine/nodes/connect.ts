@@ -56,6 +56,30 @@ export const connect: NodeHandler = async (ctx, config): Promise<NodeResult> => 
             };
         }
 
+        // Did WE withdraw an invite to this person recently?
+        //
+        // LinkedIn refuses to let a withdrawn invitation be resent for THREE
+        // WEEKS. Without this check the pair of features fight each other: the
+        // withdraw job clears the outstanding pile, the campaign re-invites the
+        // same people days later, every attempt fails, and the failures look
+        // like a broken connect node. Terminal, not a retry — time is the only
+        // thing that fixes it.
+        const withdrawn = await prisma.actionLog.findFirst({
+            where: {
+                userId, leadId: lead.id, actionType: 'invite-withdrawn', status: 'SUCCESS',
+                executedAt: { gte: new Date(Date.now() - 21 * 86_400_000) },
+            },
+            select: { executedAt: true },
+        }).catch(() => null);
+        if (withdrawn) {
+            const days = Math.ceil((withdrawn.executedAt.getTime() + 21 * 86_400_000 - Date.now()) / 86_400_000);
+            console.log(`[CONNECT] Invite to ${lead.firstName} was withdrawn ${new Date(withdrawn.executedAt).toISOString().slice(0, 10)} — LinkedIn blocks a resend for ~${days} more day(s).`);
+            return {
+                success: false, terminal: true, terminalReason: 'invite_withdrawn_cooldown',
+                error: `Invite was withdrawn recently; LinkedIn blocks resending for about ${days} more days.`,
+            };
+        }
+
         console.log(`[CONNECT] Checking connection status for ${lead.firstName}...`);
 
         // Ask LinkedIn what the relationship IS before trusting the page.
