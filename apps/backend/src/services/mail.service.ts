@@ -33,7 +33,19 @@ const SMTP_PORT = parseInt(process.env.SMTP_PORT || '587', 10);
 const SMTP_SECURE = process.env.SMTP_SECURE === 'true' || SMTP_PORT === 465;
 const SMTP_USER = process.env.SMTP_USER || process.env.OUTLOOK_EMAIL || '';
 const SMTP_PASS = process.env.SMTP_PASS || process.env.OUTLOOK_APP_PASSWORD || '';
+/**
+ * The address mail is FROM, and the domain whose reputation it builds.
+ *
+ * Sending as @gmail.com (the current default) passes SPF only because Google's
+ * record covers it — the mail carries NO reputation of our own, and business
+ * inboxes file it accordingly. Point MAIL_FROM at an address on a domain that
+ * publishes SPF + DKIM + DMARC and that changes. `npm run check:email-dns`
+ * grades whichever domain MAIL_FROM uses.
+ */
 const MAIL_FROM = process.env.MAIL_FROM || (SMTP_USER ? `"Qampi AI" <${SMTP_USER}>` : '');
+/** Where replies go, when that shouldn't be the sending mailbox. */
+const MAIL_REPLY_TO = process.env.MAIL_REPLY_TO || '';
+const PUBLIC_API_URL = process.env.BACKEND_PUBLIC_URL || 'https://api.qampi.com';
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
 
@@ -158,7 +170,11 @@ class MailService {
             return null;
         }
         try {
-            const info = await this.transporter.sendMail({ from: MAIL_FROM, ...mailOptions });
+            const info = await this.transporter.sendMail({
+                from: MAIL_FROM,
+                ...(MAIL_REPLY_TO ? { replyTo: MAIL_REPLY_TO } : {}),
+                ...mailOptions,
+            });
             console.log(`[MAIL] ${label} sent:`, info.messageId);
             await this.record({ userId: meta?.userId, to, type, subject, status: 'SENT', detail: info.messageId });
             return info;
@@ -200,7 +216,25 @@ class MailService {
             return null;
         }
 
-        return this.send(label, { to: args.to, subject: args.subject, html: args.html }, { type: args.type, userId: args.userId });
+        // RFC 8058 one-click unsubscribe.
+        //
+        // Gmail and Yahoo expect these on bulk mail, and the practical effect is
+        // bigger than compliance: a recipient who can unsubscribe from their
+        // mail client's own button does that INSTEAD of pressing "report spam".
+        // Spam complaints are what actually destroy a sending domain, and they
+        // would take the billing and security emails down with the nudges.
+        const unsubUrl = `${PUBLIC_API_URL}/api/v1/email/unsubscribe`
+            + `?u=${encodeURIComponent(args.userId)}&t=${unsubscribeToken(args.userId)}`;
+
+        return this.send(label, {
+            to: args.to,
+            subject: args.subject,
+            html: args.html,
+            headers: {
+                'List-Unsubscribe': `<${unsubUrl}>`,
+                'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+            },
+        }, { type: args.type, userId: args.userId });
     }
 
     async sendWelcomeEmail(to: string, name: string) {

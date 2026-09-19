@@ -47,4 +47,33 @@ router.get('/unsubscribe', async (req, res) => {
         + 'and you can turn nudges back on in Settings whenever you like.'));
 });
 
+/**
+ * RFC 8058 one-click unsubscribe.
+ *
+ * Gmail and Yahoo POST here directly when a recipient presses the unsubscribe
+ * button in their mail client — no page is ever shown, so the response body is
+ * irrelevant and only the status code matters. Separate from the GET above
+ * because that one renders a confirmation page for a human who clicked a link.
+ *
+ * Same HMAC guard. No CSRF token by design: the caller is a mail provider, not
+ * a browser session, and the token IS the authorisation.
+ */
+router.post('/unsubscribe', async (req, res) => {
+    const userId = String(req.query.u || '');
+    const token = String(req.query.t || '');
+
+    if (!userId || token !== unsubscribeToken(userId)) {
+        return res.status(400).json({ error: 'invalid_token' });
+    }
+
+    await prisma.user
+        .update({ where: { id: userId }, data: { emailOptOut: true } as any })
+        .catch(() => null);
+
+    // 200 regardless of whether the row existed: a provider retrying a
+    // one-click unsubscribe must not be told to try again forever.
+    console.log(`[MAIL] one-click unsubscribe for user ${userId}`);
+    return res.status(200).json({ ok: true });
+});
+
 export default router;
