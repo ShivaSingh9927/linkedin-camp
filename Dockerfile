@@ -34,6 +34,18 @@ RUN npm install @sentry/node --no-save 2>/dev/null || true
 # Socket.IO server. Result: ~500 MB.
 FROM node:20-bookworm-slim AS api-runner
 
+# The commit this image was built from.
+#
+# Exists because a deploy used to be unverifiable: a git pull that aborted
+# half-way still printed "Updating <old>..<new>", Docker then built the stale
+# tree and reported success, and production ran nine-day-old code for the
+# public API with every signal saying it was current. A SHA baked into the
+# image — and surfaced on /health — turns "is my change live?" from a guess
+# into a string comparison. See scripts/deploy-worker.sh.
+ARG GIT_SHA=unknown
+ENV GIT_SHA=$GIT_SHA
+
+
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y \
@@ -63,6 +75,18 @@ CMD ["sh", "-c", "echo '🚀 API SERVER' && node apps/backend/dist/server.js"]
 # --------- WORKER RUNNER (full)---------
 # Includes Google Chrome + xvfb for headed automation.
 FROM node:20-bookworm-slim AS worker-runner
+
+# The commit this image was built from.
+#
+# Exists because a deploy used to be unverifiable: a git pull that aborted
+# half-way still printed "Updating <old>..<new>", Docker then built the stale
+# tree and reported success, and production ran nine-day-old code for the
+# public API with every signal saying it was current. A SHA baked into the
+# image — and surfaced on /health — turns "is my change live?" from a guess
+# into a string comparison. See scripts/deploy-worker.sh.
+ARG GIT_SHA=unknown
+ENV GIT_SHA=$GIT_SHA
+
 
 WORKDIR /app
 

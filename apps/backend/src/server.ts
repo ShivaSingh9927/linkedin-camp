@@ -57,7 +57,18 @@ app.get('/health', async (_req, res) => {
         checks.redis = 'not configured';
     }
 
-    res.status(allOk ? 200 : 503).json({ status: allOk ? 'ok' : 'degraded', checks });
+    // commit: which build is ACTUALLY serving this request.
+    //
+    // Baked in at image build (Dockerfile ARG GIT_SHA). Without it, confirming
+    // a deploy meant sshing to the box and trusting a chain of commands that
+    // has already been shown to lie — a half-aborted pull still prints
+    // "Updating <old>..<new>", and a Docker build of a stale tree still says
+    // "Built". This is the one signal that comes from the running process.
+    res.status(allOk ? 200 : 503).json({
+        status: allOk ? 'ok' : 'degraded',
+        commit: process.env.GIT_SHA || 'unknown',
+        checks,
+    });
 });
 
 app.get('/ping', (_req, res) => res.send('pong'));

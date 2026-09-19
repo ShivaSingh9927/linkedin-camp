@@ -17,7 +17,13 @@ x-logging: &default-logging
 
 services:
   backend-api:
-    build: .
+    build:
+      context: .
+      args:
+        # Set by scripts/deploy-worker.sh from the SHA it verified. A manual
+        # build leaves it "unknown", which the deploy script treats as a failed
+        # verification rather than a pass.
+        GIT_SHA: ${GIT_SHA:-unknown}
     image: linkedin-camp-backend:latest
     container_name: backend-api
     restart: unless-stopped
