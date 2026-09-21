@@ -11,9 +11,13 @@
 # Pages are disjoint (58 distinct profiles over 3 pages, zero page1/page2
 # overlap), so depth is real.
 #
-# `secret_key` is deliberately the literal "ultrasecretkey": the official image's
-# entrypoint substitutes $SEARXNG_SECRET into it at boot, which is why the
-# settings mount must be writable.
+# `secret_key` below stays the literal placeholder on purpose. SearXNG reads the
+# real value from the environment — searx/settings_defaults.py declares
+# `'secret_key': SettingsValue(str, environ_name='SEARXNG_SECRET')`, and the env
+# var wins over the file. (The image entrypoint also has a sed, but it
+# substitutes a RANDOM value and does not touch a mounted settings file, so it
+# is not the mechanism here.) Never put the real secret in this file — it is
+# committed.
 
 use_default_settings: true
 
@@ -42,7 +46,9 @@ outgoing:
   pool_connections: 20
   pool_maxsize: 10
 
-redis:
+valkey:
   # Share the Redis already running on this box instead of adding the Valkey
-  # sidecar the upstream compose template ships.
+  # sidecar the upstream compose template ships — they speak the same protocol.
+  # Key name is `valkey`, not `redis`: the latter still works but logs a
+  # DeprecationWarning on every boot.
   url: redis://redis:6379/3

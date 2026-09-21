@@ -100,12 +100,13 @@ services:
       redis:
         condition: service_healthy
     environment:
-      # The entrypoint substitutes this into settings.yml's "ultrasecretkey"
-      # placeholder at boot, which is why the mount below is NOT read-only.
+      # SearXNG reads secret_key from this env var directly (settings_defaults
+      # declares environ_name='SEARXNG_SECRET'), so the committed settings file
+      # keeps a placeholder and the real value never enters git.
       SEARXNG_SECRET: ${SEARXNG_SECRET:-change-me-in-env-production}
       SEARXNG_BASE_URL: http://searxng:8080/
     volumes:
-      - ./apps/searxng/settings.yml:/etc/searxng/settings.yml
+      - ./apps/searxng/settings.yml:/etc/searxng/settings.yml:ro
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz >/dev/null 2>&1 || exit 1"]
       interval: 30s
