@@ -1,4 +1,5 @@
 import json
+import os
 import httpx
 from typing import List, Optional
 from openai import OpenAI
