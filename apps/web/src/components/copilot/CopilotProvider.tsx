@@ -19,7 +19,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { Msg } from './copilotTypes';
-import { toDurableMessages } from './copilotTypes';
+import { toDurableMessages, upgradePersistedMessages } from './copilotTypes';
 
 export interface ThreadMeta {
     id: string;
@@ -56,7 +56,8 @@ const CopilotContext = createContext<CopilotState | null>(null);
 const INDEX_PREFIX = 'qampi.copilot.index.'; // the thread index (per user)
 const THREAD_PREFIX = 'qampi.copilot.t.';    // one blob per thread
 const OLD_PREFIX = 'qampi.copilot.thread.';  // pre-threads single conversation (migrate from)
-const V = 2;
+const V = 3;
+const PREVIOUS_V = 2;
 const MAX_THREADS = 30;
 const DEFAULT_TITLE = 'New chat';
 
@@ -117,7 +118,10 @@ function readThread(w: string, id: string): ThreadBlob {
         const raw = localStorage.getItem(threadKey(w, id));
         if (raw) {
             const b = JSON.parse(raw) as ThreadBlob;
-            if (b?.v === V) return { v: V, messages: Array.isArray(b.messages) ? b.messages : [], importedLeadIds: Array.isArray(b.importedLeadIds) ? b.importedLeadIds : [] };
+            if (b?.v === V || b?.v === PREVIOUS_V) {
+                const messages = Array.isArray(b.messages) ? upgradePersistedMessages(b.messages) : [];
+                return { v: V, messages, importedLeadIds: Array.isArray(b.importedLeadIds) ? b.importedLeadIds : [] };
+            }
         }
     } catch { /* corrupt — treat as empty */ }
     return { v: V, messages: [], importedLeadIds: [] };
@@ -143,7 +147,7 @@ export function CopilotProvider({ children }: { children: React.ReactNode }) {
             const idxRaw = localStorage.getItem(indexKey(w));
             if (idxRaw) {
                 const idx = JSON.parse(idxRaw) as IndexBlob;
-                if (idx?.v === V && Array.isArray(idx.threads) && idx.threads.length) {
+                if ((idx?.v === V || idx?.v === PREVIOUS_V) && Array.isArray(idx.threads) && idx.threads.length) {
                     const act = idx.threads.some((t) => t.id === idx.activeThreadId) ? idx.activeThreadId : idx.threads[0].id;
                     const blob = readThread(w, act);
                     setThreads(idx.threads);
@@ -158,7 +162,7 @@ export function CopilotProvider({ children }: { children: React.ReactNode }) {
             const oldRaw = localStorage.getItem(oldKey(w));
             if (oldRaw) {
                 const old = JSON.parse(oldRaw) as { messages?: Msg[]; importedLeadIds?: string[] };
-                const msgs = Array.isArray(old?.messages) ? old.messages : [];
+                const msgs = Array.isArray(old?.messages) ? upgradePersistedMessages(old.messages) : [];
                 const imported = Array.isArray(old?.importedLeadIds) ? old.importedLeadIds : [];
                 const id = newThreadId();
                 const meta: ThreadMeta = { id, title: titleFrom(msgs), updatedAt: Date.now() };
@@ -193,8 +197,6 @@ export function CopilotProvider({ children }: { children: React.ReactNode }) {
             writeIndex(w, next, activeThreadId);
             return next;
         });
-        // setThreads is intentionally excluded — it's the setter, stable.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [messages, importedLeadIds, hydrated, activeThreadId]);
 
     const newThread = useCallback(() => {

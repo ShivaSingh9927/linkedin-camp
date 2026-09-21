@@ -28,6 +28,45 @@ export type MsgKind = Msg['kind'];
 let _id = 0;
 export const nextId = () => `m${Date.now()}_${_id++}`;
 
+// V2 stored completed web research as a normal assistant text message with a
+// long `Sources:` tail. Upgrade those saved messages while hydrating so users
+// immediately get the research-brief treatment after the frontend deploy,
+// without having to repeat their question or delete a thread.
+export function upgradePersistedMessages(messages: Msg[]): Msg[] {
+    let lastUserQuestion = '';
+    return messages.map((message) => {
+        if (message.kind === 'text' && message.role === 'user') {
+            lastUserQuestion = message.text;
+            return message;
+        }
+        if (message.kind !== 'text' || message.role !== 'qampi' || !/\n\s*Sources:\s*/i.test(message.text)) return message;
+
+        const [reply, sourceTail = ''] = message.text.split(/\n\s*Sources:\s*/i, 2);
+        const seen = new Set<string>();
+        const sources = Array.from(sourceTail.matchAll(/https?:\/\/[^\s)\]]+/g))
+            .map((match) => match[0].replace(/[.,;:]+$/, ''))
+            .filter((url) => {
+                if (seen.has(url)) return false;
+                seen.add(url);
+                return true;
+            })
+            .map((url) => {
+                let title = url;
+                try { title = new URL(url).hostname.replace(/^www\./, ''); } catch { /* retain URL */ }
+                return { title, url };
+            });
+
+        return {
+            id: message.id,
+            role: 'qampi',
+            kind: 'researchBrief',
+            query: lastUserQuestion || 'Web research',
+            reply: reply.trim() || 'I found public sources for this research.',
+            sources,
+        };
+    });
+}
+
 // Message kinds that are safe to persist and restore verbatim. Volatile kinds
 // (live search results, suggestion chips, in-flight spinners) are dropped on
 // save — the narrative text stays, but live data is always re-fetched fresh
