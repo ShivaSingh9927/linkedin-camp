@@ -146,6 +146,9 @@ services:
       # fallback: the two fail independently, so keeping both is the only
       # redundancy we actually have (see the single-engine note in people-serp).
       SEARXNG_URL: ${SEARXNG_URL:-http://searxng:8080}
+      # Only the engines measured to answer from this box. See the probe table
+      # in people-serp.js before changing this.
+      SEARXNG_ENGINES: ${SEARXNG_ENGINES:-google,yahoo}
       SERP_CACHE_TTL_SECONDS: ${SERP_CACHE_TTL_SECONDS:-604800}
       # Cache the landscape effectively forever — the user's positioning + their
       # competitor list rarely shifts week-to-week, and a "refresh strategy"

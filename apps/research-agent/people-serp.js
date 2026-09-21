@@ -37,6 +37,18 @@ const SERP_DEFAULT_PAGES = parseInt(process.env.SERP_DEFAULT_PAGES || '2', 10);
 // SEARXNG_URL and everything falls back to Yahoo automatically.
 const SEARXNG_URL = (process.env.SEARXNG_URL || '').replace(/\/$/, '');
 const SEARXNG_TIMEOUT_MS = parseInt(process.env.SEARXNG_TIMEOUT_MS || '15000', 10);
+// Pinned engine set, chosen by probing each one from this box 2026-09-22 with a
+// site:linkedin.com/in/ query:
+//     google      10 profiles   380ms   <- works
+//     yahoo        7 profiles   883ms   <- works, and with NO browser
+//     bing        10 results, 0 profiles (ignores the site: restriction)
+//     google cse   suspended: "unusual traffic from your network"
+//     brave / duckduckgo / startpage / qwant / mojeek / presearch / marginalia
+//                  all refused: CAPTCHA or too-many-requests
+// Leaving the set unpinned means every query also waits on eight engines that
+// will not answer, and lets `google cse` — which returns topically-adjacent but
+// wrong results — pollute the ranking.
+const SEARXNG_ENGINES = process.env.SEARXNG_ENGINES || 'google,yahoo';
 // General web answers go stale faster than a list of people in a role.
 const WEB_CACHE_TTL_SECONDS = parseInt(process.env.WEB_SEARCH_CACHE_TTL_SECONDS || String(6 * 60 * 60), 10);
 
@@ -104,7 +116,8 @@ function fetchMarkdownAsync(url, timeoutMs = SERP_PAGE_TIMEOUT_MS) {
 // a log line, not from a user with zero leads.
 async function searxngSearch(query, pageno = 1) {
     if (!SEARXNG_URL) return null;
-    const url = `${SEARXNG_URL}/search?q=${encodeURIComponent(query)}&format=json&pageno=${pageno}`;
+    const url = `${SEARXNG_URL}/search?q=${encodeURIComponent(query)}`
+        + `&format=json&pageno=${pageno}&engines=${encodeURIComponent(SEARXNG_ENGINES)}`;
     let resp;
     try {
         resp = await fetch(url, { signal: AbortSignal.timeout(SEARXNG_TIMEOUT_MS) });
@@ -345,29 +358,30 @@ async function searchWeb({ query, limit } = {}, redis) {
         } catch { /* cache is an optimization, never a dependency */ }
     }
 
-    // NOTE the order here is the REVERSE of profile discovery, and that is
-    // deliberate. Measured 2026-09-22 on "what is enphase energies main icp":
-    //     Yahoo    -> Enphase Wikipedia, enphase.com/about, product pages
-    //     SearXNG  -> "Methods Improving Energy Efficiency of Photovoltaic
-    //                 System", "Energy Communities - Hive Power", "5 Factors
-    //                 To Consider When Choosing Solar Panels"
-    // SearXNG wins decisively on `site:`-restricted profile lookups and loses
-    // on open research questions — it matched the topic but not the subject.
-    // So each path leads with the backend that is better at its own job.
+    // Same order as profile discovery. An earlier revision put Yahoo first here
+    // because SearXNG had answered an Enphase question with "Methods Improving
+    // Energy Efficiency of Photovoltaic System" — topically adjacent, wrong
+    // subject. That was `google cse`, not SearXNG: with the engine set pinned
+    // to google+yahoo the same query returns 5/5 on-topic results in ~860ms,
+    // against ~5s for the Lightpanda render. One backend, both jobs.
     let hits = [];
-    let backend = 'yahoo';
-    await acquire();
-    try {
-        hits = await yahooHits(q, 1);
-    } catch (e) {
-        console.error(`[web-search] "${q}" yahoo failed: ${e && e.message}`);
-    } finally {
-        release();
-    }
-    if (hits.length === 0 && SEARXNG_URL) {
-        backend = 'searxng (yahoo empty)';
+    let backend = 'searxng';
+    if (SEARXNG_URL) {
         const rows = await searxngSearch(q, 1);
         if (rows) hits = rows;
+    }
+    if (hits.length === 0) {
+        // Out-of-band fallback: Lightpanda fails independently of SearXNG, so
+        // it still covers the case where SearXNG itself is down.
+        backend = SEARXNG_URL ? 'yahoo (searxng empty)' : 'yahoo';
+        await acquire();
+        try {
+            hits = await yahooHits(q, 1);
+        } catch (e) {
+            console.error(`[web-search] "${q}" yahoo failed: ${e && e.message}`);
+        } finally {
+            release();
+        }
     }
 
     const results = hits
