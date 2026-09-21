@@ -28,6 +28,10 @@ const EMAIL_FORMAT_CACHE_TTL_SECONDS = parseInt(process.env.EMAIL_FORMAT_CACHE_T
 const CF_GATEWAY_URL = process.env.CLOUDFLARE_AI_GATEWAY_URL || '';
 const CF_AIG_TOKEN = process.env.CF_AIG_TOKEN || '';
 const CF_BYOK_ALIAS_DEEPSEEK = process.env.CF_BYOK_ALIAS_DEEPSEEK || 'qampi-deepseek-v4-flash';
+// Per-task attribution in the Cloudflare gateway logs. Without it every row
+// across all four services looks identical (same model, same path, metadata
+// null), so "which feature is our spend?" has no answer.
+const CF_METADATA = JSON.stringify({ task: 'research', service: 'research-agent' });
 const DEEPSEEK_MODEL = process.env.LLM_MODEL || 'deepseek/deepseek-flash';
 
 // ---------- Lightpanda ----------
@@ -78,6 +82,7 @@ async function callDeepSeek(systemPrompt, userPrompt, { maxTokens = 600, tempera
       'Authorization': `Bearer ${CF_AIG_TOKEN}`,
       'Content-Type': 'application/json',
       'cf-aig-byok-alias': CF_BYOK_ALIAS_DEEPSEEK,
+      'cf-aig-metadata': CF_METADATA,
     },
     body: JSON.stringify(body),
   });

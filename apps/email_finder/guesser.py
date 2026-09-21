@@ -44,6 +44,10 @@ def _call_llm(system: str, user: str, temperature: float = 0.3) -> str:
     extra_headers = {}
     if USE_CLOUDFLARE_GATEWAY and DEEPSEEK_MODEL.startswith("deepseek/") and CF_BYOK_ALIAS_DEEPSEEK:
         extra_headers["cf-aig-byok-alias"] = CF_BYOK_ALIAS_DEEPSEEK
+        # Per-task attribution in the gateway logs — without it this
+        # service's calls are indistinguishable from every other one.
+        extra_headers["cf-aig-metadata"] = json.dumps(
+            {"task": "email_guess", "service": "email-finder"})
 
     resolved = _resolve_model(DEEPSEEK_MODEL)
 

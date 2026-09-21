@@ -1,3 +1,5 @@
+import sys
+import json
 import os
 import httpx
 from typing import Optional, Dict, Any, List
@@ -422,6 +424,35 @@ CF_BYOK_ALIAS_DEEPSEEK = os.environ.get("CF_BYOK_ALIAS_DEEPSEEK", "qampi-deepsee
 CF_BYOK_ALIAS_GROQ = os.environ.get("CF_BYOK_ALIAS_GROQ", "")  # unset = skip
 
 
+def _gateway_metadata(model_name: str, reasoning_effort: Optional[str], depth: int = 2) -> dict:
+    """Tag each gateway request with the TASK that made it.
+
+    Cloudflare logs every call, but until now every row looked identical:
+    same model, same path, metadata null. So "which feature is our spend?" and
+    "did search-query calls start failing?" were both unanswerable — 500 rows
+    of undifferentiated chat/completions.
+
+    The task name is the calling function, read straight off the stack rather
+    than threaded through 24 call sites (which would drift the first time
+    someone added an endpoint and forgot). sys._getframe is microseconds
+    against a ~2s network call, so the cost is noise.
+    """
+    # depth 2 = the endpoint that called call_llm (0 is this helper, 1 is
+    # call_llm itself). Verified against a stack fixture — depth 3 names
+    # FastAPI's dispatcher instead, which would tag every row identically and
+    # make the whole exercise pointless.
+    try:
+        task = sys._getframe(depth).f_code.co_name
+    except Exception:
+        task = "unknown"
+    return {
+        "task": task,
+        "service": "ai-service",
+        "model": model_name,
+        "thinking": reasoning_effort or "none",
+    }
+
+
 def call_llm(system: str, user: str, temperature: float = 0.7, model: str = LLM_MODEL, max_tokens: int = 600, reasoning_effort: Optional[str] = None) -> str:
     model_name = model
 
@@ -433,6 +464,13 @@ def call_llm(system: str, user: str, temperature: float = 0.7, model: str = LLM_
             extra_headers["cf-aig-byok-alias"] = CF_BYOK_ALIAS_DEEPSEEK
         elif model_name.startswith("groq/") and CF_BYOK_ALIAS_GROQ:
             extra_headers["cf-aig-byok-alias"] = CF_BYOK_ALIAS_GROQ
+        # Per-task attribution in the gateway logs. Best-effort: a malformed
+        # header must never cost us the completion itself.
+        try:
+            extra_headers["cf-aig-metadata"] = json.dumps(
+                _gateway_metadata(model_name, reasoning_effort))
+        except Exception:
+            pass
 
     resolved = _resolve_model(model_name)
 
@@ -505,6 +543,13 @@ def call_llm_with_reasoning(system: str, user: str, temperature: float = 0.7, mo
             extra_headers["cf-aig-byok-alias"] = CF_BYOK_ALIAS_DEEPSEEK
         elif model_name.startswith("groq/") and CF_BYOK_ALIAS_GROQ:
             extra_headers["cf-aig-byok-alias"] = CF_BYOK_ALIAS_GROQ
+        # Per-task attribution in the gateway logs. Best-effort: a malformed
+        # header must never cost us the completion itself.
+        try:
+            extra_headers["cf-aig-metadata"] = json.dumps(
+                _gateway_metadata(model_name, reasoning_effort))
+        except Exception:
+            pass
 
     resolved = _resolve_model(model_name)
 
