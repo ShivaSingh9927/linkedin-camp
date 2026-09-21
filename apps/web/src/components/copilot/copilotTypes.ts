@@ -13,6 +13,9 @@ export type Msg =
     // User-facing progress only — concise task/rationale, never private model reasoning.
     | { id: string; role: 'qampi'; kind: 'searching'; label: string; detail?: string }
     | { id: string; role: 'qampi'; kind: 'webSearch'; query: string; state: 'install' | 'permission' | 'ready' | 'searching' | 'error'; error?: string }
+    // Grounded public-web research is a brief, not an unstructured chat wall.
+    // Sources remain distinct from the answer so they can be inspected on demand.
+    | { id: string; role: 'qampi'; kind: 'researchBrief'; query: string; reply: string; sources: Array<{ title: string; url: string }> }
     | { id: string; role: 'qampi'; kind: 'results'; people: SearchPerson[]; via: string; remaining: number; cap: number; keywords: string; filters?: SearchFilters; page: number; saturation?: SaturationSignal }
     | { id: string; role: 'qampi'; kind: 'templates'; loading: boolean; picks?: TemplatePick[] }
     | { id: string; role: 'qampi'; kind: 'launchConfirm'; templateId: string; label: string; leadIds: string[]; note?: string; setup?: { objective: string; cta: string; tone: string }; meta?: { durationDays: number; stepCount: number; needsEmail: boolean }; state: 'idle' | 'launching' | 'done' | 'error'; campaignId?: string; error?: string }
@@ -29,7 +32,7 @@ export const nextId = () => `m${Date.now()}_${_id++}`;
 // (live search results, suggestion chips, in-flight spinners) are dropped on
 // save — the narrative text stays, but live data is always re-fetched fresh
 // rather than replayed from a stale snapshot.
-const DURABLE_KINDS: ReadonlySet<MsgKind> = new Set<MsgKind>(['text', 'understand', 'reconnect', 'launchConfirm']);
+const DURABLE_KINDS: ReadonlySet<MsgKind> = new Set<MsgKind>(['text', 'understand', 'researchBrief', 'reconnect', 'launchConfirm']);
 
 const MAX_PERSISTED = 40;
 

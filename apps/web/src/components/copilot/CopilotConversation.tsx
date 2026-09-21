@@ -9,10 +9,12 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Search, Loader2, ArrowUp, Check, Plus, MapPin, Clock, ArrowRight, Rocket, LinkIcon, Sparkles, PenSquare, Trash2, MessageSquare, Send } from 'lucide-react';
+import { Search, Loader2, ArrowUp, Check, Plus, MapPin, Clock, ArrowRight, Rocket, LinkIcon, Sparkles, PenSquare, Trash2, MessageSquare, Send, ExternalLink, FileText, ShieldCheck, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { TypingLoader } from '@/components/ui/loader';
 import { Reasoning, ReasoningContent, ReasoningTrigger } from '@/components/ui/reasoning';
+import { Card, CardBody } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { track } from '@/lib/analytics';
 import { updateCopilotHarnessTurn } from '@/lib/copilot-harness-store';
 import {
@@ -376,8 +378,14 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
         try {
             const summary = await searchAndSummarizeWeb(query);
             setMessages((prev) => prev.filter((m) => m.id !== msgId));
-            const sources = summary.sources.map((s) => `- ${s.title}: ${s.url}`).join('\n');
-            push({ id: nextId(), role: 'qampi', kind: 'text', text: [summary.reply, sources].filter(Boolean).join('\n\n') || 'I found public sources, but could not create a summary.' });
+            push({
+                id: nextId(),
+                role: 'qampi',
+                kind: 'researchBrief',
+                query,
+                reply: summary.reply || 'I found public sources, but could not create a summary.',
+                sources: summary.sources,
+            });
         } catch (error: unknown) {
             // Surface what actually failed. The old path reported every failure
             // as "No web results found. Try a shorter query.", which blamed the
@@ -689,6 +697,7 @@ function MessageRow({ m, onPickSearch, onRunDraft, onPickTemplate, onLaunch, onS
     if (m.kind === 'searchChips') return <div className="pl-8"><SearchChips loading={m.loading} recs={m.recs} onPick={onPickSearch} /></div>;
     if (m.kind === 'searchDraft') return <div className="pl-8"><SearchDraftCard m={m} onRun={onRunDraft} /></div>;
     if (m.kind === 'webSearch') return <div className="pl-8"><WebSearchCard m={m} onRun={onRunWebSearch} /></div>;
+    if (m.kind === 'researchBrief') return <div className="pl-8"><ResearchBriefCard m={m} /></div>;
     if (m.kind === 'searching') return <QBubble><AgentProgress label={m.label} detail={m.detail} /></QBubble>;
     if (m.kind === 'results') return <QBubble><p>These leads are ready in the panel. Choose an option there and I&rsquo;ll stay in sync; or tell me how you&rsquo;d like to refine the search.</p></QBubble>;
     if (m.kind === 'templates') return <div className="pl-8"><TemplatePicks loading={m.loading} picks={m.picks} onPick={onPickTemplate} /></div>;
@@ -720,6 +729,74 @@ function WebSearchCard({ m, onRun }: { m: Extract<Msg, { kind: 'webSearch' }>; o
             )}
         </div>
     );
+}
+
+// Public research deserves a distinct, scan-friendly surface. The model's
+// grounded answer stays intact, while source provenance is deliberately kept
+// behind a disclosure instead of consuming the whole conversation viewport.
+function ResearchBriefCard({ m }: { m: Extract<Msg, { kind: 'researchBrief' }> }) {
+    const title = researchTitle(m.query);
+    const sourceLabel = m.sources.length === 1 ? '1 source checked' : `${m.sources.length} sources checked`;
+
+    return (
+        <Card className="max-w-[96%] overflow-hidden border-brand-100 shadow-none">
+            <CardBody className="p-0">
+                <div className="flex items-start gap-3 px-4 pt-4 pb-3">
+                    <div className="grid h-8 w-8 shrink-0 place-items-center rounded-control bg-brand-50 text-brand">
+                        <FileText className="h-4 w-4" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-brand">Research brief</p>
+                            <Badge tone="success" className="!px-1.5 !py-0.5 !text-[10px]" dot>Grounded</Badge>
+                        </div>
+                        <h3 className="mt-0.5 text-[14px] font-semibold leading-snug text-foreground">{title}</h3>
+                    </div>
+                </div>
+
+                <div className="mx-4 border-y border-line bg-surface/55 px-3.5 py-3">
+                    <div className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.11em] text-ink-500">
+                        <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" /> Bottom line
+                    </div>
+                    <div className="text-[13px] leading-relaxed text-ink-700 [&_strong]:text-foreground [&_strong]:font-semibold">
+                        <RichText text={m.reply} />
+                    </div>
+                </div>
+
+                <details className="group px-4 py-3">
+                    <summary className="flex cursor-pointer list-none items-center gap-2 text-[12px] font-medium text-ink-600 hover:text-brand">
+                        <span className="grid h-5 w-5 place-items-center rounded-full bg-surface text-ink-500 group-open:bg-brand-50 group-open:text-brand"><ChevronDown className="h-3 w-3 transition-transform group-open:rotate-180" /></span>
+                        {sourceLabel}
+                    </summary>
+                    <div className="mt-2.5 space-y-1.5 border-l-2 border-brand-100 pl-3">
+                        {m.sources.length ? m.sources.map((source) => (
+                            <a
+                                key={source.url}
+                                href={source.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="flex items-start gap-1.5 text-[11px] leading-snug text-ink-500 hover:text-brand"
+                            >
+                                <ExternalLink className="mt-0.5 h-3 w-3 shrink-0" />
+                                <span>{source.title}</span>
+                            </a>
+                        )) : <p className="text-[11px] text-ink-500">No source links were returned for this brief.</p>}
+                    </div>
+                </details>
+            </CardBody>
+        </Card>
+    );
+}
+
+function researchTitle(query: string): string {
+    const clean = query.replace(/\s+/g, ' ').trim();
+    const company = clean
+        .replace(/^(what(?:'s| is)|who is|tell me about|research)\s+/i, '')
+        .replace(/(?:'s|’s)?\s+(main\s+)?(ideal customer profile|icp|target market).*$/i, '')
+        .replace(/\?+$/, '')
+        .trim();
+    if (/(ideal customer profile|\bicp\b|target market)/i.test(clean)) return `${company || 'Company'} — ICP brief`;
+    return clean.length > 72 ? `${clean.slice(0, 69)}…` : clean || 'Research brief';
 }
 
 // A reasoned query, shown BEFORE a search is spent. The user edits the boolean +
