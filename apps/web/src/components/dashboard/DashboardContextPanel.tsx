@@ -3,11 +3,12 @@
 import { useMemo, useState } from 'react';
 import type { Dispatch, ReactNode, SetStateAction } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, ChevronDown, ExternalLink, X } from 'lucide-react';
+import { ArrowLeft, ChevronDown, ExternalLink, FolderPlus, ListPlus, Rocket, Search, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useCopilot } from '@/components/copilot/CopilotProvider';
 import type { Msg } from '@/components/copilot/copilotTypes';
-import type { SearchPerson, TemplatePick } from '@/components/copilot/copilotApi';
+import { fetchTemplateRecommendations, importPeople, runSearch, type SearchPerson, type TemplatePick } from '@/components/copilot/copilotApi';
+import api from '@/lib/api';
 import type { SetupStatus } from '@/components/ActivationHero';
 import { DynamicStatusPanel, type StatusCampaign, type StatusLog } from './DynamicStatusPanel';
 
@@ -37,6 +38,7 @@ export function DashboardContextPanel(props: Props) {
         [messages],
     );
     const [navigation, setNavigation] = useState<{ artifactId?: string; view?: View }>({});
+    const [panelPicks, setPanelPicks] = useState<TemplatePick[] | null>(null);
     if (artifact && navigation.artifactId !== artifact.id) {
         setNavigation({ artifactId: artifact.id });
     }
@@ -52,12 +54,16 @@ export function DashboardContextPanel(props: Props) {
     if (view === 'leads' && latestResults) {
         return (
             <ContextShell title="Matched leads" subtitle={`${latestResults.people.length} results from Qampi`} onClose={showStatus}>
-                <LeadsContext people={latestResults.people} />
+                <LeadsContext result={latestResults} onFindCampaigns={(picks) => {
+                    setPanelPicks(picks);
+                    setNavigation({ artifactId: artifact?.id, view: 'campaigns' });
+                    setWorkspaceContext({ kind: 'campaigns', label: 'Campaign recommendations', detail: `${picks.length} matches for selected leads` });
+                }} />
             </ContextShell>
         );
     }
 
-    const picks = artifact?.kind === 'templates' ? artifact.picks || [] : [];
+    const picks = panelPicks || (artifact?.kind === 'templates' ? artifact.picks || [] : []);
     return (
         <ContextShell
             title="Campaign recommendations"
@@ -95,10 +101,21 @@ function ContextShell({ title, subtitle, children, onClose, back }: {
     );
 }
 
-function LeadsContext({ people }: { people: SearchPerson[] }) {
-    const { setWorkspaceContext } = useCopilot();
+function LeadsContext({ result, onFindCampaigns }: {
+    result: Extract<Msg, { kind: 'results' }>;
+    onFindCampaigns: (picks: TemplatePick[]) => void;
+}) {
+    const { setImportedLeadIds, setWorkspaceContext } = useCopilot();
+    const [extraPeople, setExtraPeople] = useState<SearchPerson[]>([]);
+    const people = [...result.people, ...extraPeople];
     const [open, setOpen] = useState<number | null>(people.length ? 0 : null);
     const [selected, setSelected] = useState<Set<number>>(() => new Set(people.length ? [0] : []));
+    const [action, setAction] = useState<'new-list' | 'existing-list' | null>(null);
+    const [listName, setListName] = useState('');
+    const [lists, setLists] = useState<string[]>([]);
+    const [chosenList, setChosenList] = useState('');
+    const [busy, setBusy] = useState<'list' | 'more' | 'campaigns' | null>(null);
+    const [notice, setNotice] = useState<string | null>(null);
 
     const toggleSelected = (index: number) => {
         setSelected((current) => {
@@ -109,8 +126,80 @@ function LeadsContext({ people }: { people: SearchPerson[] }) {
         });
     };
 
+    const selectedPeople = () => people.filter((_, index) => selected.has(index));
+
+    const importSelection = async () => {
+        const chosen = selectedPeople();
+        if (!chosen.length) return [];
+        const { leadIds } = await importPeople(chosen);
+        const ids = leadIds.length ? leadIds : (await api.get('/leads')).data
+            .filter((lead: { id: string; linkedinUrl?: string }) => chosen.some((person) => person.linkedinUrl === lead.linkedinUrl))
+            .map((lead: { id: string }) => lead.id);
+        setImportedLeadIds((current) => Array.from(new Set([...current, ...ids])));
+        return ids;
+    };
+
+    const loadLists = async () => {
+        setAction('existing-list');
+        if (lists.length) return;
+        try {
+            const { data } = await api.get<Array<{ tags?: string[] }>>('/leads');
+            const tags = data.flatMap((lead) => lead.tags || []).filter((tag) => !tag.startsWith('bot:'));
+            setLists([...new Set(tags)].sort());
+        } catch {
+            setNotice('We could not load your existing lists. Try again in a moment.');
+        }
+    };
+
+    const saveToList = async (name: string) => {
+        const trimmed = name.trim();
+        if (!trimmed || !selected.size) return;
+        setBusy('list');
+        try {
+            const leadIds = await importSelection();
+            await api.post('/leads/bulk-tags', { leadIds, tags: [trimmed], operation: 'ADD' });
+            setLists((current) => [...new Set([...current, trimmed])].sort());
+            setAction(null);
+            setListName('');
+            setNotice(`${selected.size} selected lead${selected.size === 1 ? '' : 's'} added to “${trimmed}”.`);
+            setWorkspaceContext({ kind: 'leads', label: trimmed, detail: `${selected.size} leads saved to list` });
+        } catch {
+            setNotice('We could not save this list. Try again in a moment.');
+        } finally {
+            setBusy(null);
+        }
+    };
+
+    const findMore = async () => {
+        setBusy('more');
+        try {
+            const response = await runSearch(result.keywords, result.filters, result.page + 1, result.keywords);
+            setExtraPeople((current) => [...current, ...response.people.filter((candidate) => !people.some((person) => person.linkedinUrl === candidate.linkedinUrl))]);
+            setNotice(response.people.length ? `${response.people.length} more leads added with the same search.` : 'No more fresh leads for this search. Ask Qampi to refine the criteria.');
+            setWorkspaceContext({ kind: 'leads', label: 'Matched leads', detail: 'same search, expanded results' });
+        } catch {
+            setNotice('We could not fetch more leads. Try again in a moment.');
+        } finally {
+            setBusy(null);
+        }
+    };
+
+    const findCampaigns = async () => {
+        if (!selected.size) return;
+        setBusy('campaigns');
+        try {
+            await importSelection();
+            const { picks } = await fetchTemplateRecommendations();
+            onFindCampaigns(picks || []);
+        } catch {
+            setNotice('We could not find campaign matches. Try again in a moment.');
+        } finally {
+            setBusy(null);
+        }
+    };
+
     return (
-        <div className="min-w-[480px]">
+        <div className="flex min-w-[480px] flex-col">
             <div className="grid grid-cols-[34px_minmax(150px,1.5fr)_1fr_1fr_28px] border-b border-line bg-surface/60 px-2 text-[10px] font-medium text-ink-500">
                 <span className="py-2.5" /><span className="py-2.5">Lead</span><span className="py-2.5">Current role</span><span className="py-2.5">Company</span><span />
             </div>
@@ -138,6 +227,21 @@ function LeadsContext({ people }: { people: SearchPerson[] }) {
                 );
             })}
             {!people.length && <p className="p-8 text-center text-[12px] text-ink-500">No leads in this search result.</p>}
+            <section className="border-t border-line bg-surface/45 p-3">
+                <div className="flex items-start justify-between gap-3">
+                    <div><p className="text-[11px] font-semibold text-foreground">What should happen next?</p><p className="mt-0.5 text-[9px] text-ink-500">Choose an option below. Qampi will keep the chat context in sync.</p></div>
+                    <span className="shrink-0 rounded-control bg-brand-50 px-2 py-1 text-[9px] font-medium text-brand">{selected.size} selected</span>
+                </div>
+                <div className="mt-2.5 grid grid-cols-2 gap-2">
+                    <button onClick={() => setAction('new-list')} disabled={!selected.size} className="inline-flex items-center gap-1.5 rounded-control border border-line bg-card px-2.5 py-2 text-[10px] font-medium text-ink-600 transition-colors hover:border-brand-200 hover:bg-brand-50 hover:text-brand disabled:cursor-not-allowed disabled:opacity-45"><ListPlus className="h-3.5 w-3.5" /> Make a new list</button>
+                    <button onClick={loadLists} disabled={!selected.size} className="inline-flex items-center gap-1.5 rounded-control border border-line bg-card px-2.5 py-2 text-[10px] font-medium text-ink-600 transition-colors hover:border-brand-200 hover:bg-brand-50 hover:text-brand disabled:cursor-not-allowed disabled:opacity-45"><FolderPlus className="h-3.5 w-3.5" /> Add to existing list</button>
+                    <button onClick={findMore} disabled={busy !== null} className="inline-flex items-center gap-1.5 rounded-control border border-line bg-card px-2.5 py-2 text-[10px] font-medium text-ink-600 transition-colors hover:border-brand-200 hover:bg-brand-50 hover:text-brand disabled:cursor-not-allowed disabled:opacity-45"><Search className="h-3.5 w-3.5" /> {busy === 'more' ? 'Finding leads…' : 'Find more like these'}</button>
+                    <button onClick={findCampaigns} disabled={!selected.size || busy !== null} className="inline-flex items-center gap-1.5 rounded-control bg-brand px-2.5 py-2 text-[10px] font-medium text-white transition-colors hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-45"><Rocket className="h-3.5 w-3.5" /> {busy === 'campaigns' ? 'Matching…' : 'Add to campaign'}</button>
+                </div>
+                {action === 'new-list' && <div className="mt-2.5 flex gap-2"><input autoFocus value={listName} onChange={(event) => setListName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void saveToList(listName); }} placeholder="Name this list" className="min-w-0 flex-1 rounded-control border border-line bg-card px-2.5 py-2 text-[11px] outline-none focus:border-brand-300" /><button onClick={() => void saveToList(listName)} disabled={!listName.trim() || busy === 'list'} className="rounded-control bg-brand px-3 text-[11px] font-medium text-white disabled:opacity-50">Save</button></div>}
+                {action === 'existing-list' && <div className="mt-2.5 flex gap-2"><select value={chosenList} onChange={(event) => setChosenList(event.target.value)} className="min-w-0 flex-1 rounded-control border border-line bg-card px-2.5 py-2 text-[11px] outline-none focus:border-brand-300"><option value="">{lists.length ? 'Choose a list' : 'No saved lists yet'}</option>{lists.map((list) => <option key={list} value={list}>{list}</option>)}</select><button onClick={() => void saveToList(chosenList)} disabled={!chosenList || busy === 'list'} className="rounded-control bg-brand px-3 text-[11px] font-medium text-white disabled:opacity-50">Add</button></div>}
+                {notice && <p className="mt-2 text-[10px] text-ink-500">{notice}</p>}
+            </section>
         </div>
     );
 }

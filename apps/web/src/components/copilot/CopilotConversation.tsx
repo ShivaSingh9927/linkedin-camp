@@ -14,10 +14,10 @@ import { cn } from '@/lib/utils';
 import { track } from '@/lib/analytics';
 import { updateCopilotHarnessTurn } from '@/lib/copilot-harness-store';
 import {
-    fetchUnderstand, fetchSearchRecommendations, runSearch, importPeople, fetchTemplateRecommendations,
+    fetchUnderstand, fetchSearchRecommendations, runSearch, fetchTemplateRecommendations,
     routeMessage, launchFromTemplate, fetchAvailableLeads, fetchTemplateHint, fetchProactiveContext,
     draftReply, sendReply, summarizeBrowserWebSearch,
-    type Understand, type SearchRecommendation, type SearchPerson, type TemplatePick, type HistoryMsg, type LaunchOverrides, type TemplateHint, type ProactiveContext, type WaitingReply,
+    type Understand, type SearchRecommendation, type TemplatePick, type HistoryMsg, type LaunchOverrides, type TemplateHint, type ProactiveContext, type WaitingReply,
 } from './copilotApi';
 import { getBrowserWebSearchStatus, requestBrowserWebSearchPermission, searchFromBrowser } from '@/lib/copilot-web-search';
 import { type Msg, nextId } from './copilotTypes';
@@ -36,7 +36,7 @@ const QUICK_PROMPTS: { label: string; icon: typeof Search; action: 'search' | 'c
 export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen' | 'panel'; onClose?: () => void }) {
     // Conversation state is owned by the layout-level provider so it survives
     // route navigation and (via localStorage) reloads. This component is a view.
-    const { messages, setMessages, importedLeadIds, setImportedLeadIds, hydrated,
+    const { messages, setMessages, importedLeadIds, hydrated,
         threads, activeThreadId, newThread, switchThread, deleteThread,
         workspaceContext, setWorkspaceContext } = useCopilot();
     const [input, setInput] = useState('');
@@ -159,7 +159,9 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
                 else rotateAngleRef.current?.();
                 return;
             }
-            push({ id: nextId(), role: 'qampi', kind: 'text', text: page > 1 ? `Found ${people.length} more.` : `Found ${people.length} people. Pick the ones you want and I’ll import them.` });
+            push({ id: nextId(), role: 'qampi', kind: 'text', text: page > 1
+                ? `Found ${people.length} more. Choose what to do with them in the lead panel, or tell me how to refine the search.`
+                : `I found ${people.length} people. Review the details and choose a next step in the lead panel; tell me what to change if you want to refine the search.` });
             push({ id: nextId(), role: 'qampi', kind: 'results', people, via: res.via, remaining: res.remaining, cap: res.cap, keywords, filters, page, saturation: res.saturation });
         } catch (e) {
             setMessages((prev) => prev.filter((m) => m.id !== sId));
@@ -172,11 +174,6 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
             push({ id: nextId(), role: 'qampi', kind: 'text', text: msg });
         }
     }, [push]);
-
-    // "Show 10 more" — continue the same query at the next page (dedup handled in doSearch).
-    const showMore = useCallback((keywords: string, filters: SearchRecommendation['filters'] | undefined, nextPage: number) => {
-        doSearch(keywords, keywords, filters, nextPage);
-    }, [doSearch]);
 
     // Run a reasoned search draft the user approved/edited (removes the draft card).
     const runDraft = useCallback((msgId: string, label: string, keywords: string, filters?: SearchRecommendation['filters']) => {
@@ -324,12 +321,6 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
             patch(tId, { loading: false, picks: [] });
         }
     }, [push, patch]);
-
-    const afterImport = useCallback(async (count: number, leadIds: string[]) => {
-        setImportedLeadIds((prev) => Array.from(new Set([...prev, ...leadIds])));
-        push({ id: nextId(), role: 'qampi', kind: 'text', text: `Imported ${count} lead${count === 1 ? '' : 's'}. Here are campaigns that fit — pick one to launch.` });
-        await recommendCampaigns();
-    }, [push, recommendCampaigns, setImportedLeadIds]);
 
     // Launch a chosen template on the leads the confirm card was built for — via
     // the guarded endpoints (which enforce the 1-active + lead-cap rules).
@@ -499,9 +490,6 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
                         m={m}
                         onPickSearch={doSearch}
                         onRunDraft={runDraft}
-                        onShowMore={showMore}
-                        onTryDifferent={rotateAngle}
-                        onImported={afterImport}
                         onPickTemplate={offerLaunch}
                         onLaunch={runLaunch}
                         onSendReply={sendReplyDraft}
@@ -679,13 +667,10 @@ function PanelResting({ onSuggestSearches, onRecommendCampaign, onCheckStatus }:
     );
 }
 
-function MessageRow({ m, onPickSearch, onRunDraft, onShowMore, onTryDifferent, onImported, onPickTemplate, onLaunch, onSendReply, onTryWarmer, onEditReply, onDraftNext, onBackToProspecting, onRunWebSearch }: {
+function MessageRow({ m, onPickSearch, onRunDraft, onPickTemplate, onLaunch, onSendReply, onTryWarmer, onEditReply, onDraftNext, onBackToProspecting, onRunWebSearch }: {
     m: Msg;
     onPickSearch: (label: string, keywords: string, filters?: SearchRecommendation['filters']) => void;
     onRunDraft: (msgId: string, label: string, keywords: string, filters?: SearchRecommendation['filters']) => void;
-    onShowMore: (keywords: string, filters: SearchRecommendation['filters'] | undefined, nextPage: number) => void;
-    onTryDifferent: () => void;
-    onImported: (count: number, leadIds: string[]) => void;
     onPickTemplate: (templateId: string, label: string) => void;
     onLaunch: (msgId: string, overrides?: LaunchOverrides) => void;
     onSendReply: (msgId: string) => void;
@@ -705,7 +690,7 @@ function MessageRow({ m, onPickSearch, onRunDraft, onShowMore, onTryDifferent, o
     if (m.kind === 'searchDraft') return <div className="pl-8"><SearchDraftCard m={m} onRun={onRunDraft} /></div>;
     if (m.kind === 'webSearch') return <div className="pl-8"><WebSearchCard m={m} onRun={onRunWebSearch} /></div>;
     if (m.kind === 'searching') return <QBubble><div className="text-ink-500"><span className="inline-flex items-center gap-2"><Loader2 className="w-3.5 h-3.5 animate-spin text-brand" /> {m.label}</span>{m.detail && <p className="ml-5.5 mt-1 text-[11px] leading-relaxed text-ink-400">Why: {m.detail}</p>}</div></QBubble>;
-    if (m.kind === 'results') return <div className="pl-8"><ResultsBlock m={m} onImported={onImported} onShowMore={onShowMore} onTryDifferent={onTryDifferent} /></div>;
+    if (m.kind === 'results') return <QBubble><p>These leads are ready in the panel. Choose an option there and I&rsquo;ll stay in sync; or tell me how you&rsquo;d like to refine the search.</p></QBubble>;
     if (m.kind === 'templates') return <div className="pl-8"><TemplatePicks loading={m.loading} picks={m.picks} onPick={onPickTemplate} /></div>;
     if (m.kind === 'launchConfirm') return <div className="pl-8"><LaunchConfirm m={m} onLaunch={onLaunch} /></div>;
     if (m.kind === 'replyDraft') return <div className="pl-8"><ReplyDraftCard m={m} onSend={onSendReply} onTryWarmer={onTryWarmer} onEdit={onEditReply} onDraftNext={onDraftNext} onBackToProspecting={onBackToProspecting} /></div>;
@@ -1049,111 +1034,6 @@ function SearchChips({ loading, recs, onPick }: { loading: boolean; recs?: Searc
                     {r.rationale && <p className="text-[11px] text-ink-500 mt-1 pl-6">{r.rationale}</p>}
                 </button>
             ))}
-        </div>
-    );
-}
-
-function ResultsBlock({ m, onImported, onShowMore, onTryDifferent }: {
-    m: Extract<Msg, { kind: 'results' }>;
-    onImported: (count: number, leadIds: string[]) => void;
-    onShowMore: (keywords: string, filters: SearchRecommendation['filters'] | undefined, nextPage: number) => void;
-    onTryDifferent: () => void;
-}) {
-    const people = m.people;
-    const [selected, setSelected] = useState<Set<number>>(() => new Set(people.map((_, i) => i)));
-    const [importing, setImporting] = useState(false);
-    const [done, setDone] = useState<number | null>(null);
-
-    const toggle = (i: number) => setSelected((prev) => {
-        const n = new Set(prev);
-        if (n.has(i)) n.delete(i); else n.add(i);
-        return n;
-    });
-
-    const doImport = async () => {
-        const chosen = people.filter((_, i) => selected.has(i));
-        if (!chosen.length) return;
-        setImporting(true);
-        try {
-            const { importedTotal, leadIds } = await importPeople(chosen);
-            const n = importedTotal || chosen.length;
-            track('leads_imported', { count: n, source: 'copilot' });
-            setDone(n);
-            onImported(n, leadIds);
-        } catch {
-            setImporting(false);
-        }
-    };
-
-    return (
-        <div className="bg-card border border-line rounded-card p-2.5 space-y-1.5">
-            {people.map((p, i) => (
-                <button
-                    key={p.linkedinUrl}
-                    onClick={() => !done && toggle(i)}
-                    disabled={!!done}
-                    className={cn('w-full flex items-center gap-2.5 px-2 py-1.5 rounded-chip text-left transition-colors', selected.has(i) ? 'bg-brand-50' : 'hover:bg-surface')}
-                >
-                    <div className="w-7 h-7 rounded-full bg-brand-50 text-brand grid place-items-center text-[11px] font-medium shrink-0">
-                        {(p.firstName?.[0] || '') + (p.lastName?.[0] || '')}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                        <p className="text-[12px] font-medium text-foreground truncate">
-                            {p.name}
-                            {p.connectionDegree && <span className="text-[10px] text-ink-400 font-normal"> · {p.connectionDegree === 1 ? '1st' : p.connectionDegree === 2 ? '2nd' : '3rd'}</span>}
-                        </p>
-                        <p className="text-[11px] text-ink-500 truncate">{p.headline || p.jobTitle}</p>
-                    </div>
-                    {selected.has(i)
-                        ? <Check className="w-4 h-4 text-brand shrink-0" />
-                        : <Plus className="w-4 h-4 text-ink-400 shrink-0" />}
-                </button>
-            ))}
-            {done == null ? (
-                <button
-                    onClick={doImport}
-                    disabled={importing || selected.size === 0}
-                    className="w-full mt-1 bg-brand text-white text-[13px] font-medium rounded-chip py-2 grid place-items-center disabled:opacity-40 hover:bg-brand-600 transition-colors"
-                >
-                    {importing
-                        ? <span className="inline-flex items-center gap-2"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Importing…</span>
-                        : `Import ${selected.size} selected`}
-                </button>
-            ) : (
-                <p className="text-center text-[12px] text-emerald-600 font-medium py-1.5 inline-flex items-center justify-center gap-1.5 w-full"><Check className="w-3.5 h-3.5" /> {done} imported</p>
-            )}
-            {/* Next step depends on the durable saturation signal:
-                • exhausted  → this vein is mined out; offer a fresh angle instead.
-                • budget out → no monthly searches left; point to the extension.
-                • otherwise  → keep paging the SAME query (dedup handled server-side),
-                  and if it's drying up, also offer a pivot.  */}
-            {m.saturation?.state === 'exhausted' ? (
-                <button
-                    onClick={onTryDifferent}
-                    className="w-full mt-0.5 text-[12px] font-medium text-brand rounded-chip py-1.5 hover:bg-brand-50 transition-colors inline-flex items-center justify-center gap-1.5"
-                >
-                    <Sparkles className="w-3.5 h-3.5" /> This angle’s mined out — try a different one
-                </button>
-            ) : m.remaining <= 0 ? (
-                <p className="text-center text-[11px] text-ink-400 py-1.5">No searches left this month — use the Qampi extension to import more.</p>
-            ) : (
-                <>
-                    <button
-                        onClick={() => onShowMore(m.keywords, m.filters, m.page + 1)}
-                        className="w-full mt-0.5 text-[12px] font-medium text-brand rounded-chip py-1.5 hover:bg-brand-50 transition-colors inline-flex items-center justify-center gap-1.5"
-                    >
-                        <Plus className="w-3.5 h-3.5" /> Show 10 more <span className="text-ink-400 font-normal">· {m.remaining} searches left</span>
-                    </button>
-                    {m.saturation?.state === 'saturating' && (
-                        <button
-                            onClick={onTryDifferent}
-                            className="w-full text-[11px] font-medium text-ink-500 rounded-chip py-1 hover:text-brand transition-colors inline-flex items-center justify-center gap-1.5"
-                        >
-                            <Sparkles className="w-3 h-3" /> running low on fresh matches — try a different angle
-                        </button>
-                    )}
-                </>
-            )}
         </div>
     );
 }
