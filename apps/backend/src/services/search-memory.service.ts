@@ -22,18 +22,17 @@
 
 import { prisma } from '@repo/db';
 import type { SearchPerson, SearchFilters } from './people-search.service';
+import { normalizeLinkedinUrl } from './linkedin-url';
 
 // Skipped-but-seen profiles resurface after this many days (they may have
 // changed jobs / relevance). Imported profiles dedup permanently via Lead.
 const SEEN_WINDOW_DAYS = 30;
 
-// Match Lead.linkedinUrl canonicalization (see lead.controller.normalizeLinkedinUrl)
-// so dedup lines up across the two stores: strip query/hash + trailing slashes.
+// Canonicalize exactly the way Lead.linkedinUrl is stored, so SeenProfile and
+// Lead dedup against each other. One shared implementation — these used to be
+// two copies kept in sync by a comment.
 export function normUrl(raw?: string | null): string {
-    if (!raw) return '';
-    let u = raw.trim().split('?')[0].split('#')[0];
-    u = u.replace(/\/+$/, '');
-    return u;
+    return normalizeLinkedinUrl(raw || undefined);
 }
 
 // Canonical key for a query so the same search across sessions maps to ONE

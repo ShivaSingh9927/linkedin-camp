@@ -42,6 +42,9 @@ services:
       SENTRY_DSN: ${SENTRY_DSN}
       AI_SERVICE_URL: ${AI_SERVICE_URL}
       EMAIL_FINDER_URL: ${EMAIL_FINDER_URL}
+      # Lead discovery via a public search engine (db box). Optional: unset
+      # simply means LinkedIn is the only lead source.
+      RESEARCH_AGENT_URL: ${RESEARCH_AGENT_URL:-}
       EMAIL_FINDER_TOKEN: ${EMAIL_FINDER_TOKEN}
       GROQ_API: ${GROQ_API}
       GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID}
@@ -136,6 +139,9 @@ services:
       SENTRY_DSN: ${SENTRY_DSN}
       AI_SERVICE_URL: ${AI_SERVICE_URL}
       EMAIL_FINDER_URL: ${EMAIL_FINDER_URL}
+      # Lead discovery via a public search engine (db box). Optional: unset
+      # simply means LinkedIn is the only lead source.
+      RESEARCH_AGENT_URL: ${RESEARCH_AGENT_URL:-}
       EMAIL_FINDER_TOKEN: ${EMAIL_FINDER_TOKEN}
       GROQ_API: ${GROQ_API}
       GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID}

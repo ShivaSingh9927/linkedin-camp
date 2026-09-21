@@ -103,13 +103,23 @@ async function callDeepSeek(systemPrompt, userPrompt, { maxTokens = 600, tempera
 
 // ---------- Yahoo search via Lightpanda ----------
 
-function searchYahoo(query, maxResults = 8) {
-  const searchUrl = `https://search.yahoo.com/search?p=${encodeURIComponent(query)}`;
+function searchYahoo(query, maxResults = 8, start = 1) {
+  // `b` is Yahoo's 1-based result offset: b=1 page 1, b=11 page 2, b=21 page 3.
+  // Measured 2026-09-22: consecutive pages return essentially disjoint results,
+  // so paging is real depth and not the same rows re-ranked.
+  const offset = start > 1 ? `&b=${start}` : '';
+  const searchUrl = `https://search.yahoo.com/search?p=${encodeURIComponent(query)}${offset}`;
   const markdown = fetchMarkdown(searchUrl, { stripUi: false, timeoutMs: 8000 });
   if (!markdown) return [];
+  return parseYahooMarkdown(markdown).slice(0, maxResults);
+}
 
+// Extract {title,url,snippet,source} triples from Lightpanda's markdown dump of
+// a Yahoo SERP. Pure + synchronous, so it can be unit-tested against a fixture
+// and shared by the async caller in people-serp.js.
+function parseYahooMarkdown(markdown) {
   const results = [];
-  const lines = markdown.split(/\r?\n/);
+  const lines = String(markdown || '').split(/\r?\n/);
   let current = null;
   let linesSinceTitle = -1;
 
@@ -154,9 +164,7 @@ function searchYahoo(query, maxResults = 8) {
   }
   if (current && current.title && current.url) results.push(current);
 
-  return results
-    .filter(r => r.url && r.title && !/yahoo\.com\//i.test(r.url))
-    .slice(0, maxResults);
+  return results.filter(r => r.url && r.title && !/yahoo\.com\//i.test(r.url));
 }
 
 // ---------- Serper fallback ----------
@@ -526,4 +534,4 @@ patterns should list the top 1-3 most likely formats, ordered by frequency in th
   return result;
 }
 
-module.exports = { buildCompetitiveLandscape, searchEmailFormat, normalizeUrl };
+module.exports = { buildCompetitiveLandscape, searchEmailFormat, normalizeUrl, parseYahooMarkdown };

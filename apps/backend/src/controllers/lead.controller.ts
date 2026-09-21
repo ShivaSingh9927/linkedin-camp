@@ -8,6 +8,9 @@ import { captureEvent } from '../services/analytics.service';
 import { searchPeople, SessionExpiredError, type SearchFilters } from '../services/people-search.service';
 import { checkSearchQuota, logSearchAction } from '../campaign-engine/safety/quota';
 import { recordSearchPage, markImported } from '../services/search-memory.service';
+import { searchPeopleViaSerp } from '../services/serp-search.service';
+import { profileSlug } from '../services/linkedin-url';
+import { normalizeLinkedinUrl } from '../services/linkedin-url';
 
 // Helper to get team user ids
 const getTeamUserIds = async (userId: string) => {
@@ -22,13 +25,6 @@ const getTeamUserIds = async (userId: string) => {
 // ".../in/jane-doe/" and ".../in/jane-doe?foo=1" dedup to one lead. Without this
 // the (userId, linkedinUrl) unique constraint treats them as distinct → the same
 // person imports twice (the bug seen with extension CSVs).
-const normalizeLinkedinUrl = (raw?: string): string => {
-    if (!raw) return raw || '';
-    let u = raw.trim().split('?')[0].split('#')[0];
-    u = u.replace(/\/+$/, ''); // drop trailing slash(es)
-    return u;
-};
-
 const bulkImportLeads = async (userId: string, incomingLeads: any[], teamUserIds: string[]) => {
     // 1. Array Deduplication (on the normalized URL)
     const uniqueLeadsMap = new Map();
@@ -268,6 +264,10 @@ export const importLeads = async (req: any, res: Response) => {
 // the copilot can show real leads for the keywords it recommended. Guarded by
 // the monthly commercial-use budget; each successful search is logged against
 // it. Does NOT import — the client imports the chosen results via POST /import.
+// Engine pages pulled per in-app search page. Yahoo yields ~7 profiles a page,
+// so 2 pages lands the ~10-14 we merge alongside LinkedIn's 10.
+const SERP_PAGES_PER_PAGE = 2;
+
 export const searchLeads = async (req: any, res: Response) => {
     const userId = req.user.id;
     const { keywords, filters, limit, page } = req.body || {};
@@ -288,12 +288,41 @@ export const searchLeads = async (req: any, res: Response) => {
             });
         }
 
-        const result = await searchPeople(userId, {
-            keywords: keywords.trim(),
-            filters: (filters || undefined) as SearchFilters | undefined,
-            limit: typeof limit === 'number' ? limit : undefined,
-            page: pageNum,
+        // Two sources, run together. LinkedIn is authoritative (it carries
+        // connection degree and location); the engine adds reach that doesn't
+        // consume the monthly Commercial Use Limit. The engine call resolves to
+        // [] on any failure, so it can only ever add leads, never fail a search.
+        const [result, serpPeople] = await Promise.all([
+            searchPeople(userId, {
+                keywords: keywords.trim(),
+                filters: (filters || undefined) as SearchFilters | undefined,
+                limit: typeof limit === 'number' ? limit : undefined,
+                page: pageNum,
+            }),
+            searchPeopleViaSerp({
+                keywords: keywords.trim(),
+                // "Show more" must read deeper into the engine rather than
+                // re-rendering pages the user already saw.
+                startPage: pageNum * SERP_PAGES_PER_PAGE - (SERP_PAGES_PER_PAGE - 1),
+                pages: SERP_PAGES_PER_PAGE,
+            }),
+        ]);
+
+        // Merge on the profile slug, LinkedIn first — when the same person comes
+        // from both, keep the richer row.
+        const bySlug = new Set(
+            result.people.map((p) => profileSlug(p.linkedinUrl)).filter(Boolean) as string[],
+        );
+        const serpExtra = serpPeople.filter((p) => {
+            const slug = profileSlug(p.linkedinUrl);
+            if (!slug || bySlug.has(slug)) return false;
+            bySlug.add(slug);
+            return true;
         });
+        result.people = [...result.people, ...serpExtra];
+        if (serpPeople.length) {
+            console.log(`[people-search] merged ${serpExtra.length} engine profiles (${serpPeople.length - serpExtra.length} already in the LinkedIn page)`);
+        }
 
         // LinkedIn counts the request against the commercial-use limit whether
         // or not it returned rows, so log any completed fetch (searchPeople only
@@ -318,11 +347,12 @@ export const searchLeads = async (req: any, res: Response) => {
             return { fresh: result.people, saturation: { state: 'active' as const, newRatio: 1, page: pageNum, freshCount: result.people.length, pageCount: result.people.length } };
         });
 
-        captureEvent(userId, 'people_search', { count: fresh.length, raw: result.people.length, via: result.via, saturation: saturation.state });
+        captureEvent(userId, 'people_search', { count: fresh.length, raw: result.people.length, via: result.via, saturation: saturation.state, serp: serpExtra.length });
 
         res.json({
             people: fresh,
             via: result.via,
+            serpCount: serpExtra.length,
             remaining: after.remaining,
             cap: after.cap,
             saturation,

@@ -1,6 +1,7 @@
 const express = require('express');
 const Redis = require('ioredis');
 const { buildCompetitiveLandscape, searchEmailFormat } = require('./research');
+const { searchLinkedInProfiles } = require('./people-serp');
 
 const PORT = parseInt(process.env.PORT || '3010', 10);
 const REDIS_URL = process.env.REDIS_URL || '';
@@ -75,6 +76,41 @@ app.post('/research/email-format', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.error(`[RESEARCH-AGENT] email-format failed: ${err.message}`);
+    res.status(500).json({ error: err.message });
+  } finally {
+    clearTimeout(timer);
+  }
+});
+
+// LinkedIn profile discovery via a public search engine. Second lead source
+// alongside in-app LinkedIn people-search; does NOT consume the user's monthly
+// LinkedIn Commercial Use Limit. Deliberately anonymous — no LinkedIn session,
+// no cookies, and never the dedicated ISP proxy the LinkedIn worker is pinned
+// to, so a misconfiguration here cannot burn that IP.
+app.post('/research/people-serp', async (req, res) => {
+  const { keywords, pages, limit, startPage } = req.body || {};
+  if (!keywords || typeof keywords !== 'string' || !keywords.trim()) {
+    return res.status(400).json({ error: 'keywords is required' });
+  }
+
+  // Browser renders are slow and this sits on a user-facing path, so cap the
+  // whole call. The caller treats a failure here as "no SERP leads", never as a
+  // failed search.
+  const HARD_DEADLINE_MS = parseInt(process.env.SERP_HARD_DEADLINE_MS || '75000', 10);
+  let timer;
+  const deadline = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`people-serp exceeded ${HARD_DEADLINE_MS}ms`)), HARD_DEADLINE_MS);
+  });
+
+  try {
+    const result = await Promise.race([
+      searchLinkedInProfiles({ keywords, pages, limit, startPage }, redis),
+      deadline,
+    ]);
+    console.log(`[RESEARCH-AGENT] people-serp "${result.query}" -> ${result.people.length} profiles (cached=${result.cached})`);
+    res.json(result);
+  } catch (err) {
+    console.error(`[RESEARCH-AGENT] people-serp failed: ${err.message}`);
     res.status(500).json({ error: err.message });
   } finally {
     clearTimeout(timer);
