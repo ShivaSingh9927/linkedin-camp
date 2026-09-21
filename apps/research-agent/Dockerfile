@@ -23,7 +23,10 @@ WORKDIR /app
 COPY package.json ./
 RUN npm install --omit=dev --no-audit --no-fund
 
-COPY server.js research.js ./
+# List every source file explicitly (the image has no bundler). Adding a new
+# module means adding it here too — a missing name is a crash-loop at start,
+# not a build error.
+COPY server.js research.js people-serp.js ./
 
 ENV LIGHTPANDA_PATH=/usr/local/bin/lightpanda \
     PORT=3010 \
