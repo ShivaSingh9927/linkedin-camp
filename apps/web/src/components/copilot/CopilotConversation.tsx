@@ -11,6 +11,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Search, Loader2, ArrowUp, Check, Plus, MapPin, Clock, ArrowRight, Rocket, LinkIcon, Sparkles, PenSquare, Trash2, MessageSquare, Send, ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { TypingLoader } from '@/components/ui/loader';
+import { Reasoning, ReasoningContent, ReasoningTrigger } from '@/components/ui/reasoning';
 import { track } from '@/lib/analytics';
 import { updateCopilotHarnessTurn } from '@/lib/copilot-harness-store';
 import {
@@ -689,7 +691,7 @@ function MessageRow({ m, onPickSearch, onRunDraft, onPickTemplate, onLaunch, onS
     if (m.kind === 'searchChips') return <div className="pl-8"><SearchChips loading={m.loading} recs={m.recs} onPick={onPickSearch} /></div>;
     if (m.kind === 'searchDraft') return <div className="pl-8"><SearchDraftCard m={m} onRun={onRunDraft} /></div>;
     if (m.kind === 'webSearch') return <div className="pl-8"><WebSearchCard m={m} onRun={onRunWebSearch} /></div>;
-    if (m.kind === 'searching') return <QBubble><div className="text-ink-500"><span className="inline-flex items-center gap-2"><Loader2 className="w-3.5 h-3.5 animate-spin text-brand" /> {m.label}</span>{m.detail && <p className="ml-5.5 mt-1 text-[11px] leading-relaxed text-ink-400">Why: {m.detail}</p>}</div></QBubble>;
+    if (m.kind === 'searching') return <QBubble><AgentProgress label={m.label} detail={m.detail} /></QBubble>;
     if (m.kind === 'results') return <QBubble><p>These leads are ready in the panel. Choose an option there and I&rsquo;ll stay in sync; or tell me how you&rsquo;d like to refine the search.</p></QBubble>;
     if (m.kind === 'templates') return <div className="pl-8"><TemplatePicks loading={m.loading} picks={m.picks} onPick={onPickTemplate} /></div>;
     if (m.kind === 'launchConfirm') return <div className="pl-8"><LaunchConfirm m={m} onLaunch={onLaunch} /></div>;
@@ -725,7 +727,7 @@ function WebSearchCard({ m, onRun }: { m: Extract<Msg, { kind: 'webSearch' }>; o
                     <Search className="w-3.5 h-3.5" /> Search & summarise
                 </button>
             ) : (
-                <span className="inline-flex items-center gap-2 text-[12px] text-ink-500"><Loader2 className="w-3.5 h-3.5 animate-spin text-brand" /> Finding sources and preparing a summary</span>
+                <AgentProgress compact label="Finding sources and preparing a summary" />
             )}
         </div>
     );
@@ -745,16 +747,7 @@ function SearchDraftCard({ m, onRun }: { m: Extract<Msg, { kind: 'searchDraft' }
                 <span className="text-[13px] font-medium text-foreground">{m.label}</span>
             </div>
             {m.rationale && <p className="text-[11px] text-ink-500">{m.rationale}</p>}
-            {m.reasoning && (
-                <details className="group">
-                    <summary className="flex items-center gap-1 cursor-pointer list-none text-[11px] text-ink-400 hover:text-ink-600 transition-colors select-none">
-                        <Sparkles className="w-3 h-3 text-brand shrink-0" />
-                        <span>How I chose this</span>
-                        <ArrowRight className="w-3 h-3 shrink-0 transition-transform group-open:rotate-90" />
-                    </summary>
-                    <p className="mt-1.5 text-[11px] leading-relaxed text-ink-500 whitespace-pre-wrap border-l-2 border-line pl-2.5">{m.reasoning}</p>
-                </details>
-            )}
+            {m.reasoning && <DecisionContext text={m.reasoning} />}
             <div>
                 <label className="label !text-[10px] mb-1 block">Search query (editable)</label>
                 <textarea rows={2} value={keywords} onChange={(e) => setKeywords(e.target.value)} className={cn(fieldCls, 'resize-none leading-snug')} />
@@ -879,7 +872,7 @@ function ReplyDraftCard({ m, onSend, onTryWarmer, onEdit, onDraftNext, onBackToP
             <p className="text-[12.5px] text-ink-700 italic border-l-2 border-line pl-3">“{m.theirMessage}”</p>
 
             {drafting ? (
-                <div className="inline-flex items-center gap-2 text-ink-500 text-[13px]"><Loader2 className="w-3.5 h-3.5 animate-spin text-brand" /> Drafting a reply…</div>
+                <AgentProgress compact label="Drafting a reply" />
             ) : m.state === 'error' ? (
                 <div className="text-[13px] text-ink-700">{m.error}<Link href="/inbox" className="block mt-1 text-[12px] text-brand hover:underline">Open inbox →</Link></div>
             ) : (
@@ -990,8 +983,65 @@ function QBubble({ children }: { children: React.ReactNode }) {
     );
 }
 
+function AgentProgress({ label, detail, compact = false }: { label: string; detail?: string; compact?: boolean }) {
+    return (
+        <div className={cn('flex items-start gap-2.5 text-ink-500', compact ? 'text-[12px]' : 'text-[13px]')}>
+            <TypingLoader size="sm" className="mt-0.5 shrink-0" />
+            <div className="min-w-0">
+                <p className="font-medium text-ink-600">{label}</p>
+                <WorkTrace label={label} detail={detail} />
+            </div>
+        </div>
+    );
+}
+
+function WorkTrace({ label, detail }: { label: string; detail?: string }) {
+    const lower = label.toLowerCase();
+    const steps = lower.includes('search')
+        ? ['Interpret the target and filters', 'Check for a fresh lead angle', 'Search matching LinkedIn profiles']
+        : lower.includes('reply')
+            ? ['Read the lead’s message', 'Match the agreed tone and goal', 'Prepare an editable reply']
+            : lower.includes('campaign')
+                ? ['Review the selected leads', 'Compare viable campaign flows', 'Prepare the best-fit recommendation']
+                : ['Interpret your request', 'Choose the right Qampi action', 'Prepare the next step'];
+
+    return (
+        <Reasoning className="mt-1.5">
+            <ReasoningTrigger className="text-[11px] text-ink-400 transition-colors hover:text-ink-600">
+                <Sparkles className="h-3 w-3 shrink-0 text-brand" /> View Qampi&apos;s work
+            </ReasoningTrigger>
+            <ReasoningContent contentClassName="mt-1.5 border-l-2 border-brand-100 pl-2.5 text-[11px] leading-relaxed">
+                <ol className="space-y-1.5">
+                    {steps.map((step, index) => (
+                        <li key={step} className="flex items-center gap-2">
+                            <span className={cn('grid h-4 w-4 place-items-center rounded-full text-[9px] font-semibold', index === steps.length - 1 ? 'bg-brand text-white' : 'bg-brand-50 text-brand')}>
+                                {index === steps.length - 1 ? <TypingLoader size="sm" className="scale-75" /> : <Check className="h-2.5 w-2.5" />}
+                            </span>
+                            <span className={index === steps.length - 1 ? 'text-ink-700' : 'text-ink-500'}>{step}</span>
+                        </li>
+                    ))}
+                </ol>
+                {detail && <p className="mt-2 border-t border-line pt-2 text-ink-400">Why now: {detail}</p>}
+            </ReasoningContent>
+        </Reasoning>
+    );
+}
+
+function DecisionContext({ text, label = 'How Qampi chose this' }: { text: string; label?: string }) {
+    return (
+        <Reasoning className="mt-1.5">
+            <ReasoningTrigger className="text-[11px] text-ink-400 transition-colors hover:text-ink-600">
+                <Sparkles className="h-3 w-3 shrink-0 text-brand" /> {label}
+            </ReasoningTrigger>
+            <ReasoningContent contentClassName="mt-1.5 border-l-2 border-brand-100 pl-2.5 text-[11px] leading-relaxed whitespace-pre-wrap">
+                {text}
+            </ReasoningContent>
+        </Reasoning>
+    );
+}
+
 function UnderstandCard({ loading, data }: { loading: boolean; data?: Understand }) {
-    if (loading) return <span className="inline-flex items-center gap-2 text-ink-500"><Loader2 className="w-3.5 h-3.5 animate-spin text-brand" /> Reading your profile…</span>;
+    if (loading) return <AgentProgress compact label="Reading your profile" />;
     if (!data) return <span>I couldn’t build your summary — you can still search below.</span>;
     return (
         <div>
@@ -1016,7 +1066,7 @@ function Row({ label, value }: { label: string; value: string }) {
 }
 
 function SearchChips({ loading, recs, onPick }: { loading: boolean; recs?: SearchRecommendation[]; onPick: (label: string, keywords: string, filters?: SearchRecommendation['filters']) => void }) {
-    if (loading) return <span className="inline-flex items-center gap-2 text-[13px] text-ink-500"><Loader2 className="w-3.5 h-3.5 animate-spin text-brand" /> Reviewing your profile to prepare targeted searches…</span>;
+    if (loading) return <AgentProgress compact label="Reviewing your profile to prepare targeted searches" />;
     if (!recs || !recs.length) return <span className="text-[13px] text-ink-500">No suggestions — type a search below.</span>;
     return (
         <div className="flex flex-col gap-2">
@@ -1039,7 +1089,7 @@ function SearchChips({ loading, recs, onPick }: { loading: boolean; recs?: Searc
 }
 
 function TemplatePicks({ loading, picks, onPick }: { loading: boolean; picks?: TemplatePick[]; onPick: (id: string, label: string) => void }) {
-    if (loading) return <span className="inline-flex items-center gap-2 text-[13px] text-ink-500"><Loader2 className="w-3.5 h-3.5 animate-spin text-brand" /> Matching campaigns to your goal…</span>;
+    if (loading) return <AgentProgress compact label="Matching campaigns to your goal" />;
     if (!picks || !picks.length) return <Link href="/campaigns" className="text-[13px] text-brand hover:underline">Browse campaign templates →</Link>;
     return (
         <div className="flex flex-col gap-2">

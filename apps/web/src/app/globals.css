@@ -337,3 +337,10 @@
 @media (prefers-reduced-motion: reduce) {
   .asky-wing, .asky-drift, .asky-cloud-float { animation: none; }
 }
+
+
+/* Prompt Kit loader support: quiet, purpose-built motion for Qampi's agent. */
+@keyframes typing {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.38; }
+  30% { transform: translateY(-3px); opacity: 1; }
+}
