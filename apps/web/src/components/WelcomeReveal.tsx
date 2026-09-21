@@ -3,8 +3,17 @@
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Sparkles, Loader2, Users, Lightbulb, Target, Building2, PenTool, ArrowRight, Check } from 'lucide-react';
+import { Sparkles, Loader2, Users, Lightbulb, Target, Building2, PenTool, ArrowRight, Check, type LucideIcon } from 'lucide-react';
 import api from '@/lib/api';
+
+type BusinessUnderstanding = {
+    summary?: string;
+    youAre?: string;
+    youTarget?: string;
+    youSolve?: string;
+    yourEdge?: string;
+    voice?: string[];
+};
 
 /**
  * First-run reveal. Fires when the dashboard is opened with ?welcome=1 (set by
@@ -15,7 +24,7 @@ import api from '@/lib/api';
  * Three terminal states:
  *  - revealed: we inferred a profile → show it, let them confirm or refine.
  *  - empty: no website / nothing scrapeable → gentle nudge to add details.
- * Either way the overlay dismisses by stripping the query param.
+ * Either way the overlay hands new users to the short workspace guide.
  */
 export function WelcomeReveal() {
     const router = useRouter();
@@ -23,7 +32,7 @@ export function WelcomeReveal() {
     const active = params.get('welcome') === '1';
 
     const [phase, setPhase] = useState<'analyzing' | 'revealed' | 'empty'>('analyzing');
-    const [u, setU] = useState<any>(null);
+    const [u, setU] = useState<BusinessUnderstanding | null>(null);
 
     useEffect(() => {
         if (!active) return;
@@ -45,7 +54,9 @@ export function WelcomeReveal() {
         return () => { cancelled = true; };
     }, [active]);
 
-    const dismiss = () => router.replace('/');
+    // Hand new users to the brief workspace guide once they have acknowledged
+    // Qampi's business summary. The guide clears this flag when it finishes.
+    const dismiss = () => router.replace('/?tour=1');
 
     if (!active) return null;
 
@@ -160,7 +171,7 @@ export function WelcomeReveal() {
     );
 }
 
-function Pill({ icon: Icon, color, label, value }: { icon: any; color: string; label: string; value: string }) {
+function Pill({ icon: Icon, color, label, value }: { icon: LucideIcon; color: string; label: string; value: string }) {
     return (
         <div className="flex items-start gap-2.5 bg-slate-50 rounded-2xl p-3 border border-slate-100">
             <Icon className={`w-4 h-4 ${color} mt-0.5 flex-shrink-0`} />

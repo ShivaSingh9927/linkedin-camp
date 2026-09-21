@@ -86,13 +86,14 @@ interface Nudge {
     tone: 'brand' | 'success';
 }
 
-export function DynamicStatusPanel({ campaigns, logs, setup, loading, quotas, kpis }: {
+export function DynamicStatusPanel({ campaigns, logs, setup, loading, quotas, kpis, resumeContext }: {
     campaigns: StatusCampaign[];
     logs: StatusLog[];
     setup: SetupStatus | null;
     loading: boolean;
     quotas?: { label: string; value: number; total: number }[];
     kpis?: { label: string; value: string; detail: string }[];
+    resumeContext?: { label: string; onClick: () => void };
 }) {
     const [repliesWaiting, setRepliesWaiting] = useState(0);
     // Capture "now" once (lazy init) — reading Date.now() directly in the render
@@ -193,6 +194,11 @@ export function DynamicStatusPanel({ campaigns, logs, setup, loading, quotas, kp
                             : loading ? '' : 'Ready when you are'}
                     </p>
                 </div>
+                {resumeContext && (
+                    <button onClick={resumeContext.onClick} className="inline-flex h-7 items-center rounded-control border border-line px-2 text-[10px] font-medium text-ink-600 transition-colors hover:border-brand-200 hover:bg-brand-50 hover:text-brand">
+                        Back to {resumeContext.label}
+                    </button>
+                )}
                 {active && <span className="text-[12px] font-semibold text-foreground shrink-0">{pct}%</span>}
             </div>
 

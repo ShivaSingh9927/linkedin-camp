@@ -1,11 +1,18 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { usePathname } from 'next/navigation';
 import { Bell, CheckCircle2, AlertCircle, Loader2, Menu } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { io, Socket } from 'socket.io-client';
 import { cn } from '@/lib/utils';
 import LinkedInConnectivity from './LinkedInConnectivity';
+
+type CampaignActivity = {
+  action?: string;
+  node?: string;
+  leadName?: string;
+};
 
 /**
  * Slim top bar for the sidebar layout: search + LinkedIn connectivity +
@@ -13,8 +20,9 @@ import LinkedInConnectivity from './LinkedInConnectivity';
  * from the old TopNav (which the sidebar layout replaces).
  */
 export function AppHeader({ onMenuClick }: { onMenuClick?: () => void }) {
+  const pathname = usePathname();
   const [showNotifications, setShowNotifications] = useState(false);
-  const [activities, setActivities] = useState<any[]>([]);
+  const [activities, setActivities] = useState<CampaignActivity[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
@@ -22,7 +30,7 @@ export function AppHeader({ onMenuClick }: { onMenuClick?: () => void }) {
     const newSocket: Socket = io(apiBase);
     const token = localStorage.getItem('token');
     if (token) newSocket.emit('join_room', { token });
-    newSocket.on('campaign_activity', (data: any) => {
+    newSocket.on('campaign_activity', (data: CampaignActivity) => {
       setActivities((prev) => [data, ...prev].slice(0, 20));
       setUnreadCount((prev) => prev + 1);
     });
@@ -43,6 +51,11 @@ export function AppHeader({ onMenuClick }: { onMenuClick?: () => void }) {
       </div>
 
       <div className="flex items-center gap-2 shrink-0">
+        {pathname === '/' && (
+          <p className="hidden whitespace-nowrap text-[16px] font-semibold tracking-tight text-foreground sm:block">
+            Good {new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 18 ? 'afternoon' : 'evening'}
+          </p>
+        )}
         <LinkedInConnectivity />
 
         <div className="relative">
@@ -80,7 +93,7 @@ export function AppHeader({ onMenuClick }: { onMenuClick?: () => void }) {
                         <p className="text-[13px] font-semibold">No activity yet</p>
                         <p className="text-[12px] mt-1 font-medium">Start a campaign to see updates</p>
                       </div>
-                    ) : activities.slice(0, 10).map((a: any, idx: number) => {
+                    ) : activities.slice(0, 10).map((a, idx) => {
                       const isSuccess = a.action === 'success';
                       const isFailed = a.action === 'failed';
                       return (

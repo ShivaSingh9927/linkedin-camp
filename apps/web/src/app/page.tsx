@@ -1,28 +1,22 @@
 'use client';
 
 import { useState, useEffect, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { WelcomeReveal } from '@/components/WelcomeReveal';
 import { ActivationHero, type SetupStatus } from '@/components/ActivationHero';
 import { OptionalSetupReminder } from '@/components/OptionalSetupReminder';
 import { ProfileCompletionNudge } from '@/components/ProfileCompletionNudge';
 import { ActivationCopilot, ACTIVATION_DISMISSED_KEY } from '@/components/copilot/ActivationCopilot';
+import { FirstRunWorkspaceGuide } from '@/components/FirstRunWorkspaceGuide';
 import { QampiDashboardPanel } from '@/components/copilot/QampiDashboardPanel';
 import { type StatusCampaign, type StatusLog } from '@/components/dashboard/DynamicStatusPanel';
 import { DashboardContextPanel } from '@/components/dashboard/DashboardContextPanel';
 import { Skeleton } from '@/components/ui';
 
-function greeting() {
-  const h = new Date().getHours();
-  if (h < 12) return 'Good morning';
-  if (h < 18) return 'Good afternoon';
-  return 'Good evening';
-}
-
 export default function DashboardPage() {
   const [campaigns, setCampaigns] = useState<StatusCampaign[]>([]);
   const [recentLogs, setRecentLogs] = useState<StatusLog[]>([]);
   const [loading, setLoading] = useState(true);
-  const [firstName, setFirstName] = useState('');
   const [setup, setSetup] = useState<SetupStatus | null>(null);
   const [stats, setStats] = useState({
     totalLeads: 0,
@@ -39,13 +33,6 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem('user');
-      if (raw) {
-        const u = JSON.parse(raw);
-        setFirstName((u?.name || '').split(/\s+/)[0] || '');
-      }
-    } catch { /* ignore */ }
     const fetchStats = async () => {
       try {
         const token = localStorage.getItem('token');
@@ -94,8 +81,14 @@ export default function DashboardPage() {
         <WelcomeReveal />
       </Suspense>
 
-      {/* First-run full-screen copilot takeover */}
-      {showActivationCopilot && <ActivationCopilot onDismiss={() => setCopilotDismissed(true)} />}
+      {/* First-run guide precedes the old copilot takeover only after the new
+          onboarding handoff. Existing eligible users retain the copilot path. */}
+      <Suspense fallback={null}>
+        <FirstRunExperience
+          showActivationCopilot={showActivationCopilot}
+          onDismissCopilot={() => setCopilotDismissed(true)}
+        />
+      </Suspense>
 
       {/* State 1 — onboarding (renders full page while required setup is incomplete; null once done) */}
       <ActivationHero onResolved={setSetup} />
@@ -116,15 +109,6 @@ export default function DashboardPage() {
           mobile. */}
       {setup?.requiredDone && (
         <div className="flex flex-col gap-4 lg:h-[calc(100dvh-6.5rem)] lg:min-h-0">
-          <div className="flex flex-col items-start justify-between gap-3 shrink-0 sm:flex-row sm:items-end">
-            <div className="min-w-0">
-              <h1 className="text-[26px] font-bold tracking-tight leading-none text-foreground truncate">
-                {firstName ? `${greeting()}, ${firstName}` : greeting()}
-              </h1>
-              <p className="text-ink-500 font-medium mt-1.5 text-[13px]">Here&rsquo;s what&rsquo;s happening with your outreach.</p>
-            </div>
-          </div>
-
           {/* Complete-your-AI-profile nudge (profile/strategy quality) then the
               optional CRM/email reminder — both dismissible top strips. */}
           <div className="shrink-0 space-y-3">
@@ -147,4 +131,18 @@ export default function DashboardPage() {
       )}
     </>
   );
+}
+
+function FirstRunExperience({ showActivationCopilot, onDismissCopilot }: {
+  showActivationCopilot: boolean;
+  onDismissCopilot: () => void;
+}) {
+  // Kept in this Suspense boundary because useSearchParams is intentionally
+  // client-side: only the post-onboarding handoff uses ?tour=1.
+  const params = useSearchParams();
+  // The website insight reveal owns the first screen. Its acknowledgement
+  // changes the query to ?tour=1, avoiding two onboarding overlays at once.
+  if (params.get('welcome') === '1') return null;
+  if (params.get('tour') === '1') return <FirstRunWorkspaceGuide />;
+  return showActivationCopilot ? <ActivationCopilot onDismiss={onDismissCopilot} /> : null;
 }

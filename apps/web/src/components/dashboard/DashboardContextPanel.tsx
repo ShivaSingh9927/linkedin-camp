@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import type { Dispatch, ReactNode, SetStateAction } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, ChevronDown, ExternalLink, FolderPlus, ListPlus, Rocket, Search, X } from 'lucide-react';
+import { Activity, ArrowLeft, ChevronDown, ExternalLink, FolderPlus, ListPlus, Rocket, Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useCopilot } from '@/components/copilot/CopilotProvider';
 import type { Msg } from '@/components/copilot/copilotTypes';
@@ -37,7 +37,7 @@ export function DashboardContextPanel(props: Props) {
         () => [...messages].reverse().find((m): m is Extract<Msg, { kind: 'results' }> => m.kind === 'results'),
         [messages],
     );
-    const [navigation, setNavigation] = useState<{ artifactId?: string; view?: View }>({});
+    const [navigation, setNavigation] = useState<{ artifactId?: string; view?: View; returnView?: Exclude<View, 'status'> }>({});
     const [panelPicks, setPanelPicks] = useState<TemplatePick[] | null>(null);
     if (artifact && navigation.artifactId !== artifact.id) {
         setNavigation({ artifactId: artifact.id });
@@ -45,15 +45,21 @@ export function DashboardContextPanel(props: Props) {
     const view: View = navigation.view || (artifact?.kind === 'results' ? 'leads' : artifact?.kind === 'templates' ? 'campaigns' : 'status');
 
     const showStatus = () => {
-        setNavigation({ artifactId: artifact?.id, view: 'status' });
+        setNavigation({ artifactId: artifact?.id, view: 'status', returnView: view === 'status' ? navigation.returnView : view });
         setWorkspaceContext({ kind: 'status', label: 'Outreach status', detail: 'live campaign activity' });
     };
 
-    if (view === 'status') return <DynamicStatusPanel {...props} />;
+    if (view === 'status') {
+        const returnView = navigation.returnView || (panelPicks ? 'campaigns' : artifact?.kind === 'templates' ? 'campaigns' : artifact?.kind === 'results' ? 'leads' : undefined);
+        return <DynamicStatusPanel {...props} resumeContext={returnView ? {
+            label: returnView === 'campaigns' ? 'campaigns' : 'leads',
+            onClick: () => setNavigation({ artifactId: artifact?.id, view: returnView }),
+        } : undefined} />;
+    }
 
     if (view === 'leads' && latestResults) {
         return (
-            <ContextShell title="Matched leads" subtitle={`${latestResults.people.length} results from Qampi`} onClose={showStatus}>
+            <ContextShell title="Matched leads" subtitle={`${latestResults.people.length} results from Qampi`} onStatus={showStatus}>
                 <LeadsContext result={latestResults} onFindCampaigns={(picks) => {
                     setPanelPicks(picks);
                     setNavigation({ artifactId: artifact?.id, view: 'campaigns' });
@@ -68,7 +74,7 @@ export function DashboardContextPanel(props: Props) {
         <ContextShell
             title="Campaign recommendations"
             subtitle="Review the rationale and fixed flow"
-            onClose={showStatus}
+            onStatus={showStatus}
             back={latestResults ? () => {
                 setNavigation({ artifactId: artifact?.id, view: 'leads' });
                 setWorkspaceContext({ kind: 'leads', label: 'Matched leads', detail: `${latestResults.people.length} results` });
@@ -79,11 +85,11 @@ export function DashboardContextPanel(props: Props) {
     );
 }
 
-function ContextShell({ title, subtitle, children, onClose, back }: {
+function ContextShell({ title, subtitle, children, onStatus, back }: {
     title: string;
     subtitle: string;
     children: ReactNode;
-    onClose: () => void;
+    onStatus: () => void;
     back?: () => void;
 }) {
     return (
@@ -94,7 +100,7 @@ function ContextShell({ title, subtitle, children, onClose, back }: {
                     <p className="truncate text-[10px] text-ink-500">{subtitle}</p>
                 </div>
                 {back && <button onClick={back} className="inline-flex h-7 items-center gap-1 rounded-control border border-line px-2 text-[10px] font-medium text-ink-600 hover:border-brand-200 hover:text-brand"><ArrowLeft className="h-3 w-3" /> Leads</button>}
-                <button onClick={onClose} aria-label="Close context and show status" className="grid h-7 w-7 place-items-center rounded-control text-ink-400 hover:bg-surface hover:text-ink-700"><X className="h-3.5 w-3.5" /></button>
+                <button onClick={onStatus} className="inline-flex h-7 items-center gap-1 rounded-control border border-line px-2 text-[10px] font-medium text-ink-600 transition-colors hover:border-brand-200 hover:bg-brand-50 hover:text-brand"><Activity className="h-3 w-3" /> Status</button>
             </header>
             <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
         </section>
