@@ -551,6 +551,42 @@ export async function summarizeCopilotWebSearch(input: { message: string; result
     }
 }
 
+// Provider-side web research: DeepSeek searches the public web itself and
+// answers in one round trip, so there is no separate search step to wire.
+//
+// Preferred over our own SearXNG search for research questions because it
+// reaches primary sources. Asked for Enphase Energy's ICP, SearXNG returns
+// Wikipedia and the company's marketing pages; this reads their investor
+// presentations and identifies the B2B2C structure. Slower (~7s vs ~850ms),
+// which is why the caller falls back rather than treating a failure as fatal.
+export interface CopilotResearchResult {
+    reply: string;
+    sources: Array<{ title: string; url: string }>;
+    searches: number;
+}
+
+export async function researchWebWithProvider(input: {
+    message: string;
+    youAre?: string;
+    youSell?: string;
+}): Promise<CopilotResearchResult> {
+    if (isMockAI()) {
+        await mockAiWait();
+        return { reply: '[MOCK] Public sources summarised.', sources: [], searches: 0 };
+    }
+    const response = await axios.post(`${AI_SERVICE_URL}/ai/copilot/web-research`, {
+        message: input.message,
+        profile_you_are: input.youAre,
+        profile_you_sell: input.youSell,
+    }, { timeout: 100000 });
+    const sources = Array.isArray(response.data?.sources) ? response.data.sources : [];
+    return {
+        reply: (response.data?.reply as string) || '',
+        sources,
+        searches: Number(response.data?.searches) || 0,
+    };
+}
+
 // Adaptive-depth campaign-status answer. The caller computes the EXACT figures
 // (deterministic) and passes them as `facts`; the model only decides how much to
 // say — a tight summary for a plain status check, detail only when asked. Returns

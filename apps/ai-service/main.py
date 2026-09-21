@@ -2436,6 +2436,150 @@ async def health_check():
     }
 
 
+# ─── DeepSeek native web research (Anthropic-protocol path) ───────────────────
+#
+# DeepSeek runs a SECOND, Anthropic-shaped API alongside the OpenAI-compatible
+# one, and only that path exposes provider-executed web search: the model calls
+# the search itself (server_tool_use) and the results come back as
+# web_search_tool_result blocks. There is no client-side search to wire.
+#
+# Verified through our own Cloudflare gateway 2026-09-22, so BYOK and gateway
+# logging still apply:
+#     <GW>/deepseek/anthropic/v1/messages   -> 200, server_tool_use x2
+#     <GW>/compat/v1/messages               -> 400 "v1/messages is not supported"
+# The /compat endpoint we use everywhere else cannot carry this, which is why
+# this is a separate raw-httpx call rather than another OpenAI-SDK method.
+#
+# Why bother when SearXNG already answers in ~850ms: asked for Enphase Energy's
+# ICP, SearXNG returns Wikipedia and the company's marketing pages; DeepSeek
+# reads their investor presentations and newsroom filings and identifies the
+# B2B2C structure — that they sell through installers, not to homeowners. For a
+# research question that difference is the whole answer.
+#
+# NOT usable for lead discovery: asked for LinkedIn profiles it returns URLs
+# recalled from training data rather than from the search (5 of 6 real, 1
+# invented, none present in the results it received). Lead discovery stays on
+# SearXNG. See memory project-serp-lead-discovery.
+
+DEEPSEEK_ANTHROPIC_DIRECT = "https://api.deepseek.com/anthropic/v1/messages"
+WEB_RESEARCH_MAX_USES = int(os.environ.get("WEB_RESEARCH_MAX_USES", "4"))
+WEB_RESEARCH_TIMEOUT = float(os.environ.get("WEB_RESEARCH_TIMEOUT_SECONDS", "90"))
+
+
+def _anthropic_messages_url() -> str:
+    """Route through the gateway when configured, else straight to DeepSeek.
+
+    CLOUDFLARE_AI_GATEWAY_URL points at the OpenAI-compat endpoint
+    (.../compat/chat/completions); the Anthropic path is a sibling of /compat,
+    so strip that suffix rather than introducing a second env var that could
+    drift out of sync with the first.
+    """
+    if USE_CLOUDFLARE_GATEWAY and CLOUDFLARE_AI_GATEWAY_URL:
+        base = CLOUDFLARE_AI_GATEWAY_URL.rstrip("/")
+        for suffix in ("/compat/chat/completions", "/compat"):
+            if base.endswith(suffix):
+                base = base[: -len(suffix)]
+                break
+        return f"{base.rstrip('/')}/deepseek/anthropic/v1/messages"
+    return DEEPSEEK_ANTHROPIC_DIRECT
+
+
+class WebResearchRequest(BaseModel):
+    message: str
+    # Optional grounding so the answer is written for THIS user's context
+    # rather than as an encyclopedia entry.
+    profile_you_are: Optional[str] = None
+    profile_you_sell: Optional[str] = None
+
+
+@app.post("/ai/copilot/web-research")
+def copilot_web_research(req: WebResearchRequest):
+    """Search the public web and answer, in one provider-side round trip."""
+    question = (req.message or "").strip()
+    if not question:
+        raise HTTPException(status_code=400, detail="message is required")
+
+    context = ""
+    if req.profile_you_are or req.profile_you_sell:
+        context = (
+            "\n\nThe person asking runs B2B outreach. "
+            f"They are: {req.profile_you_are or 'unknown'}. "
+            f"They sell: {req.profile_you_sell or 'unknown'}. "
+            "Where it is relevant, say what the answer means for reaching this "
+            "kind of buyer. Do not invent details you did not find."
+        )
+
+    headers = {
+        "Content-Type": "application/json",
+        "anthropic-version": "2023-06-01",
+        # Cloudflare answers 403 (error 1010) to a default python UA — the
+        # request never reaches the gateway. Cost me a false "not supported".
+        "User-Agent": "qampi-ai-service/1.0",
+        "x-api-key": DEEPSEEK_API_KEY,
+    }
+    if USE_CLOUDFLARE_GATEWAY:
+        headers["cf-aig-authorization"] = f"Bearer {CF_AIG_TOKEN}"
+        headers["cf-aig-byok-alias"] = CF_BYOK_ALIAS_DEEPSEEK
+        try:
+            headers["cf-aig-metadata"] = json.dumps(
+                {"task": "web_research", "service": "ai-service",
+                 "model": LLM_MODEL, "thinking": "provider-default"}
+            )
+        except Exception:
+            pass
+
+    payload = {
+        "model": LLM_MODEL.split("/")[-1],  # the Anthropic path wants the bare id
+        "max_tokens": 1500,
+        "messages": [{"role": "user", "content": question + context}],
+        "tools": [{"type": "web_search_20250305", "name": "web_search",
+                   "max_uses": WEB_RESEARCH_MAX_USES}],
+    }
+
+    try:
+        resp = httpx.post(_anthropic_messages_url(), headers=headers,
+                          json=payload, timeout=WEB_RESEARCH_TIMEOUT)
+    except Exception as e:
+        logger.exception("web-research transport failed: %s", e)
+        raise HTTPException(status_code=502, detail=f"web research unreachable: {e}")
+
+    if resp.status_code != 200:
+        logger.error("web-research HTTP %s: %s", resp.status_code, resp.text[:400])
+        raise HTTPException(status_code=502,
+                            detail=f"web research upstream {resp.status_code}")
+
+    data = resp.json()
+    reply_parts: List[str] = []
+    sources: List[dict] = []
+    seen_urls = set()
+    searches = 0
+
+    for block in data.get("content") or []:
+        kind = block.get("type")
+        # `thinking` blocks are the model's scratchpad — never shown to a user.
+        if kind == "text" and block.get("text"):
+            reply_parts.append(block["text"].strip())
+        elif kind == "server_tool_use":
+            searches += 1
+        elif kind == "web_search_tool_result":
+            for item in block.get("content") or []:
+                url = (item or {}).get("url") or ""
+                title = (item or {}).get("title") or ""
+                if url and url not in seen_urls:
+                    seen_urls.add(url)
+                    sources.append({"title": title[:180], "url": url[:1000]})
+
+    # The model narrates before searching ("I'll look that up"), so the LAST
+    # text block is the answer; earlier ones are preamble.
+    reply = reply_parts[-1] if reply_parts else ""
+    if not reply:
+        raise HTTPException(status_code=502, detail="web research returned no answer")
+
+    logger.info("web-research: %d searches, %d sources, %d chars",
+                searches, len(sources), len(reply))
+    return {"reply": reply, "sources": sources[:8], "searches": searches}
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8001)

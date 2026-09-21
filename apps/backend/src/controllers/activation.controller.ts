@@ -24,6 +24,7 @@ import {
     generateCopilotAdvice,
     generateCopilotStatus,
     summarizeCopilotWebSearch,
+    researchWebWithProvider,
     routeCopilotMessage,
     type ActivationGrounding,
 } from '../campaign-engine/ai-service';
@@ -418,13 +419,36 @@ export const copilotWebSearch = async (req: AuthRequest, res: Response) => {
     const searchFor = (typeof query === 'string' && query.trim()) || question;
     if (!question || !searchFor) return res.status(400).json({ error: 'message_required' });
 
+    // Ground the answer in who this user is, so it reads as advice for their
+    // outreach rather than an encyclopedia entry.
+    // Direct model query rather than a relation include — the include form is
+    // where the Prisma casing drift bites (capitalised passes tsc, lowercase
+    // matches the runtime). Matches how the rest of this file reads it.
+    const bp = await prisma.businessProfile.findUnique({
+        where: { userId },
+        select: { company: true, companyDescription: true, products: true },
+    }).catch(() => null);
+    const youAre = [bp?.company, bp?.companyDescription].filter(Boolean).join(' — ').slice(0, 300) || undefined;
+    const youSell = (bp?.products || undefined)?.slice(0, 300);
+
+    // ---- preferred: provider-side research (DeepSeek searches + answers) ----
+    try {
+        const r = await researchWebWithProvider({ message: question.slice(0, 500), youAre, youSell });
+        if (r.reply) {
+            console.log(`[COPILOT] web research via provider: ${r.searches} searches, ${r.sources.length} sources`);
+            return res.json({ reply: r.reply, sources: r.sources, query: searchFor, via: 'provider' });
+        }
+        console.warn('[COPILOT] provider research returned no answer — falling back to SearXNG');
+    } catch (error: any) {
+        // Not fatal: our own search still works, just with thinner sources.
+        console.warn(`[COPILOT] provider research failed (${error?.message || error}) — falling back to SearXNG`);
+    }
+
+    // ---- fallback: our own search, then summarise ----
     let results: WebResult[] = [];
     try {
         results = await searchWeb(searchFor.slice(0, 300), 5);
     } catch (error: any) {
-        // Say what actually went wrong. The old path collapsed every failure
-        // into "No web results found. Try a shorter query." — which blamed the
-        // user's phrasing for a dead provider.
         console.error('[COPILOT] web search failed:', error?.message || error);
         return res.status(502).json({
             error: 'web_search_failed',
@@ -440,7 +464,12 @@ export const copilotWebSearch = async (req: AuthRequest, res: Response) => {
 
     try {
         const reply = await summarizeCopilotWebSearch({ message: question.slice(0, 500), results });
-        return res.json({ reply, sources: results.map((r: WebResult) => ({ title: r.title, url: r.url })), query: searchFor });
+        return res.json({
+            reply,
+            sources: results.map((r: WebResult) => ({ title: r.title, url: r.url })),
+            query: searchFor,
+            via: 'searxng',
+        });
     } catch (error: any) {
         console.error('[COPILOT] web summary error:', error?.message || error);
         return res.status(502).json({ error: 'web_summary_failed', message: 'I found results but could not summarise them right now.' });
