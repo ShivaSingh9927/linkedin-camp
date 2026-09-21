@@ -38,11 +38,16 @@ search:
   safe_search: 0
   # Upstream engines are the slow part; fail the slow ones rather than making
   # the caller wait for a straggler.
-  max_request_timeout: 10.0
+  max_request_timeout: 6.0
 
 outgoing:
-  request_timeout: 6.0
-  max_request_timeout: 10.0
+  # Kept short on purpose. Engines that refuse us (brave and duckduckgo both
+  # did, within seconds of a cold start) otherwise dominate latency: the first
+  # cold query took 6s waiting on them, versus ~400ms once SearXNG had marked
+  # them suspended. They stay ENABLED so they can recover on their own; the
+  # timeout just stops them holding up the ones that answer.
+  request_timeout: 3.0
+  max_request_timeout: 5.0
   pool_connections: 20
   pool_maxsize: 10
 

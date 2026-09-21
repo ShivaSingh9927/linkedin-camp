@@ -345,23 +345,29 @@ async function searchWeb({ query, limit } = {}, redis) {
         } catch { /* cache is an optimization, never a dependency */ }
     }
 
-    // Same primary/fallback split as profile discovery.
+    // NOTE the order here is the REVERSE of profile discovery, and that is
+    // deliberate. Measured 2026-09-22 on "what is enphase energies main icp":
+    //     Yahoo    -> Enphase Wikipedia, enphase.com/about, product pages
+    //     SearXNG  -> "Methods Improving Energy Efficiency of Photovoltaic
+    //                 System", "Energy Communities - Hive Power", "5 Factors
+    //                 To Consider When Choosing Solar Panels"
+    // SearXNG wins decisively on `site:`-restricted profile lookups and loses
+    // on open research questions — it matched the topic but not the subject.
+    // So each path leads with the backend that is better at its own job.
     let hits = [];
-    let backend = 'searxng';
-    if (SEARXNG_URL) {
+    let backend = 'yahoo';
+    await acquire();
+    try {
+        hits = await yahooHits(q, 1);
+    } catch (e) {
+        console.error(`[web-search] "${q}" yahoo failed: ${e && e.message}`);
+    } finally {
+        release();
+    }
+    if (hits.length === 0 && SEARXNG_URL) {
+        backend = 'searxng (yahoo empty)';
         const rows = await searxngSearch(q, 1);
         if (rows) hits = rows;
-    }
-    if (hits.length === 0) {
-        backend = SEARXNG_URL ? 'yahoo (searxng empty)' : 'yahoo';
-        await acquire();
-        try {
-            hits = await yahooHits(q, 1);
-        } catch (e) {
-            console.error(`[web-search] "${q}" failed: ${e && e.message}`);
-        } finally {
-            release();
-        }
     }
 
     const results = hits
