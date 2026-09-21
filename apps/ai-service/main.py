@@ -81,6 +81,39 @@ else:
     print("[AI-SERVICE] Using direct DeepSeek API (Cloudflare Gateway not configured)")
 
 
+# The API model id.
+#
+# `deepseek-chat` (what this used to send) is an UNDOCUMENTED legacy alias:
+# DeepSeek's own error text lists the supported names as `deepseek-flash` and
+# `deepseek-v4-pro`, and `deepseek-chat` survives only on backward
+# compatibility. `deepseek-flash` is served by DeepSeek-V4.1-Flash — the same
+# model we were already getting, just requested by a name they still document.
+#
+# Env-configurable so switching (or pinning, or rolling back) is a restart
+# rather than a rebuild across three machines. Keep the `deepseek/` prefix:
+# the Cloudflare gateway routes on it, and _resolve_model strips it for the
+# direct-to-DeepSeek fallback.
+LLM_MODEL = os.environ.get("LLM_MODEL", "deepseek/deepseek-flash")
+
+# Thinking is OFF unless a call asks for it.
+#
+# This is what makes the deepseek-chat → deepseek-flash rename behaviour-
+# NEUTRAL rather than a silent cost and latency increase. Measured through the
+# gateway on the same prompt:
+#
+#     deepseek-chat                      13 output tokens, no reasoning
+#     deepseek-flash (default)           62 output tokens, 197 chars reasoning
+#     deepseek-flash + effort "none"     13 output tokens, no reasoning  ← same
+#
+# `deepseek-chat` was simply flash with thinking disabled. Left at the model's
+# own default, every call would cost ~4-5x the output tokens for an identical
+# answer, and any call site with a tight max_tokens would have its budget eaten
+# by reasoning before emitting content — which returns EMPTY, not an error.
+# (`enable_thinking: false` is silently ignored by this model; only
+# reasoning_effort="none" / thinking.type=disabled actually work.)
+LLM_THINKING_DEFAULT = os.environ.get("LLM_THINKING", "off").lower()
+
+
 def _resolve_model(model_name: str) -> str:
     """Adjust model name for the active provider.
 
@@ -389,7 +422,7 @@ CF_BYOK_ALIAS_DEEPSEEK = os.environ.get("CF_BYOK_ALIAS_DEEPSEEK", "qampi-deepsee
 CF_BYOK_ALIAS_GROQ = os.environ.get("CF_BYOK_ALIAS_GROQ", "")  # unset = skip
 
 
-def call_llm(system: str, user: str, temperature: float = 0.7, model: str = "deepseek/deepseek-chat", max_tokens: int = 600, reasoning_effort: Optional[str] = None) -> str:
+def call_llm(system: str, user: str, temperature: float = 0.7, model: str = LLM_MODEL, max_tokens: int = 600, reasoning_effort: Optional[str] = None) -> str:
     model_name = model
 
     extra_headers = {}
@@ -413,7 +446,14 @@ def call_llm(system: str, user: str, temperature: float = 0.7, model: str = "dee
             max_tokens=max_tokens,
             extra_headers=extra_headers if extra_headers else None,
         )
-        if with_reasoning:
+        if with_reasoning and reasoning_effort == "none":
+            # Thinking explicitly OFF. The parameter must still be SENT —
+            # omitting it leaves the model on its own default, which for
+            # deepseek-flash is thinking ON. Temperature is honoured here,
+            # because it only gets ignored while thinking.
+            kwargs["reasoning_effort"] = "none"
+            kwargs["temperature"] = temperature
+        elif with_reasoning:
             # DeepSeek thinking mode (OpenAI format). Temperature is ignored in
             # thinking mode, so we omit it. reasoning_content comes back in a
             # separate field; we only read the final `content` (our callers parse
@@ -422,6 +462,12 @@ def call_llm(system: str, user: str, temperature: float = 0.7, model: str = "dee
         else:
             kwargs["temperature"] = temperature
         return ai_client.chat.completions.create(**kwargs)
+
+    # Explicitly disable thinking when the caller didn't ask for it. Sending no
+    # reasoning_effort at all leaves the model on its own default, which for
+    # deepseek-flash means thinking ON — see LLM_THINKING_DEFAULT above.
+    if reasoning_effort is None and LLM_THINKING_DEFAULT == "off":
+        reasoning_effort = "none"
 
     # Thinking is opt-in per call and fail-safe: if the provider/model rejects
     # reasoning_effort, fall back to a normal completion rather than 500ing.
@@ -436,7 +482,7 @@ def call_llm(system: str, user: str, temperature: float = 0.7, model: str = "dee
     content = response.choices[0].message.content
     # Thinking mode can return the answer only in reasoning_content, leaving
     # content empty — retry once without thinking so callers get a real answer.
-    if reasoning_effort and not ((content or "").strip()):
+    if reasoning_effort and reasoning_effort != "none" and not ((content or "").strip()):
         print("[llm] empty content under thinking; retrying without thinking")
         try:
             content = _create(False).choices[0].message.content
@@ -445,7 +491,7 @@ def call_llm(system: str, user: str, temperature: float = 0.7, model: str = "dee
     return content
 
 
-def call_llm_with_reasoning(system: str, user: str, temperature: float = 0.7, model: str = "deepseek/deepseek-chat", max_tokens: int = 600, reasoning_effort: Optional[str] = None) -> tuple[str, str]:
+def call_llm_with_reasoning(system: str, user: str, temperature: float = 0.7, model: str = LLM_MODEL, max_tokens: int = 600, reasoning_effort: Optional[str] = None) -> tuple[str, str]:
     """Like call_llm but also returns DeepSeek's `reasoning_content` (the chain of
     thought) so a caller can surface it to the user. Returns (content, reasoning);
     reasoning is "" when thinking was off/unsupported. Same fail-safe as call_llm."""
@@ -472,7 +518,11 @@ def call_llm_with_reasoning(system: str, user: str, temperature: float = 0.7, mo
             max_tokens=max_tokens,
             extra_headers=extra_headers if extra_headers else None,
         )
-        if with_reasoning:
+        if with_reasoning and reasoning_effort == "none":
+            # Send the "off" switch rather than omitting it — see call_llm.
+            kwargs["reasoning_effort"] = "none"
+            kwargs["temperature"] = temperature
+        elif with_reasoning:
             kwargs["reasoning_effort"] = reasoning_effort
         else:
             kwargs["temperature"] = temperature
@@ -2146,7 +2196,7 @@ Produce EXACTLY this JSON:
 Keep every phrase tight. Base everything ONLY on the scraped content above."""
 
     try:
-        raw = call_llm(system, user, temperature=0.4, model="deepseek/deepseek-chat")
+        raw = call_llm(system, user, temperature=0.4, model=LLM_MODEL)
         cleaned = _re.sub(r"^```(?:json)?|```$", "", raw.strip(), flags=_re.MULTILINE).strip()
         match = _re.search(r"\{.*\}", cleaned, _re.DOTALL)
         data = _json.loads(match.group(0) if match else cleaned)
@@ -2293,7 +2343,7 @@ Distill it into a JSON object with these keys:
 Keep every field tight. Base everything ONLY on the text above. Return STRICT JSON only."""
 
     try:
-        raw = call_llm(system, user, temperature=0.3, model="deepseek/deepseek-chat")
+        raw = call_llm(system, user, temperature=0.3, model=LLM_MODEL)
         cleaned = _re.sub(r"^```(?:json)?|```$", "", raw.strip(), flags=_re.MULTILINE).strip()
         match = _re.search(r"\{.*\}", cleaned, _re.DOTALL)
         data = _json.loads(match.group(0) if match else cleaned)
@@ -2319,10 +2369,10 @@ Keep every field tight. Base everything ONLY on the text above. Return STRICT JS
 async def health_check():
     # Determine model based on AI_MODE for display
     ai_mode = os.environ.get("AI_MODE", "production")
-    if ai_mode == "test":
-        model_display = "openrouter/deepseek/deepseek-chat:free"
-    else:
-        model_display = "deepseek/deepseek-chat"
+    # Report the model actually in use. This used to be a hardcoded string that
+    # drifted from reality — a health endpoint naming a model the service does
+    # not send is how you debug the wrong thing for an afternoon.
+    model_display = LLM_MODEL
     
     return {
         "status": "healthy",

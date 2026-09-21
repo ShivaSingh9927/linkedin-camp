@@ -48,6 +48,10 @@ def _call_llm(system: str, user: str, temperature: float = 0.3) -> str:
 
     response = _ai_client.chat.completions.create(
         model=resolved,
+        # Thinking OFF — see the note in ai-service. deepseek-flash reasons by
+        # default; with max_tokens=800 here a long chain of thought could
+        # consume the budget and return empty content rather than an error.
+        reasoning_effort=os.environ.get("LLM_THINKING_EFFORT", "none"),
         messages=[
             {"role": "system", "content": system},
             {"role": "user", "content": user},

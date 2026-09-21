@@ -23,7 +23,7 @@ STRATEGY_CACHE_TTL = 86400  # 24 hours
 # review agent (broken on OpenRouter), no separate research agent (the old
 # "research" only did a BeautifulSoup scrape — now done inline in the
 # orchestrator before agents run).
-_DEEPSEEK_MODEL = "deepseek/deepseek-chat"
+_DEEPSEEK_MODEL = os.environ.get("LLM_MODEL", "deepseek/deepseek-flash")
 
 AGENT_CONFIG = {
     "business_analysis": {

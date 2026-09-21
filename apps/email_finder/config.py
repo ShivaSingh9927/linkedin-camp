@@ -23,4 +23,4 @@ RESEARCH_AGENT_URL = os.environ.get("RESEARCH_AGENT_URL", "http://localhost:3012
 LLM_HTTP_TIMEOUT = float(os.environ.get("LLM_HTTP_TIMEOUT_SECONDS", "60"))
 
 # DeepSeek model name
-DEEPSEEK_MODEL = "deepseek/deepseek-chat"
+DEEPSEEK_MODEL = os.environ.get("LLM_MODEL", "deepseek/deepseek-flash")

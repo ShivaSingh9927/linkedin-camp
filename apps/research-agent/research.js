@@ -28,7 +28,7 @@ const EMAIL_FORMAT_CACHE_TTL_SECONDS = parseInt(process.env.EMAIL_FORMAT_CACHE_T
 const CF_GATEWAY_URL = process.env.CLOUDFLARE_AI_GATEWAY_URL || '';
 const CF_AIG_TOKEN = process.env.CF_AIG_TOKEN || '';
 const CF_BYOK_ALIAS_DEEPSEEK = process.env.CF_BYOK_ALIAS_DEEPSEEK || 'qampi-deepseek-v4-flash';
-const DEEPSEEK_MODEL = 'deepseek/deepseek-chat';
+const DEEPSEEK_MODEL = process.env.LLM_MODEL || 'deepseek/deepseek-flash';
 
 // ---------- Lightpanda ----------
 
@@ -59,6 +59,10 @@ async function callDeepSeek(systemPrompt, userPrompt, { maxTokens = 600, tempera
   const url = `${CF_GATEWAY_URL.replace(/\/$/, '')}/chat/completions`;
   const body = {
     model: DEEPSEEK_MODEL,
+    // Thinking OFF. deepseek-flash reasons by default, which quadruples output
+    // tokens for the same answer and can eat a tight max_tokens budget before
+    // any content is emitted (returning EMPTY, not an error).
+    reasoning_effort: process.env.LLM_THINKING === 'on' ? undefined : 'none',
     messages: [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userPrompt },
