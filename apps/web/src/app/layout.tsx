@@ -7,7 +7,6 @@ import { Toaster } from 'sonner';
 import { GoogleOAuthProvider } from '@react-oauth/google';
 import { PostHogProvider } from "@/components/PostHogProvider";
 import { CopilotProvider } from "@/components/copilot/CopilotProvider";
-
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {

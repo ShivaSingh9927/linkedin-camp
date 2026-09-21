@@ -26,10 +26,11 @@ const { parseYahooMarkdown } = require('./research');
 const LIGHTPANDA_PATH = process.env.LIGHTPANDA_PATH || '/usr/local/bin/lightpanda';
 const SERP_PAGE_TIMEOUT_MS = parseInt(process.env.SERP_PAGE_TIMEOUT_MS || '30000', 10);
 const SERP_CACHE_TTL_SECONDS = parseInt(process.env.SERP_CACHE_TTL_SECONDS || String(7 * 24 * 60 * 60), 10);
-// Concurrent Lightpanda renders. Browser rendering is CPU-bound and this box
-// also runs Postgres, so the cap protects the database, not memory (Lightpanda
-// does 100 pages in ~123MB). Size it from nproc, not from a guess.
-const SERP_MAX_CONCURRENT = parseInt(process.env.SERP_MAX_CONCURRENT || '3', 10);
+// Concurrent Lightpanda renders. Rendering is CPU-bound and this box also runs
+// Postgres, so the cap protects the database, not memory (Lightpanda does 100
+// pages in ~123MB). Default 2 because the db box is a 2-core machine — measured,
+// not guessed. Raise it only alongside nproc.
+const SERP_MAX_CONCURRENT = parseInt(process.env.SERP_MAX_CONCURRENT || '2', 10);
 // Yahoo yields ~7 profiles/page, so 2 pages covers the ~10 we merge in.
 const SERP_DEFAULT_PAGES = parseInt(process.env.SERP_DEFAULT_PAGES || '2', 10);
 

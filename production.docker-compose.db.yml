@@ -113,7 +113,7 @@ services:
       # people-serp: concurrent Lightpanda renders on this box. Rendering is
       # CPU-bound and Postgres lives here too, so this cap protects the DB.
       # Size it from nproc rather than raising it blind.
-      SERP_MAX_CONCURRENT: ${SERP_MAX_CONCURRENT:-3}
+      SERP_MAX_CONCURRENT: ${SERP_MAX_CONCURRENT:-2}
       SERP_CACHE_TTL_SECONDS: ${SERP_CACHE_TTL_SECONDS:-604800}
       # Cache the landscape effectively forever — the user's positioning + their
       # competitor list rarely shifts week-to-week, and a "refresh strategy"
