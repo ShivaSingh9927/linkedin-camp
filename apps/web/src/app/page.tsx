@@ -1,17 +1,15 @@
 'use client';
 
 import { useState, useEffect, Suspense } from 'react';
-import { Users, Send, MessageSquare, Plus } from 'lucide-react';
-import { motion } from 'framer-motion';
-import Link from 'next/link';
 import { WelcomeReveal } from '@/components/WelcomeReveal';
 import { ActivationHero, type SetupStatus } from '@/components/ActivationHero';
 import { OptionalSetupReminder } from '@/components/OptionalSetupReminder';
 import { ProfileCompletionNudge } from '@/components/ProfileCompletionNudge';
 import { ActivationCopilot, ACTIVATION_DISMISSED_KEY } from '@/components/copilot/ActivationCopilot';
 import { QampiDashboardPanel } from '@/components/copilot/QampiDashboardPanel';
-import { DynamicStatusPanel, type StatusCampaign, type StatusLog } from '@/components/dashboard/DynamicStatusPanel';
-import { Skeleton, Button } from '@/components/ui';
+import { type StatusCampaign, type StatusLog } from '@/components/dashboard/DynamicStatusPanel';
+import { DashboardContextPanel } from '@/components/dashboard/DashboardContextPanel';
+import { Skeleton } from '@/components/ui';
 
 function greeting() {
   const h = new Date().getHours();
@@ -79,9 +77,9 @@ export default function DashboardPage() {
   const totalReplies = campaigns.reduce((sum, c) => sum + (c.replied || 0), 0);
 
   const kpis = [
-    { label: 'Active leads', value: stats.totalLeads.toLocaleString(), icon: Users },
-    { label: 'Requests sent', value: stats.sentRequests.toLocaleString(), icon: Send },
-    { label: 'Replies', value: totalReplies.toLocaleString(), icon: MessageSquare },
+    { label: 'Active leads', value: stats.totalLeads.toLocaleString(), detail: `${campaigns.filter((c) => c.status === 'ACTIVE').length} live campaigns` },
+    { label: 'Requests sent', value: stats.sentRequests.toLocaleString(), detail: 'Across all campaigns' },
+    { label: 'Replies', value: totalReplies.toLocaleString(), detail: 'Needs your attention' },
   ];
 
   // Only the caps LinkedIn actually enforces, sourced from the server.
@@ -125,12 +123,6 @@ export default function DashboardPage() {
               </h1>
               <p className="text-ink-500 font-medium mt-1.5 text-[13px]">Here&rsquo;s what&rsquo;s happening with your outreach.</p>
             </div>
-            <Link href="/campaigns" className="shrink-0">
-              <Button>
-                <Plus className="w-4 h-4" />
-                New Campaign
-              </Button>
-            </Link>
           </div>
 
           {/* Complete-your-AI-profile nudge (profile/strategy quality) then the
@@ -140,37 +132,15 @@ export default function DashboardPage() {
             <OptionalSetupReminder status={setup} variant="strip" />
           </div>
 
-          <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-3 gap-5">
-            {/* Left: KPIs + the Qampi conversation as the MAIN surface */}
-            <div className="lg:col-span-2 flex flex-col gap-4 min-h-0">
-              {/* KPI row */}
-              <div className="grid grid-cols-1 gap-2.5 shrink-0 sm:grid-cols-3 sm:gap-3">
-                {kpis.map((kpi, i) => (
-                  <motion.div
-                    key={kpi.label}
-                    initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
-                    className="bg-card border border-line rounded-card p-3.5 sm:p-4"
-                  >
-                    <div className="flex items-center gap-2">
-                      <div className="w-7 h-7 rounded-control bg-brand-50 grid place-items-center shrink-0">
-                        <kpi.icon className="w-4 h-4 text-brand" />
-                      </div>
-                      <span className="text-[12px] text-ink-500 truncate">{kpi.label}</span>
-                    </div>
-                    <p className="num text-[24px] leading-none mt-2.5 sm:text-[26px] sm:mt-3">{kpi.value}</p>
-                  </motion.div>
-                ))}
-              </div>
-
-              {/* The copilot — the big conversation surface */}
-              <div className="flex-1 min-h-[360px] lg:min-h-0">
+          <div className="flex-1 min-h-0 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(390px,2fr)]">
+            {/* The copilot is the main working surface. */}
+            <div className="min-h-[420px] lg:min-h-0">
                 <QampiDashboardPanel />
-              </div>
             </div>
 
-            {/* Right: status → replies → today's limits → recent activity */}
+            {/* Right: status by default; live lead/campaign artifacts replace it. */}
             <div className="min-h-0">
-              <DynamicStatusPanel campaigns={campaigns} logs={recentLogs} setup={setup} loading={loading} quotas={quotas} />
+              <DashboardContextPanel campaigns={campaigns} logs={recentLogs} setup={setup} loading={loading} quotas={quotas} kpis={kpis} />
             </div>
           </div>
         </div>

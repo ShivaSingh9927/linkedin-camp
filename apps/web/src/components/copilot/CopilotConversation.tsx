@@ -37,7 +37,8 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
     // Conversation state is owned by the layout-level provider so it survives
     // route navigation and (via localStorage) reloads. This component is a view.
     const { messages, setMessages, importedLeadIds, setImportedLeadIds, hydrated,
-        threads, activeThreadId, newThread, switchThread, deleteThread } = useCopilot();
+        threads, activeThreadId, newThread, switchThread, deleteThread,
+        workspaceContext, setWorkspaceContext } = useCopilot();
     const [input, setInput] = useState('');
     const [threadMenuOpen, setThreadMenuOpen] = useState(false);
     // Guards a single mount from kicking off the opening flow twice (e.g. React
@@ -404,7 +405,10 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
         const thinkId = nextId();
         push({ id: thinkId, role: 'qampi', kind: 'searching', label: 'Understanding your request and choosing the next step', detail: 'I’m matching it to the right Qampi action and checking what information it needs.' });
         try {
-            const routed = await routeMessage(q, historyForRouter(), importedLeadIdsRef.current.length, intentHint);
+            const contextualQuery = workspaceContext
+                ? `${q}\n\nCurrent dashboard context: ${workspaceContext.label}${workspaceContext.detail ? ` — ${workspaceContext.detail}` : ''}.`
+                : q;
+            const routed = await routeMessage(contextualQuery, historyForRouter(), importedLeadIdsRef.current.length, intentHint);
             setMessages((prev) => prev.filter((m) => m.id !== thinkId));
             // Web-search availability is determined in the browser below. Do not
             // render the router's generic “approve the search” sentence first:
@@ -443,7 +447,7 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
             setMessages((prev) => prev.filter((m) => m.id !== thinkId));
             push({ id: nextId(), role: 'qampi', kind: 'text', text: 'I had trouble with that — try rephrasing, or tell me the kind of people you want to reach.' });
         }
-    }, [started, push, doSearch, recommendCampaigns, offerLaunch, handleReplies, historyForRouter, runWebSearch]);
+    }, [started, push, doSearch, recommendCampaigns, offerLaunch, handleReplies, historyForRouter, runWebSearch, workspaceContext]);
 
     const submitInput = useCallback(() => {
         const q = input.trim();
@@ -528,6 +532,13 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
                         </button>
                     ))}
                 </div>
+                {workspaceContext && (
+                    <div className="mb-2 flex items-center gap-2 rounded-control bg-brand-50 px-2.5 py-1.5 text-[11px] text-brand-700">
+                        <span className="text-brand-500">Working with</span>
+                        <span className="min-w-0 flex-1 truncate font-medium">{workspaceContext.label}{workspaceContext.detail ? ` · ${workspaceContext.detail}` : ''}</span>
+                        <button type="button" onClick={() => setWorkspaceContext(null)} aria-label="Clear workspace context" className="text-brand-500 hover:text-brand-700">×</button>
+                    </div>
+                )}
                 <div className="flex items-end gap-2 bg-card border border-line rounded-card px-3 py-2 focus-within:border-brand-200 transition-colors">
                     <textarea
                         ref={taRef}

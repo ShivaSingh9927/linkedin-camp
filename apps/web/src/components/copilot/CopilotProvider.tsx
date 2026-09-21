@@ -27,6 +27,12 @@ export interface ThreadMeta {
     updatedAt: number;
 }
 
+export interface WorkspaceContext {
+    kind: 'status' | 'leads' | 'lead' | 'campaigns' | 'campaign' | 'node';
+    label: string;
+    detail?: string;
+}
+
 interface CopilotState {
     messages: Msg[];
     setMessages: React.Dispatch<React.SetStateAction<Msg[]>>;
@@ -41,6 +47,8 @@ interface CopilotState {
     switchThread: (id: string) => void;
     renameThread: (id: string, title: string) => void;
     deleteThread: (id: string) => void;
+    workspaceContext: WorkspaceContext | null;
+    setWorkspaceContext: React.Dispatch<React.SetStateAction<WorkspaceContext | null>>;
 }
 
 const CopilotContext = createContext<CopilotState | null>(null);
@@ -120,6 +128,7 @@ export function CopilotProvider({ children }: { children: React.ReactNode }) {
     const [importedLeadIds, setImportedLeadIds] = useState<string[]>([]);
     const [threads, setThreads] = useState<ThreadMeta[]>([]);
     const [activeThreadId, setActiveThreadId] = useState('');
+    const [workspaceContext, setWorkspaceContext] = useState<WorkspaceContext | null>(null);
     // Starts false so server + first client render agree (empty). We rehydrate in
     // an effect, then flip hydrated → the conversation reads the restored thread.
     const [hydrated, setHydrated] = useState(false);
@@ -274,8 +283,9 @@ export function CopilotProvider({ children }: { children: React.ReactNode }) {
         () => ({
             messages, setMessages, importedLeadIds, setImportedLeadIds, hydrated, reset,
             threads, activeThreadId, newThread, switchThread, renameThread, deleteThread,
+            workspaceContext, setWorkspaceContext,
         }),
-        [messages, importedLeadIds, hydrated, reset, threads, activeThreadId, newThread, switchThread, renameThread, deleteThread],
+        [messages, importedLeadIds, hydrated, reset, threads, activeThreadId, newThread, switchThread, renameThread, deleteThread, workspaceContext],
     );
 
     return <CopilotContext.Provider value={value}>{children}</CopilotContext.Provider>;

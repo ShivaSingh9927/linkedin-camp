@@ -86,12 +86,13 @@ interface Nudge {
     tone: 'brand' | 'success';
 }
 
-export function DynamicStatusPanel({ campaigns, logs, setup, loading, quotas }: {
+export function DynamicStatusPanel({ campaigns, logs, setup, loading, quotas, kpis }: {
     campaigns: StatusCampaign[];
     logs: StatusLog[];
     setup: SetupStatus | null;
     loading: boolean;
     quotas?: { label: string; value: number; total: number }[];
+    kpis?: { label: string; value: string; detail: string }[];
 }) {
     const [repliesWaiting, setRepliesWaiting] = useState(0);
     // Capture "now" once (lazy init) — reading Date.now() directly in the render
@@ -200,6 +201,20 @@ export function DynamicStatusPanel({ campaigns, logs, setup, loading, quotas }: 
                 <div className="px-4 pt-3 shrink-0">
                     <div className="h-1.5 bg-surface rounded-full overflow-hidden">
                         <div className="h-full rounded-full bg-brand transition-all duration-700" style={{ width: `${pct}%` }} />
+                    </div>
+                </div>
+            )}
+
+            {kpis && kpis.length > 0 && (
+                <div className="px-4 pt-3 shrink-0">
+                    <div className="grid grid-cols-3 overflow-hidden rounded-control border border-line bg-surface/60">
+                        {kpis.map((kpi, index) => (
+                            <div key={kpi.label} className={cn('min-w-0 px-2.5 py-2.5', index > 0 && 'border-l border-line')}>
+                                <p className="truncate text-[10px] font-medium text-ink-500">{kpi.label}</p>
+                                <p className="num mt-1 text-[20px] leading-none text-foreground">{kpi.value}</p>
+                                <p className="mt-1 truncate text-[9px] text-ink-400">{kpi.detail}</p>
+                            </div>
+                        ))}
                     </div>
                 </div>
             )}
