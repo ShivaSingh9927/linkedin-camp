@@ -33,6 +33,8 @@ const SERP_CACHE_TTL_SECONDS = parseInt(process.env.SERP_CACHE_TTL_SECONDS || St
 const SERP_MAX_CONCURRENT = parseInt(process.env.SERP_MAX_CONCURRENT || '2', 10);
 // Yahoo yields ~7 profiles/page, so 2 pages covers the ~10 we merge in.
 const SERP_DEFAULT_PAGES = parseInt(process.env.SERP_DEFAULT_PAGES || '2', 10);
+// General web answers go stale faster than a list of people in a role.
+const WEB_CACHE_TTL_SECONDS = parseInt(process.env.WEB_SEARCH_CACHE_TTL_SECONDS || String(6 * 60 * 60), 10);
 
 // ---------- concurrency ----------
 
@@ -249,7 +251,60 @@ async function yahooHits(query, b) {
     return parseYahooMarkdown(markdown);
 }
 
+/**
+ * General web search (not LinkedIn-restricted) for the copilot's research
+ * questions. Same engine + concurrency cap as profile discovery.
+ *
+ * Replaces the extension's browser-side providers, both of which are unusable:
+ * html.duckduckgo.com is hard-blocked (HTTP 202, identical ~2KB shell for any
+ * query, measured from two unrelated IPs), and Bing's RSS endpoint answers with
+ * content unrelated to the query — "enphase energy icp" returned articles about
+ * paper aeroplanes, and an earlier run returned Siamese cats. Unrelated sources
+ * are worse than none: they feed a summariser real URLs for the wrong subject.
+ *
+ * Returns { query, results: [{title,url,snippet}], cached }.
+ */
+async function searchWeb({ query, limit } = {}, redis) {
+    const q = String(query || '').replace(/\s+/g, ' ').trim().slice(0, 300);
+    if (!q) return { query: '', results: [], cached: false };
+    const want = Math.min(Math.max(parseInt(limit, 10) || 5, 1), 10);
+
+    const cacheKey = `serp:web:${q.toLowerCase()}:${want}`;
+    if (redis) {
+        try {
+            const hit = await redis.get(cacheKey);
+            if (hit) return { ...JSON.parse(hit), cached: true };
+        } catch { /* cache is an optimization, never a dependency */ }
+    }
+
+    await acquire();
+    let hits = [];
+    try {
+        hits = await yahooHits(q, 1);
+    } catch (e) {
+        console.error(`[web-search] "${q}" failed: ${e && e.message}`);
+    } finally {
+        release();
+    }
+
+    const results = hits
+        .filter((h) => h && h.url && /^https:\/\//i.test(h.url) && h.title)
+        .slice(0, want)
+        .map((h) => ({
+            title: String(h.title).slice(0, 180),
+            url: String(h.url).slice(0, 1000),
+            snippet: String(h.snippet || '').slice(0, 500),
+        }));
+
+    const result = { query: q, results, cached: false };
+    if (redis && results.length) {
+        try { await redis.setex(cacheKey, WEB_CACHE_TTL_SECONDS, JSON.stringify(result)); } catch { /* ignore */ }
+    }
+    return result;
+}
+
 module.exports = {
+    searchWeb,
     searchLinkedInProfiles,
     // exported for tests
     parseSerpHits,

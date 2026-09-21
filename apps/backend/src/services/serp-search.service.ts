@@ -126,3 +126,46 @@ export async function searchPeopleViaSerp(opts: {
         clearTimeout(timer);
     }
 }
+
+export interface WebResult {
+    title: string;
+    url: string;
+    snippet: string;
+}
+
+/**
+ * General web search for the copilot's research questions.
+ *
+ * Throws on failure rather than returning [] — unlike lead discovery, where the
+ * engine is a bonus source, here it IS the answer, and a silent empty list is
+ * what produced "No web results found" while the real cause went unlogged.
+ */
+export async function searchWeb(query: string, limit = 5): Promise<WebResult[]> {
+    if (!RESEARCH_AGENT_URL) throw new Error('web search is not configured');
+    const q = (query || '').trim();
+    if (!q) return [];
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), SERP_TIMEOUT_MS);
+    try {
+        const resp = await fetch(`${RESEARCH_AGENT_URL.replace(/\/$/, '')}/research/web-search`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query: q, limit }),
+            signal: controller.signal,
+        });
+        if (!resp.ok) {
+            const body = await resp.text().catch(() => '');
+            throw new Error(`research-agent ${resp.status}: ${body.slice(0, 200)}`);
+        }
+        const json = (await resp.json()) as { results?: WebResult[] };
+        return (Array.isArray(json?.results) ? json.results : []).filter(
+            (r) => r && typeof r.title === 'string' && /^https:\/\//i.test(r.url || ''),
+        );
+    } catch (e: any) {
+        if (e?.name === 'AbortError') throw new Error(`web search timed out after ${SERP_TIMEOUT_MS}ms`);
+        throw e;
+    } finally {
+        clearTimeout(timer);
+    }
+}

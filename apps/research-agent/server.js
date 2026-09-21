@@ -1,7 +1,7 @@
 const express = require('express');
 const Redis = require('ioredis');
 const { buildCompetitiveLandscape, searchEmailFormat } = require('./research');
-const { searchLinkedInProfiles } = require('./people-serp');
+const { searchLinkedInProfiles, searchWeb } = require('./people-serp');
 
 const PORT = parseInt(process.env.PORT || '3010', 10);
 const REDIS_URL = process.env.REDIS_URL || '';
@@ -111,6 +111,34 @@ app.post('/research/people-serp', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.error(`[RESEARCH-AGENT] people-serp failed: ${err.message}`);
+    res.status(500).json({ error: err.message });
+  } finally {
+    clearTimeout(timer);
+  }
+});
+
+// General web search for the copilot's research questions. Server-side because
+// the browser-side providers it replaces are both unusable — DuckDuckGo's html
+// endpoint blocks non-browser clients outright, and Bing's RSS endpoint returns
+// content unrelated to the query, which is worse than returning nothing.
+app.post('/research/web-search', async (req, res) => {
+  const { query, limit } = req.body || {};
+  if (!query || typeof query !== 'string' || !query.trim()) {
+    return res.status(400).json({ error: 'query is required' });
+  }
+
+  const HARD_DEADLINE_MS = parseInt(process.env.WEB_SEARCH_HARD_DEADLINE_MS || '40000', 10);
+  let timer;
+  const deadline = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`web-search exceeded ${HARD_DEADLINE_MS}ms`)), HARD_DEADLINE_MS);
+  });
+
+  try {
+    const result = await Promise.race([searchWeb({ query, limit }, redis), deadline]);
+    console.log(`[RESEARCH-AGENT] web-search "${result.query}" -> ${result.results.length} results (cached=${result.cached})`);
+    res.json(result);
+  } catch (err) {
+    console.error(`[RESEARCH-AGENT] web-search failed: ${err.message}`);
     res.status(500).json({ error: err.message });
   } finally {
     clearTimeout(timer);

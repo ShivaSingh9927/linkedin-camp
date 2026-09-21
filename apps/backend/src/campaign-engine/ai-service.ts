@@ -478,7 +478,10 @@ export async function routeCopilotMessage(opts: {
         }, { timeout: 30000 });
         return response.data as CopilotRouted;
     } catch (error: any) {
-        console.error('[AI-SERVICE] Error routing copilot message:', error.message);
+        // Include the upstream detail. Logging only error.message gives
+        // "Request failed with status code 500", which says nothing about why.
+        const detail = error?.response?.data?.detail || error?.response?.data?.error || '';
+        console.error('[AI-SERVICE] Error routing copilot message:', error.message, detail ? `| upstream: ${String(detail).slice(0, 300)}` : '');
         throw new Error('Failed to route copilot message');
     }
 }

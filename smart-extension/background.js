@@ -29,8 +29,7 @@ const DDG_ORIGINS = [
     'https://html.duckduckgo.com/*',
     'https://api.duckduckgo.com/*',
 ];
-const SEARCH_FALLBACK_ORIGINS = ['https://www.bing.com/*'];
-const WEB_SEARCH_ORIGINS = [...DDG_ORIGINS, ...SEARCH_FALLBACK_ORIGINS];
+const WEB_SEARCH_ORIGINS = [...DDG_ORIGINS];
 const WEB_SEARCH_CACHE_KEY = 'copilotWebSearchCache';
 const WEB_SEARCH_TTL_MS = 24 * 60 * 60 * 1000;
 const WEB_SEARCH_MAX_RESULTS = 5;
@@ -89,35 +88,16 @@ function parseDdgHtml(html) {
     return results;
 }
 
-function parseBingRss(xml) {
-    const results = [];
-    const items = xml.match(/<item>[\s\S]*?<\/item>/gi) || [];
-    for (const item of items) {
-        const title = item.match(/<title>([\s\S]*?)<\/title>/i)?.[1];
-        const url = item.match(/<link>([\s\S]*?)<\/link>/i)?.[1];
-        const snippet = item.match(/<description>([\s\S]*?)<\/description>/i)?.[1];
-        const cleanUrl = String(url || '').trim();
-        if (!title || !/^https?:\/\//i.test(cleanUrl)) continue;
-        results.push({ title: cleanSearchText(title, 180), url: cleanUrl, snippet: cleanSearchText(snippet || '', 420) });
-        if (results.length >= WEB_SEARCH_MAX_RESULTS) break;
-    }
-    return results;
-}
-
 async function getWebSearchPermissions() {
-    const [duckDuckGo, bing] = await Promise.all([
-        chrome.permissions.contains({ origins: DDG_ORIGINS }),
-        chrome.permissions.contains({ origins: SEARCH_FALLBACK_ORIGINS }),
-    ]);
-    return { duckDuckGo, bing };
+    const duckDuckGo = await chrome.permissions.contains({ origins: DDG_ORIGINS });
+    return { duckDuckGo };
 }
 
 async function hasWebSearchPermission() {
+    // DuckDuckGo only. Requiring the Bing grant too would now strand any client
+    // still on this path permanently, since that provider is gone.
     const permissions = await getWebSearchPermissions();
-    // Treat the provider pair as one capability. Existing users may already
-    // have the former DDG-only grant; returning false here prompts a one-time
-    // upgrade for the Bing fallback instead of silently retrying DDG alone.
-    return permissions.duckDuckGo && permissions.bing;
+    return permissions.duckDuckGo;
 }
 
 async function runBrowserWebSearch(rawQuery) {
@@ -125,7 +105,7 @@ async function runBrowserWebSearch(rawQuery) {
     if (!query) return { ok: false, error: 'Enter a search query.' };
     try {
         const permissions = await getWebSearchPermissions();
-        if (!permissions.duckDuckGo && !permissions.bing) return { ok: false, permissionNeeded: true, error: 'Allow browser search access to continue.' };
+        if (!permissions.duckDuckGo) return { ok: false, permissionNeeded: true, error: 'Allow browser search access to continue.' };
 
         const now = Date.now();
         const stored = await chrome.storage.local.get(WEB_SEARCH_CACHE_KEY);
@@ -145,14 +125,13 @@ async function runBrowserWebSearch(rawQuery) {
                     if (response.ok) results = parseDdgHtml(await response.text());
                 } catch { /* try the fallback below */ }
             }
-            if (!results.length && permissions.bing) {
-                try {
-                    const fallback = await fetch(`https://www.bing.com/search?format=rss&q=${encodeURIComponent(query)}`, {
-                        headers: { 'Accept': 'application/rss+xml,application/xml,text/xml' },
-                    });
-                    if (fallback.ok) results = parseBingRss(await fallback.text());
-                } catch { /* retry the provider pair */ }
-            }
+            // Bing's RSS endpoint was removed here on 2026-09-22: it answers
+            // HTTP 200 with content UNRELATED to the query ("enphase energy icp"
+            // returned articles about paper aeroplanes; an earlier run returned
+            // Siamese cats). Irrelevant sources are worse than none, because the
+            // summariser receives real, authoritative-looking URLs about the
+            // wrong subject. Web search now runs server-side; see
+            // apps/research-agent/people-serp.js.
         }
         if (!results.length) return { ok: false, error: 'No web results after 3 attempts. Try a shorter or more specific query.' };
         const entry = { query, results, fetchedAt: now, expiresAt: now + WEB_SEARCH_TTL_MS };

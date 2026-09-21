@@ -195,6 +195,21 @@ export interface RoutedMessage {
     toolData?: RoutedToolData | null;
 }
 
+// Search the public web and summarise it in one server-side call.
+//
+// Replaces the browser/extension search path. Both of its providers were
+// unusable: DuckDuckGo's html endpoint blocks non-browser clients outright
+// (HTTP 202, empty shell), and Bing's RSS endpoint answers with content
+// unrelated to the query — which is worse, because it feeds the summariser
+// real URLs about the wrong subject.
+export async function searchAndSummarizeWeb(message: string, query?: string): Promise<{ reply: string; sources: Array<{ title: string; url: string }> }> {
+    const { data } = await api.post('/ai/copilot/web-search', { message, ...(query ? { query } : {}) });
+    return {
+        reply: typeof data?.reply === 'string' ? data.reply : '',
+        sources: Array.isArray(data?.sources) ? data.sources : [],
+    };
+}
+
 export async function summarizeBrowserWebSearch(message: string, results: BrowserWebResult[]): Promise<{ reply: string; sources: Array<{ title: string; url: string }> }> {
     const { data } = await api.post('/ai/copilot/web-summary', { message, results });
     return {

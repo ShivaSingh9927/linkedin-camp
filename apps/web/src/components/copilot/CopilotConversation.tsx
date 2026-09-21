@@ -9,7 +9,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Search, Loader2, ArrowUp, Check, Plus, MapPin, Clock, ArrowRight, Rocket, LinkIcon, Sparkles, PenSquare, Trash2, MessageSquare, Send, ExternalLink } from 'lucide-react';
+import { Search, Loader2, ArrowUp, Check, Plus, MapPin, Clock, ArrowRight, Rocket, LinkIcon, Sparkles, PenSquare, Trash2, MessageSquare, Send } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { TypingLoader } from '@/components/ui/loader';
 import { Reasoning, ReasoningContent, ReasoningTrigger } from '@/components/ui/reasoning';
@@ -18,10 +18,9 @@ import { updateCopilotHarnessTurn } from '@/lib/copilot-harness-store';
 import {
     fetchUnderstand, fetchSearchRecommendations, runSearch, fetchTemplateRecommendations,
     routeMessage, launchFromTemplate, fetchAvailableLeads, fetchTemplateHint, fetchProactiveContext,
-    draftReply, sendReply, summarizeBrowserWebSearch,
+    draftReply, sendReply, searchAndSummarizeWeb,
     type Understand, type SearchRecommendation, type TemplatePick, type HistoryMsg, type LaunchOverrides, type TemplateHint, type ProactiveContext, type WaitingReply,
 } from './copilotApi';
-import { getBrowserWebSearchStatus, requestBrowserWebSearchPermission, searchFromBrowser } from '@/lib/copilot-web-search';
 import { type Msg, nextId } from './copilotTypes';
 import { useCopilot, type ThreadMeta } from './CopilotProvider';
 
@@ -368,24 +367,26 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
         loadSearchChips();
     }, [push, started, loadSearchChips]);
 
-    const runWebSearch = useCallback(async (msgId: string, query: string, requestPermission = false) => {
-        if (requestPermission) {
-            const granted = await requestBrowserWebSearchPermission();
-            if (!granted) {
-                patch(msgId, { state: 'error', error: 'DuckDuckGo permission was not granted. You can enable it when you are ready.' });
-                return;
-            }
-        }
+    // Web search now runs server-side (research-agent on the db box). The
+    // extension is no longer involved, so there is no permission step and no
+    // install requirement — the old browser providers were a hard block
+    // (DuckDuckGo) and unrelated results (Bing RSS).
+    const runWebSearch = useCallback(async (msgId: string, query: string) => {
         patch(msgId, { state: 'searching', error: undefined });
         try {
-            const search = await searchFromBrowser(query);
-            const summary = await summarizeBrowserWebSearch(query, search.results);
+            const summary = await searchAndSummarizeWeb(query);
             setMessages((prev) => prev.filter((m) => m.id !== msgId));
             const sources = summary.sources.map((s) => `- ${s.title}: ${s.url}`).join('\n');
             push({ id: nextId(), role: 'qampi', kind: 'text', text: [summary.reply, sources].filter(Boolean).join('\n\n') || 'I found public sources, but could not create a summary.' });
-        } catch (error) {
-            const message = error instanceof Error ? error.message : 'Web search failed.';
-            patch(msgId, { state: /permission/i.test(message) ? 'permission' : 'error', error: message });
+        } catch (error: unknown) {
+            // Surface what actually failed. The old path reported every failure
+            // as "No web results found. Try a shorter query.", which blamed the
+            // user's wording for a dead provider.
+            const apiMessage = (error as { response?: { data?: { message?: unknown } } })?.response?.data?.message;
+            const message = typeof apiMessage === 'string' && apiMessage
+                ? apiMessage
+                : error instanceof Error ? error.message : 'Web search failed.';
+            patch(msgId, { state: 'error', error: message });
         }
     }, [patch, push, setMessages]);
 
@@ -425,15 +426,12 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
             } else if (routed.intent === 'handle_replies') {
                 handleReplies(routed.toolData?.waitingReplies || []);
             } else if (routed.intent === 'web_search') {
+                // Runs server-side, so there is nothing to install, nothing to
+                // permit, and no second button to click — just search.
                 const query = routed.params.keywords || q;
-                const status = await getBrowserWebSearchStatus();
                 const webSearchId = nextId();
-                const state = !status.installed ? 'install' : status.permissionGranted ? 'searching' : 'permission';
-                push({ id: webSearchId, role: 'qampi', kind: 'webSearch', query, state });
-                // Permission is the one browser-mandated user gesture. Once it
-                // has been granted, invoke the tool immediately instead of
-                // asking the user to click a second “Search” button.
-                if (status.installed && status.permissionGranted) void runWebSearch(webSearchId, query);
+                push({ id: webSearchId, role: 'qampi', kind: 'webSearch', query, state: 'searching' });
+                void runWebSearch(webSearchId, query);
             }
             // lookup_lead / check_status / explain / unsupported / off_topic → the reply already said it.
         } catch {
@@ -700,31 +698,22 @@ function MessageRow({ m, onPickSearch, onRunDraft, onPickTemplate, onLaunch, onS
     return null;
 }
 
-function WebSearchCard({ m, onRun }: { m: Extract<Msg, { kind: 'webSearch' }>; onRun: (msgId: string, query: string, requestPermission?: boolean) => void }) {
-    const extensionUrl = 'https://chromewebstore.google.com/detail/qampi-%E2%80%94-lead-importer/gcmepobpaoiokgcekafhpjehmpnckodk';
+function WebSearchCard({ m, onRun }: { m: Extract<Msg, { kind: 'webSearch' }>; onRun: (msgId: string, query: string) => void }) {
+    // Only two states remain now that search is server-side: it is running, or
+    // it failed and can be retried. The install/permission states belonged to
+    // the extension path and no longer exist.
     return (
         <div className="bg-card border border-line rounded-card p-3 space-y-2.5">
             <div className="flex items-center gap-2">
                 <Search className="w-3.5 h-3.5 text-brand shrink-0" />
-                <span className="text-[13px] font-medium text-foreground">Browser web search</span>
+                <span className="text-[13px] font-medium text-foreground">Web search</span>
             </div>
             <p className="text-[11px] leading-relaxed text-ink-500">
-                {m.state === 'install' ? 'Install the Qampi extension, then reload your browser and return here. Results are cached locally, then only the selected snippets are summarised.' :
-                    m.state === 'permission' ? 'Allow public-search access once so Qampi can complete this search automatically.' :
-                        m.state === 'searching' ? `Finding public sources for “${m.query}”…` :
-                            m.state === 'error' ? m.error : `Search the public web for “${m.query}”.`}
+                {m.state === 'error' ? m.error : `Finding public sources for \u201c${m.query}\u201d\u2026`}
             </p>
-            {m.state === 'install' ? (
-                <a href={extensionUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-[13px] font-medium bg-brand text-white rounded-chip px-3.5 py-2 hover:bg-brand-600 transition-colors">
-                    <ExternalLink className="w-3.5 h-3.5" /> Install Qampi Extension
-                </a>
-            ) : m.state === 'permission' ? (
-                <button onClick={() => onRun(m.id, m.query, true)} className="inline-flex items-center gap-2 text-[13px] font-medium bg-brand text-white rounded-chip px-3.5 py-2 hover:bg-brand-600 transition-colors">
-                    <Check className="w-3.5 h-3.5" /> Enable & search
-                </button>
-            ) : m.state === 'ready' || m.state === 'error' ? (
+            {m.state === 'error' ? (
                 <button onClick={() => onRun(m.id, m.query)} className="inline-flex items-center gap-2 text-[13px] font-medium bg-brand text-white rounded-chip px-3.5 py-2 hover:bg-brand-600 transition-colors">
-                    <Search className="w-3.5 h-3.5" /> Search & summarise
+                    <Search className="w-3.5 h-3.5" /> Try again
                 </button>
             ) : (
                 <AgentProgress compact label="Finding sources and preparing a summary" />

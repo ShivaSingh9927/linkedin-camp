@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { generateComment, generateMessage, enhanceReply, replySuggestions } from '../controllers/ai.controller';
-import { activationUnderstand, activationRecommendSearch, activationRecommendTemplates, copilotMessage, copilotDraftReply, copilotWebSummary } from '../controllers/activation.controller';
+import { activationUnderstand, activationRecommendSearch, activationRecommendTemplates, copilotMessage, copilotDraftReply, copilotWebSummary, copilotWebSearch } from '../controllers/activation.controller';
 import { authMiddleware } from '../middleware/auth.middleware';
 
 const router = Router();
@@ -19,5 +19,7 @@ router.post('/activation/recommend-templates', activationRecommendTemplates);
 router.post('/copilot/message', copilotMessage);
 router.post('/copilot/draft-reply', copilotDraftReply);
 router.post('/copilot/web-summary', copilotWebSummary);
+// Server-side search + summarise in one call (replaces the browser providers).
+router.post('/copilot/web-search', copilotWebSearch);
 
 export default router;

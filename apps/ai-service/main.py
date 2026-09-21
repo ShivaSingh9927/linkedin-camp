@@ -1,6 +1,7 @@
 import sys
 import json
 import os
+import logging
 import httpx
 from typing import Optional, Dict, Any, List
 from fastapi import FastAPI, HTTPException
@@ -8,6 +9,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from openai import OpenAI
 from dotenv import load_dotenv
+
+# Uvicorn configures the root handler; this just gives our records a name.
+logger = logging.getLogger("ai-service")
 
 # Local development convenience: load .env from monorepo root if present.
 # Inside Docker the file doesn't exist and env vars come from compose.
@@ -1828,6 +1832,11 @@ Rules: use `unsupported` for a real outreach ask Qampi can't do (custom sequence
             "needsConfirm": bool(data.get("needsConfirm")) and intent == "launch_campaign",
         }
     except Exception as e:
+        # Log before raising. Without this a router failure is invisible: the
+        # detail rides out in the HTTP body, the backend logs only the status
+        # code, and the UI says "I had trouble with that" — so a transient
+        # gateway blip and a real bug look identical at every layer.
+        logger.exception("copilot_route failed: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
 
 

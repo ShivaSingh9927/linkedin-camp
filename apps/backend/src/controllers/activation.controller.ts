@@ -14,6 +14,7 @@
 import { Response } from 'express';
 import { prisma } from '@repo/db';
 import { AuthRequest } from '../middleware/auth.middleware';
+import { searchWeb, type WebResult } from '../services/serp-search.service';
 import {
     generateActivationUnderstand,
     generateActivationSearchRecs,
@@ -406,6 +407,46 @@ export const copilotMessage = async (req: AuthRequest, res: Response) => {
 // The browser extension fetches the public results and retains its local cache.
 // This endpoint accepts only a small, sanitised set of snippets for one-shot
 // summarisation; it never initiates a server-side web request.
+// Run a web search server-side and summarise it in one round trip. Replaces
+// the browser/extension search path, whose two providers were a hard block
+// (DuckDuckGo) and unrelated results (Bing RSS) — see serp-search.service.
+export const copilotWebSearch = async (req: AuthRequest, res: Response) => {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+    const { message, query } = req.body || {};
+    const question = typeof message === 'string' ? message.trim() : '';
+    const searchFor = (typeof query === 'string' && query.trim()) || question;
+    if (!question || !searchFor) return res.status(400).json({ error: 'message_required' });
+
+    let results: WebResult[] = [];
+    try {
+        results = await searchWeb(searchFor.slice(0, 300), 5);
+    } catch (error: any) {
+        // Say what actually went wrong. The old path collapsed every failure
+        // into "No web results found. Try a shorter query." — which blamed the
+        // user's phrasing for a dead provider.
+        console.error('[COPILOT] web search failed:', error?.message || error);
+        return res.status(502).json({
+            error: 'web_search_failed',
+            message: 'I could not reach the web search service just now. Try again in a moment.',
+        });
+    }
+    if (!results.length) {
+        return res.status(404).json({
+            error: 'no_results',
+            message: `I searched the web for "${searchFor.slice(0, 80)}" but found nothing usable.`,
+        });
+    }
+
+    try {
+        const reply = await summarizeCopilotWebSearch({ message: question.slice(0, 500), results });
+        return res.json({ reply, sources: results.map((r: WebResult) => ({ title: r.title, url: r.url })), query: searchFor });
+    } catch (error: any) {
+        console.error('[COPILOT] web summary error:', error?.message || error);
+        return res.status(502).json({ error: 'web_summary_failed', message: 'I found results but could not summarise them right now.' });
+    }
+};
+
 export const copilotWebSummary = async (req: AuthRequest, res: Response) => {
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
