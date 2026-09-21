@@ -1,0 +1,48 @@
+# SearXNG configuration for Qampi lead discovery.
+#
+# This instance is NOT a public search page. It is an internal JSON API on the
+# db box's docker network, reachable only by research-agent — no published
+# port, no user-facing UI traffic.
+#
+# Why it exists: it replaces scraping a rendered Yahoo SERP with Lightpanda.
+# Measured on this box 2026-09-22, same query:
+#     Yahoo + Lightpanda   ~7 profiles/page,  ~5s,  a browser process per page
+#     SearXNG              20 profiles/page,  ~400ms,  113MB / 0.13% CPU total
+# Pages are disjoint (58 distinct profiles over 3 pages, zero page1/page2
+# overlap), so depth is real.
+#
+# `secret_key` is deliberately the literal "ultrasecretkey": the official image's
+# entrypoint substitutes $SEARXNG_SECRET into it at boot, which is why the
+# settings mount must be writable.
+
+use_default_settings: true
+
+server:
+  secret_key: "ultrasecretkey"
+  # The limiter is bot protection for public instances. This one is private to
+  # the docker network, and the limiter would only throttle our own service.
+  limiter: false
+  image_proxy: false
+
+search:
+  # json is what research-agent consumes; it is NOT enabled by default.
+  formats:
+    - html
+    - json
+  # Engines we query are public search engines. Keep the default safe-search
+  # posture rather than widening it.
+  safe_search: 0
+  # Upstream engines are the slow part; fail the slow ones rather than making
+  # the caller wait for a straggler.
+  max_request_timeout: 10.0
+
+outgoing:
+  request_timeout: 6.0
+  max_request_timeout: 10.0
+  pool_connections: 20
+  pool_maxsize: 10
+
+redis:
+  # Share the Redis already running on this box instead of adding the Valkey
+  # sidecar the upstream compose template ships.
+  url: redis://redis:6379/3

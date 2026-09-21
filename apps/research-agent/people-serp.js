@@ -33,6 +33,10 @@ const SERP_CACHE_TTL_SECONDS = parseInt(process.env.SERP_CACHE_TTL_SECONDS || St
 const SERP_MAX_CONCURRENT = parseInt(process.env.SERP_MAX_CONCURRENT || '2', 10);
 // Yahoo yields ~7 profiles/page, so 2 pages covers the ~10 we merge in.
 const SERP_DEFAULT_PAGES = parseInt(process.env.SERP_DEFAULT_PAGES || '2', 10);
+// SearXNG is the primary backend; Yahoo-via-Lightpanda is the fallback. Unset
+// SEARXNG_URL and everything falls back to Yahoo automatically.
+const SEARXNG_URL = (process.env.SEARXNG_URL || '').replace(/\/$/, '');
+const SEARXNG_TIMEOUT_MS = parseInt(process.env.SEARXNG_TIMEOUT_MS || '15000', 10);
 // General web answers go stale faster than a list of people in a role.
 const WEB_CACHE_TTL_SECONDS = parseInt(process.env.WEB_SEARCH_CACHE_TTL_SECONDS || String(6 * 60 * 60), 10);
 
@@ -82,6 +86,52 @@ function fetchMarkdownAsync(url, timeoutMs = SERP_PAGE_TIMEOUT_MS) {
         child.on('error', () => { clearTimeout(timer); finish(''); });
         child.on('close', () => { clearTimeout(timer); finish(out.trim()); });
     });
+}
+
+// ---------- SearXNG ----------
+
+// Internal metasearch JSON API. No browser, so no semaphore: this is an HTTP
+// round trip, not a render, and the cost is a socket rather than a CPU core.
+//
+// One caveat worth remembering rather than rediscovering. On 2026-09-22 every
+// result came back attributed to a single engine, `google cse`, while brave and
+// duckduckgo refused us ("too many requests" / "CAPTCHA") within seconds of the
+// container starting. That engine declares `require_api_key: False` and
+// `use_official_api: False` — so there is no quota to exhaust, but also no
+// contract, and it can close off the way DuckDuckGo's html endpoint already
+// has. That is exactly why Yahoo stays wired as a fallback and why every search
+// logs which engines answered: when this stops working we should learn it from
+// a log line, not from a user with zero leads.
+async function searxngSearch(query, pageno = 1) {
+    if (!SEARXNG_URL) return null;
+    const url = `${SEARXNG_URL}/search?q=${encodeURIComponent(query)}&format=json&pageno=${pageno}`;
+    let resp;
+    try {
+        resp = await fetch(url, { signal: AbortSignal.timeout(SEARXNG_TIMEOUT_MS) });
+    } catch (e) {
+        console.warn(`[searxng] page ${pageno} unreachable: ${e && e.message}`);
+        return null;
+    }
+    if (!resp.ok) {
+        console.warn(`[searxng] page ${pageno} HTTP ${resp.status}`);
+        return null;
+    }
+    let json;
+    try { json = await resp.json(); } catch { return null; }
+    const rows = Array.isArray(json && json.results) ? json.results : [];
+
+    // Attribution: which engines actually answered, and which refused.
+    const engines = [...new Set(rows.flatMap((r) => r.engines || []))];
+    const dead = (json.unresponsive_engines || []).map((u) => (Array.isArray(u) ? u[0] : u));
+    if (engines.length) console.log(`[searxng] p${pageno} ${rows.length} results via [${engines.join(', ')}]${dead.length ? ` | refused: ${dead.join(', ')}` : ''}`);
+
+    // Shape into the same {title,url,snippet} the Yahoo parser produces, so
+    // everything downstream is backend-agnostic.
+    return rows.map((r) => ({
+        title: String(r.title || ''),
+        url: String(r.url || ''),
+        snippet: String(r.content || ''),
+    }));
 }
 
 // ---------- query ----------
@@ -215,23 +265,41 @@ async function searchLinkedInProfiles({ keywords, pages, limit, startPage } = {}
         } catch { /* cache is an optimization, never a dependency */ }
     }
 
-    // Pages are independent GETs, so fetch them together and let the semaphore
-    // decide how many actually render at once.
-    const offsets = Array.from({ length: wantPages }, (_, i) => 1 + (from - 1 + i) * 10);
-    const settled = await Promise.all(offsets.map(async (b) => {
-        await acquire();
-        try {
-            return await yahooHits(query, b);
-        } catch (e) {
-            console.error(`[people-serp] page b=${b} failed: ${e && e.message}`);
-            return [];
-        } finally {
-            release();
-        }
-    }));
+    // ---- primary: SearXNG ----
+    let hits = [];
+    let backend = 'searxng';
+    if (SEARXNG_URL) {
+        const pages = await Promise.all(
+            Array.from({ length: wantPages }, (_, i) => searxngSearch(query, from + i)),
+        );
+        // A null page means the backend failed, which is different from a page
+        // that legitimately held no profiles — only the former should fail over.
+        if (pages.some((p) => p !== null)) hits = pages.filter(Boolean).flat();
+    }
+    let people = parseSerpHits(hits, wantLimit);
 
-    const people = parseSerpHits(settled.flat(), wantLimit);
-    const result = { people, pagesFetched: offsets.length, cached: false, query };
+    // ---- fallback: Yahoo via Lightpanda ----
+    // Only the browser path needs the semaphore; it is the one that spawns a
+    // process per page.
+    if (people.length === 0) {
+        backend = SEARXNG_URL ? 'yahoo (searxng empty)' : 'yahoo';
+        const offsets = Array.from({ length: wantPages }, (_, i) => 1 + (from - 1 + i) * 10);
+        const settled = await Promise.all(offsets.map(async (b) => {
+            await acquire();
+            try {
+                return await yahooHits(query, b);
+            } catch (e) {
+                console.error(`[people-serp] yahoo page b=${b} failed: ${e && e.message}`);
+                return [];
+            } finally {
+                release();
+            }
+        }));
+        people = parseSerpHits(settled.flat(), wantLimit);
+    }
+
+    console.log(`[people-serp] "${query}" -> ${people.length} profiles via ${backend}`);
+    const result = { people, pagesFetched: wantPages, cached: false, query, backend };
 
     if (redis && people.length > 0) {
         try { await redis.setex(cacheKey, SERP_CACHE_TTL_SECONDS, JSON.stringify(result)); } catch { /* ignore */ }
@@ -277,14 +345,23 @@ async function searchWeb({ query, limit } = {}, redis) {
         } catch { /* cache is an optimization, never a dependency */ }
     }
 
-    await acquire();
+    // Same primary/fallback split as profile discovery.
     let hits = [];
-    try {
-        hits = await yahooHits(q, 1);
-    } catch (e) {
-        console.error(`[web-search] "${q}" failed: ${e && e.message}`);
-    } finally {
-        release();
+    let backend = 'searxng';
+    if (SEARXNG_URL) {
+        const rows = await searxngSearch(q, 1);
+        if (rows) hits = rows;
+    }
+    if (hits.length === 0) {
+        backend = SEARXNG_URL ? 'yahoo (searxng empty)' : 'yahoo';
+        await acquire();
+        try {
+            hits = await yahooHits(q, 1);
+        } catch (e) {
+            console.error(`[web-search] "${q}" failed: ${e && e.message}`);
+        } finally {
+            release();
+        }
     }
 
     const results = hits
@@ -296,7 +373,8 @@ async function searchWeb({ query, limit } = {}, redis) {
             snippet: String(h.snippet || '').slice(0, 500),
         }));
 
-    const result = { query: q, results, cached: false };
+    console.log(`[web-search] "${q}" -> ${results.length} results via ${backend}`);
+    const result = { query: q, results, cached: false, backend };
     if (redis && results.length) {
         try { await redis.setex(cacheKey, WEB_CACHE_TTL_SECONDS, JSON.stringify(result)); } catch { /* ignore */ }
     }

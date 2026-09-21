@@ -88,6 +88,31 @@ services:
       retries: 3
       start_period: 15s
 
+  # Internal metasearch API for lead discovery. No published port — only
+  # research-agent talks to it, over the compose network. Replaces a rendered
+  # Yahoo scrape with a JSON API: 20 profiles/page in ~400ms instead of ~7 in
+  # ~5s, and no browser process at all.
+  searxng:
+    image: docker.io/searxng/searxng:2026.9.21-49064747a
+    container_name: searxng
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      # The entrypoint substitutes this into settings.yml's "ultrasecretkey"
+      # placeholder at boot, which is why the mount below is NOT read-only.
+      SEARXNG_SECRET: ${SEARXNG_SECRET:-change-me-in-env-production}
+      SEARXNG_BASE_URL: http://searxng:8080/
+    volumes:
+      - ./apps/searxng/settings.yml:/etc/searxng/settings.yml
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
   research-agent:
     build:
       context: ./apps/research-agent
@@ -97,6 +122,8 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      searxng:
+        condition: service_started
     environment:
       CLOUDFLARE_AI_GATEWAY_URL: ${CLOUDFLARE_AI_GATEWAY_URL}
       CF_AIG_TOKEN: ${CF_AIG_TOKEN}
@@ -114,6 +141,10 @@ services:
       # CPU-bound and Postgres lives here too, so this cap protects the DB.
       # Size it from nproc rather than raising it blind.
       SERP_MAX_CONCURRENT: ${SERP_MAX_CONCURRENT:-2}
+      # Primary search backend. Yahoo-via-Lightpanda stays wired as the
+      # fallback: the two fail independently, so keeping both is the only
+      # redundancy we actually have (see the single-engine note in people-serp).
+      SEARXNG_URL: ${SEARXNG_URL:-http://searxng:8080}
       SERP_CACHE_TTL_SECONDS: ${SERP_CACHE_TTL_SECONDS:-604800}
       # Cache the landscape effectively forever — the user's positioning + their
       # competitor list rarely shifts week-to-week, and a "refresh strategy"
