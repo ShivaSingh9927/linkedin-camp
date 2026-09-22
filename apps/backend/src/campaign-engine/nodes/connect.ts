@@ -235,11 +235,14 @@ export const connect: NodeHandler = async (ctx, config): Promise<NodeResult> => 
             // Don't even generate one if this account is known to be out of free
             // custom notes — that costs an LLM call and then trips the upsell,
             // which destroys the invite modal (see below).
-            const note = notesExhausted(userId)
+            // Resolved once: it is a Redis round trip now, and the second call
+            // used to re-ask the same question purely to word a log line.
+            const outOfNotes = await notesExhausted(userId);
+            const note = outOfNotes
                 ? null
                 : await buildInviteNote(ctx, config || {}).catch(() => null);
             if (note) console.log(`[CONNECT] Invite note ready (${note.length} chars): "${note.slice(0, 60)}..."`);
-            else if (notesExhausted(userId)) console.log('[CONNECT] Skipping the note — this account is out of free custom notes.');
+            else if (outOfNotes) console.log('[CONNECT] Skipping the note — this account is out of free custom notes.');
 
             // Use evaluate to bypass sticky headers (like testscripts)
             await connectBtn.evaluate((el: any) => el.click());
@@ -276,7 +279,7 @@ export const connect: NodeHandler = async (ctx, config): Promise<NodeResult> => 
                 // exactly here, each reported honestly as "Send button not
                 // found" with no invite created.
                 if (res.reason === 'notes-exhausted') {
-                    markNotesExhausted(userId);
+                    await markNotesExhausted(userId);
                     console.log('[CONNECT] Upsell dismissed — reopening the invite to send it bare.');
                     if (!(await reopenInvite())) {
                         return {

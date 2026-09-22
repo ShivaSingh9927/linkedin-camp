@@ -17,6 +17,7 @@
  *     report it honestly rather than failing the node.
  */
 
+import Redis from 'ioredis';
 import { resolveVariables } from '../variables';
 import { generateAIMessage } from '../ai-service';
 import { NodeContext, CampaignFlowNode } from '../types';
@@ -162,17 +163,67 @@ export interface NoteAttachResult {
  * for a while, then try again and find out".
  */
 const NOTES_EXHAUSTED_TTL_MS = 12 * 60 * 60 * 1000;
+const NOTES_EXHAUSTED_TTL_SEC = Math.floor(NOTES_EXHAUSTED_TTL_MS / 1000);
 const notesExhaustedAt = new Map<string, number>();
 
-export function notesExhausted(userId: string): boolean {
+// Backed by Redis, not just this process's memory.
+//
+// It used to be a bare Map, and the worker restarts often (every deploy). Each
+// restart cleared the flag, so the next invite re-probed the note field, hit
+// LinkedIn's Premium upsell, and — before the reopen fix — lost that invite
+// outright. The prod signature was unmistakable: exactly one FAILED connect at
+// the start of a run, then successes for the rest of the process's life.
+//
+// Shared state also means a second worker doesn't repeat the first one's
+// discovery.
+const REDIS_URL = process.env.REDIS_URL || '';
+let redis: Redis | null = null;
+function notesRedis(): Redis | null {
+    if (!REDIS_URL) return null;
+    if (!redis) {
+        redis = new Redis(REDIS_URL, { maxRetriesPerRequest: 1, lazyConnect: false });
+        // A cache outage must not take the connect node down with it.
+        redis.on('error', (e) => console.warn(`[INVITE-NOTE] redis: ${e.message}`));
+    }
+    return redis;
+}
+const notesKey = (userId: string) => `notes_exhausted:${userId}`;
+
+/**
+ * Has this account spent its free custom-note allowance recently?
+ *
+ * Memory first (free, and correct within a process), then Redis. Any Redis
+ * failure answers `false`, which costs at most one upsell probe — and that
+ * probe now recovers and sends the invite bare. Failing the other way would
+ * suppress notes for accounts that still have them.
+ */
+export async function notesExhausted(userId: string): Promise<boolean> {
     const at = notesExhaustedAt.get(userId);
-    if (!at) return false;
-    if (Date.now() - at > NOTES_EXHAUSTED_TTL_MS) { notesExhaustedAt.delete(userId); return false; }
-    return true;
+    if (at && Date.now() - at <= NOTES_EXHAUSTED_TTL_MS) return true;
+    if (at) notesExhaustedAt.delete(userId);
+
+    const r = notesRedis();
+    if (!r) return false;
+    try {
+        const hit = await r.get(notesKey(userId));
+        if (!hit) return false;
+        // Warm the local cache so the rest of this run skips the round trip.
+        notesExhaustedAt.set(userId, Date.now());
+        return true;
+    } catch {
+        return false;
+    }
 }
 
-export function markNotesExhausted(userId: string): void {
+export async function markNotesExhausted(userId: string): Promise<void> {
     notesExhaustedAt.set(userId, Date.now());
+    const r = notesRedis();
+    if (!r) return;
+    try {
+        await r.set(notesKey(userId), '1', 'EX', NOTES_EXHAUSTED_TTL_SEC);
+    } catch (e: any) {
+        console.warn(`[INVITE-NOTE] could not persist notes-exhausted: ${e?.message || e}`);
+    }
 }
 
 /** The Premium upsell that replaces the invite modal when notes run out. */
