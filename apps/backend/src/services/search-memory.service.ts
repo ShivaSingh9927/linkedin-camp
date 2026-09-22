@@ -22,7 +22,7 @@
 
 import { prisma } from '@repo/db';
 import type { SearchPerson, SearchFilters } from './people-search.service';
-import { normalizeLinkedinUrl } from './linkedin-url';
+import { normalizeLinkedinUrl, profileSlug } from './linkedin-url';
 
 // Skipped-but-seen profiles resurface after this many days (they may have
 // changed jobs / relevance). Imported profiles dedup permanently via Lead.
@@ -101,20 +101,40 @@ export async function recordSearchPage(
     // dead-ends the search with "you've already seen everyone" and nothing to
     // import, even when the user has imported no one. So we RETURN seen-but-not-
     // imported people; we only drop the ones already in their lead list.
-    const [leadRows, seenRows] = urls.length
+    // Match the user's existing leads by SLUG, not by exact URL string.
+    //
+    // An exact `in:` match assumes every stored URL is already canonical. In
+    // prod, 56 Lead rows are not — they carry trailing slashes or utm_ params
+    // from import paths that bypassed normalization. Those rows would miss the
+    // comparison, and a lead the user had already saved would resurface in
+    // their search results. Comparing on the slug is immune to how the URL
+    // happened to be spelled when it was stored.
+    const slugs = Array.from(
+        new Set(withUrl.map((x) => profileSlug(x.url)).filter(Boolean) as string[]),
+    );
+    const [leadRows, seenRows] = slugs.length
         ? await Promise.all([
-            prisma.lead.findMany({ where: { userId, linkedinUrl: { in: urls } }, select: { linkedinUrl: true } }),
+            prisma.lead.findMany({
+                where: { userId, OR: slugs.map((slug) => ({ linkedinUrl: { contains: `/in/${slug}` } })) },
+                select: { linkedinUrl: true },
+            }),
             prisma.seenProfile.findMany({
                 where: { userId, linkedinUrl: { in: urls }, seenAt: { gt: windowStart() } },
                 select: { linkedinUrl: true },
             }),
         ])
         : [[], []];
-    const importedSet = new Set<string>(leadRows.map((r) => r.linkedinUrl));
+    // Key both sides by slug so the comparison cannot be defeated by spelling.
+    const importedSet = new Set<string>(
+        leadRows.map((r) => profileSlug(r.linkedinUrl)).filter(Boolean) as string[],
+    );
     const seenSet = new Set<string>(seenRows.map((r) => r.linkedinUrl));
 
     // What we SHOW: everything except leads already imported.
-    const returnablePairs = withUrl.filter((x) => !importedSet.has(x.url));
+    const returnablePairs = withUrl.filter((x) => {
+        const slug = profileSlug(x.url);
+        return !slug || !importedSet.has(slug);
+    });
     const fresh = returnablePairs.map((x) => x.p);
     // trulyFresh (not imported AND not seen) drives the saturation math only.
     const freshCount = returnablePairs.filter((x) => !seenSet.has(x.url)).length;
