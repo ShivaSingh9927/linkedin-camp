@@ -372,7 +372,16 @@ export const startCampaign = async (req: any, res: Response) => {
                 console.log(`[Campaign] Workflow start detected. Start Node: ${startNode.id}, First Action Step: ${firstStepId}`);
 
                 if (safeLeadIdsToStart.length > 0) {
-                    console.log(`[Campaign] Resetting/Enrolling ${safeLeadIdsToStart.length} leads in campaign ${id}`);
+                    // Counted, then reported AFTER the loop. This line used to
+                    // announce "Resetting/Enrolling N leads" before doing
+                    // anything, so on a resume — where every one of those leads
+                    // is deliberately skipped — the log claimed the exact
+                    // opposite of what happened. Logs that confidently describe
+                    // work that did not occur are how an incident turns into an
+                    // hour of chasing the wrong thing.
+                    let resumedCount = 0;
+                    let resetCount = 0;
+                    let enrolledCount = 0;
 
                     // Use a transaction or bulk operation where possible, but upsert is fine for small tests
                     for (const leadId of safeLeadIdsToStart) {
@@ -386,10 +395,12 @@ export const startCampaign = async (req: any, res: Response) => {
                             // Already enrolled and mid-sequence: nothing to do.
                             // Its nextActionDate and progress row are the state
                             // the engine parked it with.
+                            resumedCount++;
                             continue;
                         }
 
                         if (leadIdRecord) {
+                            resetCount++;
                             await prisma.campaignLead.update({
                                 where: { campaignId_leadId: { campaignId: id, leadId } },
                                 data: {
@@ -429,6 +440,7 @@ export const startCampaign = async (req: any, res: Response) => {
                                 },
                             });
                         } else {
+                            enrolledCount++;
                             await prisma.campaignLead.create({
                                 data: {
                                     id: require('crypto').randomUUID(),
@@ -445,6 +457,12 @@ export const startCampaign = async (req: any, res: Response) => {
                             emitCrmEvent({ event: 'lead.added', userId, campaignId: id, leadId });
                         }
                     }
+
+                    // Report what actually happened, not what was intended.
+                    console.log(
+                        `[Campaign] ${id}: ${resumedCount} resumed in place, `
+                        + `${resetCount} reset to the first step, ${enrolledCount} newly enrolled`
+                    );
 
                     if (safeLeadIdsToStart.length > 0) {
                         await enqueueCampaign(userId, id);
