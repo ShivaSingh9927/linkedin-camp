@@ -196,6 +196,37 @@ export const connect: NodeHandler = async (ctx, config): Promise<NodeResult> => 
             }
         }
 
+        // Reopen the invite modal from scratch.
+        //
+        // The upsell recovery used to re-click `connectBtn`, which is fine when
+        // that locator is the profile's own invite link — but when the Connect
+        // control was only reachable through the "More" dropdown, the locator
+        // points INSIDE a menu that closed the moment the first modal opened.
+        // Re-clicking it then resolves to nothing, the click is swallowed by its
+        // .catch, no dialog appears, and the invite dies as the generic
+        // "Send button not found". Redo the whole sequence instead, and confirm
+        // a dialog actually came back rather than assuming it.
+        const reopenInvite = async (): Promise<boolean> => {
+            let btn = page.locator(`main ${slugInvite}, ${slugInvite}`).first();
+            if (!(await btn.isVisible({ timeout: 4000 }).catch(() => false))) {
+                const more = page.locator('main button:has(span:text-is("More"))').first();
+                if (await more.isVisible({ timeout: 3000 }).catch(() => false)) {
+                    await more.evaluate((el: any) => el.click()).catch(() => {});
+                    await wait(randomRange(1500, 2000));
+                    btn = page.locator(
+                        `${slugInvite}, ` +
+                        'div[role="menu"] a[role="menuitem"]:has-text("Connect"), ' +
+                        'div[role="menu"] div[role="button"]:has-text("Connect")'
+                    ).first();
+                }
+            }
+            if (!(await btn.isVisible({ timeout: 4000 }).catch(() => false))) return false;
+            await btn.evaluate((el: any) => el.click()).catch(() => {});
+            await wait(randomRange(2500, 3500));
+            return await page.locator('div[role="dialog"], .artdeco-modal')
+                .first().isVisible({ timeout: 5000 }).catch(() => false);
+        };
+
         if (await connectBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
             // Resolve the note BEFORE opening the modal — LinkedIn's invite
             // dialog is short-lived and an AI round-trip inside it invites a
@@ -247,8 +278,12 @@ export const connect: NodeHandler = async (ctx, config): Promise<NodeResult> => 
                 if (res.reason === 'notes-exhausted') {
                     markNotesExhausted(userId);
                     console.log('[CONNECT] Upsell dismissed — reopening the invite to send it bare.');
-                    await connectBtn.evaluate((el: any) => el.click()).catch(() => {});
-                    await wait(randomRange(2500, 3500));
+                    if (!(await reopenInvite())) {
+                        return {
+                            success: false,
+                            error: 'connect: the note upsell replaced the invite modal and it could not be reopened',
+                        };
+                    }
                 }
             }
 
@@ -320,7 +355,21 @@ export const connect: NodeHandler = async (ctx, config): Promise<NodeResult> => 
                 // never contains, so that branch passed unconditionally and
                 // invented invitations that were never sent. No Send button is
                 // simply a failure.
-                return { success: false, error: 'Connect modal opened but Send button not found' };
+                // Persist WHAT LINKEDIN SHOWED, not just the symptom. This dump
+                // existed already but went to stdout only, so ActionLog stored
+                // the same generic sentence for ten failures across five days
+                // and the container logs were rotated away before anyone read
+                // them. The error string is the only forensics that survives.
+                const known = /weekly invitation limit|invitation limit|try again (next week|later)/i.test(dlgText)
+                    ? 'weekly-invite-limit'
+                    : /premium|upgrade/i.test(dlgText)
+                        ? 'premium-upsell'
+                        : 'unknown-modal';
+                return {
+                    success: false,
+                    error: `Connect modal opened but Send button not found [${known}] `
+                        + `modal="${dlgText || '(empty)'}" buttons=${JSON.stringify(labels).slice(0, 220)}`,
+                };
             }
 
             // Trusted click WITH the actionability check. evaluate()-dispatched
