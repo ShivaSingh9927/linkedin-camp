@@ -204,6 +204,26 @@ export const startCampaign = async (req: any, res: Response) => {
         console.log('Campaign found:', campaign ? 'yes' : 'no');
         if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
 
+        // RESUME vs RESTART.
+        //
+        // There is no separate resume endpoint — the UI's "Resume" calls this
+        // one — and this handler used to reset EVERY enrolled lead to the first
+        // node on every call. So pausing a campaign and resuming it re-visited
+        // every profile, restarted multi-day DELAY timers from zero, and wiped
+        // the lifecycle row that records which invites are outstanding. Seen
+        // live 2026-09-22: 4 leads holding pending invites since 09-20 were
+        // reset to PENDING/not_connected at node 0 the moment the campaign was
+        // resumed.
+        //
+        // A PAUSED campaign is mid-flight, so starting it means CONTINUE. A
+        // caller that genuinely wants the sequence re-run from the top asks for
+        // it with `restart: true`.
+        const wantsRestart = req.body?.restart === true;
+        const isResume = campaign.status === 'PAUSED' && !wantsRestart;
+        if (isResume) {
+            console.log(`[Campaign] Resuming ${id} — leaving in-flight lead progress untouched.`);
+        }
+
         // Prerequisite gate: refuse to start when a node needs external config
         // the user hasn't set up (e.g. a "Send Email" step with no connected
         // email account). Warnings (e.g. finder box unavailable) don't block —
@@ -361,6 +381,13 @@ export const startCampaign = async (req: any, res: Response) => {
                         });
 
                         console.log(`Processing leadId: ${leadId}, existing record: ${leadIdRecord ? 'yes' : 'no'}`);
+
+                        if (leadIdRecord && isResume) {
+                            // Already enrolled and mid-sequence: nothing to do.
+                            // Its nextActionDate and progress row are the state
+                            // the engine parked it with.
+                            continue;
+                        }
 
                         if (leadIdRecord) {
                             await prisma.campaignLead.update({
