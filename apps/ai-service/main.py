@@ -2530,7 +2530,9 @@ def copilot_web_research(req: WebResearchRequest):
 
     payload = {
         "model": LLM_MODEL.split("/")[-1],  # the Anthropic path wants the bare id
-        "max_tokens": 1500,
+        # Answers run ~1000 output tokens and `thinking` blocks draw on the
+        # same budget, so leave real headroom rather than clipping the answer.
+        "max_tokens": 4000,
         "messages": [{"role": "user", "content": question + context}],
         "tools": [{"type": "web_search_20250305", "name": "web_search",
                    "max_uses": WEB_RESEARCH_MAX_USES}],
@@ -2549,19 +2551,18 @@ def copilot_web_research(req: WebResearchRequest):
                             detail=f"web research upstream {resp.status_code}")
 
     data = resp.json()
-    reply_parts: List[str] = []
+    blocks = data.get("content") or []
     sources: List[dict] = []
     seen_urls = set()
     searches = 0
+    last_search_idx = -1
 
-    for block in data.get("content") or []:
+    for i, block in enumerate(blocks):
         kind = block.get("type")
-        # `thinking` blocks are the model's scratchpad — never shown to a user.
-        if kind == "text" and block.get("text"):
-            reply_parts.append(block["text"].strip())
-        elif kind == "server_tool_use":
+        if kind == "server_tool_use":
             searches += 1
         elif kind == "web_search_tool_result":
+            last_search_idx = i
             for item in block.get("content") or []:
                 url = (item or {}).get("url") or ""
                 title = (item or {}).get("title") or ""
@@ -2569,14 +2570,46 @@ def copilot_web_research(req: WebResearchRequest):
                     seen_urls.add(url)
                     sources.append({"title": title[:180], "url": url[:1000]})
 
-    # The model narrates before searching ("I'll look that up"), so the LAST
-    # text block is the answer; earlier ones are preamble.
-    reply = reply_parts[-1] if reply_parts else ""
+    # Pick the answer by POSITION, not by order.
+    #
+    # A typical response is:
+    #   thinking, text("I'll search for that"), server_tool_use x2,
+    #   web_search_tool_result x2, thinking, text(the actual answer)
+    #
+    # An earlier version took the last text block, reasoning that the preamble
+    # always comes first. That holds right up until the model ends its turn
+    # after searching WITHOUT writing an answer — then the last text block IS
+    # the preamble, and we hand the user "I'll research Enphase Energy's 2026
+    # outlook" with eight sources attached and no content. That shipped, and a
+    # real question came back that way. `thinking` blocks are the model's
+    # scratchpad and are never shown either way.
+    #
+    # So: the answer is the last text block that appears AFTER the final search
+    # result. If there is none, we did not get an answer — say so and let the
+    # caller fall back, rather than presenting narration as research.
+    answer_parts = [
+        b["text"].strip()
+        for i, b in enumerate(blocks)
+        if i > last_search_idx and b.get("type") == "text" and (b.get("text") or "").strip()
+    ]
+    reply = answer_parts[-1] if answer_parts else ""
+
+    stop = data.get("stop_reason")
     if not reply:
+        logger.error(
+            "web-research produced no post-search answer (stop_reason=%s, searches=%d, "
+            "sources=%d, blocks=%s)",
+            stop, searches, len(sources), [b.get("type") for b in blocks],
+        )
         raise HTTPException(status_code=502, detail="web research returned no answer")
 
-    logger.info("web-research: %d searches, %d sources, %d chars",
-                searches, len(sources), len(reply))
+    # A truncated answer is still worth returning — it is grounded, just cut
+    # short — but it should be visible in the logs rather than silent.
+    if stop == "max_tokens":
+        logger.warning("web-research hit max_tokens; answer may be truncated (%d chars)", len(reply))
+
+    logger.info("web-research: %d searches, %d sources, %d chars, stop=%s",
+                searches, len(sources), len(reply), stop)
     return {"reply": reply, "sources": sources[:8], "searches": searches}
 
 
