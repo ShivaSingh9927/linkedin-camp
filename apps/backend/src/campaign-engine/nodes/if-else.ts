@@ -121,7 +121,20 @@ export function evaluateOperator(operator: string, fieldValue: any, value: any):
         case 'equals':       return fieldValue === value;
         case 'not_equals':   return fieldValue !== value;
         case 'is_true':      return fieldValue === true || fieldValue === 'connected' || fieldValue === '1st' || fieldValue === 1;
-        case 'is_false':     return fieldValue === false || fieldValue === 'not_connected' || fieldValue === '3rd+' || fieldValue === 3;
+        // Every value that means "cannot DM this person yet". `pending` and
+        // 2nd-degree were missing: a lead whose invite is sent-but-unaccepted
+        // answered false to is_true AND false to is_false, so a gate worded as
+        // is_false routed it down the CONNECTED branch and tried to message
+        // someone who had not accepted. No shipped template gates on
+        // connectionStatus (they all use `connected`, which is a plain boolean
+        // and was never affected), so this is closing the hole rather than
+        // fixing a live break — but the operator should not depend on which
+        // field it happens to be pointed at.
+        case 'is_false':     return fieldValue === false
+                                || fieldValue === 'not_connected'
+                                || fieldValue === 'pending'
+                                || fieldValue === '2nd' || fieldValue === 2
+                                || fieldValue === '3rd+' || fieldValue === 3;
         case 'is_null':      return fieldValue === null || fieldValue === undefined;
         case 'is_not_null':  return fieldValue !== null && fieldValue !== undefined;
         case 'is_empty':     return fieldValue === null || fieldValue === undefined || fieldValue === '';
