@@ -10,6 +10,7 @@ import { AccountHealthBanner } from './AccountHealthBanner';
 export function SidebarWrapper({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isAuthPage = pathname === '/login' || pathname === '/register' || pathname === '/api-reference';
+  const isDashboard = pathname === '/';
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   // Close the mobile drawer whenever the route changes (a nav link was tapped).
@@ -58,8 +59,8 @@ export function SidebarWrapper({ children }: { children: React.ReactNode }) {
       <div className="flex-1 min-w-0 flex flex-col h-full">
         <AppHeader onMenuClick={() => setMobileNavOpen(true)} />
         <AccountHealthBanner />
-        <main className="flex-1 overflow-y-auto">
-          <div className="px-3 sm:px-6 lg:px-8 2xl:px-12 pt-3 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:pt-4 sm:pb-6 lg:pt-4 lg:pb-6">
+        <main className={`flex-1 min-h-0 ${isDashboard ? 'lg:overflow-hidden' : 'overflow-y-auto'}`}>
+          <div className={`px-3 sm:px-6 lg:px-8 2xl:px-12 pt-3 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:pt-4 sm:pb-6 lg:pt-4 lg:pb-6 ${isDashboard ? 'lg:h-full lg:min-h-0 lg:box-border' : ''}`}>
             {children}
           </div>
         </main>

@@ -108,7 +108,7 @@ export default function DashboardPage() {
           each pane scrolls internally). Falls back to natural stacked scroll on
           mobile. */}
       {setup?.requiredDone && (
-        <div className="flex flex-col gap-4 lg:h-[calc(100dvh-6.5rem)] lg:min-h-0">
+        <div className="flex flex-col gap-4 lg:h-full lg:min-h-0">
           {/* Complete-your-AI-profile nudge (profile/strategy quality) then the
               optional CRM/email reminder — both dismissible top strips. */}
           <div className="shrink-0 space-y-3">
