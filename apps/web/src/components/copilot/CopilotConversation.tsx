@@ -1008,34 +1008,95 @@ function renderInline(s: string): React.ReactNode[] {
     return nodes;
 }
 
-// Render an assistant reply as structured text: blank-line paragraphs, soft line
-// breaks, and dash/bullet lists — so multi-part answers (advise, status) read
-// cleanly instead of as one flat run.
+// Render a bounded, safe subset of Markdown. Research replies regularly carry
+// headings, ordered recommendations, and compact decision-maker tables; raw
+// HTML is intentionally never interpreted.
 function RichText({ text }: { text: string }) {
-    const blocks = (text || '').trim().split(/\n{2,}/).filter(Boolean);
-    if (blocks.length === 0) return null;
-    return (
-        <div className="space-y-2">
-            {blocks.map((block, bi) => {
-                const lines = block.split('\n');
-                const isList = lines.length > 0 && lines.every((l) => /^\s*[-•]\s+/.test(l));
-                if (isList) {
-                    return (
-                        <ul key={bi} className="list-disc pl-4 space-y-1 marker:text-brand">
-                            {lines.map((l, li) => <li key={li}>{renderInline(l.replace(/^\s*[-•]\s+/, ''))}</li>)}
-                        </ul>
-                    );
-                }
-                return (
-                    <p key={bi}>
-                        {lines.map((l, li) => (
-                            <span key={li}>{renderInline(l)}{li < lines.length - 1 && <br />}</span>
-                        ))}
-                    </p>
-                );
-            })}
-        </div>
-    );
+    const lines = (text || '').trim().split('\n');
+    if (!lines.length || !lines.some((line) => line.trim())) return null;
+    const blocks: React.ReactNode[] = [];
+    let i = 0;
+    let key = 0;
+
+    while (i < lines.length) {
+        const line = lines[i];
+        if (!line.trim()) { i += 1; continue; }
+
+        const heading = line.match(/^(#{1,3})\s+(.+)$/);
+        if (heading) {
+            const Tag = heading[1].length === 1 ? 'h2' : heading[1].length === 2 ? 'h3' : 'h4';
+            blocks.push(<Tag key={key++} className={cn('font-semibold text-foreground tracking-tight', heading[1].length === 1 ? 'text-[16px] mt-1' : 'text-[14px] mt-1')}>{renderInline(heading[2])}</Tag>);
+            i += 1;
+            continue;
+        }
+
+        // GitHub-style table: header row, separator row, then zero or more rows.
+        if (isMarkdownTableRow(line) && i + 1 < lines.length && isMarkdownTableDivider(lines[i + 1])) {
+            const headers = markdownTableCells(line);
+            i += 2;
+            const rows: string[][] = [];
+            while (i < lines.length && isMarkdownTableRow(lines[i])) {
+                rows.push(markdownTableCells(lines[i]));
+                i += 1;
+            }
+            blocks.push(
+                <div key={key++} className="overflow-x-auto rounded-control border border-line bg-card">
+                    <table className="min-w-[540px] w-full border-collapse text-left text-[11px] leading-snug">
+                        <thead className="bg-surface text-ink-500">
+                            <tr>{headers.map((header, cellIndex) => <th key={cellIndex} className="border-b border-line px-2.5 py-2 font-semibold">{renderInline(header)}</th>)}</tr>
+                        </thead>
+                        <tbody className="divide-y divide-line">
+                            {rows.map((row, rowIndex) => (
+                                <tr key={rowIndex} className="align-top">
+                                    {headers.map((_, cellIndex) => <td key={cellIndex} className="px-2.5 py-2 text-ink-700">{renderInline(row[cellIndex] || '')}</td>)}
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>,
+            );
+            continue;
+        }
+
+        const unordered = /^\s*[-•]\s+/.test(line);
+        const ordered = /^\s*\d+[.)]\s+/.test(line);
+        if (unordered || ordered) {
+            const entries: string[] = [];
+            const pattern = unordered ? /^\s*[-•]\s+/ : /^\s*\d+[.)]\s+/;
+            while (i < lines.length && pattern.test(lines[i])) {
+                entries.push(lines[i].replace(pattern, ''));
+                i += 1;
+            }
+            const List = ordered ? 'ol' : 'ul';
+            blocks.push(<List key={key++} className={cn('space-y-1 pl-4 marker:text-brand', ordered ? 'list-decimal' : 'list-disc')}>
+                {entries.map((entry, entryIndex) => <li key={entryIndex}>{renderInline(entry)}</li>)}
+            </List>);
+            continue;
+        }
+
+        const paragraph: string[] = [line];
+        i += 1;
+        while (i < lines.length && lines[i].trim() && !lines[i].match(/^(#{1,3})\s+/) && !isMarkdownTableRow(lines[i]) && !/^\s*[-•]\s+/.test(lines[i]) && !/^\s*\d+[.)]\s+/.test(lines[i])) {
+            paragraph.push(lines[i]);
+            i += 1;
+        }
+        blocks.push(<p key={key++}>{paragraph.map((part, partIndex) => <span key={partIndex}>{renderInline(part)}{partIndex < paragraph.length - 1 && <br />}</span>)}</p>);
+    }
+
+    return <div className="space-y-2.5">{blocks}</div>;
+}
+
+function isMarkdownTableRow(line: string): boolean {
+    return line.includes('|') && markdownTableCells(line).length > 1;
+}
+
+function isMarkdownTableDivider(line: string): boolean {
+    const cells = markdownTableCells(line);
+    return cells.length > 1 && cells.every((cell) => /^:?-{3,}:?$/.test(cell));
+}
+
+function markdownTableCells(line: string): string[] {
+    return line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((cell) => cell.trim());
 }
 
 function QBubble({ children }: { children: React.ReactNode }) {
