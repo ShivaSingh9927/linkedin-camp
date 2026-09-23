@@ -13,7 +13,7 @@ export function QampiDashboardPanel() {
         // one-window layout, so the panel owns the column height and scrolls its
         // messages internally. A soft (untinted) shadow so it never bleeds over
         // neighbouring cards the way the old sticky + purple lift-shadow did.
-        <div className="h-full min-h-[420px]">
+        <div className="h-full min-h-0">
             <div className="bg-card border border-line rounded-card shadow-soft overflow-hidden flex flex-col h-full">
                 <CopilotConversation variant="panel" />
             </div>

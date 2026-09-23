@@ -108,7 +108,7 @@ export default function DashboardPage() {
           each pane scrolls internally). Falls back to natural stacked scroll on
           mobile. */}
       {setup?.requiredDone && (
-        <div className="flex flex-col gap-4 lg:h-full lg:min-h-0">
+        <div className="flex h-full min-h-0 flex-col gap-4">
           {/* Complete-your-AI-profile nudge (profile/strategy quality) then the
               optional CRM/email reminder — both dismissible top strips. */}
           <div className="shrink-0 space-y-3">
@@ -116,9 +116,9 @@ export default function DashboardPage() {
             <OptionalSetupReminder status={setup} variant="strip" />
           </div>
 
-          <div className="flex-1 min-h-0 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(390px,2fr)]">
+          <div className="flex-1 min-h-0 grid grid-cols-1 grid-rows-[minmax(0,1fr)_minmax(11rem,0.46fr)] gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(390px,2fr)] lg:grid-rows-none">
             {/* The copilot is the main working surface. */}
-            <div className="min-h-[420px] lg:min-h-0">
+            <div className="min-h-0">
                 <QampiDashboardPanel />
             </div>
 
