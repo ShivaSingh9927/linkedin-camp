@@ -7,7 +7,7 @@
 
 import { CopilotConversation } from './CopilotConversation';
 
-export function QampiDashboardPanel() {
+export function QampiDashboardPanel({ onToggleMobileStatus }: { onToggleMobileStatus?: () => void }) {
     return (
         // Fills its grid cell as a full-height rail — the dashboard is a fixed
         // one-window layout, so the panel owns the column height and scrolls its
@@ -15,7 +15,7 @@ export function QampiDashboardPanel() {
         // neighbouring cards the way the old sticky + purple lift-shadow did.
         <div className="h-full min-h-0">
             <div className="bg-card border border-line rounded-card shadow-soft overflow-hidden flex flex-col h-full">
-                <CopilotConversation variant="panel" />
+                <CopilotConversation variant="panel" onToggleMobileStatus={onToggleMobileStatus} />
             </div>
         </div>
     );

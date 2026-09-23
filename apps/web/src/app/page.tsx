@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, useMemo, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { WelcomeReveal } from '@/components/WelcomeReveal';
 import { ActivationHero, type SetupStatus } from '@/components/ActivationHero';
@@ -12,8 +12,10 @@ import { QampiDashboardPanel } from '@/components/copilot/QampiDashboardPanel';
 import { type StatusCampaign, type StatusLog } from '@/components/dashboard/DynamicStatusPanel';
 import { DashboardContextPanel } from '@/components/dashboard/DashboardContextPanel';
 import { Skeleton } from '@/components/ui';
+import { useCopilot } from '@/components/copilot/CopilotProvider';
 
 export default function DashboardPage() {
+  const { messages } = useCopilot();
   const [campaigns, setCampaigns] = useState<StatusCampaign[]>([]);
   const [recentLogs, setRecentLogs] = useState<StatusLog[]>([]);
   const [loading, setLoading] = useState(true);
@@ -27,6 +29,17 @@ export default function DashboardPage() {
     today: { invites: 0, messages: 0, visits: 0 },
   });
   const [copilotDismissed, setCopilotDismissed] = useState(true); // assume dismissed until we read localStorage (avoids a flash)
+  const [mobilePanelMode, setMobilePanelMode] = useState<'status' | 'artifact' | null>(null);
+  const latestArtifactId = useMemo(
+    () => [...messages].reverse().find((message) => message.kind === 'results' || message.kind === 'templates')?.id,
+    [messages],
+  );
+
+  // A lead result or campaign recommendation is a deliberate handoff from the
+  // agent, so reveal its paired workspace on mobile. Otherwise chat stays full-screen.
+  useEffect(() => {
+    if (latestArtifactId) setMobilePanelMode('artifact');
+  }, [latestArtifactId]);
 
   useEffect(() => {
     try { setCopilotDismissed(localStorage.getItem(ACTIVATION_DISMISSED_KEY) === '1'); } catch { /* ignore */ }
@@ -116,15 +129,15 @@ export default function DashboardPage() {
             <OptionalSetupReminder status={setup} variant="strip" />
           </div>
 
-          <div className="flex-1 min-h-0 grid grid-cols-1 grid-rows-[minmax(0,1fr)_minmax(11rem,0.46fr)] gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(390px,2fr)] lg:grid-rows-none">
+          <div className={`flex-1 min-h-0 grid grid-cols-1 gap-4 ${mobilePanelMode ? 'grid-rows-[minmax(0,1fr)_minmax(0,1fr)]' : 'grid-rows-[minmax(0,1fr)]'} lg:grid-cols-[minmax(0,3fr)_minmax(390px,2fr)] lg:grid-rows-none`}>
             {/* The copilot is the main working surface. */}
             <div className="min-h-0">
-                <QampiDashboardPanel />
+                <QampiDashboardPanel onToggleMobileStatus={() => setMobilePanelMode((current) => current === 'status' ? null : 'status')} />
             </div>
 
             {/* Right: status by default; live lead/campaign artifacts replace it. */}
-            <div className="min-h-0">
-              <DashboardContextPanel campaigns={campaigns} logs={recentLogs} setup={setup} loading={loading} quotas={quotas} kpis={kpis} />
+            <div className={`${mobilePanelMode ? 'min-h-0' : 'hidden'} lg:block lg:min-h-0`}>
+              <DashboardContextPanel campaigns={campaigns} logs={recentLogs} setup={setup} loading={loading} quotas={quotas} kpis={kpis} forcedView={mobilePanelMode === 'status' ? 'status' : undefined} />
             </div>
           </div>
         </div>

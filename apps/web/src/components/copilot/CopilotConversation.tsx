@@ -9,7 +9,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Search, Loader2, ArrowUp, Check, Plus, MapPin, Clock, ArrowRight, Rocket, LinkIcon, Sparkles, PenSquare, Trash2, MessageSquare, Send, ExternalLink, FileText, ShieldCheck, ChevronDown, HelpCircle } from 'lucide-react';
+import { Search, Loader2, ArrowUp, Check, Plus, MapPin, Clock, ArrowRight, Rocket, LinkIcon, Sparkles, PenSquare, Trash2, MessageSquare, Send, ExternalLink, FileText, ShieldCheck, ChevronDown, HelpCircle, Activity } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { TypingLoader } from '@/components/ui/loader';
 import { Reasoning, ReasoningContent, ReasoningTrigger } from '@/components/ui/reasoning';
@@ -36,7 +36,7 @@ const QUICK_PROMPTS: { label: string; icon: typeof Search; action: 'search' | 'c
     { label: 'How’s my campaign?', icon: ArrowRight, action: 'status', send: 'How is my campaign doing?', intent: 'check_status' },
 ];
 
-export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen' | 'panel'; onClose?: () => void }) {
+export function CopilotConversation({ variant, onClose, onToggleMobileStatus }: { variant: 'fullscreen' | 'panel'; onClose?: () => void; onToggleMobileStatus?: () => void }) {
     // Conversation state is owned by the layout-level provider so it survives
     // route navigation and (via localStorage) reloads. This component is a view.
     const { messages, setMessages, importedLeadIds, hydrated,
@@ -500,6 +500,7 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
                         onSwitch={(id) => { switchThread(id); setThreadMenuOpen(false); }}
                         onNew={() => { newThread(); setThreadMenuOpen(false); }}
                         onDelete={deleteThread}
+                        onToggleMobileStatus={onToggleMobileStatus}
                     />
                 )}
                 {onClose && (
@@ -599,7 +600,7 @@ function relThread(ts: number, now: number): string {
 
 // Chatbox header controls: a clock (recent threads) + a new-chat button. The
 // clock opens a right-aligned dropdown to switch/delete; new-chat starts fresh.
-function ThreadControls({ threads, activeThreadId, open, setOpen, onSwitch, onNew, onDelete }: {
+function ThreadControls({ threads, activeThreadId, open, setOpen, onSwitch, onNew, onDelete, onToggleMobileStatus }: {
     threads: ThreadMeta[];
     activeThreadId: string;
     open: boolean;
@@ -607,6 +608,7 @@ function ThreadControls({ threads, activeThreadId, open, setOpen, onSwitch, onNe
     onSwitch: (id: string) => void;
     onNew: () => void;
     onDelete: (id: string) => void;
+    onToggleMobileStatus?: () => void;
 }) {
     const ref = useRef<HTMLDivElement | null>(null);
     const [now] = useState(() => Date.now());
@@ -623,6 +625,7 @@ function ThreadControls({ threads, activeThreadId, open, setOpen, onSwitch, onNe
             <div className="flex items-center gap-1">
                 <button onClick={() => setOpen(!open)} title="Recent threads" aria-label="Recent threads" className={iconBtn}><Clock className="w-4 h-4" /></button>
                 <button onClick={onNew} title="New chat" aria-label="New chat" className={iconBtn}><PenSquare className="w-4 h-4" /></button>
+                {onToggleMobileStatus && <button onClick={onToggleMobileStatus} title="Show status" aria-label="Show status" className={`${iconBtn} lg:hidden`}><Activity className="w-4 h-4" /></button>}
             </div>
             {open && (
                 <div className="absolute right-0 top-9 w-60 bg-card border border-line rounded-card shadow-lift p-1.5 z-30">

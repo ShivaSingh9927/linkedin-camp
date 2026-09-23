@@ -22,6 +22,7 @@ interface Props {
     loading: boolean;
     quotas: { label: string; value: number; total: number }[];
     kpis: { label: string; value: string; detail: string }[];
+    forcedView?: 'status';
 }
 
 function latestArtifact(messages: Msg[]) {
@@ -42,7 +43,7 @@ export function DashboardContextPanel(props: Props) {
     if (artifact && navigation.artifactId !== artifact.id) {
         setNavigation({ artifactId: artifact.id });
     }
-    const view: View = navigation.view || (artifact?.kind === 'results' ? 'leads' : artifact?.kind === 'templates' ? 'campaigns' : 'status');
+    const view: View = props.forcedView || navigation.view || (artifact?.kind === 'results' ? 'leads' : artifact?.kind === 'templates' ? 'campaigns' : 'status');
 
     const showStatus = () => {
         setNavigation({ artifactId: artifact?.id, view: 'status', returnView: view === 'status' ? navigation.returnView : view });
