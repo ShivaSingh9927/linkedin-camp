@@ -270,7 +270,7 @@ export const copilotMessage = async (req: AuthRequest, res: Response) => {
         };
 
         const routed = validHint
-            ? { intent: intentHint as CopilotIntent, params: { keywords: '', templateId: '' }, reply: '', needsConfirm: false }
+            ? { intent: intentHint as CopilotIntent, params: { keywords: '', templateId: '' }, reply: '', needsConfirm: false, clarify: null }
             : await routeCopilotMessage({
                 message: message.trim(),
                 systemContext: renderCapabilityContract(ctx),
@@ -387,6 +387,11 @@ export const copilotMessage = async (req: AuthRequest, res: Response) => {
             params: routed.params,
             reply,
             needsConfirm: intent === 'launch_campaign' && routed.needsConfirm,
+            // Relayed as-is. A clarification is never an action, so it needs no
+            // capability check — but it DOES suppress any tool the intent would
+            // otherwise have run, since the whole point is that we don't know
+            // enough yet to run it.
+            clarify: routed.clarify || null,
             // Structured tool results for the client to render richer cards later
             // (status, audience). Null when the intent needs no live lookup.
             toolData,

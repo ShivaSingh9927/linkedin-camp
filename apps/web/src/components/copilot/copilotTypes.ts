@@ -11,6 +11,11 @@ export type Msg =
     // A reasoned query shown BEFORE a search is spent — the user approves/edits it.
     | { id: string; role: 'qampi'; kind: 'searchDraft'; label: string; keywords: string; filters?: SearchFilters; rationale?: string; reasoning?: string }
     // User-facing progress only — concise task/rationale, never private model reasoning.
+    // The doubt layer: one question the copilot needs answered before it can act,
+    // offered as tappable options rather than prose the user has to answer by
+    // typing. `answered` freezes the card once used so the thread stays honest
+    // about what was chosen.
+    | { id: string; role: 'qampi'; kind: 'clarify'; question: string; options: string[]; multi: boolean; forMessage: string; answered?: string }
     | { id: string; role: 'qampi'; kind: 'searching'; label: string; detail?: string }
     | { id: string; role: 'qampi'; kind: 'webSearch'; query: string; state: 'install' | 'permission' | 'ready' | 'searching' | 'error'; error?: string }
     // Grounded public-web research is a brief, not an unstructured chat wall.

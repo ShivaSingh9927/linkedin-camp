@@ -454,6 +454,10 @@ export interface CopilotRouted {
     params: { keywords: string; templateId: string };
     reply: string;
     needsConfirm: boolean;
+    // Set when the router needs one detail before it can act. The backend
+    // relays it verbatim; the client renders it as tappable options so the
+    // answer is a tap rather than a retyped sentence.
+    clarify?: { question: string; options: string[]; multi: boolean } | null;
 }
 
 // Route a free-text copilot message → one closed intent + reply. The contract
@@ -467,7 +471,7 @@ export async function routeCopilotMessage(opts: {
 }): Promise<CopilotRouted> {
     if (isMockAI()) {
         await mockAiWait();
-        return { intent: 'off_topic', params: { keywords: '', templateId: '' }, reply: '[MOCK] I help with LinkedIn outreach — try “find data leaders”.', needsConfirm: false };
+        return { intent: 'off_topic', params: { keywords: '', templateId: '' }, reply: '[MOCK] I help with LinkedIn outreach — try “find data leaders”.', needsConfirm: false, clarify: null };
     }
     try {
         const response = await axios.post(`${AI_SERVICE_URL}/ai/copilot/route`, {

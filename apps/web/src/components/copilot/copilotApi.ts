@@ -193,6 +193,9 @@ export interface RoutedMessage {
     reply: string;
     needsConfirm: boolean;
     toolData?: RoutedToolData | null;
+    // Present when the copilot needs one detail before acting. When set, the
+    // client shows the question instead of running the intent.
+    clarify?: { question: string; options: string[]; multi: boolean } | null;
 }
 
 // Search the public web and summarise it in one server-side call.

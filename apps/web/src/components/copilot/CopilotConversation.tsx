@@ -9,7 +9,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Search, Loader2, ArrowUp, Check, Plus, MapPin, Clock, ArrowRight, Rocket, LinkIcon, Sparkles, PenSquare, Trash2, MessageSquare, Send, ExternalLink, FileText, ShieldCheck, ChevronDown } from 'lucide-react';
+import { Search, Loader2, ArrowUp, Check, Plus, MapPin, Clock, ArrowRight, Rocket, LinkIcon, Sparkles, PenSquare, Trash2, MessageSquare, Send, ExternalLink, FileText, ShieldCheck, ChevronDown, HelpCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { TypingLoader } from '@/components/ui/loader';
 import { Reasoning, ReasoningContent, ReasoningTrigger } from '@/components/ui/reasoning';
@@ -412,6 +412,24 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
                 : q;
             const routed = await routeMessage(contextualQuery, historyForRouter(), importedLeadIdsRef.current.length, intentHint);
             setMessages((prev) => prev.filter((m) => m.id !== thinkId));
+
+            // The doubt layer. When the copilot is missing a detail that would
+            // change what it DOES, it asks instead of guessing — and asks with
+            // tappable options, so answering costs a tap rather than a retyped
+            // sentence. Nothing else runs this turn: acting on a guess is the
+            // behaviour this exists to prevent.
+            const clarify = routed.clarify;
+            if (clarify?.question && Array.isArray(clarify.options) && clarify.options.length >= 2) {
+                if (routed.reply) push({ id: nextId(), role: 'qampi', kind: 'text', text: routed.reply });
+                push({
+                    id: nextId(), role: 'qampi', kind: 'clarify',
+                    question: clarify.question,
+                    options: clarify.options.slice(0, 4),
+                    multi: !!clarify.multi,
+                    forMessage: q,
+                });
+                return;
+            }
             // Web-search availability is determined in the browser below. Do not
             // render the router's generic “approve the search” sentence first:
             // it can be stale once permission is already granted and auto-run.
@@ -447,6 +465,15 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
             push({ id: nextId(), role: 'qampi', kind: 'text', text: 'I had trouble with that — try rephrasing, or tell me the kind of people you want to reach.' });
         }
     }, [started, push, doSearch, recommendCampaigns, offerLaunch, handleReplies, historyForRouter, runWebSearch, workspaceContext]);
+
+    // Answering a clarify card re-asks the ORIGINAL question with the answer
+    // attached, so the router decides again with the detail it was missing
+    // rather than us trying to patch its previous guess.
+    const answerClarify = useCallback((msgId: string, answer: string, question: string, original: string) => {
+        patch(msgId, { answered: answer });
+        void runMessage(`${original}\n\n(${question} → ${answer})`);
+    }, [patch, runMessage]);
+
 
     const submitInput = useCallback(() => {
         const q = input.trim();
@@ -506,6 +533,7 @@ export function CopilotConversation({ variant, onClose }: { variant: 'fullscreen
                         onDraftNext={draftNextReply}
                         onBackToProspecting={backToProspecting}
                         onRunWebSearch={runWebSearch}
+                        onAnswerClarify={answerClarify}
                     />
                 ))}
             </div>
@@ -675,7 +703,7 @@ function PanelResting({ onSuggestSearches, onRecommendCampaign, onCheckStatus }:
     );
 }
 
-function MessageRow({ m, onPickSearch, onRunDraft, onPickTemplate, onLaunch, onSendReply, onTryWarmer, onEditReply, onDraftNext, onBackToProspecting, onRunWebSearch }: {
+function MessageRow({ m, onPickSearch, onRunDraft, onPickTemplate, onLaunch, onSendReply, onTryWarmer, onEditReply, onDraftNext, onBackToProspecting, onRunWebSearch, onAnswerClarify }: {
     m: Msg;
     onPickSearch: (label: string, keywords: string, filters?: SearchRecommendation['filters']) => void;
     onRunDraft: (msgId: string, label: string, keywords: string, filters?: SearchRecommendation['filters']) => void;
@@ -687,6 +715,7 @@ function MessageRow({ m, onPickSearch, onRunDraft, onPickTemplate, onLaunch, onS
     onDraftNext: () => void;
     onBackToProspecting: () => void;
     onRunWebSearch: (msgId: string, query: string, requestPermission?: boolean) => void;
+    onAnswerClarify: (msgId: string, answer: string, question: string, original: string) => void;
 }) {
     if (m.kind === 'text') {
         return m.role === 'user'
@@ -703,6 +732,7 @@ function MessageRow({ m, onPickSearch, onRunDraft, onPickTemplate, onLaunch, onS
     if (m.kind === 'templates') return <div className="pl-8"><TemplatePicks loading={m.loading} picks={m.picks} onPick={onPickTemplate} /></div>;
     if (m.kind === 'launchConfirm') return <div className="pl-8"><LaunchConfirm m={m} onLaunch={onLaunch} /></div>;
     if (m.kind === 'replyDraft') return <div className="pl-8"><ReplyDraftCard m={m} onSend={onSendReply} onTryWarmer={onTryWarmer} onEdit={onEditReply} onDraftNext={onDraftNext} onBackToProspecting={onBackToProspecting} /></div>;
+    if (m.kind === 'clarify') return <div className="pl-8"><ClarifyCard m={m} onAnswer={onAnswerClarify} /></div>;
     if (m.kind === 'reconnect') return <QBubble><ReconnectNotice /></QBubble>;
     return null;
 }
@@ -797,6 +827,79 @@ function researchTitle(query: string): string {
         .trim();
     if (/(ideal customer profile|\bicp\b|target market)/i.test(clean)) return `${company || 'Company'} — ICP brief`;
     return clean.length > 72 ? `${clean.slice(0, 69)}…` : clean || 'Research brief';
+}
+
+
+// The doubt layer, rendered.
+//
+// The copilot already asked clarifying questions, but only as a sentence the
+// user had to answer by typing — which most people skip, so it guessed anyway.
+// Options make answering a tap. Multi-select accumulates, single-select commits
+// immediately, and both keep a free-text escape because four options are never
+// the whole world.
+function ClarifyCard({ m, onAnswer }: {
+    m: Extract<Msg, { kind: 'clarify' }>;
+    onAnswer: (msgId: string, answer: string, question: string, original: string) => void;
+}) {
+    const [picked, setPicked] = useState<string[]>([]);
+    const done = !!m.answered;
+
+    const commit = (answer: string) => {
+        if (done || !answer.trim()) return;
+        onAnswer(m.id, answer.trim(), m.question, m.forMessage);
+    };
+
+    const toggle = (opt: string) => {
+        if (done) return;
+        if (!m.multi) return commit(opt);
+        setPicked((prev) => (prev.includes(opt) ? prev.filter((o) => o !== opt) : [...prev, opt]));
+    };
+
+    return (
+        <div className="bg-card border border-line rounded-card p-3 space-y-2.5">
+            <div className="flex items-center gap-2">
+                <HelpCircle className="w-3.5 h-3.5 text-brand shrink-0" />
+                <span className="text-[13px] font-medium text-foreground">Quick question</span>
+            </div>
+            <p className="text-[12px] leading-relaxed text-foreground">{m.question}</p>
+
+            {done ? (
+                <p className="text-[11px] text-ink-500">You chose: <span className="text-foreground">{m.answered}</span></p>
+            ) : (
+                <>
+                    <div className="flex flex-wrap gap-1.5">
+                        {m.options.map((opt) => {
+                            const on = picked.includes(opt);
+                            return (
+                                <button
+                                    key={opt}
+                                    onClick={() => toggle(opt)}
+                                    aria-pressed={m.multi ? on : undefined}
+                                    className={cn(
+                                        'text-[12px] rounded-chip px-3 py-1.5 border transition-colors',
+                                        on ? 'bg-brand text-white border-brand' : 'bg-surface text-foreground border-line hover:border-brand-200',
+                                    )}
+                                >
+                                    {m.multi && <span className="mr-1.5">{on ? '\u2713' : '\u25a2'}</span>}
+                                    {opt}
+                                </button>
+                            );
+                        })}
+                    </div>
+                    {m.multi && (
+                        <button
+                            onClick={() => commit(picked.join(', '))}
+                            disabled={picked.length === 0}
+                            className="inline-flex items-center gap-2 text-[13px] font-medium bg-brand text-white rounded-chip px-3.5 py-2 disabled:opacity-40 hover:bg-brand-600 transition-colors"
+                        >
+                            <Check className="w-3.5 h-3.5" /> Continue
+                        </button>
+                    )}
+                    <p className="text-[11px] text-ink-500">Or just type your answer below.</p>
+                </>
+            )}
+        </div>
+    );
 }
 
 // A reasoned query, shown BEFORE a search is spent. The user edits the boolean +
