@@ -227,7 +227,7 @@ export async function markNotesExhausted(userId: string): Promise<void> {
 }
 
 /** The Premium upsell that replaces the invite modal when notes run out. */
-const UPSELL_SELECTOR = 'div[data-test-modal-id="modal-upsell"], div.modal-upsell';
+export const UPSELL_SELECTOR = 'div[data-test-modal-id="modal-upsell"], div.modal-upsell';
 
 /**
  * The modal's Send control. Matched by aria-label first — that's what this

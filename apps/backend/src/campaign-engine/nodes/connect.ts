@@ -3,7 +3,7 @@ import { prisma } from '@repo/db';
 import { detectConnectionState, extractSlug, isOnLeadProfile } from '../connection-state';
 import { syncLeadStatus } from '../safety/lifecycle';
 import { getMemberRelationship } from '../../services/voyager-api.service';
-import { buildInviteNote, attachInviteNote, notesExhausted, markNotesExhausted, NoteAttachResult } from './invite-note';
+import { buildInviteNote, attachInviteNote, notesExhausted, markNotesExhausted, UPSELL_SELECTOR, NoteAttachResult } from './invite-note';
 
 const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
 const randomRange = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1) + min);
@@ -206,7 +206,8 @@ export const connect: NodeHandler = async (ctx, config): Promise<NodeResult> => 
         // .catch, no dialog appears, and the invite dies as the generic
         // "Send button not found". Redo the whole sequence instead, and confirm
         // a dialog actually came back rather than assuming it.
-        const reopenInvite = async (): Promise<boolean> => {
+        // One attempt at reopening, without leaving the current page.
+        const clickInviteHere = async (): Promise<boolean> => {
             let btn = page.locator(`main ${slugInvite}, ${slugInvite}`).first();
             if (!(await btn.isVisible({ timeout: 4000 }).catch(() => false))) {
                 const more = page.locator('main button:has(span:text-is("More"))').first();
@@ -225,6 +226,47 @@ export const connect: NodeHandler = async (ctx, config): Promise<NodeResult> => 
             await wait(randomRange(2500, 3500));
             return await page.locator('div[role="dialog"], .artdeco-modal')
                 .first().isVisible({ timeout: 5000 }).catch(() => false);
+        };
+
+        // Describe what is actually on screen. Without this the failure is just
+        // "could not be reopened" and the next attempt is another guess.
+        const describePage = async (): Promise<string> => {
+            const upsell = await page.locator(UPSELL_SELECTOR).first()
+                .isVisible({ timeout: 1500 }).catch(() => false);
+            const anyDialog = await page.locator('div[role="dialog"], .artdeco-modal').first()
+                .isVisible({ timeout: 1500 }).catch(() => false);
+            const inviteLink = await page.locator(`main ${slugInvite}, ${slugInvite}`).first()
+                .isVisible({ timeout: 1500 }).catch(() => false);
+            const moreBtn = await page.locator('main button:has(span:text-is("More"))').first()
+                .isVisible({ timeout: 1500 }).catch(() => false);
+            return `upsell=${upsell} dialog=${anyDialog} inviteLink=${inviteLink} more=${moreBtn} url=${(page.url() || '').slice(0, 80)}`;
+        };
+
+        // Reopen the invite so it can be sent WITHOUT a note.
+        //
+        // Attempt 1 re-clicks Connect on the current page. That was the whole
+        // fix on 2026-09-22 and it was not enough: the live run on 09-23 still
+        // failed with "could not be reopened". The page is left in a bad state
+        // once the Premium upsell has replaced the invite dialog — the overlay
+        // is still in the DOM, so the Connect control underneath is present but
+        // not really clickable.
+        //
+        // Attempt 2 therefore stops trying to repair that page and loads the
+        // profile again from scratch, which is the one state we know works:
+        // it is exactly how the node reached a working invite dialog in the
+        // first place, a few seconds earlier.
+        const reopenInvite = async (): Promise<boolean> => {
+            if (await clickInviteHere()) return true;
+
+            console.log(`[CONNECT] In-page reopen failed (${await describePage()}) — reloading the profile.`);
+            await safeGoto(page, lead.linkedinUrl).catch(() => {});
+            await wait(randomRange(2000, 3000));
+            if (await clickInviteHere()) {
+                console.log('[CONNECT] Invite dialog recovered after reload.');
+                return true;
+            }
+            console.log(`[CONNECT] Reopen failed after reload (${await describePage()}).`);
+            return false;
         };
 
         if (await connectBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
@@ -284,7 +326,8 @@ export const connect: NodeHandler = async (ctx, config): Promise<NodeResult> => 
                     if (!(await reopenInvite())) {
                         return {
                             success: false,
-                            error: 'connect: the note upsell replaced the invite modal and it could not be reopened',
+                            error: 'connect: out of free custom notes — the invite modal could not be reopened '
+                                + `after a reload [${await describePage()}]`,
                         };
                     }
                 }

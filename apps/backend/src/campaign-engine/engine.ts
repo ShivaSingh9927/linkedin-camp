@@ -894,7 +894,6 @@ async function runLead(
                     return execResult;
                 }
 
-                console.log(`[ENGINE] Lead ${lead.firstName}: ${nodeType} FAILED (non-fatal). Continuing to next node.`);
 
                 // A like or invite that fails is nearly always the account, not
                 // the page — those two verify reliably when LinkedIn is applying
@@ -912,6 +911,41 @@ async function runLead(
                         return execResult;
                     }
                 }
+
+                // A failed CONNECT is different from other non-fatal failures:
+                // everything after it assumes the invite went out. Marching on
+                // means waiting three days, checking acceptance on an invite
+                // that was never sent, and retiring the lead as "Not Accepted"
+                // — a person who was never actually asked. Seen live 2026-09-23.
+                //
+                // So retry the SAME node later instead of advancing past it
+                // (currentNodeIndex: i). Most connect failures are transient or
+                // self-healing: the notes-exhausted case, which is the one that
+                // actually fires, records the exhausted flag on its way out, so
+                // the retry skips the note entirely and sends bare. The
+                // lifecycle bounds this — deferralCount past MAX_DEFERRALS
+                // promotes the lead to STALLED rather than looping.
+                if (nodeType === 'connect') {
+                    const retryAt = nextDayRetryAt();
+                    console.log(`[ENGINE] Lead ${lead.firstName}: connect FAILED (${result.error || 'no reason'}). Retrying this step at ${retryAt.toISOString()} rather than moving on.`);
+                    const t = await transitionLead(campaignId, lead.id, 'DEFERRED', {
+                        reason: 'connect_failed',
+                        nextRetryAt: retryAt,
+                        currentNodeIndex: i,
+                    }).catch(err => {
+                        console.error(`[ENGINE] transitionLead DEFERRED failed: ${err.message}`);
+                        return null;
+                    });
+                    execResult.status = 'paused';
+                    execResult.pausedReason = t?.to === 'STALLED' ? 'stalled' : 'connect_failed';
+                    return execResult;
+                }
+
+                // Said LAST, once every special case above has declined to
+                // take the lead. Announcing it earlier made the log claim the
+                // run was continuing while it was in fact about to park.
+                console.log(`[ENGINE] Lead ${lead.firstName}: ${nodeType} FAILED (non-fatal). Continuing to next node.`);
+
             }
 
             // ---- Delay = stage boundary. Park the lead and resume later. ----
