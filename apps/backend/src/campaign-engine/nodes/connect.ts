@@ -358,8 +358,31 @@ export const connect: NodeHandler = async (ctx, config): Promise<NodeResult> => 
                     + 'button[aria-label="Send invitation"], '
                     + 'button:has-text("Send now")';
 
-            const dialog = page.locator('div[role="dialog"], .artdeco-modal').first();
-            const inDialog = await dialog.isVisible({ timeout: 5000 }).catch(() => false);
+            // Pick the dialog that actually holds invite controls, not merely
+            // the first dialog on the page.
+            //
+            // `.first()` assumed the invite modal is the only one open. It is
+            // not: on 2026-09-25 a LinkedIn VIDEO PLAYER modal ("This is a
+            // modal window. The media could not be loaded…") matched first, the
+            // Send lookup searched inside it, found nothing, and the invite
+            // failed — while the real dialog sat alongside with "Add a note"
+            // and "Send without a note" both present and enabled. The captured
+            // button list is what proved it; before that diagnostic this looked
+            // identical to the notes-exhausted upsell and got blamed on it.
+            const INVITE_MARKERS =
+                'button:has-text("Send without a note"), button:has-text("Add a note"), '
+                + 'button[aria-label="Send invitation"], button[aria-label="Send now"]';
+            const allDialogs = page.locator('div[role="dialog"], .artdeco-modal');
+            const inviteDialog = allDialogs.filter({ has: page.locator(INVITE_MARKERS) }).first();
+            const foundInvite = await inviteDialog.isVisible({ timeout: 5000 }).catch(() => false);
+            // Fall back to the old behaviour when nothing matches, so a markup
+            // change that renames every control degrades to the previous
+            // attempt rather than refusing outright.
+            const dialog = foundInvite ? inviteDialog : allDialogs.first();
+            const inDialog = foundInvite || await dialog.isVisible({ timeout: 5000 }).catch(() => false);
+            if (!foundInvite && inDialog) {
+                console.log('[CONNECT] No dialog carried invite controls — falling back to the first dialog on the page.');
+            }
             const sendBtn = (inDialog ? dialog.locator(sendSelector) : page.locator(sendSelector)).first();
             if (!inDialog) console.log('[CONNECT] No invite dialog found — falling back to a page-wide Send lookup.');
 
