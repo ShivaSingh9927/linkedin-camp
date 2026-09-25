@@ -589,10 +589,31 @@ export const getCampaignOverview = async (req: any, res: Response) => {
             },
         });
 
+        // Count PEOPLE, not actions.
+        //
+        // `invited` used to be tally('connect') — every successful connect
+        // ACTION. But the engine logs a success when it checks a lead and
+        // correctly skips sending because an invite is already pending, so a
+        // 5-lead campaign reported 8 invitations. A number larger than the
+        // campaign is worse than a wrong one: it is obviously untrue.
+        //
+        // `connected` used to be tally('connect-accept'), an actionType that is
+        // written nowhere in the codebase and appears zero times in 1,159
+        // connect rows — so it was structurally always 0. Acceptance is now
+        // established by probing, not by an event, so count the probe's answer.
+        // Genuine 1st-degree, matching query-tools: connectionStatus 'connected'
+        // also covers Open-Profile leads who are DMable WITHOUT having accepted.
+        const invitedLeads = await prisma.campaignLeadProgress.count({
+            where: { campaignId: id, connectionStatus: { in: ['pending', 'connected'] } },
+        }).catch(() => 0);
+        const acceptedLeads = await prisma.lead.count({
+            where: { connectionDegree: 1, CampaignLead: { some: { campaignId: id } } },
+        }).catch(() => 0);
+
         const kpis = {
             totalLeads,
-            invited: tally('connect'),
-            connected: tally('connect-accept'),
+            invited: invitedLeads,
+            connected: acceptedLeads,
             messaged: tally('send-message'),
             replied: repliedLeads,
             replyRatePct: totalLeads ? Math.round((repliedLeads / totalLeads) * 100) : 0,
