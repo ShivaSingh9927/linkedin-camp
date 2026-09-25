@@ -552,6 +552,8 @@ export const getCampaignOverview = async (req: any, res: Response) => {
             select: {
                 id: true, name: true, status: true, queuePosition: true,
                 createdAt: true, objective: true,
+                // Needed to know how many steps a lead has to travel.
+                workflowJson: true,
             },
         });
         if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
@@ -560,6 +562,16 @@ export const getCampaignOverview = async (req: any, res: Response) => {
         const completedLeads = await prisma.campaignLead.count({
             where: { campaignId: id, isCompleted: true },
         });
+
+        // How far each lead has actually travelled through the sequence.
+        // Needed because progress used to be completedLeads/totalLeads, which
+        // reads 0% for a campaign that has visited every profile and sent every
+        // invite — all real work, none of it "finished" — and then jumps. Users
+        // reasonably read 0% as "nothing is happening".
+        const progressRows = await prisma.campaignLeadProgress.findMany({
+            where: { campaignId: id },
+            select: { currentNodeIndex: true, status: true },
+        }).catch(() => [] as Array<{ currentNodeIndex: number; status: string }>);
 
         // Per-action-type tallies from ActionLog scoped to this campaign.
         // groupBy keeps this cheap even on large campaigns.
@@ -586,7 +598,25 @@ export const getCampaignOverview = async (req: any, res: Response) => {
             replyRatePct: totalLeads ? Math.round((repliedLeads / totalLeads) * 100) : 0,
         };
 
-        const progressPct = totalLeads ? Math.round((completedLeads / totalLeads) * 100) : 0;
+        // Average how far the leads have got, not how many have finished.
+        //
+        // A lead that has reached step 4 of 13 is 31% done, and saying so is
+        // both truer and far less alarming than 0%. Terminal leads count as
+        // 100% whatever their outcome — a lead retired as "not accepted" is
+        // finished with, not stuck. Falls back to the old completion ratio when
+        // there are no progress rows (nothing has run yet), which is the one
+        // case where 0% is the honest answer.
+        const TERMINAL = new Set(['COMPLETED', 'STALLED', 'FAILED', 'REPLIED']);
+        // Steps a lead can occupy, excluding the trigger it never sits on.
+        const nodes = (campaign.workflowJson as any)?.nodes;
+        const stepCount = Math.max(1, (Array.isArray(nodes) ? nodes.length : 2) - 1);
+        const progressPct = progressRows.length
+            ? Math.round(
+                (progressRows.reduce((sum, r) => sum + (
+                    TERMINAL.has(r.status) ? 1 : Math.min(1, (r.currentNodeIndex || 0) / stepCount)
+                ), 0) / progressRows.length) * 100,
+            )
+            : (totalLeads ? Math.round((completedLeads / totalLeads) * 100) : 0);
         const eta = estimateCampaignEta(totalLeads, campaign.createdAt);
 
         // "Currently" = most recent SUCCESS action in the last 60s. Older
