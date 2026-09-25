@@ -5,7 +5,7 @@ import { getOrAssignProxy } from '../services/proxy.service';
 import { enqueueCampaign } from '../workers/campaign-worker';
 import { leadCapForTier } from '../config/plans';
 import { featureAllowed } from '../campaign-engine/safety/quota';
-import { queueCampaign as queueCampaignSvc, unqueueCampaign as unqueueCampaignSvc, reorderQueue } from '../services/campaign-queue.service';
+import { queueCampaign as queueCampaignSvc, unqueueCampaign as unqueueCampaignSvc, reorderQueue, findWorkingCampaign } from '../services/campaign-queue.service';
 import { getCampaignActivity, getOneCampaignActivity } from '../services/campaign-activity.service';
 import { estimateCampaignEta } from '../campaign-engine/safety/eta';
 import { syncLeadToCRMs } from '../services/crmService';
@@ -278,18 +278,20 @@ export const startCampaign = async (req: any, res: Response) => {
             });
         }
 
-        // 1-active-per-user invariant. LinkedIn caps an account at ~58
-        // actions/day, so running multiple campaigns in parallel doesn't
-        // raise throughput — it just confuses progress reporting. The user
-        // should explicitly queue the campaign instead.
-        const existingActive = await prisma.campaign.findFirst({
-            where: { userId, status: 'ACTIVE', id: { not: id } },
-            select: { id: true, name: true },
-        });
+        // One campaign WORKING at a time — not one ACTIVE at a time.
+        //
+        // This used to block on status alone, so a campaign with every lead
+        // parked on a multi-day wait held the slot while using none of the
+        // day's allowance, and a ready campaign was refused. The account's real
+        // limit is its daily/hourly/weekly caps and per-action pacing, all
+        // scoped to the user across every campaign, with a per-account lock
+        // serialising actual LinkedIn work — so a second campaign shares that
+        // budget, it cannot exceed it.
+        const existingActive = await findWorkingCampaign(userId, id);
         if (existingActive) {
             return res.status(409).json({
                 error: 'ACTIVE_CAMPAIGN_EXISTS',
-                message: `You already have an active campaign ("${existingActive.name}"). Pause it, wait for it to finish, or queue this campaign to run next.`,
+                message: `"${existingActive.name}" is working right now. Pause it, wait for it to go idle, or queue this campaign to run next.`,
                 activeCampaignId: existingActive.id,
             });
         }

@@ -1,15 +1,25 @@
 import { prisma } from '@repo/db';
 import { enqueueCampaign } from '../workers/campaign-worker';
 
-// FIFO per-user campaign queue. One ACTIVE campaign per user at a time;
-// QUEUED campaigns wait, ordered by queuePosition (lower = next up).
-// Auto-promotion fires only on COMPLETED — PAUSED/CANCELLED/FAILED keep
-// the slot vacant on purpose (those usually need user intervention).
+// FIFO per-user campaign queue. QUEUED campaigns wait, ordered by
+// queuePosition (lower = next up).
 //
-// The single-ACTIVE rule is not an infrastructure limit: one LinkedIn account
-// is the real bottleneck, and running several campaigns at once against it
-// multiplies actions per hour on a single identity — the pattern that gets
-// accounts restricted. Campaigns therefore run one at a time, in order.
+// The rule is "one campaign WORKING at a time", not "one campaign ACTIVE at a
+// time". Those are different, and conflating them cost real throughput: a
+// campaign whose leads are all parked on a multi-day wait held the slot while
+// doing nothing, so a queued campaign could not touch a completely unused
+// daily allowance. The account sat idle and the user was told to wait.
+//
+// What actually protects the account is the per-account safety layer — daily,
+// hourly and weekly caps plus per-action pacing, all scoped to userId across
+// every campaign — and the per-account lock that serialises real LinkedIn
+// work. Two ACTIVE campaigns cannot exceed the budget or interleave actions;
+// they simply share one. So the gate is now "does another campaign have a lead
+// due RIGHT NOW", and promotion fires when a campaign goes idle, not only when
+// it finishes.
+//
+// PAUSED/CANCELLED/FAILED still keep the slot vacant on purpose — those
+// usually need user intervention.
 
 /**
  * Most campaigns a user can have in flight: 1 ACTIVE + 3 QUEUED. The queue is
@@ -24,6 +34,41 @@ export async function countCampaignsInFlight(userId: string): Promise<number> {
     return prisma.campaign.count({
         where: { userId, status: { in: ['ACTIVE', 'QUEUED'] } },
     });
+}
+
+/**
+ * Does this campaign have a lead ready to act on right now?
+ *
+ * "Working" means at least one unfinished lead whose nextActionDate has
+ * matured. A campaign parked entirely on future waits is idle — still ACTIVE,
+ * still owned by the user, just not using the account.
+ */
+export async function campaignHasWorkDue(campaignId: string): Promise<boolean> {
+    const due = await prisma.campaignLead.count({
+        where: { campaignId, isCompleted: false, nextActionDate: { lte: new Date() } },
+    }).catch(() => 0);
+    return due > 0;
+}
+
+/**
+ * Is any of this user's ACTIVE campaigns actually working? `excludeId` skips
+ * the campaign being started, which would otherwise block itself.
+ *
+ * Returns the blocking campaign so the caller can name it — "you already have
+ * an active campaign" is not actionable; naming it is.
+ */
+export async function findWorkingCampaign(
+    userId: string,
+    excludeId?: string,
+): Promise<{ id: string; name: string } | null> {
+    const active = await prisma.campaign.findMany({
+        where: { userId, status: 'ACTIVE', ...(excludeId ? { id: { not: excludeId } } : {}) },
+        select: { id: true, name: true },
+    });
+    for (const c of active) {
+        if (await campaignHasWorkDue(c.id)) return c;
+    }
+    return null;
 }
 
 async function nextQueuePosition(userId: string): Promise<number> {
@@ -118,16 +163,15 @@ export async function reorderQueue(userId: string, orderedIds: string[]) {
  * a terminal state — no-op if another campaign is already ACTIVE or the
  * queue is empty.
  *
- * Only called from terminal-status sites (recomputeCampaignStatus on
- * COMPLETED). Manual PAUSE/CANCEL do NOT auto-promote — those usually
- * mean the user wants the slot to stay vacant.
+ * Called when a campaign reaches a terminal state AND when a campaign run
+ * ends with every lead parked — idle is as good as finished for the purpose of
+ * letting the next campaign use the account. Manual PAUSE/CANCEL do NOT
+ * auto-promote: those usually mean the user wants the slot to stay vacant.
  */
 export async function promoteNextQueuedCampaign(userId: string): Promise<string | null> {
-    const alreadyActive = await prisma.campaign.findFirst({
-        where: { userId, status: 'ACTIVE' },
-        select: { id: true },
-    });
-    if (alreadyActive) return null;
+    // Only a campaign that is actually working blocks promotion. An ACTIVE
+    // campaign sitting on a three-day wait no longer holds the queue.
+    if (await findWorkingCampaign(userId)) return null;
 
     const next = await prisma.campaign.findFirst({
         where: { userId, status: 'QUEUED' },

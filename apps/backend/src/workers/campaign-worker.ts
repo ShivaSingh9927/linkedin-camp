@@ -318,6 +318,24 @@ const processCampaignJob = async (data: CampaignJobData, job: Job) => {
             .then(({ enqueueInboxSync }) => enqueueInboxSync(userId, { debounceSec: 3 * 60 * 60 }))
             .catch((err: any) => console.warn(`[CAMPAIGN-WORKER] inbox sync enqueue failed: ${err?.message}`));
 
+        // The run is over and every remaining lead is parked on a future date,
+        // so this campaign is idle even though it is still ACTIVE. Idle is as
+        // good as finished for the purpose of letting the next campaign use the
+        // account — promotion used to wait for COMPLETED, which meant a queued
+        // campaign could sit behind a three-day wait with the whole daily
+        // allowance unused. No-op when this campaign still has work due, when
+        // another campaign is working, or when the queue is empty.
+        try {
+            const { campaignHasWorkDue, promoteNextQueuedCampaign } =
+                await import('../services/campaign-queue.service');
+            if (!(await campaignHasWorkDue(campaignId))) {
+                const promoted = await promoteNextQueuedCampaign(userId);
+                if (promoted) console.log(`[CAMPAIGN-WORKER] ${campaignId} is idle — promoted queued campaign ${promoted}.`);
+            }
+        } catch (err: any) {
+            console.warn(`[CAMPAIGN-WORKER] idle promotion check failed: ${err?.message}`);
+        }
+
     } catch (err: any) {
         console.error(`[CAMPAIGN-WORKER] ❌ Critical Crash:`, err.message);
 
