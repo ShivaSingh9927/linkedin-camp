@@ -5,6 +5,7 @@ import { getOrAssignProxy } from '../services/proxy.service';
 import { enqueueCampaign } from '../workers/campaign-worker';
 import { leadCapForTier } from '../config/plans';
 import { featureAllowed } from '../campaign-engine/safety/quota';
+import { campaignProgressPct, workflowNodeCount } from '../services/campaign-progress';
 import { queueCampaign as queueCampaignSvc, unqueueCampaign as unqueueCampaignSvc, reorderQueue, findWorkingCampaign } from '../services/campaign-queue.service';
 import { getCampaignActivity, getOneCampaignActivity } from '../services/campaign-activity.service';
 import { estimateCampaignEta } from '../campaign-engine/safety/eta';
@@ -629,17 +630,11 @@ export const getCampaignOverview = async (req: any, res: Response) => {
         // finished with, not stuck. Falls back to the old completion ratio when
         // there are no progress rows (nothing has run yet), which is the one
         // case where 0% is the honest answer.
-        const TERMINAL = new Set(['COMPLETED', 'STALLED', 'FAILED', 'REPLIED']);
-        // Steps a lead can occupy, excluding the trigger it never sits on.
-        const nodes = (campaign.workflowJson as any)?.nodes;
-        const stepCount = Math.max(1, (Array.isArray(nodes) ? nodes.length : 2) - 1);
-        const progressPct = progressRows.length
-            ? Math.round(
-                (progressRows.reduce((sum, r) => sum + (
-                    TERMINAL.has(r.status) ? 1 : Math.min(1, (r.currentNodeIndex || 0) / stepCount)
-                ), 0) / progressRows.length) * 100,
-            )
-            : (totalLeads ? Math.round((completedLeads / totalLeads) * 100) : 0);
+        const progressPct = campaignProgressPct(
+            progressRows,
+            workflowNodeCount(campaign.workflowJson),
+            totalLeads ? Math.round((completedLeads / totalLeads) * 100) : 0,
+        );
         const eta = estimateCampaignEta(totalLeads, campaign.createdAt);
 
         // "Currently" = most recent SUCCESS action in the last 60s. Older

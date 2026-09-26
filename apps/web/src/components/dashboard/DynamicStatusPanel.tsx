@@ -21,6 +21,9 @@ export interface StatusCampaign {
     status: string;
     totalLeads: number;
     pending: number;
+    /** How far the campaign has travelled, from the server. Same number the
+     *  campaign detail page shows. */
+    progressPct?: number;
     connected: number;
     replied: number;
     deferred?: number;
@@ -174,8 +177,14 @@ export function DynamicStatusPanel({ campaigns, logs, setup, loading, quotas, kp
         return null;
     })();
 
-    const processed = active ? Math.max(0, active.totalLeads - active.pending) : 0;
-    const pct = active && active.totalLeads > 0 ? Math.round((processed / active.totalLeads) * 100) : 0;
+    // Use the server's number rather than deriving one here.
+    //
+    // This used to be (totalLeads - pending) / totalLeads, counting leads that
+    // had left PENDING status. But the coarse lead status stays PENDING through
+    // profile visits and invites — it only moves on acceptance or a reply — so
+    // the bar read 0% for a campaign several nodes deep with every invite sent.
+    // Two components computing "progress" two different ways is how they drift.
+    const pct = active?.progressPct ?? 0;
 
     return (
         <div className="bg-card border border-line rounded-card shadow-soft flex flex-col h-full min-h-0 overflow-hidden">
@@ -190,7 +199,7 @@ export function DynamicStatusPanel({ campaigns, logs, setup, loading, quotas, kp
                         {active
                             ? scheduledWaits > 0
                                 ? `Scheduled wait · ${scheduledWaits} lead${scheduledWaits === 1 ? '' : 's'} resume${nextResume ? ` ${nextResume}` : ' automatically'}`
-                                : `Autopilot running · ${processed} of ${active.totalLeads} leads`
+                                : `Autopilot running · ${active.totalLeads} lead${active.totalLeads === 1 ? '' : 's'} in this campaign`
                             : loading ? '' : 'Ready when you are'}
                     </p>
                 </div>

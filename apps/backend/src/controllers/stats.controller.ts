@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { prisma } from '@repo/db';
+import { campaignProgressPct, workflowNodeCount } from '../services/campaign-progress';
 import Redis from 'ioredis';
 import { DAILY_CAPS } from '../campaign-engine/safety/quota';
 
@@ -61,11 +62,15 @@ export const getStats = async (req: any, res: Response) => {
                             status: true
                         }
                     },
+                    // currentNodeIndex drives the progress number; workflowJson
+                    // gives it a denominator.
+                    workflowJson: true,
                     CampaignLeadProgress: {
                         select: {
                             status: true,
                             statusReason: true,
                             nextRetryAt: true,
+                            currentNodeIndex: true,
                         }
                     }
                 },
@@ -111,6 +116,11 @@ export const getStats = async (req: any, res: Response) => {
                 connected: leads.filter(l => l.status === 'CONNECTED' || l.status === 'REPLIED').length,
                 replied: leads.filter(l => l.status === 'REPLIED').length,
                 deferred: deferred.length,
+                // Same definition as the campaign detail page. The dashboard
+                // used to derive its own from lead status, which stays PENDING
+                // through visits and invites — so it read 0% while the campaign
+                // was several nodes deep.
+                progressPct: campaignProgressPct(progress, workflowNodeCount(camp.workflowJson)),
                 nextActionAt,
                 terminalReasons,
             };
