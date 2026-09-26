@@ -233,6 +233,17 @@ export interface NodeContext {
     // can run without a page (e.g. check-connection-voyager) should use this
     // when `page` is null. Built once per lead from the saved session.
     apiRequest?: APIRequestContext;
+    // Opens Chromium on demand, injected by the engine.
+    //
+    // The engine's lazy-launch gate only sees the node it is about to run. An
+    // IF_ELSE is browser-free, so no browser is opened for it — but IF_ELSE
+    // then runs its chosen branch through executeNode with this same context,
+    // and a DOM node in that branch found `page` undefined and crashed on
+    // `page.goto`. Seen live 2026-09-26: the one lead who actually accepted an
+    // invite reached SEND_MESSAGE through the accepted branch and got nothing.
+    //
+    // Resolves to the live page, or null when the launch fails.
+    ensureBrowser?: () => Promise<{ page: Page; context: BrowserContext } | null>;
     // True when a later node in this flow (comment/like) will navigate the
     // lead's activity feed anyway, making profile-visit's own post scrape
     // redundant. Set by the engine from the flow; see postsCoveredLater().

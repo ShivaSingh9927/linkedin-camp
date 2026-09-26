@@ -95,17 +95,39 @@ const NODE_HANDLERS: Record<NodeType, NodeHandler> = {
 
 // ---- Execute single node (exported for if-else node) ----
 export async function executeNode(ctx: NodeContext, config: CampaignFlowNode): Promise<NodeResult> {
-    const { page, context, lead, userId, campaignId, storedOutputs, campaign, connectionStatus } = ctx;
-    
+    let { page, context } = ctx;
+    const { lead, userId, campaignId, storedOutputs, campaign, connectionStatus } = ctx;
+
     const nodeType = config.node;
     const handler = NODE_HANDLERS[nodeType];
-    
+
     if (!handler) {
         return { success: false, error: `Unknown node type: ${nodeType}` };
     }
-    
+
+    // IF_ELSE runs its chosen branch through here with its own context, and
+    // IF_ELSE is browser-free — so the engine's lazy-launch gate never opened
+    // Chromium. A DOM node inside the branch then met an undefined `page`.
+    // Launch on demand instead, keeping the laziness: an untaken DOM branch
+    // still costs no browser.
+    if (!page && !isMockLinkedIn() && nodeNeedsBrowser(config) && ctx.ensureBrowser) {
+        const launched = await ctx.ensureBrowser();
+        if (!launched) {
+            return { success: false, error: `Could not open a browser for ${nodeType}` };
+        }
+        page = launched.page;
+        context = launched.context;
+    }
+
     const nodeCtx: NodeContext = {
-        page, context, lead, userId, campaignId, storedOutputs, campaign, connectionStatus
+        page, context, lead, userId, campaignId, storedOutputs, campaign, connectionStatus,
+        // Forwarded so a branch node is no worse off than the same node run
+        // inline: without apiRequest a browser-free read inside a branch would
+        // needlessly launch Chromium, and without aiContext an AI-generated
+        // message would lose the user's company/strategy grounding.
+        apiRequest: ctx.apiRequest,
+        aiContext: ctx.aiContext,
+        ensureBrowser: ctx.ensureBrowser,
     };
 
     // Load-test mode: stub LinkedIn actions reached via if-else branches too.
@@ -688,6 +710,12 @@ async function runLead(
                 campaign: campaignData,
                 aiContext,
                 connectionStatus: seedConnectionStatus,
+                // Lets a DOM node reached through an IF_ELSE branch open the
+                // browser the gate above never opened for the IF_ELSE itself.
+                ensureBrowser: async () => {
+                    const b = await ensureBrowser();
+                    return b.ok && page ? { page, context } : null;
+                },
             };
 
             // Phase C — sequence awareness for AI-capable nodes. Only assembled
