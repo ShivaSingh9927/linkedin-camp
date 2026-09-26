@@ -713,14 +713,33 @@ def generate_comment(req: CommentRequest):
     brand = get_brand_context(req.persona, req.value_proposition, req.user_context)
     strategy_ctx = get_strategy_context(req.ai_strategy)
     
+    # This block describes the person whose post we are replying to — the lead.
+    # It was headed "COMMENTER PROFILE", which told the model the lead's
+    # background was its own, and the instructions below then asked it to draw
+    # on "YOUR background". /ai/message has always called the same block
+    # RECIPIENT PROFILE; only this endpoint had it backwards.
     profile_ctx = f"""
-COMMENTER PROFILE:
+POST AUTHOR (the person whose post you are replying to — this is NOT you):
 - Name: {req.profile_name}
 - Headline: {req.profile_headline or 'Not specified'}
 - Company: {req.company or 'Not specified'}
 - Job Title: {req.job_title or 'Not specified'}
 - Location: {req.location or 'Not specified'}
 """
+
+    # Who the comment is published as. When no brand context is configured the
+    # model has no identity to speak from, and the nearest one on offer is the
+    # post author's — so say explicitly that it has none rather than leave the
+    # gap for it to fill.
+    if brand.strip():
+        identity_ctx = f"\n\nYOU ARE THE COMMENTER. This is your own background:{brand}"
+    else:
+        identity_ctx = (
+            "\n\nYOU ARE THE COMMENTER. No background was configured for you, so you"
+            " have none to speak from. React to the substance of the post itself."
+            " Do NOT invent a job, company, seniority or education for yourself,"
+            " and do NOT adopt the post author's."
+        )
     
     campaign_ctx = ""
     if req.campaign_description:
@@ -730,7 +749,7 @@ COMMENTER PROFILE:
     if req.ai_prompt:
         custom_ctx = f"\nUSER'S COMMENT STYLE (highest priority — follow these exactly):\n{req.ai_prompt}\n"
     
-    system = f"""You are an expert LinkedIn commenter who engages authentically with posts.{brand}{strategy_ctx}
+    system = f"""You are an expert LinkedIn commenter who engages authentically with posts.{identity_ctx}{strategy_ctx}
 
 Your goal: Write a genuine, engaging comment that adds value to the conversation.
 
@@ -740,7 +759,10 @@ STRICT RULES:
 3. NO questions that can be answered with yes/no
 4. Add a unique insight, perspective, or question specific to THIS post's content
 5. Sound like a real human expert, not a bot
-6. NO placeholders or generic templates"""
+6. NO placeholders or generic templates
+7. You are NOT the post's author. Never describe yourself using their job,
+   company, seniority or education, and never claim a background that is not
+   in YOUR OWN background above"""
     
     user = f"""{profile_ctx}
 
@@ -754,7 +776,8 @@ THE POST YOU'RE COMMENTING ON:
 Write a comment that:
 - Shows you've actually read and understood the post
 - Adds genuine value (insight, perspective, or thoughtful question)
-- References specific thing from YOUR background that relates to the post
+- Draws on YOUR OWN background where it genuinely relates to the post — never
+  the post author's, and omit this entirely if you were given no background
 - Feels natural and human, not like a template
 
 Remember: The goal is to get engagement with YOUR comment, not just sound smart."""
@@ -771,7 +794,8 @@ FAIL: {"verdict": "fail", "issues": ["issue 1", "issue 2", ...]}
 Check for:
 1. STRATEGIC ALIGNMENT — does the comment reflect the brand's positioning and at least one messaging pillar? Or is it generic fluff?
 2. TONE & SAFETY — no banned openers ("Great post!", "Thanks for sharing", "Well said"), no self-promotion, no robotic phrasing
-3. USER INSTRUCTIONS (if provided) — does the comment follow any user-specified style preferences?"""
+3. USER INSTRUCTIONS (if provided) — does the comment follow any user-specified style preferences?
+4. IDENTITY — the commenter must not claim the post author's job, company, seniority or education as their own, and must not invent a background absent from the brand context"""
 
         verify_input = f"""
 COMMENT TO INSPECT:
