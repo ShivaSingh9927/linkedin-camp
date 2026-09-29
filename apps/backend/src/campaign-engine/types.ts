@@ -303,6 +303,14 @@ export interface NodeResult {
     terminal?: boolean;
     /** Human-readable terminal reason, recorded on the lead. */
     terminalReason?: string;
+    /**
+     * The node type that actually failed, when it is not the node the engine
+     * dispatched. IF_ELSE runs its branch inline, so a SEND_MESSAGE crash
+     * inside a branch surfaced to the engine as an `if-else` failure and
+     * missed every per-node retry rule. Set by IF_ELSE; the engine reads it
+     * in preference to the dispatched type when deciding how to recover.
+     */
+    failedNode?: NodeType;
 }
 
 // ---- Node handler signature ----
@@ -345,7 +353,10 @@ export interface LeadExecutionResult {
     //   'not_accepted' — resumed into a 1st-degree-only stage but the invite
     //                    was never accepted; sequence gives up (soft terminal,
     //                    recorded as COMPLETED+reason, not FAILED).
-    pausedReason?: 'lead_replied' | 'daily_cap' | 'hourly_cap' | 'weekly_cap' | 'outstanding_invites' | 'off_hours' | 'stalled' | 'delay' | 'not_accepted' | 'connect_failed';
+    //   'send_message_failed' — the message step errored; retried on the same
+    //                    node rather than advancing, because the message IS the
+    //                    sequence and everything after it assumes it went out.
+    pausedReason?: 'lead_replied' | 'daily_cap' | 'hourly_cap' | 'weekly_cap' | 'outstanding_invites' | 'off_hours' | 'stalled' | 'delay' | 'not_accepted' | 'connect_failed' | 'send_message_failed';
     // Set when the sequence ended early because a gate declined to proceed
     // (e.g. connection could not be confirmed). The lead still finishes as
     // COMPLETED — it is a soft terminal, not a failure, and is never retried —

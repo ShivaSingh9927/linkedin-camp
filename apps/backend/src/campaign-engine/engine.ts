@@ -141,6 +141,23 @@ export async function executeNode(ctx: NodeContext, config: CampaignFlowNode): P
 // Nodes that are fatal if they fail (skip to next lead)
 const FATAL_NODES: Set<string> = new Set(['profile-visit']);
 
+// Nodes whose failure must NOT advance the lead past them, because the steps
+// after them assume the action happened.
+//
+// CONNECT: everything downstream assumes the invite went out — marching on
+// means checking acceptance on an invite nobody sent (seen live 2026-09-23).
+// SEND-MESSAGE: the message is the point of the sequence. A failure used to
+// fall through as an ordinary non-fatal error, so the lead ran off the end of
+// the flow and was retired as 'sequence_finished' with nothing sent — seen
+// live 2026-09-26 on the one lead in that campaign who had actually accepted.
+//
+// Retries are bounded by the lifecycle: deferralCount past MAX_DEFERRALS
+// promotes the lead to STALLED rather than looping forever.
+const RETRY_SAME_NODE = new Map<string, 'connect_failed' | 'send_message_failed'>([
+    ['connect', 'connect_failed'],
+    ['send-message', 'send_message_failed'],
+]);
+
 // Whether a node requires a live Chromium page (lazy-launch gate). Browser-FREE:
 // delay + if-else (DB-only), email/email-finder (SMTP / backend service), and
 // BOTH connection-check node types whenever they resolve to Voyager 'fast'
@@ -304,6 +321,12 @@ async function runLead(
         status: 'failed',
         nodesExecuted: [],
     };
+
+    // Set when a node failed and no recovery rule took the lead. Reaching the
+    // end of the flow afterwards is not a completed sequence, and saying
+    // 'sequence_finished' there hid a crashed SEND_MESSAGE behind a clean
+    // finish (2026-09-26).
+    let sawUnrecoveredFailure = false;
 
     let browser: any;
     let context: any;
@@ -953,11 +976,16 @@ async function runLead(
                 // the retry skips the note entirely and sends bare. The
                 // lifecycle bounds this — deferralCount past MAX_DEFERRALS
                 // promotes the lead to STALLED rather than looping.
-                if (nodeType === 'connect') {
+                // `failedNode` names what actually failed when IF_ELSE ran the
+                // step inside a branch; without it a SEND_MESSAGE crash arrives
+                // here as a bare 'if-else' and matches none of these rules.
+                const failedType = result.failedNode || nodeType;
+                const retryReason = RETRY_SAME_NODE.get(failedType);
+                if (retryReason) {
                     const retryAt = nextDayRetryAt();
-                    console.log(`[ENGINE] Lead ${lead.firstName}: connect FAILED (${result.error || 'no reason'}). Retrying this step at ${retryAt.toISOString()} rather than moving on.`);
+                    console.log(`[ENGINE] Lead ${lead.firstName}: ${failedType} FAILED (${result.error || 'no reason'}). Retrying this step at ${retryAt.toISOString()} rather than moving on.`);
                     const t = await transitionLead(campaignId, lead.id, 'DEFERRED', {
-                        reason: 'connect_failed',
+                        reason: retryReason,
                         nextRetryAt: retryAt,
                         currentNodeIndex: i,
                     }).catch(err => {
@@ -965,9 +993,14 @@ async function runLead(
                         return null;
                     });
                     execResult.status = 'paused';
-                    execResult.pausedReason = t?.to === 'STALLED' ? 'stalled' : 'connect_failed';
+                    execResult.pausedReason = t?.to === 'STALLED' ? 'stalled' : retryReason;
                     return execResult;
                 }
+
+                // Nothing above took the lead, so the run continues past a step
+                // that failed. Remember that, because reaching the end of the
+                // flow after this is not the same as completing it.
+                sawUnrecoveredFailure = true;
 
                 // Said LAST, once every special case above has declined to
                 // take the lead. Announcing it earlier made the log claim the
@@ -1039,6 +1072,11 @@ async function runLead(
         }
 
         execResult.status = 'completed';
+        // Ran to the end, but not cleanly. Recorded so the funnel can separate
+        // "did everything" from "fell through a failure and ran out of nodes".
+        if (sawUnrecoveredFailure && !execResult.skipReason) {
+            execResult.skipReason = 'finished_with_failed_step';
+        }
         return execResult;
 
     } catch (err: any) {

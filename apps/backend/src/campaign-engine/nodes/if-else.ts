@@ -268,6 +268,16 @@ export const ifElse: NodeHandler = async (ctx, config): Promise<NodeResult> => {
                 return {
                     success: false,
                     error: `Node ${nodeConfig.node} failed: ${nodeResult.error}`,
+                    // Name the node that actually failed. The engine's recovery
+                    // rules are per node type, and a branch failure arriving as
+                    // a bare 'if-else' matched none of them — a SEND_MESSAGE
+                    // that died in here was swept up as an ordinary non-fatal
+                    // failure and the lead retired as 'sequence_finished'.
+                    failedNode: innerType,
+                    // Terminality belongs to the node that decided it, not to
+                    // the branch that happened to contain it.
+                    terminal: nodeResult.terminal,
+                    terminalReason: nodeResult.terminalReason,
                     output
                 };
             }
