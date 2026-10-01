@@ -185,6 +185,10 @@ class MessageRequest(BaseModel):
     # reference it if it's a genuinely relevant hook, but must not force it.
     post_content: Optional[str] = None
     connection_context: Optional[str] = None
+    # True when the recipient is already a 1st-degree connection. A DM
+    # only reaches someone we can already message, so a 'connect' CTA is
+    # usually wrong — see the cta resolution below.
+    already_connected: Optional[bool] = None
     campaign_description: Optional[str] = None
     tone: str = "professional"
     cta: str = "connect"
@@ -919,6 +923,7 @@ RECIPIENT PROFILE:
         campaign_ctx = f"\nCAMPAIGN OBJECTIVE/DESCRIPTION: {req.campaign_description}\n"
     if req.connection_context:
         campaign_ctx += f"\nOUTREACH PURPOSE: {req.connection_context}\n"
+    # relationship_ctx is appended after the CTA block resolves it.
 
     cta_map = {
         "connect": "connect with you",
@@ -928,7 +933,30 @@ RECIPIENT PROFILE:
         "referral": "provide a referral",
         "meeting": "schedule a quick call"
     }
-    cta_text = cta_map.get(req.cta, "connect with you")
+
+    # 'connect' is the default CTA and the right one for an INVITE NOTE. On a
+    # DM it is usually wrong: a direct message only reaches someone we can
+    # already message, so asking them to connect either states the obvious or
+    # is simply false. The warm-network campaign on 2026-10-01 closed every
+    # message to an existing 1st-degree connection with "Would be great to
+    # connect with you!".
+    #
+    # The caller supplies the relationship; this is the only place that decides
+    # what to do about it, so the two cannot drift.
+    effective_cta = req.cta
+    if req.already_connected and req.cta == "connect":
+        effective_cta = "reply"
+    cta_text = cta_map.get(effective_cta, "connect with you")
+
+    relationship_ctx = ""
+    if req.already_connected:
+        relationship_ctx = (
+            "\nRELATIONSHIP: You are ALREADY connected on LinkedIn. Do not ask to"
+            " connect, do not say it is good to connect, and do not imply this is"
+            " a first approach to a stranger.\n"
+        )
+    elif req.already_connected is False:
+        relationship_ctx = "\nRELATIONSHIP: You are not a 1st-degree connection yet.\n"
 
     # Phase C: sequence-awareness. When the engine ships campaign_progress
     # the model knows step N of M and can shift register (opener → nudge →
@@ -1025,7 +1053,7 @@ STRICT RULES:
 {channel_rules}{sequence_rules}"""
 
     user = f"""{profile_ctx}{post_ctx}
-{campaign_ctx}{sequence_ctx}{history_ctx}{custom_ctx}
+{campaign_ctx}{relationship_ctx}{sequence_ctx}{history_ctx}{custom_ctx}
 Write a personalized outreach {channel_label} that:
 - Shows you've done homework on their profile
 - References something specific from their background

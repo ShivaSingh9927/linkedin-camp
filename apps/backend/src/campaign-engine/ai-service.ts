@@ -39,6 +39,8 @@ export interface AIGenerateOptions {
     
     // Campaign context
     connectionContext?: string;
+    /** True when the recipient is already a connection, so a 'connect' CTA makes no sense. */
+    alreadyConnected?: boolean;
     campaignDescription?: string;
     tone?: string;
     cta?: string;
@@ -193,6 +195,7 @@ export async function generateAIMessage(options: AIGenerateOptions): Promise<AIG
 
             // Campaign context
             connection_context: options.connectionContext,
+            already_connected: options.alreadyConnected,
             campaign_description: options.campaignDescription,
             tone: options.tone || 'professional',
             cta: options.cta || 'connect',

@@ -72,6 +72,13 @@ export const sendMessage: NodeHandler = async (ctx, config): Promise<NodeResult>
                     education: profileData.education,
                     postContent: latestPost,
                     connectionContext: campaignContext.objective || undefined,
+                    // A DM only reaches someone we can already message. Asking
+                    // them to connect is then incoherent — it closed messages
+                    // to existing 1st-degree connections with "Would be great
+                    // to connect with you!" (seen on the warm-network campaign,
+                    // 2026-10-01). The node knows the relationship; the AI
+                    // service decides how to phrase the close.
+                    alreadyConnected: ctx.connectionStatus === 'connected',
                     campaignDescription: campaignContext.description || undefined,
                     // Per-step overrides (set in the builder's Step Settings) win
                     // over the campaign-level defaults.
