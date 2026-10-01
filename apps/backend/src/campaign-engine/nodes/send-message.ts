@@ -1,4 +1,6 @@
-import { NodeHandler, NodeResult, SendMessageOutput } from '../types';
+import { NodeHandler, NodeResult, SendMessageOutput, NodeContext } from '../types';
+import { prisma } from '@repo/db';
+import { resolveConnection } from '../connection-resolve';
 import { resolveVariables } from '../variables';
 import { generateAIMessage } from '../ai-service';
 import { buildRationale } from '../ai-rationale';
@@ -12,6 +14,36 @@ import { profileVisitOutput } from '../profile-output';
 function normalizeBraces(text: string): string {
     // Convert {var} to {{var}} but don't double-convert {{var}}
     return text.replace(/\{([^{}]+)\}/g, '{{$1}}');
+}
+
+/**
+ * Is the recipient someone we are already connected to?
+ *
+ * Delegates to the shared resolver so this and the IF_ELSE gate can never
+ * disagree about the same lead — writing a second opinion here is exactly how
+ * the progress bar ended up with two definitions.
+ */
+async function isAlreadyConnected(
+    ctx: NodeContext,
+    storedOutputs: Record<string, Record<string, any>>,
+): Promise<boolean> {
+    let leadStatus: string | null = null;
+    let leadConnectionDegree: number | null = null;
+    try {
+        const row = await prisma.lead.findUnique({
+            where: { id: ctx.lead.id },
+            select: { status: true, connectionDegree: true },
+        });
+        leadStatus = (row?.status as string | undefined) ?? null;
+        leadConnectionDegree = row?.connectionDegree ?? null;
+    } catch { /* tolerate transient DB errors — fall back to what's in memory */ }
+
+    const resolved = resolveConnection(ctx.connectionStatus, storedOutputs, leadStatus, leadConnectionDegree);
+    // `connected: null` means nothing knew. Treat that as "not connected" for
+    // the CTA only: phrasing a close as an introduction to someone we already
+    // know is mildly odd, while telling an actual stranger not to connect
+    // leaves the message with no ask at all.
+    return resolved.connected === true;
 }
 
 export const sendMessage: NodeHandler = async (ctx, config): Promise<NodeResult> => {
@@ -75,10 +107,15 @@ export const sendMessage: NodeHandler = async (ctx, config): Promise<NodeResult>
                     // A DM only reaches someone we can already message. Asking
                     // them to connect is then incoherent — it closed messages
                     // to existing 1st-degree connections with "Would be great
-                    // to connect with you!" (seen on the warm-network campaign,
-                    // 2026-10-01). The node knows the relationship; the AI
-                    // service decides how to phrase the close.
-                    alreadyConnected: ctx.connectionStatus === 'connected',
+                    // to connect with you!" (warm-network campaign, 2026-10-01).
+                    //
+                    // Resolved the same way the IF_ELSE gate resolves it, not
+                    // from ctx.connectionStatus alone. That field is seeded once
+                    // per run and only CHECK_CONNECTION updates it in place, so
+                    // in a flow without one it stays stale — and this read false
+                    // for two leads whose progress row, lead row AND the
+                    // profile-visit that had just run all said "connected".
+                    alreadyConnected: await isAlreadyConnected(ctx, storedOutputs),
                     campaignDescription: campaignContext.description || undefined,
                     // Per-step overrides (set in the builder's Step Settings) win
                     // over the campaign-level defaults.
