@@ -1,0 +1,48 @@
+name: Campaign templates
+
+# Templates decide what a LinkedIn account actually does, and a bad shape is
+# not a crash — it is an account restriction days later. The audit walks every
+# shipped template through the real DAG compiler, because the shapes are built
+# by helpers and it is the compiler that decides what ends up inside a
+# conditional branch. That is precisely where this week's incidents lived.
+
+on:
+  pull_request:
+    paths:
+      - 'apps/backend/src/campaign-templates/**'
+      - 'apps/backend/src/campaign-engine/workflow-graph.ts'
+      - 'apps/backend/src/scripts/audit-templates.ts'
+      - 'apps/backend/package.json'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/campaign-templates.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'apps/backend/src/campaign-templates/**'
+      - 'apps/backend/src/campaign-engine/workflow-graph.ts'
+      - 'apps/backend/src/scripts/audit-templates.ts'
+      - 'apps/backend/package.json'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/campaign-templates.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      # workflow-graph.ts imports @repo/db, which constructs a PrismaClient at
+      # module load. No query is made and no database is needed, but the
+      # generated client must exist or the import throws.
+      - run: npx prisma generate --schema packages/db/schema.prisma
+      - run: npm run audit:templates

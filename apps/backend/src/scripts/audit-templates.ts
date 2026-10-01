@@ -88,23 +88,53 @@ function audit(flow: any[]): Finding[] {
     return f;
 }
 
+const verbose = process.argv.includes('--verbose');
+
 const templates = getTemplates();
-console.log(`Auditing ${templates.length} templates\n`);
+console.log(`Auditing ${templates.length} campaign templates through the DAG compiler\n`);
+
 let blocks = 0, warns = 0, notes = 0;
 const clean: string[] = [];
+const branchWait = new Set<string>();
+const branchGoverned = new Set<string>();
 
 for (const t of templates) {
     const flow = flattenDagToFlow(t.workflow as any);
     const findings = audit(flow);
-    if (!findings.length) { clean.push(t.id); continue; }
-    const b = findings.filter(x => x.level === 'BLOCK');
-    const w = findings.filter(x => x.level === 'WARN');
-    const n = findings.filter(x => x.level === 'NOTE');
-    blocks += b.length; warns += w.length; notes += n.length;
+
+    for (const x of findings) {
+        if (x.msg.includes('wait INSIDE a branch')) branchWait.add(t.id);
+        if (x.msg.includes('branch-caps')) branchGoverned.add(t.id);
+    }
+
+    const serious = findings.filter(x => x.level !== 'NOTE');
+    blocks += findings.filter(x => x.level === 'BLOCK').length;
+    warns += findings.filter(x => x.level === 'WARN').length;
+    notes += findings.filter(x => x.level === 'NOTE').length;
+
+    if (!findings.length) clean.push(t.id);
+    if (!serious.length && !verbose) continue;
+
     console.log(`### ${t.id}  (${t.name})`);
-    for (const x of [...b, ...w, ...n]) console.log(`    ${x.level.padEnd(5)} ${x.msg}`);
-    if (b.length) console.log(describe(flow).map(l => '      ' + l).join('\n'));
+    for (const x of (verbose ? findings : serious)) console.log(`    ${x.level.padEnd(5)} ${x.msg}`);
+    if (serious.some(x => x.level === 'BLOCK')) console.log(describe(flow).map(l => '      ' + l).join('\n'));
     console.log();
 }
-console.log(`\nCLEAN (${clean.length}): ${clean.join(', ')}`);
-console.log(`\nTOTals — BLOCK ${blocks}, WARN ${warns}, NOTE ${notes}`);
+
+// NOTEs are not failures: they record which templates depend on the engine
+// handling branches correctly (waits parking, caps applying). Every one of
+// these was broken until 2026-10-01, which is why the count is worth printing
+// even when nothing fails — it is the blast radius if that code regresses.
+console.log('---');
+console.log(`clean of branch dependencies : ${clean.length}/${templates.length}`);
+console.log(`governed action in a branch  : ${branchGoverned.size}/${templates.length} (needs per-branch caps)`);
+console.log(`multi-day wait in a branch   : ${branchWait.size}/${templates.length} (needs branch parking)`);
+console.log(`BLOCK ${blocks}   WARN ${warns}   NOTE ${notes}`);
+
+if (blocks || warns) {
+    console.error(`\nFAILED: ${blocks} blocking and ${warns} warning finding(s). `
+        + `A template must not wait less than a day, fire two writes with no gap, `
+        + `message without a connection check, or end in an empty branch.`);
+    process.exit(1);
+}
+console.log('\nOK — no template has a structure that is unsafe on its own.');
