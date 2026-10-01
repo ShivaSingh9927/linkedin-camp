@@ -24,6 +24,7 @@ import { Router, Response } from 'express';
 import { authMiddleware, AuthRequest } from '../middleware/auth.middleware';
 import {
     getMe,
+    warmSelfCache,
     getProfileByFsd,
     isFirstDegree,
     getAllConnections,
@@ -102,7 +103,11 @@ async function withSession<T>(userId: string, fn: (page: any) => Promise<T>): Pr
  */
 router.get('/me', async (req: AuthRequest, res: Response) => {
     const userId = req.user!.id;
-    const r = await withSession(userId, async (page) => getMe(userId, page));
+    // warmSelfCache, not getMe: the messaging routes need the mailbox urn
+    // cached, their error tells you to "call getMe first", and getMe is
+    // precisely the function that does NOT populate that cache. Calling it
+    // here made the advice impossible to follow.
+    const r = await withSession(userId, async (page) => warmSelfCache(userId, page));
     if ((r as any).error) return res.status(500).json(r);
     res.json(r);
 });
@@ -213,7 +218,10 @@ router.get('/is-1st-degree/:vanity', async (req: AuthRequest, res: Response) => 
  */
 router.get('/mailbox-counts', async (req: AuthRequest, res: Response) => {
     const userId = req.user!.id;
-    const r = await withSession(userId, async (page) => getMailboxCounts(userId, page));
+    const r = await withSession(userId, async (page) => {
+        await warmSelfCache(userId, page);
+        return getMailboxCounts(userId, page);
+    });
     if ((r as any).error) return res.status(500).json(r);
     res.json(r);
 });
@@ -225,7 +233,14 @@ router.get('/mailbox-counts', async (req: AuthRequest, res: Response) => {
 router.get('/inbox', async (req: AuthRequest, res: Response) => {
     const userId = req.user!.id;
     const maxThreads = parseInt((req.query.maxThreads as string) || '20');
-    const r = await withSession(userId, async (page) => syncInbox(userId, page, { maxThreads }));
+    const r = await withSession(userId, async (page) => {
+        // The mailbox urn is per-process cache state, so a route cannot
+        // assume another call populated it. The inbox WORKER already warms
+        // it this way — only these debug routes did not, which is why they
+        // always 500'd.
+        await warmSelfCache(userId, page);
+        return syncInbox(userId, page, { maxThreads });
+    });
     if ((r as any).error) return res.status(500).json(r);
     res.json(r);
 });
