@@ -1,6 +1,6 @@
 import { NodeHandler, NodeResult, CampaignFlowNode, IfElseCondition, IfElseOutput, NodeType } from '../types';
 import { executeNode } from '../engine';
-import { writeNodeOutput } from '../storage';
+import { recordNodeExecution } from '../node-record';
 import { runConnectionCheck, resolveConnectionBackend } from './connection-check';
 import { prisma } from '@repo/db';
 
@@ -244,24 +244,31 @@ export const ifElse: NodeHandler = async (ctx, config): Promise<NodeResult> => {
             const nodeResult = await executeNode(ctx, nodeConfig);
 
             // Persist inner node output the same way the top-level engine loop
-            // does — write to ctx.storedOutputs so the next inner node in
-            // this branch can read it, AND call writeNodeOutput so downstream
-            // top-level nodes (and audit log) see the result. Without this,
+            // does — write to ctx.storedOutputs so the next inner node in this
+            // branch can read it, and record the execution so downstream
+            // top-level nodes (and the audit log) see the result. Without this,
             // a chain like trueBranch=[EMAIL_FINDER, EMAIL] would have EMAIL
-            // unable to read EMAIL_FINDER's output, and post-branch nodes
-            // would have no visibility into what the branch did.
+            // unable to read EMAIL_FINDER's output.
             const innerType = nodeConfig.node as NodeType;
             const execAt = new Date().toISOString();
             if (nodeResult.success && nodeResult.output) {
                 ctx.storedOutputs[innerType] = nodeResult.output;
             }
-            await writeNodeOutput(ctx.campaignId, ctx.lead.id, {
-                node: innerType,
-                status: nodeResult.success ? 'success' : 'failed',
-                output: nodeResult.output,
-                error: nodeResult.error,
+            // The same bookkeeping a top-level node gets: audit row, node
+            // output, DM persistence, CRM event, enrichment, status
+            // projection. This used to be writeNodeOutput alone, so a message
+            // sent from inside a branch left no ActionLog row, no inbox
+            // record and no CRM event — and since the compiler puts the whole
+            // post-gate sequence inside the branch, that was most of the run.
+            await recordNodeExecution({
+                userId: ctx.userId,
+                campaignId: ctx.campaignId,
+                leadId: ctx.lead.id,
+                leadName: ctx.lead.firstName || ctx.lead.linkedinUrl,
+                nodeType: innerType,
+                result: nodeResult,
                 at: execAt,
-            }).catch((err) => console.error(`[IF-ELSE] writeNodeOutput failed for ${innerType}:`, err?.message));
+            });
 
             if (!nodeResult.success) {
                 console.log(`[IF-ELSE] Node ${nodeConfig.node} failed: ${nodeResult.error}`);

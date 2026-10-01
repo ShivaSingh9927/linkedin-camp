@@ -39,7 +39,8 @@ import { emailNode } from './nodes/email';
 import { emailFinder } from './nodes/email-finder';
 import { follow } from './nodes/follow';
 import { profileVisitDispatch, inboxSyncDispatch, profileVisitNeedsDom, postsCoveredLater } from './nodes/read-backend';
-import { readNodeOutputs, writeNodeOutput, updateLeadEnrichment } from './storage';
+import { readNodeOutputs } from './storage';
+import { recordNodeExecution } from './node-record';
 import { checkQuota, checkBurst, checkWeeklyQuota, checkInviteQuota, nextDayRetryAt, nextHourRetryAt, DAILY_CAPS, HOURLY_CAPS, WEEKLY_CAPS, OUTSTANDING_INVITE_CAP, GovernedAction, isWithinWorkingHours, nextWorkingHourAt } from './safety/quota';
 import { paceAction, markActionAt } from './safety/pacing';
 import { getRampState } from './safety/rampup';
@@ -815,83 +816,30 @@ async function runLead(
             // so without this the fresh reading dies with the object.
             seedConnectionStatus = nodeCtx.connectionStatus ?? seedConnectionStatus;
 
-            // Emit socket event for real-time activity
-            if (socket) {
-                socket.to(`user_${userId}`).emit('campaign_activity', {
-                    campaignId,
-                    leadId: lead.id,
-                    leadName: lead.firstName || lead.linkedinUrl,
-                    node: nodeType,
-                    action: result.success ? 'success' : 'failed',
-                    details: {
-                        // Extract key info for display
-                        name: result.output?.name,
-                        company: result.output?.company,
-                        connected: result.output?.connected,
-                        status: result.output?.status,
-                        message: result.output?.messageText || result.output?.postContent,
-                        sent: result.output?.sent,
-                        liked: result.output?.liked,
-                        commented: result.output?.commented,
-                    },
-                    error: result.error,
-                    timestamp: new Date().toISOString(),
-                });
-            }
-
-            // Audit every node execution — without this the UI has no record of
-            // what the campaign actually did. CampaignLead.personalization.execLog
-            // captures it as JSON but isn't queryable from the activity/inbox views.
-            await prisma.actionLog.create({
-                data: {
-                    userId,
-                    campaignId,
-                    leadId: lead.id,
-                    actionType: nodeType,
-                    status: result.success ? 'SUCCESS' : 'FAILED',
-                    errorMessage: result.error || null,
-                },
-            }).catch(err => console.error(`[ENGINE] ActionLog write failed: ${err.message}`));
-
-            // For send-message, also persist the outbound DM so it shows up in the
-            // inbox alongside the replies the sync worker pulls back.
-            if (result.success && nodeType === 'send-message' && result.output?.sent && result.output?.messageText) {
-                await prisma.message.create({
-                    data: {
-                        userId,
-                        leadId: lead.id,
-                        campaignId,
-                        direction: 'SENT',
-                        content: result.output.messageText,
-                        // Tag AI-written DMs so the Messages tab shows the "AI"
-                        // badge + the "why this message" rationale; template /
-                        // fallback sends stay 'CAMPAIGN'.
-                        source: result.output.aiGenerated ? 'AI' : 'CAMPAIGN',
-                        rationale: result.output.rationale || null,
-                    },
-                }).catch(err => console.error(`[ENGINE] Message write failed: ${err.message}`));
-
-                // CRM event — policy decides whether this fans out anywhere.
-                import('../services/crm-events').then(({ emitCrmEvent }) =>
-                    emitCrmEvent({
-                        event: 'lead.messaged',
-                        userId,
-                        campaignId,
-                        leadId: lead.id,
-                        meta: { messageContent: result.output?.messageText },
-                    }),
-                ).catch(() => {});
-            }
+            // One definition of what happens after a node runs, shared with
+            // IF_ELSE's branch runner. Audit row, node output, DM persistence,
+            // CRM event, enrichment and status projection all live in
+            // recordNodeExecution — when this was inline here, nothing that
+            // ran inside a branch was recorded anywhere.
+            await recordNodeExecution({
+                userId,
+                campaignId,
+                leadId: lead.id,
+                leadName: lead.firstName || lead.linkedinUrl,
+                nodeType,
+                result,
+                at: nodeExec.at,
+            });
 
             if (result.success) {
                 nodeExec.output = result.output;
                 execResult.nodesExecuted.push(nodeExec);
 
-                // Store output for downstream nodes
-                if (result.output) {
-                    storedOutputs[nodeType] = result.output;
-                    await writeNodeOutput(campaignId, lead.id, nodeExec);
-                }
+                // Engine-local run state. The persistence that used to sit
+                // here (node output, enrichment, status projection) now
+                // happens in recordNodeExecution above, for branch nodes too.
+                if (result.output) storedOutputs[nodeType] = result.output;
+                if (nodeType === 'profile-visit' && result.output) profileVisitRan = true;
 
                 // A gate that declined ends the sequence (its false branch is
                 // an END node). Carry the reason up so the lead's terminal
@@ -902,26 +850,10 @@ async function runLead(
                     execResult.skipReason = (result.output as any).skipReason;
                 }
 
-                // If profile-visit, update lead enrichment
-                if (nodeType === 'profile-visit' && result.output) {
-                    profileVisitRan = true;
-                    await updateLeadEnrichment(lead.id, result.output);
-                }
-
-                // If connect sent, project the coarse status (the connect node already
-                // wrote connectionStatus='pending' → syncLeadStatus derives PENDING).
-                // Single writer; no direct Lead.status poke here anymore.
-                if (nodeType === 'connect' && result.output?.status === 'sent') {
-                    await syncLeadStatus(campaignId, lead.id).catch(() => {});
-                }
-
             } else {
                 nodeExec.status = 'failed';
                 nodeExec.error = result.error;
                 execResult.nodesExecuted.push(nodeExec);
-
-                // Write the failed execution too
-                await writeNodeOutput(campaignId, lead.id, nodeExec).catch(() => {});
 
                 // Deterministic failure — retrying can't help (e.g. the target
                 // has no recent posts for a like/comment node). Retire the lead
