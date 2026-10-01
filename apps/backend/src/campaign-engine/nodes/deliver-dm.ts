@@ -1,6 +1,9 @@
 import { detectConnectionState } from '../connection-state';
 
 const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
+/** Whitespace-insensitive comparison: a contenteditable renders paragraph
+ *  breaks its own way, so the source string and the DOM never match exactly. */
+const collapse = (v: string) => v.replace(/\s+/g, ' ').trim();
 const randomRange = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1) + min);
 
 async function safeGoto(page: any, url: string, retries = 3) {
@@ -253,8 +256,23 @@ export async function deliverDirectMessage(
         return { sent: false, verified: false, diagnostics, error: `Message composer could not be focused. ${diagnostics}` };
     }
 
-    for (const char of messageText) {
-        await page.keyboard.type(char, { delay: randomRange(40, 90) });
+    // Type line by line, breaking lines with Shift+Enter.
+    //
+    // A bare Enter is a submit in LinkedIn's composer (the Enter fallback
+    // further down relies on exactly that), so typing a multi-paragraph message
+    // character by character risks sending each paragraph as its own message.
+    // Template copy is one paragraph and never hit this; the first AI-written
+    // message, which has paragraph breaks, did. Shift+Enter inserts a line
+    // break without submitting.
+    const lines = messageText.split('\n');
+    for (let li = 0; li < lines.length; li++) {
+        for (const char of lines[li]) {
+            await page.keyboard.type(char, { delay: randomRange(40, 90) });
+        }
+        if (li < lines.length - 1) {
+            await page.keyboard.press('Shift+Enter');
+            await wait(randomRange(120, 260));
+        }
     }
     await wait(randomRange(2000, 3000));
 
@@ -267,9 +285,14 @@ export async function deliverDirectMessage(
     // keystrokes went somewhere else and Send will be disabled — clicking it
     // then produces an 8-second timeout and no message, which is exactly what
     // happened on 2026-09-30 and again on 2026-10-01.
+    //
+    // Compare with whitespace collapsed. A contenteditable renders paragraph
+    // breaks as its own mix of newlines, so an exact prefix match against a
+    // message containing "\n\n" fails even when every character is sitting
+    // right there — which is how a correctly typed AI message was refused.
     const typed = await textBox.evaluate((el: any) => (el.innerText || el.textContent || '').trim())
         .catch(() => '');
-    if (!typed.includes(messageText.substring(0, 25))) {
+    if (!collapse(typed).includes(collapse(messageText).substring(0, 30))) {
         const diagnostics = await describeComposer();
         console.log(`[DELIVER-DM] Composer holds ${typed.length} chars but not our message — the keystrokes did not land. ${diagnostics}`);
         return {
@@ -295,15 +318,16 @@ export async function deliverDirectMessage(
     const bubbleAppeared = async (attempts = 6, gapMs = 2500): Promise<boolean> => {
         for (let i = 0; i < attempts; i++) {
             const seen = await page.evaluate((text: string) => {
-                const needle = text.substring(0, 40);
-                const body = (document.body as any)?.innerText || '';
+                const flat = (v: string) => v.replace(/\s+/g, ' ').trim();
+                const needle = flat(text).substring(0, 40);
+                const body = flat((document.body as any)?.innerText || '');
                 // The draft is still sitting in the composer, so a naive page
                 // match would always succeed. Cut the composer's own text out.
                 const composer = document.querySelector(
                     'div.msg-form__contenteditable[contenteditable="true"], '
                     + 'div[role="textbox"][aria-label^="Write a message"]',
                 );
-                const draft = (composer as any)?.innerText || '';
+                const draft = flat((composer as any)?.innerText || '');
                 const outside = draft ? body.split(draft).join(' ') : body;
                 return outside.includes(needle);
             }, messageText).catch(() => false);
