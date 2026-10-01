@@ -193,8 +193,65 @@ export async function deliverDirectMessage(
         return { sent: false, error: `Message textbox not found. Page URL: ${debugUrl}` };
     }
 
-    await textBox.click({ force: true });
-    await wait(1000);
+    // What the composer looked like when a send could not be confirmed.
+    // "Send click refused (Timeout)" alone could not say whether the button was
+    // disabled, covered by an overlay, or simply absent — and the worker log
+    // holding it is gone after a container recreate. Carried back on the result
+    // so it reaches ActionLog and survives.
+    const describeComposer = async (): Promise<string> => page.evaluate(() => {
+        const btn = document.querySelector('button.msg-form__send-button')
+            || Array.from(document.querySelectorAll('button')).find(
+                (b) => (b.textContent || '').trim().toLowerCase() === 'send');
+        if (!btn) return 'send button: absent';
+        const r = btn.getBoundingClientRect();
+        const atPoint = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        const describe = (el: Element | null) => el
+            ? `${el.tagName.toLowerCase()}${el.getAttribute('aria-label') ? `[${el.getAttribute('aria-label')}]` : ''}`
+            : 'nothing';
+        const editor = document.querySelector(
+            'div.msg-form__contenteditable[contenteditable="true"], '
+            + 'div[role="textbox"][aria-label^="Write a message"]',
+        );
+        const held = ((editor as any)?.innerText || '').trim().length;
+        return `send button: disabled=${(btn as any).disabled} aria-disabled=${btn.getAttribute('aria-disabled')} `
+            + `visible=${r.width > 0 && r.height > 0} coveredBy=${describe(atPoint)} `
+            + `composerChars=${held} focused=${editor ? editor.contains(document.activeElement) : 'no-editor'}`;
+    }).catch(() => 'composer state unreadable');
+
+    // Focus the composer, and CHECK that focus actually landed.
+    //
+    // This was `click({ force: true })`, which skips Playwright's actionability
+    // checks — so when anything overlays the composer the click went to the
+    // overlay, focus never reached the editor, and every keystroke after it was
+    // typed into the page body. The editor stayed empty, LinkedIn kept Send
+    // disabled, and the click on that disabled button timed out. That is the
+    // whole failure, and it was invisible because nothing ever asked where the
+    // text went. Observed 2026-10-01: "send button: disabled=true".
+    const focusEditor = async (): Promise<boolean> => {
+        // An ordinary click first: if something covers the composer we want to
+        // know, not to punch through it.
+        await textBox.click({ timeout: 5000 }).catch(async (e: any) => {
+            console.log(`[DELIVER-DM] Composer click refused (${(e?.message || '').split('\n')[0]}) — focusing directly.`);
+            await textBox.evaluate((el: any) => el.focus()).catch(() => {});
+        });
+        await wait(500);
+        return textBox.evaluate((el: any) => document.activeElement === el
+            || el.contains(document.activeElement)).catch(() => false);
+    };
+
+    let focused = await focusEditor();
+    if (!focused) {
+        console.log('[DELIVER-DM] Composer did not take focus on the first attempt — retrying.');
+        await textBox.evaluate((el: any) => el.focus()).catch(() => {});
+        await wait(500);
+        focused = await textBox.evaluate((el: any) => document.activeElement === el
+            || el.contains(document.activeElement)).catch(() => false);
+    }
+    if (!focused) {
+        const diagnostics = await describeComposer();
+        console.log(`[DELIVER-DM] Composer never took focus — not typing into the void. ${diagnostics}`);
+        return { sent: false, verified: false, diagnostics, error: `Message composer could not be focused. ${diagnostics}` };
+    }
 
     for (const char of messageText) {
         await page.keyboard.type(char, { delay: randomRange(40, 90) });
@@ -205,6 +262,23 @@ export async function deliverDirectMessage(
     await page.keyboard.press('Space');
     await page.keyboard.press('Backspace');
     await wait(1000);
+
+    // The text must be IN the editor before we try to send. If it isn't, the
+    // keystrokes went somewhere else and Send will be disabled — clicking it
+    // then produces an 8-second timeout and no message, which is exactly what
+    // happened on 2026-09-30 and again on 2026-10-01.
+    const typed = await textBox.evaluate((el: any) => (el.innerText || el.textContent || '').trim())
+        .catch(() => '');
+    if (!typed.includes(messageText.substring(0, 25))) {
+        const diagnostics = await describeComposer();
+        console.log(`[DELIVER-DM] Composer holds ${typed.length} chars but not our message — the keystrokes did not land. ${diagnostics}`);
+        return {
+            sent: false,
+            verified: false,
+            diagnostics,
+            error: `Message text never reached the composer (held ${typed.length} chars). ${diagnostics}`,
+        };
+    }
 
     // Poll for the bubble instead of checking once. A single check 5s after the
     // click called plenty of real sends "unverifiable" purely because the thread
@@ -239,26 +313,12 @@ export async function deliverDirectMessage(
         return false;
     };
 
-    // What the composer looked like when a send could not be confirmed.
-    // "Send click refused (Timeout)" alone could not say whether the button was
-    // disabled, covered by an overlay, or simply absent — and the worker log
-    // holding it is gone after a container recreate. Carried back on the result
-    // so it reaches ActionLog and survives.
-    const describeComposer = async (): Promise<string> => page.evaluate(() => {
-        const btn = document.querySelector('button.msg-form__send-button')
-            || Array.from(document.querySelectorAll('button')).find(
-                (b) => (b.textContent || '').trim().toLowerCase() === 'send');
-        if (!btn) return 'send button: absent';
-        const r = btn.getBoundingClientRect();
-        const atPoint = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
-        const describe = (el: Element | null) => el
-            ? `${el.tagName.toLowerCase()}${el.getAttribute('aria-label') ? `[${el.getAttribute('aria-label')}]` : ''}`
-            : 'nothing';
-        return `send button: disabled=${(btn as any).disabled} aria-disabled=${btn.getAttribute('aria-disabled')} `
-            + `visible=${r.width > 0 && r.height > 0} coveredBy=${describe(atPoint)}`;
-    }).catch(() => 'composer state unreadable');
-
     const sendBtn = page.locator('button.msg-form__send-button').first();
+
+    // State BEFORE the click. Read afterwards it is ambiguous: a successful
+    // send also clears the composer and disables Send, so "disabled=true" in a
+    // post-mortem could mean either "never sendable" or "already sent".
+    console.log(`[DELIVER-DM] About to send — ${await describeComposer()}`);
 
     if (await sendBtn.isVisible({ timeout: 10000 }).catch(() => false)) {
         // Same reasoning as connect/comment: force:true suppresses the
