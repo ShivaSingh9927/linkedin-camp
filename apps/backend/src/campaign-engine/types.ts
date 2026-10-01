@@ -189,6 +189,18 @@ export interface IfElseOutput {
     // we do NOT retry — but recorded so the funnel shows "skipped, couldn't
     // confirm" instead of a silent success.
     skipReason?: 'connection_unknown' | 'connection_not_confirmed';
+    /**
+     * Where to pick the chosen branch up again, when a DELAY inside it parked
+     * the lead. Absent once the branch has run to the end.
+     *
+     * The engine parks a lead by writing currentNodeIndex, which can only
+     * address a TOP-LEVEL position — so a wait inside a branch had nowhere to
+     * record itself and simply returned success, firing the rest of the branch
+     * immediately. On 2026-09-30 that turned a 5-day gap between two DMs into
+     * 78 seconds. The engine now parks at the IF_ELSE itself and this says how
+     * far in to resume, so no new index space is needed.
+     */
+    resumeAt?: number;
 }
 
 export interface CheckConnectionOutput {
@@ -311,6 +323,19 @@ export interface NodeResult {
      * in preference to the dispatched type when deciding how to recover.
      */
     failedNode?: NodeType;
+    /**
+     * Park the lead for this many hours and re-enter THIS node on resume.
+     * Set by IF_ELSE when a DELAY inside the chosen branch is reached — the
+     * branch records its own resume position in `output.resumeAt`.
+     */
+    parkHours?: number;
+    /**
+     * Park until this exact moment and re-enter THIS node. Used when a branch
+     * node is held by a per-account cap, where the resume time is a specific
+     * window (tomorrow's working hour, the next burst slot) rather than a
+     * duration. Takes precedence over `parkHours`.
+     */
+    parkUntil?: string;
 }
 
 // ---- Node handler signature ----

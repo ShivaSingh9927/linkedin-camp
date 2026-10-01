@@ -850,6 +850,42 @@ async function runLead(
                     execResult.skipReason = (result.output as any).skipReason;
                 }
 
+                // A wait INSIDE a branch. The branch cannot park itself — the
+                // resume cursor addresses top-level positions only — so it asks
+                // the engine to park at THIS node and records how far into the
+                // branch to resume (output.resumeAt, already persisted above).
+                // Re-entering the IF_ELSE then continues mid-branch instead of
+                // re-running it. Without this the wait returned instantly and
+                // the rest of the branch fired in the same pass: a 5-day gap
+                // between two DMs became 78 seconds on 2026-09-30.
+                if (result.parkHours !== undefined || result.parkUntil !== undefined) {
+                    const nextRetryAt = result.parkUntil
+                        ? new Date(result.parkUntil)
+                        : new Date(Date.now() + (result.parkHours as number) * 60 * 60 * 1000);
+                    // Scheduled resume, not a forced retry — reset
+                    // deferralCount so a long healthy sequence doesn't trip the
+                    // STALLED ceiling. Same treatment as a top-level delay.
+                    // Say which kind of park it was. A branch held by the
+                    // account's daily cap is not the same event as a scheduled
+                    // wait, and the funnel should not show them as one.
+                    const parkReason = result.parkUntil ? 'branch_cap_hold' : 'delay_node';
+                    await transitionLead(campaignId, lead.id, 'DEFERRED', {
+                        reason: parkReason,
+                        nextRetryAt,
+                        currentNodeIndex: i,
+                    }).then(() => prisma.campaignLeadProgress.update({
+                        where: { campaignId_leadId: { campaignId, leadId: lead.id } },
+                        data: { deferralCount: 0 },
+                    })).catch(err => {
+                        console.log(`[ENGINE] Could not update progress for branch delay: ${err}`);
+                    });
+
+                    console.log(`[ENGINE] Lead ${lead.firstName}: parked inside ${nodeType} branch — re-enters node ${i} after ${nextRetryAt.toISOString()}.`);
+                    execResult.status = 'paused';
+                    execResult.pausedReason = 'delay';
+                    return execResult;
+                }
+
             } else {
                 nodeExec.status = 'failed';
                 nodeExec.error = result.error;
