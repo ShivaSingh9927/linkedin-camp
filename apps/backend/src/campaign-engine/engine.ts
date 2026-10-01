@@ -1115,6 +1115,18 @@ export async function runCampaign(
                     communicationStyle: bp.communicationStyle,
                     writingSamples: bp.writingSamples,
                     tonePreferences: bp.tonePreferences,
+                    // What the user is on LinkedIn to DO. The strategy prompts
+                    // have always branched on this; the per-message brand
+                    // context never saw it, so a job seeker's own background
+                    // was labelled "Company Description" and their skills
+                    // "Products/Services" in every prompt.
+                    goalType: bp.goalType,
+                    // Scraped from the user's OWN LinkedIn after login — the
+                    // most authoritative statement of who the account is, and
+                    // it reached no prompt until now. When the typed fields
+                    // contradict each other this is the tiebreaker.
+                    selfHeadline: bp.selfHeadline,
+                    selfProfileSummary: bp.selfProfileSummary,
                 },
             };
             console.log(`[CAMPAIGN] Loaded ai context (strategy=${bp.aiStrategy ? 'yes' : 'no'})`);

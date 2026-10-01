@@ -310,27 +310,62 @@ class SelfProfileRequest(BaseModel):
 
 # ── Helper Functions ─────────────────────────────────────────────────────────
 
+# How the profile fields are named in the prompt, per goal.
+#
+# These fields are a B2B seller's vocabulary, and the labels were hardcoded to
+# match. A job seeker filling in the same form had their own background
+# announced as "Company Description" and their skills as "Products/Services" —
+# so the model was told a final-year student was a company selling DSA and Java.
+# goalType already decides which strategy prompt set runs; it decides the
+# labels here too.
+_FIELD_LABELS = {
+    "sell": {
+        "company": "Your Company",
+        "companyDescription": "Company Description",
+        "products": "Products/Services",
+        "differentiators": "Key Differentiators",
+        "caseStudies": "Case Studies/Results",
+        "valueProp": "Your Company Value Proposition",
+        "persona": "Your Persona/Role",
+    },
+    "job_seeking": {
+        "company": "Where You Study or Work",
+        "companyDescription": "Your Background",
+        "products": "Your Skills",
+        "differentiators": "What Sets You Apart",
+        "caseStudies": "Your Projects and Results",
+        "valueProp": "What You Offer an Employer",
+        "persona": "Your Role",
+    },
+}
+
+
 def get_brand_context(persona: Optional[str], value_prop: Optional[str], user_context: Optional[Dict] = None) -> str:
+    ctx = user_context or {}
+    labels = _FIELD_LABELS.get(str(ctx.get("goalType") or "sell"), _FIELD_LABELS["sell"])
+
     context = ""
-    if user_context and user_context.get("sender_name"):
-        context += f"\nYour Name: {user_context['sender_name']}"
+    if ctx.get("sender_name"):
+        context += f"\nYour Name: {ctx['sender_name']}"
+
+    # Scraped from the user's own LinkedIn, so it outranks anything typed into
+    # a form — and when the typed fields contradict each other, it is the only
+    # statement of identity we can actually trust.
+    if ctx.get("selfHeadline"):
+        context += f"\nYour LinkedIn Headline: {ctx['selfHeadline']}"
+    if ctx.get("selfProfileSummary"):
+        context += f"\nYour LinkedIn Profile Says: {ctx['selfProfileSummary']}"
+
     if persona:
-        context += f"\nYour Persona/Role: {persona}"
+        context += f"\n{labels['persona']}: {persona}"
     if value_prop:
-        context += f"\nYour Company Value Proposition: {value_prop}"
-    if user_context:
-        if user_context.get("company"):
-            context += f"\nYour Company: {user_context['company']}"
-        if user_context.get("companyDescription"):
-            context += f"\nCompany Description: {user_context['companyDescription']}"
-        if user_context.get("products"):
-            context += f"\nProducts/Services: {user_context['products']}"
-        if user_context.get("differentiators"):
-            context += f"\nKey Differentiators: {user_context['differentiators']}"
-        if user_context.get("caseStudies"):
-            context += f"\nCase Studies/Results: {user_context['caseStudies']}"
-        if user_context.get("communicationStyle"):
-            context += f"\nCommunication Style: {user_context['communicationStyle']}"
+        context += f"\n{labels['valueProp']}: {value_prop}"
+
+    for key in ("company", "companyDescription", "products", "differentiators", "caseStudies"):
+        if ctx.get(key):
+            context += f"\n{labels[key]}: {ctx[key]}"
+    if ctx.get("communicationStyle"):
+        context += f"\nCommunication Style: {ctx['communicationStyle']}"
     return context
 
 

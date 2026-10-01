@@ -294,6 +294,11 @@ export interface NodeContext {
             communicationStyle?: string | null;
             writingSamples?: any;
             tonePreferences?: any;
+            /** 'sell' | 'job_seeking' — decides how the fields below are read. */
+            goalType?: string | null;
+            /** From the user's own LinkedIn profile, not typed by them. */
+            selfHeadline?: string | null;
+            selfProfileSummary?: string | null;
         };
     };
 }
