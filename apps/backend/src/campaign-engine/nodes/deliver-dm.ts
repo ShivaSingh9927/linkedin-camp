@@ -18,12 +18,21 @@ async function safeGoto(page: any, url: string, retries = 3) {
 export interface DeliverResult {
     sent: boolean;
     /**
-     * Did we SEE the message land in the thread? `sent: true, verified: false`
-     * means we clicked send and could not confirm — an honest "probably", not a
-     * fact. Deliberately not a failure: a false failure risks re-sending, and a
-     * duplicate DM to a prospect is worse than one we're unsure about.
+     * Did we SEE the message land in the thread? This is now the ONLY evidence
+     * that decides `sent`.
+     *
+     * It used to return `sent: true, verified: false` and call that an honest
+     * "probably", on the reasoning that a false failure risks a duplicate DM.
+     * That reasoning assumed unverified meant "sent but unconfirmed". On
+     * 2026-09-30 two DMs reported sent+unverified and the account owner
+     * confirmed neither had been sent at all — the verifier was right and the
+     * `sent` flag was the lie. The old bubble check was also class-based, so on
+     * LinkedIn's obfuscated build it could never see a real send, which made
+     * "unverified" the permanent state for those accounts rather than a rarity.
      */
     verified?: boolean;
+    /** What the composer looked like when a send could not be confirmed. */
+    diagnostics?: string;
     skipped?: boolean;
     skipReason?: 'not_connected' | 'no_message_ui';
     error?: string;
@@ -201,20 +210,53 @@ export async function deliverDirectMessage(
     // click called plenty of real sends "unverifiable" purely because the thread
     // hadn't re-rendered yet, which is how a genuine signal got written off as
     // noise and the result reported as sent regardless.
-    const bubbleAppeared = async (attempts = 4, gapMs = 2500): Promise<boolean> => {
+    // Search the rendered TEXT, not class-named containers.
+    //
+    // Both selectors here were class-based, and LinkedIn ships an obfuscated
+    // build where those classes do not exist — the same split that made the
+    // comment node unverifiable on rajaji while working on another account. On
+    // that build this check could never return true, so every genuine send was
+    // "unverified" too, and the signal was written off as noise. Matching the
+    // message text anywhere outside the composer works on either build.
+    const bubbleAppeared = async (attempts = 6, gapMs = 2500): Promise<boolean> => {
         for (let i = 0; i < attempts; i++) {
             const seen = await page.evaluate((text: string) => {
-                const msgs = document.querySelectorAll('.msg-s-event-listitem__body, .msg-s-message-list__event');
-                for (const m of msgs) {
-                    if (m.textContent?.includes(text.substring(0, 20))) return true;
-                }
-                return false;
+                const needle = text.substring(0, 40);
+                const body = (document.body as any)?.innerText || '';
+                // The draft is still sitting in the composer, so a naive page
+                // match would always succeed. Cut the composer's own text out.
+                const composer = document.querySelector(
+                    'div.msg-form__contenteditable[contenteditable="true"], '
+                    + 'div[role="textbox"][aria-label^="Write a message"]',
+                );
+                const draft = (composer as any)?.innerText || '';
+                const outside = draft ? body.split(draft).join(' ') : body;
+                return outside.includes(needle);
             }, messageText).catch(() => false);
             if (seen) return true;
             if (i < attempts - 1) await wait(gapMs);
         }
         return false;
     };
+
+    // What the composer looked like when a send could not be confirmed.
+    // "Send click refused (Timeout)" alone could not say whether the button was
+    // disabled, covered by an overlay, or simply absent — and the worker log
+    // holding it is gone after a container recreate. Carried back on the result
+    // so it reaches ActionLog and survives.
+    const describeComposer = async (): Promise<string> => page.evaluate(() => {
+        const btn = document.querySelector('button.msg-form__send-button')
+            || Array.from(document.querySelectorAll('button')).find(
+                (b) => (b.textContent || '').trim().toLowerCase() === 'send');
+        if (!btn) return 'send button: absent';
+        const r = btn.getBoundingClientRect();
+        const atPoint = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        const describe = (el: Element | null) => el
+            ? `${el.tagName.toLowerCase()}${el.getAttribute('aria-label') ? `[${el.getAttribute('aria-label')}]` : ''}`
+            : 'nothing';
+        return `send button: disabled=${(btn as any).disabled} aria-disabled=${btn.getAttribute('aria-disabled')} `
+            + `visible=${r.width > 0 && r.height > 0} coveredBy=${describe(atPoint)}`;
+    }).catch(() => 'composer state unreadable');
 
     const sendBtn = page.locator('button.msg-form__send-button').first();
 
@@ -233,10 +275,13 @@ export async function deliverDirectMessage(
         await wait(2500);
 
         const verified = await bubbleAppeared();
-        console.log(verified
-            ? '[DELIVER-DM] Message verified in chat.'
-            : '[DELIVER-DM] Send clicked but bubble never appeared (UNVERIFIED — may not have sent).');
-        return { sent: true, verified };
+        if (verified) {
+            console.log('[DELIVER-DM] Message verified in chat.');
+            return { sent: true, verified: true };
+        }
+        const diagnostics = await describeComposer();
+        console.log(`[DELIVER-DM] Send clicked but the message never appeared in the thread. ${diagnostics}`);
+        return { sent: false, verified: false, diagnostics, error: `Message did not appear after send. ${diagnostics}` };
     }
 
     // Enter fallback. This used to press Enter and return sent:true with no
@@ -246,9 +291,11 @@ export async function deliverDirectMessage(
     // as the button path.
     await page.keyboard.press('Enter');
     await wait(2500);
-    const verifiedViaEnter = await bubbleAppeared();
-    console.log(verifiedViaEnter
-        ? '[DELIVER-DM] Message verified in chat (sent via Enter).'
-        : '[DELIVER-DM] Enter pressed but bubble never appeared (UNVERIFIED — may not have sent).');
-    return { sent: true, verified: verifiedViaEnter };
+    if (await bubbleAppeared()) {
+        console.log('[DELIVER-DM] Message verified in chat (sent via Enter).');
+        return { sent: true, verified: true };
+    }
+    const enterDiag = await describeComposer();
+    console.log(`[DELIVER-DM] Enter pressed but the message never appeared in the thread. ${enterDiag}`);
+    return { sent: false, verified: false, diagnostics: enterDiag, error: `Message did not appear after Enter. ${enterDiag}` };
 }

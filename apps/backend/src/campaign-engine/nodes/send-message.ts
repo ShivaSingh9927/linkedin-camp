@@ -126,14 +126,12 @@ export const sendMessage: NodeHandler = async (ctx, config): Promise<NodeResult>
             return { success: false, error: deliver.error };
         }
         output.sent = deliver.sent;
-        // Carry the evidence through so the Messages tab / ActionLog can show
-        // "sent but unconfirmed" rather than presenting a guess as a fact.
+        // `sent` now means the message was SEEN in the thread. There is no
+        // longer a sent-but-unconfirmed state: the delivery path returns an
+        // error when it cannot confirm, which the branch above already took.
         (output as any).verified = deliver.verified === true;
         if (!deliver.sent) {
             return { success: false, error: 'Message was not sent' };
-        }
-        if (deliver.verified !== true) {
-            console.log('[SEND-MESSAGE] Delivered but UNVERIFIED — could not confirm the message in the thread.');
         }
         return { success: true, output };
 
