@@ -46,68 +46,45 @@ export const follow: NodeHandler = async (ctx): Promise<NodeResult> => {
             return { success: false, error: `Session invalid. Redirected to: ${url}` };
         }
 
-        // Already following? LinkedIn flips the button to "Following".
+        // Match the control by the LEAD'S OWN NAME, from its aria-label.
+        //
+        // Every previous selector searched the whole page for the word
+        // "Follow", so on a profile that embeds someone else's post it could
+        // match THAT author's Follow button — and on a profile with a video it
+        // matched the player's controls and opened the player's menu looking
+        // for a follow item (probed 2026-10-06: the only "More" controls were
+        // inside div[role="toolbar"], and the menu offered subtitle settings).
+        // So a "Following (verified)" could not be attributed to anyone in
+        // particular.
+        //
+        // LinkedIn labels these controls with the person: "Follow Sachin
+        // Raghav", "Unfollow <name>". The name is the one anchor that is both
+        // build-agnostic — the obfuscated build has none of the top-card
+        // classes, all of which probed as absent — and target-specific.
+        const fullName = `${lead.firstName || ''} ${lead.lastName || ''}`.trim();
+        if (!fullName) {
+            return { success: false, error: 'Lead has no name to match the Follow control against' };
+        }
+        const esc = fullName.replace(/"/g, '\\"');
+
+        // Already following? The control inverts to Unfollow / Stop following
+        // FOR THIS PERSON.
         const followingIndicator = page.locator(
-            'button[aria-label^="Stop following"], ' +
-            'button[aria-label^="Unfollow"], ' +
-            'button:has(span:text-is("Following"))'
+            `button[aria-label="Unfollow ${esc}"], button[aria-label="Stop following ${esc}"], `
+            + `[role="menuitem"][aria-label="Unfollow ${esc}"]`
         ).first();
-        if (await followingIndicator.isVisible({ timeout: 2000 }).catch(() => false)) {
-            console.log('[FOLLOW] Already following — skipping.');
+        if (await followingIndicator.isVisible({ timeout: 2500 }).catch(() => false)) {
+            console.log(`[FOLLOW] Already following ${fullName} — leaving it alone.`);
             return { success: true, output: { followed: false, alreadyFollowing: true } };
         }
 
-        // Try the direct Follow button first (primary or secondary slot).
-        // aria-label^="Follow" already excludes "Unfollow" (prefix match), and
-        // text-is is exact — neither can match the unfollow control. Spelled
-        // out because the More-menu fallback below used :has-text and did.
-        let followBtn = page.locator(
-            'button[aria-label^="Follow"]:not([aria-label*="Following"]):not([aria-label*="hashtag"]), ' +
-            'button:has(span:text-is("Follow"))'
+        // The Follow control for THIS lead.
+        const followBtn = page.locator(
+            `button[aria-label="Follow ${esc}"], a[role="button"][aria-label="Follow ${esc}"]`
         ).first();
 
         if (!(await followBtn.isVisible({ timeout: 5000 }).catch(() => false))) {
-            // Fall back to the More menu.
-            console.log('[FOLLOW] No primary Follow button — trying More menu.');
-            const moreBtn = page.locator(
-                'button:has(span:text-is("More")), button[aria-label^="More"]'
-            ).first();
-            if (await moreBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-                await moreBtn.click({ timeout: 5000 }).catch(async () => {
-                    await moreBtn.click({ force: true }).catch(() => {});
-                });
-                await wait(randomRange(1500, 2500));
-
-                // ALREADY FOLLOWING, seen from inside the menu.
-                //
-                // The primary-button check above misses profiles where
-                // LinkedIn puts the follow state only in this menu, and
-                // :has-text("Follow") is a SUBSTRING match that happily
-                // matches "Unfollow". So on someone we already followed, the
-                // menu offered Unfollow, we matched it, clicked it, and
-                // unfollowed them — then reported failure because the
-                // Following indicator was, correctly, gone. Same shape as the
-                // /liked/ regex that was quietly un-liking posts.
-                const unfollowItem = page.locator(
-                    '[role="menuitem"]:has-text("Unfollow"), [role="menuitem"]:has-text("Stop following"), '
-                    + '.artdeco-dropdown__item:has-text("Unfollow"), .artdeco-dropdown__item:has-text("Stop following")'
-                ).first();
-                if (await unfollowItem.isVisible({ timeout: 2000 }).catch(() => false)) {
-                    console.log('[FOLLOW] Already following (Unfollow offered in the More menu) — leaving it alone.');
-                    await page.keyboard.press('Escape').catch(() => {});
-                    return { success: true, output: { followed: false, alreadyFollowing: true } };
-                }
-
-                // Exact label only. "Follow" must not match "Unfollow".
-                followBtn = page.locator(
-                    '[role="menuitem"]:has(span:text-is("Follow")), [role="menuitem"][aria-label^="Follow"], '
-                    + '.artdeco-dropdown__item:has(span:text-is("Follow"))'
-                ).first();
-            }
-        }
-
-        if (!(await followBtn.isVisible({ timeout: 5000 }).catch(() => false))) {
-            return { success: false, error: 'Follow button not found on profile' };
+            return { success: false, error: `No Follow control for ${fullName} on this profile (already a connection, or LinkedIn offers none)` };
         }
 
         // A REAL click, not el.click() dispatched through evaluate.
@@ -126,11 +103,12 @@ export const follow: NodeHandler = async (ctx): Promise<NodeResult> => {
         });
         await wait(randomRange(2000, 3500));
 
-        // Verify — LinkedIn swaps the button to "Following". Polled, because a
-        // single look right after the click reported "never appeared" for
-        // actions that had simply not repainted yet.
+        // Verify against THIS lead's control, for the same reason the lookup
+        // is name-scoped: a page-wide "Following" could belong to anyone.
+        // Polled, because a single look right after the click reported
+        // "never appeared" for actions that had simply not repainted yet.
         const followingNow = async (): Promise<boolean> => page.locator(
-            'button[aria-label^="Stop following"], button[aria-label^="Unfollow"], button:has(span:text-is("Following"))'
+            `button[aria-label="Unfollow ${esc}"], button[aria-label="Stop following ${esc}"]`
         ).first().isVisible({ timeout: 2500 }).catch(() => false);
 
         let confirmed = false;
@@ -154,7 +132,7 @@ export const follow: NodeHandler = async (ctx): Promise<NodeResult> => {
             return { success: false, error: `Follow did not register (forced=${forced})` };
         }
 
-        console.log('[FOLLOW] Following (verified).');
+        console.log(`[FOLLOW] Following ${fullName} (verified).`);
         return { success: true, output: { followed: true, verified: true, alreadyFollowing: false } };
     } catch (err: any) {
         return { success: false, error: err.message };
