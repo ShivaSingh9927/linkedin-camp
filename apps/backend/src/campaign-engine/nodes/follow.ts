@@ -111,10 +111,27 @@ export const follow: NodeHandler = async (ctx): Promise<NodeResult> => {
             `button[aria-label="Unfollow ${esc}"], button[aria-label="Stop following ${esc}"]`
         ).first().isVisible({ timeout: 2500 }).catch(() => false);
 
+        // The Follow control for this lead should no longer be offered.
+        //
+        // Positive confirmation would be an "Unfollow <name>" control, and on
+        // the semantic build that is what appears. This build renders neither
+        // that nor a "Following" label anywhere we can find: probed on
+        // 2026-10-06 after a real follow, "Follow Sachin Raghav" had simply
+        // vanished and nothing named him replaced it. So accept EITHER signal
+        // — the inverse control appearing, or the Follow control for THIS
+        // PERSON disappearing. Both are state changes tied to the right
+        // target, which is what the old page-wide "something says Following"
+        // check never was.
+        const followOfferStillThere = async (): Promise<boolean> =>
+            page.locator(`button[aria-label="Follow ${esc}"], a[role="button"][aria-label="Follow ${esc}"]`)
+                .first().isVisible({ timeout: 2000 }).catch(() => false);
+
         let confirmed = false;
+        let how = '';
         for (let attempt = 0; attempt < 4 && !confirmed; attempt++) {
-            confirmed = await followingNow();
-            if (!confirmed) await wait(1500);
+            if (await followingNow()) { confirmed = true; how = 'Unfollow control appeared'; break; }
+            if (!(await followOfferStillThere())) { confirmed = true; how = 'Follow control no longer offered'; break; }
+            await wait(1500);
         }
 
         if (!confirmed) {
@@ -129,10 +146,10 @@ export const follow: NodeHandler = async (ctx): Promise<NodeResult> => {
             // Safe to fail: the already-following check above runs first, so a
             // later retry skips rather than following twice.
             console.log(`[FOLLOW] Clicked but the Following indicator never appeared (forced=${forced}) — reporting failure.`);
-            return { success: false, error: `Follow did not register (forced=${forced})` };
+            return { success: false, error: `Follow did not register for ${fullName} — the Follow control is still being offered (forced=${forced})` };
         }
 
-        console.log(`[FOLLOW] Following ${fullName} (verified).`);
+        console.log(`[FOLLOW] Following ${fullName} (verified: ${how}).`);
         return { success: true, output: { followed: true, verified: true, alreadyFollowing: false } };
     } catch (err: any) {
         return { success: false, error: err.message };
