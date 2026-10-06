@@ -170,16 +170,49 @@ export const likeNthPost: NodeHandler = async (ctx, config): Promise<NodeResult>
         }
 
         await likeBtn.scrollIntoViewIfNeeded().catch(() => {});
-        await likeBtn.click({ force: true });
-        await wait(2500);
+
+        // What sits on top of the button, if anything. force:true suppresses
+        // the "covered by another element" error, which is how an intercepted
+        // click passes for a real one — and the messaging overlay docks in the
+        // bottom-right corner, exactly where a post's action bar can end up.
+        const describeLike = async (): Promise<string> => likeBtn.evaluate((btn: any) => {
+            const r = btn.getBoundingClientRect();
+            const at = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+            const describe = (el: Element | null) => el
+                ? `${el.tagName.toLowerCase()}${el.getAttribute('aria-label') ? `[${el.getAttribute('aria-label')}]` : ''}`
+                : 'nothing';
+            const covered = at && !btn.contains(at) && at !== btn;
+            return `visible=${r.width > 0 && r.height > 0} inViewport=${r.top >= 0 && r.bottom <= innerHeight} `
+                + `covered=${covered} by=${describe(at)}`;
+        }).catch(() => 'button state unreadable');
+
+        // An ordinary click first: a refusal tells us the control is not
+        // actionable, which is information. Only then force it.
+        let forced = false;
+        await likeBtn.click({ timeout: 6000 }).catch(async (e: any) => {
+            console.log(`[LIKE-NTH-POST] Click refused (${(e?.message || '').split('\n')[0]}) — ${await describeLike()}. Retrying forced.`);
+            forced = true;
+            await likeBtn.click({ force: true }).catch(() => {});
+        });
+
+        // Poll for the state change. LinkedIn repaints the reaction control
+        // asynchronously, and a single read 2.5s later called real likes
+        // failures — the same impatience that made the comment check
+        // unreliable. Still requires the post to end up LIKED.
+        let after = '';
+        for (let attempt = 0; attempt < 5; attempt++) {
+            await wait(attempt === 0 ? 2000 : 1500);
+            after = await readState();
+            if (isLiked(after)) break;
+        }
 
         // Success means the post ends up LIKED — not merely that something
         // changed. A bare change test called an un-like a success, which is how
         // this node removed a real like and reported it as verified.
-        const after = await readState();
         if (!isLiked(after)) {
-            console.log(`[LIKE-NTH-POST] Post is not liked after clicking ("${before}" → "${after}") — reporting failure.`);
-            return { success: false, error: 'Like did not register' };
+            const why = await describeLike();
+            console.log(`[LIKE-NTH-POST] Post is not liked after clicking ("${before}" → "${after}", forced=${forced}) — ${why}`);
+            return { success: false, error: `Like did not register ("${before}" → "${after}", forced=${forced}). ${why}` };
         }
         output.liked = true;
         (output as any).verified = true;
