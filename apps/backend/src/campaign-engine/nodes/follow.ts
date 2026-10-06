@@ -83,25 +83,52 @@ export const follow: NodeHandler = async (ctx): Promise<NodeResult> => {
             return { success: false, error: 'Follow button not found on profile' };
         }
 
-        await followBtn.evaluate((el: any) => el.click());
-        console.log('[FOLLOW] Follow button clicked.');
+        // A REAL click, not el.click() dispatched through evaluate.
+        //
+        // An evaluate-dispatched click is untrusted, and LinkedIn's handlers
+        // are documented elsewhere in this engine as ignoring those in favour
+        // of a trusted one. An ordinary Playwright click also enforces
+        // actionability, so a control that is covered or disabled reports that
+        // instead of silently absorbing the click.
+        await followBtn.scrollIntoViewIfNeeded().catch(() => {});
+        let forced = false;
+        await followBtn.click({ timeout: 6000 }).catch(async (e: any) => {
+            console.log(`[FOLLOW] Click refused (${(e?.message || '').split('\n')[0]}) — retrying forced.`);
+            forced = true;
+            await followBtn.click({ force: true }).catch(() => {});
+        });
         await wait(randomRange(2000, 3500));
 
-        // Verify — LinkedIn swaps the button text to "Following".
-        const confirmed = await page.locator(
-            'button[aria-label^="Stop following"], button:has(span:text-is("Following"))'
-        ).first().isVisible({ timeout: 4000 }).catch(() => false);
+        // Verify — LinkedIn swaps the button to "Following". Polled, because a
+        // single look right after the click reported "never appeared" for
+        // actions that had simply not repainted yet.
+        const followingNow = async (): Promise<boolean> => page.locator(
+            'button[aria-label^="Stop following"], button[aria-label^="Unfollow"], button:has(span:text-is("Following"))'
+        ).first().isVisible({ timeout: 2500 }).catch(() => false);
 
-        if (!confirmed) {
-            // Still not a hard failure — LinkedIn does lazy-render the swap, and
-            // failing here would re-follow someone we may already follow. But the
-            // uncertainty is now recorded instead of being flattened into a
-            // confident "followed", which is the pattern that let unsent
-            // comments and invites report success across the engine.
-            console.log('[FOLLOW] Clicked but Following indicator never appeared (UNVERIFIED — may not have registered).');
+        let confirmed = false;
+        for (let attempt = 0; attempt < 4 && !confirmed; attempt++) {
+            confirmed = await followingNow();
+            if (!confirmed) await wait(1500);
         }
 
-        return { success: true, output: { followed: true, verified: confirmed, alreadyFollowing: false } };
+        if (!confirmed) {
+            // An unverified follow is a FAILURE, not a confident "followed".
+            //
+            // This used to return success:true, followed:true regardless — the
+            // comment here even named the pattern that let unsent comments and
+            // invites report success, and then repeated it. So the node's 29/0
+            // record counted clicks, not follows, and some of those 29 may
+            // never have registered.
+            //
+            // Safe to fail: the already-following check above runs first, so a
+            // later retry skips rather than following twice.
+            console.log(`[FOLLOW] Clicked but the Following indicator never appeared (forced=${forced}) — reporting failure.`);
+            return { success: false, error: `Follow did not register (forced=${forced})` };
+        }
+
+        console.log('[FOLLOW] Following (verified).');
+        return { success: true, output: { followed: true, verified: true, alreadyFollowing: false } };
     } catch (err: any) {
         return { success: false, error: err.message };
     }
