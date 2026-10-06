@@ -84,7 +84,22 @@ export const follow: NodeHandler = async (ctx): Promise<NodeResult> => {
         ).first();
 
         if (!(await followBtn.isVisible({ timeout: 5000 }).catch(() => false))) {
-            return { success: false, error: `No Follow control for ${fullName} on this profile (already a connection, or LinkedIn offers none)` };
+            // No Follow control is NOT a failure — there is simply no follow
+            // action to take. Either we already follow them (this build
+            // renders no "Unfollow <name>" for the check above to find), or
+            // LinkedIn offers none at all, which is the normal case for a
+            // 1st-degree connection since connections are followed
+            // automatically. Reporting FAILED here marked a correct no-op as
+            // a broken node on every second pass.
+            //
+            // Guard against calling a blank page a skip: a profile that
+            // rendered has controls on it.
+            const rendered = await page.locator('main button').count().catch(() => 0);
+            if (!rendered) {
+                return { success: false, error: `Profile did not render any controls for ${fullName}` };
+            }
+            console.log(`[FOLLOW] No Follow control for ${fullName} — nothing to do (already following, or LinkedIn offers none).`);
+            return { success: true, output: { followed: false, alreadyFollowing: true, skipReason: 'no_follow_control' } };
         }
 
         // A REAL click, not el.click() dispatched through evaluate.
