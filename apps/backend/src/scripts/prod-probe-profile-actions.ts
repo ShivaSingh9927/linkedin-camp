@@ -25,17 +25,38 @@ async function main() {
         await wait(9000);
         console.log('url:', page.url());
 
-        const bar = await page.evaluate(() => {
-            const btns = Array.from(document.querySelectorAll('main button, main a[role="button"]'));
-            return btns.slice(0, 20).map((b: any) => ({
-                text: (b.textContent || '').trim().slice(0, 30),
-                aria: b.getAttribute('aria-label') || '',
-            })).filter(x => x.text || x.aria);
+        // Which container actually holds the profile's OWN action bar? The
+        // node searched the whole page, so it matched embedded post authors
+        // and a video player's controls.
+        const scopes = await page.evaluate(() => {
+            const candidates = [
+                '.pvs-profile-actions',
+                '.pv-top-card-v2-ctas',
+                '.ph5.pb5',
+                'main section:first-of-type',
+                '[data-view-name="profile-top-card"]',
+                'main .artdeco-card:first-of-type',
+            ];
+            return candidates.map((sel) => {
+                const el = document.querySelector(sel);
+                if (!el) return { sel, found: false, buttons: [] as any[] };
+                const buttons = Array.from(el.querySelectorAll('button, a[role="button"]'))
+                    .slice(0, 10)
+                    .map((b: any) => ({ text: (b.textContent || '').trim().slice(0, 28), aria: b.getAttribute('aria-label') || '' }))
+                    .filter((x) => x.text || x.aria);
+                return { sel, found: true, buttons };
+            });
         });
-        console.log('\n--- action-bar controls');
-        bar.forEach((b: any) => console.log(`   text="${b.text}"  aria="${b.aria}"`));
+        console.log('\n--- candidate scopes for the profile action bar');
+        for (const s of scopes as any[]) {
+            console.log(`  ${s.sel}  found=${s.found}`);
+            for (const b of s.buttons) console.log(`      text="${b.text}"  aria="${b.aria}"`);
+        }
 
-        const more = page.locator('button:has(span:text-is("More")), button[aria-label^="More"]').first();
+        const topCard = page.locator('.pvs-profile-actions, .pv-top-card-v2-ctas, [data-view-name="profile-top-card"]').first();
+        const hasTop = (await topCard.count().catch(() => 0)) > 0;
+        console.log(`\nprofile action container present: ${hasTop}`);
+        const more = (hasTop ? topCard : page).locator('button:has(span:text-is("More")), button[aria-label^="More"]').first();
         if (await more.isVisible({ timeout: 4000 }).catch(() => false)) {
             await more.click({ timeout: 5000 }).catch(() => more.click({ force: true }));
             await wait(2500);
