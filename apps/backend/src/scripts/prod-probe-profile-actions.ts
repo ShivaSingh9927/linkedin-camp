@@ -29,13 +29,17 @@ async function main() {
         // is useless on the obfuscated build, so the question is what ANCESTOR
         // marks a control as belonging to an embedded post or a media player —
         // i.e. what to exclude, rather than what to scope into.
+        await page.evaluate((n: string) => { (window as any).__QNAME__ = n; }, process.env.QNAME || '').catch(() => {});
         const controls = await page.evaluate(() => {
             const want = /^(follow|following|unfollow|message|connect|more)$/i;
+            const nameNeedle = (window as any).__QNAME__ ? String((window as any).__QNAME__).toLowerCase() : '';
             const out: any[] = [];
             for (const b of Array.from(document.querySelectorAll('button, a[role="button"]'))) {
                 const text = (b.textContent || '').trim();
                 const aria = b.getAttribute('aria-label') || '';
-                if (!want.test(text) && !/^(follow|message|connect|more)/i.test(aria)) continue;
+                const mentionsLead = nameNeedle
+                    && (text.toLowerCase().includes(nameNeedle) || aria.toLowerCase().includes(nameNeedle));
+                if (!want.test(text) && !/^(follow|message|connect|more)/i.test(aria) && !mentionsLead) continue;
                 const chain: string[] = [];
                 let n: any = b;
                 for (let i = 0; i < 8 && n; i++) {
@@ -48,7 +52,7 @@ async function main() {
                     chain.push(`${n.tagName.toLowerCase()}${data ? '{' + data + '}' : ''}`);
                 }
                 out.push({ text: text.slice(0, 24), aria: aria.slice(0, 40), chain: chain.join(' < ') });
-                if (out.length >= 10) break;
+                if (out.length >= 16) break;
             }
             return out;
         });
