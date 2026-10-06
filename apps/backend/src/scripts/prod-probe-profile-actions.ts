@@ -25,32 +25,37 @@ async function main() {
         await wait(9000);
         console.log('url:', page.url());
 
-        // Which container actually holds the profile's OWN action bar? The
-        // node searched the whole page, so it matched embedded post authors
-        // and a video player's controls.
-        const scopes = await page.evaluate(() => {
-            const candidates = [
-                '.pvs-profile-actions',
-                '.pv-top-card-v2-ctas',
-                '.ph5.pb5',
-                'main section:first-of-type',
-                '[data-view-name="profile-top-card"]',
-                'main .artdeco-card:first-of-type',
-            ];
-            return candidates.map((sel) => {
-                const el = document.querySelector(sel);
-                if (!el) return { sel, found: false, buttons: [] as any[] };
-                const buttons = Array.from(el.querySelectorAll('button, a[role="button"]'))
-                    .slice(0, 10)
-                    .map((b: any) => ({ text: (b.textContent || '').trim().slice(0, 28), aria: b.getAttribute('aria-label') || '' }))
-                    .filter((x) => x.text || x.aria);
-                return { sel, found: true, buttons };
-            });
+        // Where does each candidate control actually live? Class-based scoping
+        // is useless on the obfuscated build, so the question is what ANCESTOR
+        // marks a control as belonging to an embedded post or a media player —
+        // i.e. what to exclude, rather than what to scope into.
+        const controls = await page.evaluate(() => {
+            const want = /^(follow|following|unfollow|message|connect|more)$/i;
+            const out: any[] = [];
+            for (const b of Array.from(document.querySelectorAll('button, a[role="button"]'))) {
+                const text = (b.textContent || '').trim();
+                const aria = b.getAttribute('aria-label') || '';
+                if (!want.test(text) && !/^(follow|message|connect|more)/i.test(aria)) continue;
+                const chain: string[] = [];
+                let n: any = b;
+                for (let i = 0; i < 8 && n; i++) {
+                    n = n.parentElement;
+                    if (!n) break;
+                    const data = Array.from(n.attributes || [])
+                        .filter((a: any) => a.name.startsWith('data-') || a.name === 'role')
+                        .map((a: any) => `${a.name}=${String(a.value).slice(0, 34)}`)
+                        .join(' ');
+                    chain.push(`${n.tagName.toLowerCase()}${data ? '{' + data + '}' : ''}`);
+                }
+                out.push({ text: text.slice(0, 24), aria: aria.slice(0, 40), chain: chain.join(' < ') });
+                if (out.length >= 10) break;
+            }
+            return out;
         });
-        console.log('\n--- candidate scopes for the profile action bar');
-        for (const s of scopes as any[]) {
-            console.log(`  ${s.sel}  found=${s.found}`);
-            for (const b of s.buttons) console.log(`      text="${b.text}"  aria="${b.aria}"`);
+        console.log('\n--- candidate controls and where they live');
+        for (const c of controls as any[]) {
+            console.log(`  text="${c.text}" aria="${c.aria}"`);
+            console.log(`      ${c.chain}`);
         }
 
         const topCard = page.locator('.pvs-profile-actions, .pv-top-card-v2-ctas, [data-view-name="profile-top-card"]').first();
