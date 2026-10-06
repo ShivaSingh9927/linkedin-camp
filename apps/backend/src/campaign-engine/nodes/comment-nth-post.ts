@@ -21,6 +21,10 @@ async function safeGoto(page: any, url: string, retries = 3) {
     }
 }
 
+
+/** Whitespace-insensitive comparison: a contenteditable renders its own breaks. */
+const flatten = (v: string) => v.replace(/\s+/g, ' ').trim();
+
 export const commentNthPost: NodeHandler = async (ctx, config): Promise<NodeResult> => {
     const { page, lead, storedOutputs, campaign, aiContext, userId } = ctx;
     const n = config.n || 1;
@@ -174,11 +178,45 @@ export const commentNthPost: NodeHandler = async (ctx, config): Promise<NodeResu
 
         if (await commentBox.isVisible({ timeout: 5000 }).catch(() => false)) {
             await commentBox.scrollIntoViewIfNeeded();
-            await commentBox.click({ force: true });
-            await wait(1000);
 
-            // Type the comment
-            await page.keyboard.type(commentText, { delay: randomRange(30, 60) });
+            // Focus the editor, and CHECK that focus landed.
+            //
+            // This was click({ force: true }), which skips Playwright's
+            // actionability checks — so when anything overlays the composer the
+            // click goes to the overlay, focus never reaches the editor, and
+            // every keystroke after it lands in the page body. The identical
+            // bug in the DM path left the Send button disabled and produced
+            // "Comment did not appear after submit" with no explanation; it
+            // accounts for 8 of this node's recorded failures.
+            await commentBox.click({ timeout: 5000 }).catch(async (e: any) => {
+                console.log(`[COMMENT-NTH-POST] Editor click refused (${(e?.message || '').split('\n')[0]}) — focusing directly.`);
+                await commentBox.evaluate((el: any) => el.focus()).catch(() => {});
+            });
+            await wait(800);
+            let focused = await commentBox.evaluate((el: any) => document.activeElement === el
+                || el.contains(document.activeElement)).catch(() => false);
+            if (!focused) {
+                await commentBox.evaluate((el: any) => el.focus()).catch(() => {});
+                await wait(500);
+                focused = await commentBox.evaluate((el: any) => document.activeElement === el
+                    || el.contains(document.activeElement)).catch(() => false);
+            }
+            if (!focused) {
+                console.log('[COMMENT-NTH-POST] Editor never took focus — not typing into the void.');
+                return { success: false, error: 'Comment editor could not be focused' };
+            }
+
+            // Type line by line. A bare Enter submits a comment on LinkedIn, so
+            // a multi-line comment typed straight through would post its first
+            // line and leave the rest behind.
+            const commentLines = commentText.split('\n');
+            for (let li = 0; li < commentLines.length; li++) {
+                await page.keyboard.type(commentLines[li], { delay: randomRange(30, 60) });
+                if (li < commentLines.length - 1) {
+                    await page.keyboard.press('Shift+Enter');
+                    await wait(randomRange(120, 240));
+                }
+            }
             await wait(randomRange(1500, 2500));
 
             // Nudge the editor's React state WITHOUT leaving it. The old code
@@ -205,6 +243,17 @@ export const commentNthPost: NodeHandler = async (ctx, config): Promise<NodeResu
             // dispatches the click to the element itself, so nothing needs that
             // region to be clear.
 
+            // The comment must be IN the editor before we look for Submit. If it
+            // is not, the keystrokes went elsewhere and Submit stays disabled —
+            // clicking it then yields "Comment did not appear after submit",
+            // which describes the symptom and hides the cause.
+            const typedComment = await commentBox.evaluate((el: any) => (el.innerText || el.textContent || '').trim())
+                .catch(() => '');
+            if (!flatten(typedComment).includes(flatten(commentText).substring(0, 30))) {
+                console.log(`[COMMENT-NTH-POST] Editor holds ${typedComment.length} chars but not our comment — the keystrokes did not land.`);
+                return { success: false, error: `Comment text never reached the editor (held ${typedComment.length} chars)` };
+            }
+
             const commentForm = page
                 .locator('form.comments-comment-box__form, div.comments-comment-box, div[class*="comments-comment-box"]')
                 .first();
@@ -230,18 +279,49 @@ export const commentNthPost: NodeHandler = async (ctx, config): Promise<NodeResu
             // goes through Playwright: the working test script notes React's form
             // handler accepts a trusted click and ignores evaluate()-dispatched
             // ones.
+            // State BEFORE the click. Read afterwards it is ambiguous: a
+            // successful submit clears the editor and disables the button too.
+            const describeSubmit = async (): Promise<string> => page.evaluate(() => {
+                const btn = document.querySelector('[data-qampi-submit="1"]')
+                    || Array.from(document.querySelectorAll('button')).find(
+                        (b) => ['comment', 'post', 'reply'].includes((b.textContent || '').trim().toLowerCase()));
+                const ed = document.querySelector('div.tiptap.ProseMirror[contenteditable="true"], div[role="textbox"][aria-label*="Add a comment"]');
+                const held = ((ed as any)?.innerText || '').trim().length;
+                if (!btn) return `submit: absent  editorChars=${held}`;
+                const r = btn.getBoundingClientRect();
+                const at = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+                return `submit: disabled=${(btn as any).disabled} visible=${r.width > 0 && r.height > 0} `
+                    + `coveredBy=${at ? at.tagName.toLowerCase() : 'nothing'} editorChars=${held}`;
+            }).catch(() => 'composer state unreadable');
+
             const MARK = 'data-qampi-submit';
-            const located = await page.evaluate((mark: string) => {
-                const editor = document.querySelector(
+            const located = await page.evaluate(({ mark, draft }: { mark: string; draft: string }) => {
+                // The editor holding OUR text, not merely the first on the
+                // page. A reshare renders more than one comment box, and
+                // resolving the submit from the wrong one is how the click
+                // went to a composer we had never typed into.
+                const editors = Array.from(document.querySelectorAll(
                     'div.tiptap.ProseMirror[contenteditable="true"], '
                     + 'div[role="textbox"][aria-label*="Add a comment"], '
                     + 'div[data-placeholder*="Add a comment"]',
-                );
+                ));
+                const flat = (v: string) => v.replace(/\s+/g, ' ').trim();
+                const want = flat(draft).substring(0, 30);
+                const editor = editors.find((e) => flat((e as any).innerText || '').includes(want))
+                    || editors[0];
                 if (!editor) return 'no-editor';
                 document.querySelectorAll(`[${mark}]`).forEach((e) => e.removeAttribute(mark));
 
                 let node: any = editor;
-                for (let depth = 0; depth < 8 && node; depth++) {
+                // A reshare nests the composer deeper than an original post:
+                // the embedded post sits inside the reshare wrapper, adding
+                // levels between the editor and the container that holds its
+                // submit. Eight was enough for an original post and not for a
+                // reshare — "Comment submit button not found" on Dharmender's
+                // reposted job ad, 2026-09-25. Walking further costs nothing:
+                // the loop stops at the first ancestor that has a submit, so a
+                // shallow layout still matches at the same depth it always did.
+                for (let depth = 0; depth < 16 && node; depth++) {
                     node = node.parentElement;
                     if (!node) break;
                     const btn = Array.from(node.querySelectorAll('button')).find((b: any) => {
@@ -254,7 +334,7 @@ export const commentNthPost: NodeHandler = async (ctx, config): Promise<NodeResu
                     if (btn) { (btn as any).setAttribute(mark, '1'); return 'found'; }
                 }
                 return 'no-button';
-            }, MARK).catch(() => 'error');
+            }, { mark: MARK, draft: commentText }).catch(() => 'error');
 
             let submitBtn: any = null;
             if (located === 'found') {
@@ -281,6 +361,8 @@ export const commentNthPost: NodeHandler = async (ctx, config): Promise<NodeResu
                 console.log(`[COMMENT-NTH-POST] No submit button matched. Buttons in composer: ${JSON.stringify(candidates)}`);
                 return { success: false, error: 'Comment submit button not found' };
             }
+
+            console.log(`[COMMENT-NTH-POST] About to submit — ${await describeSubmit()}`);
 
             // Captured with the comment typed and the button about to be
             // clicked — this frame is what shows whether the draft actually
@@ -358,14 +440,15 @@ export const commentNthPost: NodeHandler = async (ctx, config): Promise<NodeResu
                 // distinctive enough that its presence in the page text is sound
                 // evidence.
                 commentAppeared = await page.evaluate((text: string) => {
-                    const needle = text.substring(0, 40);
-                    const body = (document.body as any)?.innerText || '';
+                    const flat = (v: string) => v.replace(/\s+/g, ' ').trim();
+                    const needle = flat(text).substring(0, 40);
+                    const body = flat((document.body as any)?.innerText || '');
                     // Exclude the editor itself — the draft is still sitting in
                     // it, so a naive page-text match would always succeed.
                     const editor = document.querySelector(
                         'div.tiptap.ProseMirror[contenteditable="true"], div[role="textbox"][aria-label*="Add a comment"]',
                     );
-                    const draft = (editor as any)?.innerText || '';
+                    const draft = flat((editor as any)?.innerText || '');
                     const outside = draft ? body.split(draft).join(' ') : body;
                     return outside.includes(needle);
                 }, commentText).catch(() => false);
