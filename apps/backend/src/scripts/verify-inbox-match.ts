@@ -21,10 +21,20 @@ async function main() {
     // priming does not work here — getMe needs a live page for its headers.
     const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, email: true } });
     const token = jwt.sign({ id: user!.id, email: user!.email }, process.env.JWT_SECRET!, { expiresIn: '10m' });
-    const { data } = await axios.get('http://localhost:3001/api/v1/voyager/inbox?maxThreads=40', {
-        headers: { Authorization: `Bearer ${token}` }, timeout: 120000,
-    });
-    const threads = data?.data?.conversations || [];
+    // QTHREADS_JSON lets this run with no LinkedIn access at all — a recorded
+    // thread list is enough to prove the matcher, and the matching logic has no
+    // network dependency. Needed on 2026-10-06, when the account's sticky proxy
+    // was refusing connections and no live read was possible.
+    let threads: any[];
+    if (process.env.QTHREADS_JSON) {
+        threads = JSON.parse(process.env.QTHREADS_JSON);
+        console.log(`(using ${threads.length} recorded threads — no LinkedIn call)\n`);
+    } else {
+        const { data } = await axios.get('http://localhost:3001/api/v1/voyager/inbox?maxThreads=40', {
+            headers: { Authorization: `Bearer ${token}` }, timeout: 120000,
+        });
+        threads = data?.data?.conversations || [];
+    }
 
     const index = await buildLeadIndex(userId);
     console.log(`threads: ${threads.length}   leads indexed: ${index.byName.size} names / ${index.byVanity.size} vanities\n`);
