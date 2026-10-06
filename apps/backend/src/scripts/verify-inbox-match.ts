@@ -9,7 +9,7 @@
 import { prisma } from '@repo/db';
 import jwt from 'jsonwebtoken';
 import axios from 'axios';
-import { buildLeadIndex, matchLead } from '../workers/inbox.worker';
+import { buildLeadIndex, matchLead } from '../services/lead-match';
 
 async function main() {
     const userId = process.env.QUSER_ID!;
