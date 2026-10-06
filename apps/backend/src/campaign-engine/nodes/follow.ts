@@ -58,6 +58,9 @@ export const follow: NodeHandler = async (ctx): Promise<NodeResult> => {
         }
 
         // Try the direct Follow button first (primary or secondary slot).
+        // aria-label^="Follow" already excludes "Unfollow" (prefix match), and
+        // text-is is exact — neither can match the unfollow control. Spelled
+        // out because the More-menu fallback below used :has-text and did.
         let followBtn = page.locator(
             'button[aria-label^="Follow"]:not([aria-label*="Following"]):not([aria-label*="hashtag"]), ' +
             'button:has(span:text-is("Follow"))'
@@ -70,11 +73,35 @@ export const follow: NodeHandler = async (ctx): Promise<NodeResult> => {
                 'button:has(span:text-is("More")), button[aria-label^="More"]'
             ).first();
             if (await moreBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-                await moreBtn.evaluate((el: any) => el.click());
+                await moreBtn.click({ timeout: 5000 }).catch(async () => {
+                    await moreBtn.click({ force: true }).catch(() => {});
+                });
                 await wait(randomRange(1500, 2500));
+
+                // ALREADY FOLLOWING, seen from inside the menu.
+                //
+                // The primary-button check above misses profiles where
+                // LinkedIn puts the follow state only in this menu, and
+                // :has-text("Follow") is a SUBSTRING match that happily
+                // matches "Unfollow". So on someone we already followed, the
+                // menu offered Unfollow, we matched it, clicked it, and
+                // unfollowed them — then reported failure because the
+                // Following indicator was, correctly, gone. Same shape as the
+                // /liked/ regex that was quietly un-liking posts.
+                const unfollowItem = page.locator(
+                    '[role="menuitem"]:has-text("Unfollow"), [role="menuitem"]:has-text("Stop following"), '
+                    + '.artdeco-dropdown__item:has-text("Unfollow"), .artdeco-dropdown__item:has-text("Stop following")'
+                ).first();
+                if (await unfollowItem.isVisible({ timeout: 2000 }).catch(() => false)) {
+                    console.log('[FOLLOW] Already following (Unfollow offered in the More menu) — leaving it alone.');
+                    await page.keyboard.press('Escape').catch(() => {});
+                    return { success: true, output: { followed: false, alreadyFollowing: true } };
+                }
+
+                // Exact label only. "Follow" must not match "Unfollow".
                 followBtn = page.locator(
-                    '[role="menuitem"]:has-text("Follow"), ' +
-                    '.artdeco-dropdown__item:has-text("Follow")'
+                    '[role="menuitem"]:has(span:text-is("Follow")), [role="menuitem"][aria-label^="Follow"], '
+                    + '.artdeco-dropdown__item:has(span:text-is("Follow"))'
                 ).first();
             }
         }
