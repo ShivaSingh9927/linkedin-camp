@@ -634,8 +634,11 @@ export interface ConnectionSummary {
     numConnections: number;
 }
 
-export async function getConnectionsSummary(userId: string, page?: Page): Promise<VoyagerResult<ConnectionSummary>> {
-    const r = await voyagerFetch<any>(userId, 'https://www.linkedin.com/voyager/api/relationships/connectionsSummary', { page });
+export async function getConnectionsSummary(userId: string, page?: Page, apiRequest?: APIRequestContext): Promise<VoyagerResult<ConnectionSummary>> {
+    // apiRequest matters: called browser-free without it, voyagerFetch has no
+    // context and the count comes back 0 — which made the degree reconciler's
+    // completeness check inert, so it could never safely clear a stale value.
+    const r = await voyagerFetch<any>(userId, 'https://www.linkedin.com/voyager/api/relationships/connectionsSummary', { page, apiRequest });
     if (!r.ok) return r;
     const numConnections = (r.data as any)?.numConnections ?? 0;
     return { ok: true, status: r.status, data: { numConnections } };

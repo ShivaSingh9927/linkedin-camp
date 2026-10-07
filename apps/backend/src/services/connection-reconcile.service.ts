@@ -49,7 +49,7 @@ export async function reconcileConnectionDegrees(userId: string): Promise<Reconc
         // LinkedIn's own count. getAllConnections drops entries whose
         // miniProfile is missing from `included`, so the fetched list can be
         // short — and demoting on a short list would invent data.
-        const summary = await getConnectionsSummary(userId).catch(() => null);
+        const summary = await getConnectionsSummary(userId, null as any, apiRequest).catch(() => null);
         base.reported = summary?.ok ? summary.data.numConnections : 0;
         base.complete = base.reported > 0 && conns.length >= base.reported;
 
