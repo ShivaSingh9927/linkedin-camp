@@ -49,7 +49,8 @@ export async function runHealthWatch(): Promise<{ checked: number; filed: number
         const findings: HealthFinding[] = [];
 
         // 1. The account cannot act at all. Everything else is moot.
-        if (u.sessionInvalid || u.accountHealth === 'NEEDS_LOGIN') {
+        const blocked = !!u.sessionInvalid || u.accountHealth === 'NEEDS_LOGIN';
+        if (blocked) {
             findings.push({
                 key: 'session',
                 title: 'LinkedIn session needs attention',
@@ -83,7 +84,14 @@ export async function runHealthWatch(): Promise<{ checked: number; filed: number
         // 3. An ACTIVE campaign whose work is overdue. The scheduler runs every
         //    minute, so anything more than two hours late means it is not being
         //    picked up — a real stall, not pacing.
-        const active = await prisma.campaign.findMany({
+        //
+        //    Skipped when the account is blocked: a campaign cannot progress
+        //    without a session, so reporting it separately is a second alarm
+        //    for one cause. On the first run this filed "Invite-and-Follow
+        //    Hedge is not progressing" for an account whose session had been
+        //    invalid for 25 days — true, and useless next to the session alert
+        //    that already named the reason.
+        const active = blocked ? [] : await prisma.campaign.findMany({
             where: { userId: u.id, status: 'ACTIVE' },
             select: { id: true, name: true },
         });
@@ -108,8 +116,10 @@ export async function runHealthWatch(): Promise<{ checked: number; filed: number
         // 4. A burst of failures in the last hour. Set high enough that one bad
         //    profile cannot trigger it — this is for "the node is broken", which
         //    is what three separate nodes silently were.
+        //    Also skipped while blocked — every action failing because there is
+        //    no session is the session's finding, not a node-health one.
         const since = new Date(Date.now() - 3600 * 1000);
-        const recent = await prisma.actionLog.groupBy({
+        const recent = blocked ? [] : await prisma.actionLog.groupBy({
             by: ['status'],
             where: { userId: u.id, executedAt: { gt: since } },
             _count: { _all: true },
