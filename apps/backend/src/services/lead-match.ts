@@ -18,7 +18,7 @@ export function extractVanityFromUrl(profileUrl: string): string | null {
  * whitespace collapsed. Lead names are user-supplied and carry all of these
  * (one in this database ends in an emoji).
  */
-function normName(v: string | null | undefined): string {
+export function normName(v: string | null | undefined): string {
     return (v || '')
         .toLowerCase()
         .normalize('NFKD')

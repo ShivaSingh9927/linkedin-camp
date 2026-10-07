@@ -9,6 +9,7 @@ import { getStepType } from '../campaign-engine/workflow-graph';
 import { mailService } from '../services/mail.service';
 import { getCampaignActivity } from '../services/campaign-activity.service';
 import { runHealthWatch } from '../services/health-watch.service';
+import { reconcileConnectionDegrees } from '../services/connection-reconcile.service';
 
 let redisConnection: any;
 let actionQueue: any;
@@ -39,6 +40,31 @@ export const initScheduler = () => {
       if (r.filed) console.log(`[HEALTH] ${r.filed} new finding(s) across ${r.checked} user(s).`);
     } catch (e: any) {
       console.error('[HEALTH] watch failed:', e?.message);
+    }
+  });
+
+  // 0b. Reconcile connection degrees (daily, 03:30 UTC)
+  //
+  // Lead.connectionDegree drifts: it said 6 leads were 1st-degree while
+  // LinkedIn's own list returned 57. Lead selection reads this field, so a
+  // stale value silently targets the wrong people — two leads picked for a
+  // "message my connections" campaign were not connections at all. Runs before
+  // the morning campaign window so the day's selections use fresh data.
+  cron.schedule('30 3 * * *', async () => {
+    try {
+      const users = await prisma.user.findMany({
+        where: { sessionInvalid: false, accountHealth: { not: 'NEEDS_LOGIN' } },
+        select: { id: true },
+      });
+      let promoted = 0; let cleared = 0; let failed = 0;
+      for (const u of users) {
+        const r = await reconcileConnectionDegrees(u.id).catch(() => null);
+        if (!r || !r.ok) { failed++; continue; }
+        promoted += r.promoted; cleared += r.cleared;
+      }
+      console.log(`[DEGREE-RECONCILE] ${users.length} user(s): ${promoted} promoted to 1st-degree, ${cleared} cleared to unknown, ${failed} failed.`);
+    } catch (e: any) {
+      console.error('[DEGREE-RECONCILE] failed:', e?.message);
     }
   });
 
