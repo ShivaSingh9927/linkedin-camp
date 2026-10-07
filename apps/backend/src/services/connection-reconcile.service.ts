@@ -12,7 +12,7 @@
 // unknown (null) rather than demoted to a degree we never observed.
 
 import { prisma } from '@repo/db';
-import { getAllConnections, getConnectionsSummary, getBrowserlessVoyagerContext } from './voyager-api.service';
+import { getAllConnections, lastConnectionsTotal, getBrowserlessVoyagerContext } from './voyager-api.service';
 import { normName, extractVanityFromUrl } from './lead-match';
 
 export interface ReconcileResult {
@@ -46,12 +46,17 @@ export async function reconcileConnectionDegrees(userId: string): Promise<Reconc
         const conns = list.data;
         base.fetched = conns.length;
 
-        // LinkedIn's own count. getAllConnections drops entries whose
-        // miniProfile is missing from `included`, so the fetched list can be
-        // short — and demoting on a short list would invent data.
-        const summary = await getConnectionsSummary(userId, null as any, apiRequest).catch(() => null);
-        base.reported = summary?.ok ? summary.data.numConnections : 0;
-        base.complete = base.reported > 0 && conns.length >= base.reported;
+        // LinkedIn's own count for this list. getAllConnections drops entries
+        // whose miniProfile is missing from `included`, so the fetched array
+        // can be short — and treating an absence as "not a connection" on a
+        // short list would invent data.
+        //
+        // Taken from the pagination metadata of the same call. The separate
+        // connectionsSummary endpoint returns 0 for this account with or
+        // without a request context, so it cannot be the completeness signal.
+        const reported = lastConnectionsTotal(userId);
+        base.reported = reported ?? 0;
+        base.complete = reported != null && conns.length >= reported;
 
         // Two indexes, because a connection entry can carry a null
         // publicIdentifier — the same reason the inbox matcher needs both.

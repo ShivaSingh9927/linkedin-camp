@@ -666,6 +666,23 @@ export interface ConnectionsPage {
  * process; clears on process restart.
  */
 const connectionsCache = new Map<string, { data: ConnectionMini[]; fetchedAt: number }>();
+
+// LinkedIn's own total for the list, as reported in the pagination metadata of
+// the very call that fetches it.
+//
+// The walker drops entries whose miniProfile is missing from `included`, so the
+// array it returns can be SHORT of reality — and a caller deciding "this person
+// is absent, therefore not a connection" needs to know that. The separate
+// connectionsSummary endpoint was meant to supply the number and returns 0 for
+// this account whether or not it is given a request context, so take it from
+// the paging block instead: same call, no second request, and it is the count
+// LinkedIn attaches to the list being paginated.
+const connectionsTotal = new Map<string, number>();
+
+/** Last `paging.total` seen for this user's connections list, or null. */
+export function lastConnectionsTotal(userId: string): number | null {
+    return connectionsTotal.has(userId) ? (connectionsTotal.get(userId) as number) : null;
+}
 const CONNECTIONS_TTL_MS = 10 * 60 * 1000; // 10 min
 
 export async function getAllConnections(userId: string, page?: Page, apiRequest?: APIRequestContext): Promise<VoyagerResult<ConnectionMini[]>> {
@@ -712,6 +729,7 @@ export async function getAllConnections(userId: string, page?: Page, apiRequest?
             });
         }
         const total = data.paging?.total ?? all.length;
+        if (typeof data.paging?.total === 'number') connectionsTotal.set(userId, data.paging.total);
         if (urnRefs.length < pageSize || all.length >= total) break;
         start += pageSize;
     }
