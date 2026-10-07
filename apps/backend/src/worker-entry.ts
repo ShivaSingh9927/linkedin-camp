@@ -1,7 +1,12 @@
 import './sentry';
 import { Sentry } from './sentry';
+import { initFileLogging } from './lib/file-logger';
 
-console.log('[WORKER-INIT] Process starting...');
+// Before the first log line: container logs are destroyed by `up -d`, and a
+// deploy is precisely when the previous run's output is worth having.
+const fileLogging = initFileLogging();
+
+console.log(`[WORKER-INIT] Process starting... (file logging: ${fileLogging ? process.env.LOG_DIR : 'off — LOG_DIR unset'})`);
 console.error('[WORKER-INIT-STDERR] Verification log to stderr');
 
 import dotenv from 'dotenv';

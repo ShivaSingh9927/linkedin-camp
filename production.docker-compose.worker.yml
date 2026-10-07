@@ -133,6 +133,12 @@ services:
       # restart when investigating actions that report success but change
       # nothing, then flip it back.
       ACTION_SHOTS: "${ACTION_SHOTS:-0}"
+      # Worker logs, on the HOST. Docker's own json-file logs live under the
+      # container's directory and are destroyed by `up -d`, which is exactly
+      # when the previous run's output matters. Retention is enforced in
+      # file-logger.ts because this box is chronically short of disk.
+      LOG_DIR: /app/logs
+      LOG_KEEP_DAYS: "${LOG_KEEP_DAYS:-7}"
       DATABASE_URL: ${DATABASE_URL}
       REDIS_URL: ${REDIS_URL}
       JWT_SECRET: ${JWT_SECRET}
@@ -180,6 +186,9 @@ services:
     # Local sessions volume (transitional — replaced by object storage in Phase 2).
     volumes:
       - sessions_data:/app/sessions
+      # Worker logs on the HOST, so they survive `up -d` recreating the
+      # container. Docker's own logs do not.
+      - ./logs:/app/logs
     # Chromium needs more shm than the 64MB default or pages will randomly crash.
     shm_size: 1gb
 

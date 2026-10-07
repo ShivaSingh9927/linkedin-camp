@@ -8,6 +8,7 @@ import { sessionValidator } from '../services/session-validator.service';
 import { getStepType } from '../campaign-engine/workflow-graph';
 import { mailService } from '../services/mail.service';
 import { getCampaignActivity } from '../services/campaign-activity.service';
+import { runHealthWatch } from '../services/health-watch.service';
 
 let redisConnection: any;
 let actionQueue: any;
@@ -25,6 +26,21 @@ export const initScheduler = () => {
     console.warn('Scheduler skipped initialization due to no Redis connection.');
     return;
   }
+
+  // 0. Health watch (every 15 minutes)
+  //
+  // Nothing used to notice. Every defect found in the week of 2026-09-29 was
+  // found because a person went looking — including an account whose proxy had
+  // failed 68 consecutive health checks while every action failed in a way that
+  // looked like LinkedIn's fault.
+  cron.schedule('*/15 * * * *', async () => {
+    try {
+      const r = await runHealthWatch();
+      if (r.filed) console.log(`[HEALTH] ${r.filed} new finding(s) across ${r.checked} user(s).`);
+    } catch (e: any) {
+      console.error('[HEALTH] watch failed:', e?.message);
+    }
+  });
 
   // 1. Campaign Step Scheduler (Every 1 minute)
   cron.schedule('*/1 * * * *', async () => {
