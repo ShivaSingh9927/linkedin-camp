@@ -18,7 +18,7 @@ async function main() {
         if (!r.ok) { console.log(`${id}: FAILED — ${r.error}`); continue; }
         const after = await prisma.lead.count({ where: { userId: id, connectionDegree: 1 } });
         console.log(
-            `${id}: LinkedIn reports ${r.reported} connections, read ${r.fetched} `
+            `${id}: offered ${r.reported} connections, read ${r.fetched} `
             + `(list ${r.complete ? 'complete' : 'INCOMPLETE — absences not acted on'}) | `
             + `degree-1 leads ${before} → ${after} | promoted ${r.promoted}, cleared ${r.cleared}, unchanged ${r.unchanged}`,
         );

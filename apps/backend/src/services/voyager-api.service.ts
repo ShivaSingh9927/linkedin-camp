@@ -667,21 +667,30 @@ export interface ConnectionsPage {
  */
 const connectionsCache = new Map<string, { data: ConnectionMini[]; fetchedAt: number }>();
 
-// LinkedIn's own total for the list, as reported in the pagination metadata of
-// the very call that fetches it.
-//
-// The walker drops entries whose miniProfile is missing from `included`, so the
-// array it returns can be SHORT of reality — and a caller deciding "this person
-// is absent, therefore not a connection" needs to know that. The separate
-// connectionsSummary endpoint was meant to supply the number and returns 0 for
-// this account whether or not it is given a request context, so take it from
-// the paging block instead: same call, no second request, and it is the count
-// LinkedIn attaches to the list being paginated.
-const connectionsTotal = new Map<string, number>();
+/**
+ * Did the last connections walk read EVERYTHING it was offered?
+ *
+ * A caller that concludes "this person is absent from the list, therefore not a
+ * connection" is only safe if the list is whole. Two separate attempts to get a
+ * total failed for this account: connectionsSummary returns 0 with or without a
+ * request context, and the response carries no paging.total to fall back on.
+ *
+ * But the walk knows directly. LinkedIn hands back a list of URNs and the
+ * profiles themselves in `included`; an entry is dropped when no profile
+ * matches its URN. So completeness is: every URN resolved to a profile, and the
+ * final page came back short, meaning there were no further pages. That needs
+ * no total from anyone.
+ */
+export interface ConnectionsWalkMeta {
+    /** URNs offered that had no matching profile, so were silently skipped. */
+    dropped: number;
+    /** The walk ended because the list ran out, not because it hit the page cap. */
+    exhausted: boolean;
+}
+const connectionsWalk = new Map<string, ConnectionsWalkMeta>();
 
-/** Last `paging.total` seen for this user's connections list, or null. */
-export function lastConnectionsTotal(userId: string): number | null {
-    return connectionsTotal.has(userId) ? (connectionsTotal.get(userId) as number) : null;
+export function lastConnectionsWalk(userId: string): ConnectionsWalkMeta | null {
+    return connectionsWalk.get(userId) || null;
 }
 const CONNECTIONS_TTL_MS = 10 * 60 * 1000; // 10 min
 
@@ -695,6 +704,8 @@ export async function getAllConnections(userId: string, page?: Page, apiRequest?
     let start = 0;
     const pageSize = 100;
     const maxPages = 50; // safety: 5000 connections max
+    let dropped = 0;
+    let exhausted = false;
 
     for (let p = 0; p < maxPages; p++) {
         const url = `https://www.linkedin.com/voyager/api/relationships/connections?count=${pageSize}&start=${start}`;
@@ -717,7 +728,7 @@ export async function getAllConnections(userId: string, page?: Page, apiRequest?
                 e.dashEntityUrn === `urn:li:fsd_profile:${fsdIdFromUrn}` ||
                 e.entityUrn === `urn:li:fs_miniProfile:${fsdIdFromUrn}`
             );
-            if (!mp) continue;
+            if (!mp) { dropped++; continue; }
             all.push({
                 entityUrn: mp.entityUrn || urn,
                 publicIdentifier: mp.publicIdentifier || null,
@@ -729,12 +740,12 @@ export async function getAllConnections(userId: string, page?: Page, apiRequest?
             });
         }
         const total = data.paging?.total ?? all.length;
-        if (typeof data.paging?.total === 'number') connectionsTotal.set(userId, data.paging.total);
-        if (urnRefs.length < pageSize || all.length >= total) break;
+        if (urnRefs.length < pageSize || all.length >= total) { exhausted = true; break; }
         start += pageSize;
     }
 
     connectionsCache.set(userId, { data: all, fetchedAt: Date.now() });
+    connectionsWalk.set(userId, { dropped, exhausted });
     return { ok: true, status: 200, data: all };
 }
 
