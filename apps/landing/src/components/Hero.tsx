@@ -145,131 +145,113 @@ function Hero() {
     return () => clearTimeout(timeoutId);
   }, [titleNumber, titles]);
 
+  // One headline word animates in letter by letter; shared by both lines.
+  const riseWords = (text: string, offset = 0) =>
+    text.split(" ").map((word, wordIndex) => (
+      <span key={wordIndex} className="inline-block mr-[0.22em] last:mr-0 whitespace-nowrap">
+        {word.split("").map((letter, letterIndex) => (
+          <motion.span
+            key={`${wordIndex}-${letterIndex}`}
+            // Transform-only entrance (NO opacity fade): the H1 is the LCP
+            // element, and starting it at opacity:0 pushed mobile LCP to
+            // ~3.7s. Keeping opacity at 1 lets the text paint on the first
+            // frame while a subtle rise preserves the entrance feel.
+            initial={{ y: 24 }}
+            animate={{ y: 0 }}
+            transition={{
+              delay: (wordIndex + offset) * 0.04 + letterIndex * 0.012,
+              type: "spring",
+              stiffness: 150,
+              damping: 25,
+            }}
+            className="inline-block"
+          >
+            {letter}
+          </motion.span>
+        ))}
+      </span>
+    ));
+
   return (
-    <div className="relative min-h-screen w-full flex items-center justify-center overflow-hidden bg-transparent pt-20">
-      
+    // The whole hero, agent card included, is sized to land inside the first
+    // screen: the headline scales with viewport HEIGHT as well as width, so a
+    // short laptop screen shrinks the type instead of pushing the card below
+    // the fold.
+    <div className="relative min-h-[100dvh] w-full flex items-center justify-center overflow-hidden bg-transparent pt-24 pb-10">
+
       {/* Background Floating Message/Mail/LinkedIn Icons */}
       <FloatingMessages />
 
-      <div className="relative z-10 container mx-auto px-4 sm:px-6 lg:px-8 py-20 text-center">
-        <div className="flex gap-8 items-center justify-center flex-col max-w-7xl mx-auto">
-          
-          {/* Extension Badge */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.6 }}
+      <div className="relative z-10 container mx-auto px-4 sm:px-6 lg:px-8 text-center">
+        <div className="flex items-center justify-center flex-col max-w-7xl mx-auto">
+
+          {/* The visible H1 is animated per-letter (no whitespace text nodes),
+              so its raw text content reads as one run-on string to crawlers
+              and screen readers. aria-label gives a clean, natural, keyword-
+              bearing accessible name without changing the visual. */}
+          <h1
+            aria-label="Like a marketer wrote every message to your next client, investor, recruiter, customer, or hire — smart LinkedIn and email outreach that gets replies"
+            className="font-display font-medium text-slate-900 leading-[0.98] tracking-tight w-full text-[clamp(3.25rem,min(6.4vw,10.5vh),7.25rem)]"
           >
-            <span
-              className="inline-flex items-center gap-2 bg-blue-50 text-primary px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider border border-blue-100 shadow-sm"
-            >
-              Not your average outreach tool
-            </span>
-          </motion.div>
-
-          {/* Heading with Letter-by-Letter and Rotating Animations */}
-          <div className="flex gap-4 flex-col items-center w-full">
-            {/* The visible H1 is animated per-letter (no whitespace text nodes),
-                so its raw text content reads as one run-on string to crawlers
-                and screen readers. aria-label gives a clean, natural, keyword-
-                bearing accessible name without changing the visual. */}
-            <h1
-              aria-label="Like a marketer wrote every message to your next client, investor, recruiter, customer, or hire — smart LinkedIn and email outreach that gets replies"
-              className="font-display text-7xl md:text-[9rem] font-medium text-slate-900 leading-[0.95] mb-4 tracking-tight w-full"
-            >
-
-              {/* Rising spring letters for prefix */}
-              <span className="block mb-2">
-                {"Like a marketer wrote every message to your next".split(" ").map((word, wordIndex) => (
-                  <span key={wordIndex} className="inline-block mr-3 last:mr-0 whitespace-nowrap">
-                    {word.split("").map((letter, letterIndex) => (
-                      <motion.span
-                        key={`${wordIndex}-${letterIndex}`}
-                        // Transform-only entrance (NO opacity fade): the H1 is the
-                        // LCP element, and starting it at opacity:0 pushed mobile
-                        // LCP to ~3.7s. Keeping opacity at 1 lets the text paint on
-                        // the first frame (LCP ≈ FCP) while a subtle rise preserves
-                        // the entrance feel.
-                        initial={{ y: 24 }}
-                        animate={{ y: 0 }}
-                        transition={{
-                          delay: wordIndex * 0.04 + letterIndex * 0.012,
-                          type: "spring",
-                          stiffness: 150,
-                          damping: 25,
-                        }}
-                        className="inline-block"
-                      >
-                        {letter}
-                      </motion.span>
-                    ))}
-                  </span>
-                ))}
-              </span>
-
-              {/* Sliding rotation segment */}
-              <span className="relative flex w-full justify-center overflow-hidden h-[1.3em] md:pb-4 md:pt-1">
-                &nbsp;
+            <span className="block [text-wrap:balance]">{riseWords("Like a marketer wrote every message")}</span>
+            <span className="block">
+              {riseWords("to your next", 6)}
+              {/* Every candidate word sits in the same grid cell, so the slot
+                  is as wide as the longest one and the line never reflows
+                  while the word rotates. */}
+              <span className="relative inline-grid align-bottom overflow-hidden pb-[0.08em] text-left">
                 {titles.map((title, index) => (
                   <motion.span
                     key={index}
-                    className="absolute font-semibold gradient-text"
-                    initial={{ opacity: 0, y: -100 }}
+                    aria-hidden="true"
+                    className="[grid-area:1/1] font-semibold gradient-text pr-[0.04em]"
+                    initial={{ opacity: 0, y: "-100%" }}
                     transition={{ type: "spring", stiffness: 50 }}
                     animate={
                       titleNumber === index
-                        ? {
-                            y: 0,
-                            opacity: 1,
-                          }
-                        : {
-                            y: titleNumber > index ? -150 : 150,
-                            opacity: 0,
-                          }
+                        ? { y: "0%", opacity: 1 }
+                        : { y: titleNumber > index ? "-110%" : "110%", opacity: 0 }
                     }
                   >
                     {title}
                   </motion.span>
                 ))}
               </span>
-            </h1>
+            </span>
+          </h1>
 
-            {/* Description */}
-            <motion.p
-              initial={{ opacity: 0, y: 25 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.6, duration: 0.8 }}
-              className="text-lg md:text-xl leading-relaxed tracking-tight text-slate-500 max-w-2xl mx-auto mt-6"
-            >
-              It reads every prospect&apos;s profile and posts like a human would, then writes outreach personal enough to actually get a reply &mdash; across LinkedIn and email, sent safely at scale.
-            </motion.p>
-          </div>
+          <motion.p
+            initial={{ opacity: 0, y: 25 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.6, duration: 0.8 }}
+            className="text-base md:text-lg leading-relaxed tracking-tight text-slate-500 max-w-2xl mx-auto mt-6 [text-wrap:balance]"
+          >
+            It reads every prospect&apos;s profile and posts like a human would, then writes outreach personal enough to actually get a reply &mdash; across LinkedIn and email, sent safely at scale.
+          </motion.p>
 
-          {/* Premium CTAs */}
           <motion.div
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.8, duration: 0.8 }}
-            className="flex flex-col sm:flex-row gap-4 mt-8 w-full justify-center max-w-md sm:max-w-none"
+            className="flex flex-col sm:flex-row gap-3 mt-7 w-full justify-center max-w-md sm:max-w-none"
           >
             <a
               href="https://chromewebstore.google.com/detail/qampi-%E2%80%94-lead-importer/gcmepobpaoiokgcekafhpjehmpnckodk"
               target="_blank"
               rel="noopener noreferrer"
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-white hover:bg-slate-50 text-slate-800 px-8 py-4 rounded-2xl text-lg font-bold border border-slate-200 transition-all duration-200 shadow-sm hover:-translate-y-0.5 active:scale-98"
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-white hover:bg-slate-50 text-slate-800 px-7 py-3.5 rounded-2xl text-base font-bold border border-slate-200 transition-all duration-200 shadow-sm hover:-translate-y-0.5 active:scale-98"
             >
               <Download className="w-4.5 h-4.5 text-slate-400" /> Download Extension
             </a>
 
-            {/* Premium Gradient Glow Button Container */}
             <MagneticButton>
               <div
-                className="inline-block p-px rounded-2xl bg-gradient-to-b from-blue-400/30 to-purple-400/30 
+                className="inline-block p-px rounded-2xl bg-gradient-to-b from-blue-400/30 to-purple-400/30
                            overflow-hidden shadow-lg hover:shadow-xl transition-shadow duration-300 w-full sm:w-auto"
               >
                 <a
                   href="https://app.qampi.com/register"
-                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 btn-primary px-8 py-4 rounded-2xl text-lg font-bold shadow-lg shadow-blue-200 hover:-translate-y-0.5 active:scale-98 transition-all duration-200"
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 btn-primary px-7 py-3.5 rounded-2xl text-base font-bold shadow-lg shadow-blue-200 hover:-translate-y-0.5 active:scale-98 transition-all duration-200"
                 >
                   Get Started Free <MoveRight className="w-4.5 h-4.5" />
                 </a>
@@ -282,7 +264,7 @@ function Hero() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 1, duration: 0.8 }}
-            className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 mt-6 text-sm font-medium text-slate-500"
+            className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 mt-5 text-sm font-medium text-slate-500"
           >
             {["No credit card needed", "Human-like, LinkedIn-safe sending", "Cancel anytime"].map((item) => (
               <li key={item} className="inline-flex items-center gap-2">

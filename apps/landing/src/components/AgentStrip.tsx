@@ -64,48 +64,48 @@ export function AgentStrip() {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: 1.15, duration: 0.8 }}
-      className="mt-10 w-full max-w-2xl mx-auto text-left"
+      className="mt-9 w-full max-w-[56rem] mx-auto text-left"
     >
       <div className="rounded-3xl border border-slate-200/80 bg-white/75 backdrop-blur-md shadow-[0_20px_50px_-20px_rgba(34,90,234,0.25)] p-2">
-        <div className="flex flex-col gap-3 px-3 pt-3 pb-2 sm:flex-row sm:items-center sm:justify-between">
-          <p className="flex items-center gap-2 text-sm font-semibold text-slate-800">
-            <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-primary">
+        <div className="flex flex-col gap-2.5 px-2 pt-1.5 pb-2 lg:flex-row lg:items-center lg:justify-between">
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-1 pl-1 text-sm font-semibold text-slate-800 lg:flex-nowrap lg:whitespace-nowrap">
+            <span className="rounded-md bg-primary px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.1em] text-white">
               New
             </span>
             Run Qampi from your AI agent
+            <a
+              href={REPO_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-0.5 text-xs font-semibold text-slate-400 hover:text-primary transition-colors"
+            >
+              Setup guide <ArrowUpRight className="h-3.5 w-3.5" />
+            </a>
           </p>
-          <a
-            href={REPO_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-xs font-semibold text-slate-500 hover:text-primary transition-colors"
-          >
-            Setup guide <ArrowUpRight className="h-3.5 w-3.5" />
-          </a>
-        </div>
 
-        <div className="flex flex-wrap gap-1.5 px-2 pb-2" role="group" aria-label="Choose your agent">
-          {AGENTS.map((agent) => {
-            const selected = agent.id === active.id;
-            return (
-              <button
-                key={agent.id}
-                type="button"
-                aria-pressed={selected}
-                onClick={() => { setActive(agent); setCopied(false); }}
-                className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
-                  selected
-                    ? "border-slate-900 bg-slate-900 text-white shadow-sm"
-                    : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900"
-                }`}
-              >
-                <span className={selected && agent.id !== "claude" ? "text-white" : "text-slate-900"}>
-                  {agent.icon}
-                </span>
-                {agent.name}
-              </button>
-            );
-          })}
+          <div className="flex flex-wrap gap-1.5 lg:flex-nowrap" role="group" aria-label="Choose your agent">
+            {AGENTS.map((agent) => {
+              const selected = agent.id === active.id;
+              return (
+                <button
+                  key={agent.id}
+                  type="button"
+                  aria-pressed={selected}
+                  onClick={() => { setActive(agent); setCopied(false); }}
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[13px] font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
+                    selected
+                      ? "border-slate-900 bg-slate-900 text-white shadow-sm"
+                      : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900"
+                  }`}
+                >
+                  <span className={selected && agent.id !== "claude" ? "text-white" : "text-slate-900"}>
+                    {agent.icon}
+                  </span>
+                  {agent.name}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         <div className="flex items-center gap-2 rounded-2xl bg-slate-950 py-2 pl-4 pr-2">
