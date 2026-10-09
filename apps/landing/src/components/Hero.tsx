@@ -148,7 +148,7 @@ function Hero() {
   // One headline word animates in letter by letter; shared by both lines.
   const riseWords = (text: string, offset = 0) =>
     text.split(" ").map((word, wordIndex) => (
-      <span key={wordIndex} className="inline-block mr-[0.22em] last:mr-0 whitespace-nowrap">
+      <span key={wordIndex} className="inline-block mr-[0.17em] last:mr-0 whitespace-nowrap">
         {word.split("").map((letter, letterIndex) => (
           <motion.span
             key={`${wordIndex}-${letterIndex}`}
@@ -191,7 +191,7 @@ function Hero() {
               bearing accessible name without changing the visual. */}
           <h1
             aria-label="Like a marketer wrote every message to your next client, investor, recruiter, customer, or hire — smart LinkedIn and email outreach that gets replies"
-            className="font-display font-medium text-slate-900 leading-[0.98] tracking-tight w-full text-[clamp(3.25rem,min(6.4vw,10.5vh),7.25rem)]"
+            className="font-display font-medium text-slate-900 leading-[0.98] tracking-tight w-full text-[clamp(3.5rem,min(7.4vw,14vh),9.5rem)]"
           >
             <span className="block [text-wrap:balance]">{riseWords("Like a marketer wrote every message")}</span>
             <span className="block">
@@ -220,20 +220,12 @@ function Hero() {
             </span>
           </h1>
 
-          <motion.p
-            initial={{ opacity: 0, y: 25 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.6, duration: 0.8 }}
-            className="text-base md:text-lg leading-relaxed tracking-tight text-slate-500 max-w-2xl mx-auto mt-6 [text-wrap:balance]"
-          >
-            It reads every prospect&apos;s profile and posts like a human would, then writes outreach personal enough to actually get a reply &mdash; across LinkedIn and email, sent safely at scale.
-          </motion.p>
 
           <motion.div
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.8, duration: 0.8 }}
-            className="flex flex-col sm:flex-row gap-3 mt-7 w-full justify-center max-w-md sm:max-w-none"
+            className="flex flex-col sm:flex-row gap-3 mt-9 w-full justify-center max-w-md sm:max-w-none"
           >
             <a
               href="https://chromewebstore.google.com/detail/qampi-%E2%80%94-lead-importer/gcmepobpaoiokgcekafhpjehmpnckodk"
