@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { MoveRight, Check, Download } from "lucide-react";
 import { MagneticButton } from "./MagneticButton";
+import { AgentStrip } from "./AgentStrip";
 
 interface FloatingMessageProps {
   x: number;
@@ -290,6 +291,8 @@ function Hero() {
               </li>
             ))}
           </motion.ul>
+
+          <AgentStrip />
 
         </div>
       </div>
