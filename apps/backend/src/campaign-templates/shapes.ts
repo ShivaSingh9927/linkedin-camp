@@ -161,8 +161,10 @@ export function followAndNurture(opts: {
         const waitId = `rw${r}`, likeId = `rl${r}`, comId = `rc${r}`;
         nodes.push(
             node(waitId, yi++ * Y_STEP, 'DELAY', 'WAIT', `Wait ${opts.betweenEngageDays}d`, { delayDays: opts.betweenEngageDays }),
-            node(likeId, yi++ * Y_STEP, 'ACTION', 'LIKE', `Like Post (round ${r})`),
-            node(comId, yi++ * Y_STEP, 'ACTION', 'COMMENT', `Comment (AI, round ${r})`, { aiEnabled: true }),
+            // Each round engages a different post: round r likes and comments
+            // on post #r. Without a postIndex every round targeted post #1.
+            node(likeId, yi++ * Y_STEP, 'ACTION', 'LIKE', `Like Post #${r}`, { postIndex: r - 1 }),
+            node(comId, yi++ * Y_STEP, 'ACTION', 'COMMENT', `Comment on Post #${r} (AI)`, { aiEnabled: true, postIndex: r - 1 }),
         );
         edges.push(edge(cursor, waitId), edge(waitId, likeId), edge(likeId, comId));
         cursor = comId;

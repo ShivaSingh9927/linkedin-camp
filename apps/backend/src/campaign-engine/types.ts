@@ -151,6 +151,10 @@ export interface PostOutput {
     liked?: boolean;
     commented?: boolean;
     commentText?: string;
+    // Set when every post on the lead's feed was already liked/commented on
+    // by this campaign: the node does nothing rather than repeat a post.
+    skipped?: boolean;
+    skipReason?: 'no_new_post';
 }
 
 export interface SendMessageOutput {

@@ -3,6 +3,7 @@ import { resolveVariables } from '../variables';
 import { generateAIComment } from '../ai-service';
 import { persistDiscoveredPost } from '../storage';
 import { getOrDiscoverNthPost } from './post-discovery';
+import { readEngagedPostUrns } from '../storage';
 import { actionShot } from './action-shot';
 import { profileVisitOutput } from '../profile-output';
 
@@ -39,7 +40,15 @@ export const commentNthPost: NodeHandler = async (ctx, config): Promise<NodeResu
 
         console.log(`[COMMENT-NTH-POST] Navigating to posts feed (target: post #${n})...`);
 
-        const { post: discovered, emptyFeed } = await getOrDiscoverNthPost(storedOutputs, page, lead.linkedinUrl, n, 'COMMENT-NTH-POST');
+        // Never the same post twice in one campaign: see pickPost.
+        const engaged = await readEngagedPostUrns(ctx.campaignId, lead.id, 'comment-nth-post').catch(() => [] as string[]);
+        const { post: discovered, emptyFeed, allEngaged } = await getOrDiscoverNthPost(storedOutputs, page, lead.linkedinUrl, n, 'COMMENT-NTH-POST', engaged);
+        if (!discovered && allEngaged) {
+            // Nothing new to engage with is not a failure, and repeating a
+            // post is exactly what this guard exists to prevent. Move on.
+            console.log(`[COMMENT-NTH-POST] Every post by ${lead.firstName} is already commented on by this campaign — skipping.`);
+            return { success: true, output: { ...output, skipped: true, skipReason: 'no_new_post' } };
+        }
         if (!discovered) {
             // No recent post to comment on — deterministic, retire the lead.
             if (emptyFeed) {

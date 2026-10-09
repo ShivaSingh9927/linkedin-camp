@@ -31,7 +31,9 @@ function describe(flow: any[], depth = 0): string[] {
 function audit(flow: any[]): Finding[] {
     const f: Finding[] = [];
 
-    const walk = (nodes: any[], inBranch: boolean, path: string) => {
+    // `engaged` is the like/comment targets already hit on this lead's path.
+    // Each branch inherits a copy: a lead walks one branch, never both.
+    const walk = (nodes: any[], inBranch: boolean, path: string, engaged: Set<string>) => {
         let sinceDelay: string[] = [];
         nodes.forEach((n, i) => {
             const t = String(n.node);
@@ -61,19 +63,28 @@ function audit(flow: any[]): Finding[] {
             }
             sinceDelay.push(t);
 
+            // Liking or commenting on the same post twice. The engine reads
+            // a 1-based `n` (default 1), so a template whose "Post #2" never
+            // reaches `n` comments on post #1 again — seen live 2026-10-09.
+            if (t === 'like-nth-post' || t === 'comment-nth-post') {
+                const key = `${t} on post #${n.n ?? 1}`;
+                if (engaged.has(key)) f.push({ level: 'BLOCK', msg: `${path} runs ${key} twice` });
+                engaged.add(key);
+            }
+
             if (t === 'if-else') {
                 const tb = n.trueBranch || [];
                 const fb = n.falseBranch || [];
                 if (!tb.length && !fb.length) {
                     f.push({ level: 'WARN', msg: `${path} if-else #${i} has two empty branches — the sequence stops here` });
                 }
-                walk(tb, true, `${path}→true`);
-                walk(fb, true, `${path}→false`);
+                walk(tb, true, `${path}→true`, new Set(engaged));
+                walk(fb, true, `${path}→false`, new Set(engaged));
             }
         });
     };
 
-    walk(flow, false, 'flow');
+    walk(flow, false, 'flow', new Set());
 
     // A DM to someone who was never confirmed connected.
     const flat = (ns: any[]): any[] => ns.flatMap((n) => n.node === 'if-else'

@@ -1,6 +1,7 @@
 import { NodeHandler, NodeResult, PostOutput } from '../types';
 import { persistDiscoveredPost } from '../storage';
 import { getOrDiscoverNthPost } from './post-discovery';
+import { readEngagedPostUrns } from '../storage';
 import { actionShot } from './action-shot';
 
 const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
@@ -26,7 +27,15 @@ export const likeNthPost: NodeHandler = async (ctx, config): Promise<NodeResult>
     try {
         console.log(`[LIKE-NTH-POST] Navigating to posts feed (target: post #${n})...`);
 
-        const { post: discovered, emptyFeed } = await getOrDiscoverNthPost(storedOutputs, page, lead.linkedinUrl, n, 'LIKE-NTH-POST');
+        // Never the same post twice in one campaign: see pickPost.
+        const engaged = await readEngagedPostUrns(ctx.campaignId, lead.id, 'like-nth-post').catch(() => [] as string[]);
+        const { post: discovered, emptyFeed, allEngaged } = await getOrDiscoverNthPost(storedOutputs, page, lead.linkedinUrl, n, 'LIKE-NTH-POST', engaged);
+        if (!discovered && allEngaged) {
+            // Nothing new to engage with is not a failure, and repeating a
+            // post is exactly what this guard exists to prevent. Move on.
+            console.log(`[LIKE-NTH-POST] Every post by ${lead.firstName} is already liked by this campaign — skipping.`);
+            return { success: true, output: { ...output, skipped: true, skipReason: 'no_new_post' } };
+        }
         if (!discovered) {
             // Empty/insufficient feed is deterministic — the profile has no
             // recent post to like, and a retry will find the same. Retire the

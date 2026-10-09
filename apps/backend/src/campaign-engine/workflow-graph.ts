@@ -312,6 +312,15 @@ export function flattenDagToFlow(workflow: WorkflowGraph): any[] {
                 // next action 09-16 07:36 instead of 09-18. Derive hours from
                 // the same helper the DAG walker uses so both paths agree.
                 out.push({ ...data, node: engineNode, hours: delayMsFromNode(node) / 3_600_000 });
+            } else if (engineNode === 'like-nth-post' || engineNode === 'comment-nth-post') {
+                // Same vocabulary gap as `hours` above. Templates author the
+                // target post as a 0-based `postIndex`; the handlers read a
+                // 1-based `n` and default to 1. So "Comment on Post #2" and
+                // "#3" all hit post #1. Observed 2026-10-09 on rajaji: the
+                // Post #2 comment landed on the same post as Post #1, three
+                // days apart. An explicit `n` still wins.
+                const n = data.n ?? (typeof data.postIndex === 'number' ? data.postIndex + 1 : undefined);
+                out.push({ ...data, node: engineNode, ...(n !== undefined ? { n } : {}) });
             } else if (engineNode) {
                 out.push({ ...data, node: engineNode });
             } else {

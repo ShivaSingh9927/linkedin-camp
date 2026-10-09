@@ -16,6 +16,32 @@ export async function readNodeOutputs(campaignId: string, leadId: string): Promi
 }
 
 /**
+ * Posts this campaign has already liked (or commented on) for this lead, as
+ * URNs, oldest first. Read from the execution log rather than nodeOutputs,
+ * which keeps only the latest output per node type. Counts only engagements
+ * that actually happened, so a failed attempt can be retried on the same post.
+ */
+export async function readEngagedPostUrns(
+    campaignId: string,
+    leadId: string,
+    node: 'like-nth-post' | 'comment-nth-post',
+): Promise<string[]> {
+    const campaignLead = await prisma.campaignLead.findUnique({
+        where: { campaignId_leadId: { campaignId, leadId } },
+        select: { personalization: true }
+    });
+    const log: any[] = (campaignLead?.personalization as any)?.execLog || [];
+    const urns: string[] = [];
+    for (const e of log) {
+        if (e?.node !== node) continue;
+        const done = node === 'like-nth-post' ? e.output?.liked : e.output?.commented;
+        const m = done && String(e.output?.postUrl || '').match(/\/feed\/update\/(urn:li:[^/?]+)/);
+        if (m && !urns.includes(m[1])) urns.push(m[1]);
+    }
+    return urns;
+}
+
+/**
  * Appends a node execution result to the CampaignLead personalization field.
  */
 export async function writeNodeOutput(

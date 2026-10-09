@@ -44,7 +44,7 @@ async function safeGoto(page: any, url: string, retries = 3) {
  * both serialisable into `page.evaluate` AND directly exercisable by the
  * verify script against a fixture page — one implementation, no drift.
  */
-export function extractOrderedPostUrns(targetNum: number): { count: number; urn: string | null } {
+export function extractOrderedPostUrns(targetNum: number): { count: number; urn: string | null; urns: string[] } {
     const targetIndex = targetNum - 1;
     const seen = new Set<string>();
     const urns: string[] = [];
@@ -77,7 +77,26 @@ export function extractOrderedPostUrns(targetNum: number): { count: number; urn:
         }
     });
 
-    return { count: urns.length, urn: urns[targetIndex] || null };
+    return { count: urns.length, urn: urns[targetIndex] || null, urns };
+}
+
+/**
+ * Choose the post to engage with, given the feed in order and the posts this
+ * campaign has already liked/commented on for this lead.
+ *
+ * Position alone is not stable: "post #2" is a different post once the lead
+ * publishes something new, and a ladder that trusted it commented on the same
+ * post twice, three days apart (2026-10-09). So once anything has been
+ * engaged, take the newest post NOT yet engaged — round k of a ladder still
+ * lands on post #k when nothing new was posted, and on the new post when
+ * something was. Before any engagement, the requested position applies.
+ *
+ * Returns null when every post on the feed has already been engaged.
+ */
+export function pickPost(urns: string[], n: number, engaged: string[]): string | null {
+    if (!engaged.length) return urns[n - 1] || null;
+    const done = new Set(engaged);
+    return urns.find((u) => !done.has(u)) || null;
 }
 
 export interface DiscoveredPost {
@@ -101,6 +120,8 @@ export interface DiscoveryResult {
     emptyFeed: boolean;
     /** Posts seen on the last attempt (0 = nothing rendered / no posts). */
     lastCount: number;
+    /** The feed has posts, but this campaign already engaged with all of them. */
+    allEngaged?: boolean;
 }
 
 /**
@@ -113,6 +134,7 @@ export async function discoverNthPostUrl(
     linkedinUrl: string,
     n: number,
     logPrefix: string,
+    engaged: string[] = [],
 ): Promise<DiscoveryResult> {
     const cleanUrl = linkedinUrl.split('?')[0].replace(/\/$/, '');
     const activityUrl = cleanUrl + '/recent-activity/shares/';
@@ -131,7 +153,7 @@ export async function discoverNthPostUrl(
             .catch(() => {});
 
         // Scroll past the target so the Nth post is definitely rendered.
-        for (let i = 0; i < n + 2; i++) {
+        for (let i = 0; i < Math.max(n, engaged.length + 1) + 2; i++) {
             await page.mouse.wheel(0, 800);
             await wait(1500);
         }
@@ -139,18 +161,30 @@ export async function discoverNthPostUrl(
         const found = await page.evaluate(extractOrderedPostUrns, n);
 
         lastCount = found.count;
+        const urn = pickPost(found.urns, n, engaged);
 
-        if (found.urn) {
-            console.log(`[${logPrefix}] Discovered ${found.count} post(s); picked #${n} (${found.urn}).`);
+        if (urn) {
+            const how = engaged.length
+                ? `newest of ${found.count} not already engaged (${engaged.length} engaged)`
+                : `#${n} of ${found.count}`;
+            console.log(`[${logPrefix}] Discovered ${found.count} post(s); picked ${how} (${urn}).`);
             return {
                 post: {
-                    url: `https://www.linkedin.com/feed/update/${found.urn}/`,
-                    urn: found.urn,
+                    url: `https://www.linkedin.com/feed/update/${urn}/`,
+                    urn,
                     discoveredCount: found.count,
                 },
                 emptyFeed: false,
                 lastCount: found.count,
             };
+        }
+
+        // Posts exist, and this campaign has engaged with every one of them.
+        // Only concluded on the last attempt: a half-rendered feed showing
+        // just the engaged post would otherwise read as "nothing new".
+        if (engaged.length && found.count > 0 && attempt === 3) {
+            console.log(`[${logPrefix}] All ${found.count} post(s) on the feed already engaged by this campaign — nothing new.`);
+            return { post: null, emptyFeed: false, allEngaged: true, lastCount: found.count };
         }
 
         if (attempt < 3) {
@@ -194,14 +228,18 @@ export async function getOrDiscoverNthPost(
     linkedinUrl: string,
     n: number,
     logPrefix: string,
+    engaged: string[] = [],
 ): Promise<DiscoveryResult> {
     const cache = (storedOutputs[DISCOVERY_CACHE_KEY] ||= {}) as Record<string, DiscoveredPost>;
-    const cached = cache[String(n)];
+    // The choice depends on what was already engaged, so that is part of the
+    // key: a like and a comment with the same history still share one scrape.
+    const key = `${n}|${[...engaged].sort().join(',')}`;
+    const cached = cache[key];
     if (cached?.url) {
         console.log(`[${logPrefix}] Reusing post #${n} discovered earlier this run (${cached.urn}) — no re-scrape.`);
         return { post: cached, emptyFeed: false, lastCount: cached.discoveredCount };
     }
-    const result = await discoverNthPostUrl(page, linkedinUrl, n, logPrefix);
-    if (result.post) cache[String(n)] = result.post;
+    const result = await discoverNthPostUrl(page, linkedinUrl, n, logPrefix, engaged);
+    if (result.post) cache[key] = result.post;
     return result;
 }
