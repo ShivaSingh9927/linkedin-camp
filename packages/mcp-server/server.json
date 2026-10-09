@@ -1,0 +1,39 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.ShivaSingh9927/qampi",
+  "title": "Qampi",
+  "description": "LinkedIn outreach from your agent: find prospects, add leads, run campaigns, read results.",
+  "websiteUrl": "https://qampi.com",
+  "repository": {
+    "url": "https://github.com/ShivaSingh9927/linkedin-camp",
+    "source": "github",
+    "subfolder": "packages/mcp-server"
+  },
+  "version": "0.1.2",
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "@qampi/mcp-server",
+      "version": "0.1.2",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "QAMPI_API_KEY",
+          "description": "Qampi API key (Settings → API keys).",
+          "isRequired": true,
+          "isSecret": true
+        },
+        {
+          "name": "QAMPI_MODE",
+          "description": "read-only (default) exposes only read tools; full adds tools that create leads and launch campaigns.",
+          "isRequired": false,
+          "default": "read-only",
+          "choices": ["read-only", "full"]
+        }
+      ]
+    }
+  ]
+}

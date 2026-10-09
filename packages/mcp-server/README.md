@@ -17,6 +17,13 @@ call differently.
 1. Create an API key in Qampi → **Settings → API keys** (shown once).
 2. Add the server to your client.
 
+The quickest route in Claude Code or Codex is the plugin, which also teaches
+the agent the safe order of work. See
+[qampi-plugins](https://github.com/ShivaSingh9927/qampi-plugins).
+
+If your client doesn't pass environment variables through, save the key in
+`~/.config/qampi/api-key` instead (or point `QAMPI_API_KEY_FILE` at a file).
+
 ### Claude Code
 
 ```bash
@@ -96,7 +103,8 @@ cannot be unsent, and a withdrawn one cannot be resent for three weeks.
 
 | Variable | Default | |
 |---|---|---|
-| `QAMPI_API_KEY` | — | Required. |
+| `QAMPI_API_KEY` | — | Required, unless the key file below exists. |
+| `QAMPI_API_KEY_FILE` | `~/.config/qampi/api-key` | Read when `QAMPI_API_KEY` is unset. |
 | `QAMPI_MODE` | `read-only` | `full` enables write tools. |
 | `QAMPI_BASE_URL` | `https://api.qampi.com/api/public/v1` | Point at a staging API. |
 | `QAMPI_TIMEOUT_MS` | `60000` | Searches can take a while. |

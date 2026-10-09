@@ -20,11 +20,30 @@
  * people additionally requires an explicit confirm flag.
  */
 
+import { readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 
-const API_KEY = process.env.QAMPI_API_KEY || '';
+const VERSION = '0.1.2';
+const KEY_FILE = process.env.QAMPI_API_KEY_FILE || join(homedir(), '.config', 'qampi', 'api-key');
+
+/**
+ * The key comes from the environment, or failing that from a file. The file
+ * exists for clients that start MCP servers with a scrubbed environment and
+ * offer no way to declare a secret (Codex plugins, today) — there the user
+ * writes the key once and every client finds it. An unexpanded placeholder
+ * such as "${QAMPI_API_KEY}" counts as unset, not as a key.
+ */
+function resolveApiKey(): string {
+    const fromEnv = (process.env.QAMPI_API_KEY || '').trim();
+    if (fromEnv && !fromEnv.startsWith('${')) return fromEnv;
+    try { return readFileSync(KEY_FILE, 'utf8').trim(); } catch { return ''; }
+}
+
+const API_KEY = resolveApiKey();
 const BASE_URL = (process.env.QAMPI_BASE_URL || 'https://api.qampi.com/api/public/v1').replace(/\/$/, '');
 const MODE = (process.env.QAMPI_MODE || 'read-only').toLowerCase();
 const WRITES_ENABLED = MODE === 'full' || MODE === 'write';
@@ -33,7 +52,7 @@ const TIMEOUT_MS = Number(process.env.QAMPI_TIMEOUT_MS || 60_000);
 if (!API_KEY) {
     // stderr, never stdout: stdout is the JSON-RPC channel and any stray byte
     // there corrupts the protocol.
-    console.error('[qampi-mcp] QAMPI_API_KEY is not set. Create a key in Qampi → Settings → API keys.');
+    console.error(`[qampi-mcp] No API key. Set QAMPI_API_KEY, or save the key to ${KEY_FILE}. Create one in Qampi → Settings → API keys.`);
     process.exit(1);
 }
 
@@ -89,7 +108,7 @@ const ok = (data: unknown) => ({
     content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }],
 });
 
-const server = new McpServer({ name: 'qampi', version: '0.1.0' });
+const server = new McpServer({ name: 'qampi', version: VERSION });
 
 // ── Read tools ───────────────────────────────────────────────────────────────
 
