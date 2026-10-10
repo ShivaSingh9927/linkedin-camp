@@ -315,8 +315,8 @@ export default function AIProfilePage() {
           <h1 className="text-3xl font-black text-slate-900">AI Profile</h1>
           <p className="mt-2 text-slate-600">
             {existingProfile?.companyDescription || existingProfile?.products
-              ? 'Here’s what Aigeon knows about your business. Tweak anything below — it re-reads as you edit.'
-              : 'Help Aigeon understand your business so it can write messages that sound like you.'}
+              ? 'Here’s what Qampi knows about your business. Tweak anything below — it re-reads as you edit.'
+              : 'Help Qampi understand your business so it can write messages that sound like you.'}
           </p>
         </div>
 
@@ -650,7 +650,7 @@ export default function AIProfilePage() {
                 <label className="block text-sm font-bold text-slate-900 mb-2">
                   Writing Samples
                 </label>
-                <p className="text-xs text-slate-500 mb-3">Paste examples of your best emails, posts, or messages. Aigeon will learn your voice.</p>
+                <p className="text-xs text-slate-500 mb-3">Paste examples of your best emails, posts, or messages. Qampi will learn your voice.</p>
                 
                 {form.writingSamples.map((sample, i) => (
                   <div key={i} className="mb-4 p-4 bg-slate-50 rounded-xl border border-slate-100">

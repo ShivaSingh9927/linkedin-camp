@@ -95,8 +95,8 @@ export function ActivationHero({ onResolved }: { onResolved?: (status: SetupStat
   if (status.requiredDone) return null; // dashboard takes over
 
   const required = [
-    { key: 'profile', title: 'Your AI profile', desc: 'Aigeon studied your business and built your strategy.', icon: Building2, href: '/settings/ai-profile', done: status.profileDone, cta: 'Set up' },
-    { key: 'linkedin', title: 'Connect LinkedIn', desc: 'Securely link your account so Aigeon can act for you.', icon: Linkedin, href: '/settings?tab=linkedin', done: status.linkedinDone, cta: 'Connect now' },
+    { key: 'profile', title: 'Your AI profile', desc: 'Qampi studied your business and built your strategy.', icon: Building2, href: '/settings/ai-profile', done: status.profileDone, cta: 'Set up' },
+    { key: 'linkedin', title: 'Connect LinkedIn', desc: 'Securely link your account so Qampi can act for you.', icon: Linkedin, href: '/settings?tab=linkedin', done: status.linkedinDone, cta: 'Connect now' },
   ];
   const optional = [
     { key: 'crm', title: 'Connect your CRM', desc: 'Sync replies & leads to HubSpot, Pipedrive or Notion.', icon: Database, href: '/settings/integrations', done: status.crmDone },

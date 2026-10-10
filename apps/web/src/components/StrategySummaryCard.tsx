@@ -63,7 +63,7 @@ export function StrategySummaryCard({ compact = false }: { compact?: boolean }) 
               <span className="label !text-brand">Your AI strategy</span>
             </div>
             <p className="text-[13px] font-medium text-ink-700 mt-2 leading-relaxed">
-              Tell Aigeon about your business so it can write messages that sound like you.
+              Tell Qampi about your business so it can write messages that sound like you.
             </p>
             <span className="text-[12px] font-semibold text-brand mt-3 inline-block">Build strategy →</span>
           </div>
@@ -97,7 +97,7 @@ export function StrategySummaryCard({ compact = false }: { compact?: boolean }) 
           </div>
           <div className="flex-1 min-w-0">
             <p className="font-semibold text-foreground">Build your AI strategy</p>
-            <p className="text-[13px] font-medium text-ink-500 mt-0.5">Tell Aigeon about your business so it can write messages that sound like you.</p>
+            <p className="text-[13px] font-medium text-ink-500 mt-0.5">Tell Qampi about your business so it can write messages that sound like you.</p>
           </div>
           <ArrowRight className="w-5 h-5 text-brand flex-shrink-0" />
         </Card>

@@ -354,7 +354,7 @@ export function StrategyWorkspace({ embedded = false, goalType: goalTypeProp }: 
         return adv || (comp ? `Vs. ${comp}` : '') || 'Where you win and how to position.';
       }
       case 'commentStrategy':
-        return v.goal || v.approach || 'How Aigeon comments on prospects’ posts.';
+        return v.goal || v.approach || 'How Qampi comments on prospects’ posts.';
       default:
         return 'Open to review this section.';
     }
