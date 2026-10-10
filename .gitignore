@@ -83,3 +83,6 @@ test-capsolver.mjs
 
 # LinkedIn account credentials — must never be committed
 linkedin_username_password.txt
+
+# Copied from node_modules by apps/landing/scripts/copy-neat.mjs on dev/build
+apps/landing/public/vendor/

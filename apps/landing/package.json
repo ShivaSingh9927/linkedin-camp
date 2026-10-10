@@ -3,7 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "copy-neat": "node scripts/copy-neat.mjs",
+    "predev": "npm run copy-neat",
     "dev": "next dev",
+    "prebuild": "npm run copy-neat",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"

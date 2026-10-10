@@ -4,6 +4,8 @@ import { useEffect, useRef } from "react";
 import { useReducedMotion } from "framer-motion";
 import type { NeatConfig, NeatGradient } from "@firecms/neat";
 
+type NeatModule = typeof import("@firecms/neat");
+
 // Animated WebGL gradient behind the hero (https://neat.firecms.co).
 // Without a license key Neat draws a small "NEAT" watermark on the canvas;
 // set NEXT_PUBLIC_NEAT_LICENSE_KEY (bought at neat.firecms.co, tied to the
@@ -65,9 +67,13 @@ export function NeatBackground({ className = "" }: { className?: string }) {
       if (gradient) gradient.yOffset = startY + window.scrollY;
     };
 
-    // Loaded on demand so the WebGL bundle never competes with the hero's
-    // first paint.
-    import("@firecms/neat").then(({ NeatGradient }) => {
+    // Loaded on demand so the WebGL code never competes with the hero's first
+    // paint — and from public/vendor rather than the bundle: Next's production
+    // minifier re-minifies Neat's own minified build and breaks it (the canvas
+    // clears to the background colour but the gradient never draws). The file
+    // is copied there by scripts/copy-neat.mjs before every dev/build.
+    const url = "/vendor/neat.js";
+    (import(/* webpackIgnore: true */ /* turbopackIgnore: true */ url) as Promise<NeatModule>).then(({ NeatGradient }) => {
       if (cancelled || !canvasRef.current) return;
       try {
         gradient = new NeatGradient({
