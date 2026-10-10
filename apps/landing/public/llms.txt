@@ -6,7 +6,7 @@ Qampi's core idea: most automation blasts "Hi {FirstName}" templates, so reply r
 
 ## Core pages
 - [Home](https://qampi.com/): What Qampi is, how it personalizes outreach, and account-safety approach.
-- [Pricing](https://qampi.com/#pricing): Free, Starter ($49/mo), Growth ($99/mo), Enterprise ($249/mo). See /pricing.md for structured data.
+- [Pricing](https://qampi.com/#pricing): Free, Core ($19/mo), Pro ($49/mo), Business ($69/mo); INR pricing for India. See /pricing.md for structured data.
 - [Blog](https://qampi.com/blog): Guides on LinkedIn outreach, cold email, and prospecting.
 
 ## Use-case pages

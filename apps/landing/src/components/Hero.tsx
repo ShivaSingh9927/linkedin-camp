@@ -1,276 +1,123 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { motion } from "framer-motion";
-import { MoveRight, Check, Download } from "lucide-react";
-import { MagneticButton } from "./MagneticButton";
-import { AgentStrip } from "./AgentStrip";
+import { useEffect, useState } from "react";
+import { motion, useReducedMotion } from "framer-motion";
+import { ArrowRight, Check } from "lucide-react";
+import { AppWindow } from "./AppWindow";
+import { NeatBackground } from "./NeatBackground";
 
-interface FloatingMessageProps {
-  x: number;
-  y: number;
-  size: number;
-  color: string;
-  type: 'message' | 'mail' | 'linkedin' | 'logo';
-}
+const CHROME_STORE_URL =
+  "https://chromewebstore.google.com/detail/qampi-%E2%80%94-lead-importer/gcmepobpaoiokgcekafhpjehmpnckodk";
 
-function FloatingMessage({ x, y, size, color, type }: FloatingMessageProps) {
-  // SVG paths for message bubble, email envelope, and LinkedIn logo
-  const path = type === 'message'
-    ? "M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z"
-    : type === 'mail'
-      ? "M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"
-      : type === 'linkedin'
-        ? "M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"
-        : "";
-
-  // Memoize random values so they are stable across re-renders for a seamless, multi-axis soft drift
-  const driftX = useMemo(() => Math.random() * 80 - 40, []);
-  const driftY = useMemo(() => Math.random() * 80 - 40, []);
-  const maxRotate = useMemo(() => Math.random() * 24 - 12, []);
-
-  // Use slightly offset, prime-like durations so horizontal, vertical, rotation and scale cycles mismatch, 
-  // creating a truly organic and infinitely non-repetitive (seamless) motion path.
-  const durationX = useMemo(() => 18 + Math.random() * 14, []);
-  const durationY = useMemo(() => 18 + Math.random() * 14, []);
-  const durationRotate = useMemo(() => 22 + Math.random() * 18, []);
-  const durationScale = useMemo(() => 14 + Math.random() * 10, []);
-  const durationOpacity = useMemo(() => 12 + Math.random() * 8, []);
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, scale: 0 }}
-      animate={{
-        x: [0, driftX, -driftX, 0],
-        y: [0, -driftY, driftY, 0],
-        rotate: [0, maxRotate, -maxRotate, 0],
-        scale: [0.95, 1.05, 0.95],
-        opacity: type === 'logo' ? [0.25, 0.5, 0.25] : [0.4, 0.8, 0.4],
-      }}
-      transition={{
-        x: { duration: durationX, repeat: Infinity, ease: "easeInOut" },
-        y: { duration: durationY, repeat: Infinity, ease: "easeInOut" },
-        rotate: { duration: durationRotate, repeat: Infinity, ease: "easeInOut" },
-        scale: { duration: durationScale, repeat: Infinity, ease: "easeInOut" },
-        opacity: { duration: durationOpacity, repeat: Infinity, ease: "easeInOut" },
-      }}
-      className="absolute pointer-events-none select-none"
-      style={{
-        left: `${x}%`,
-        top: `${y}%`,
-        width: size,
-        height: size,
-      }}
-    >
-      {type === 'logo' ? (
-        <img 
-          src="/logo.png" 
-          alt="Qampi Bird" 
-          className="w-full h-full object-contain select-none pointer-events-none opacity-90 filter saturate-[0.8] drop-shadow-md" 
-        />
-      ) : (
-        <svg
-          width="100%"
-          height="100%"
-          viewBox="0 0 24 24"
-          fill={color}
-        >
-          <path d={path} />
-        </svg>
-      )}
-    </motion.div>
-  );
-}
-
-function FloatingMessages() {
-  const [items, setItems] = useState<Array<{ id: number; x: number; y: number; size: number; color: string; type: 'message' | 'mail' | 'linkedin' | 'logo' }>>([]);
-
-  useEffect(() => {
-    // These are purely decorative. Each item runs 5 infinite animations, so
-    // mounting them the instant we hydrate floods the main thread during the
-    // LCP window — which is what tanked mobile LCP (fast desktop was fine).
-    // So: (1) skip entirely for reduced-motion, (2) render fewer on mobile,
-    // (3) defer the mount until the browser is idle so the hero paints first.
-    if (typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
-      return;
-    }
-
-    const build = () => {
-      const types: Array<'message' | 'mail' | 'linkedin' | 'logo'> = ['message', 'mail', 'linkedin', 'logo'];
-      const count = window.innerWidth < 768 ? 10 : 18; // was a flat 32
-      const newItems = Array.from({ length: count }, (_, i) => ({
-        id: i,
-        x: 5 + Math.random() * 90, // 5% to 95%
-        y: 5 + Math.random() * 90, // 5% to 95%
-        size: Math.random() * 20 + 24, // Size range: 24px to 44px
-        color: `rgba(147, 51, 234, ${0.5 + Math.random() * 0.4})`, // Stronger brand purple
-        type: types[i % 4], // Mixes the logo into the floating items
-      }));
-      setItems(newItems);
-    };
-
-    // Wait until after first paint + idle so LCP fires before the ambient
-    // animations start competing for the main thread.
-    const w = window as unknown as { requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number };
-    const kick = () =>
-      w.requestIdleCallback ? w.requestIdleCallback(build, { timeout: 1500 }) : window.setTimeout(build, 900);
-    const id = window.setTimeout(kick, 400);
-    return () => window.clearTimeout(id);
-  }, []);
-
-  return (
-    <div className="absolute inset-0 pointer-events-none overflow-hidden w-full h-full">
-      {items.map((item) => (
-        <FloatingMessage key={item.id} {...item} />
-      ))}
-    </div>
-  );
-}
+const TITLES = ["client", "investor", "recruiter", "customer", "hire"];
 
 function Hero() {
   const [titleNumber, setTitleNumber] = useState(0);
-  const titles = useMemo(
-    () => ["client", "investor", "recruiter", "customer", "hire"],
-    []
-  );
+  const reduceMotion = useReducedMotion();
 
   useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      if (titleNumber === titles.length - 1) {
-        setTitleNumber(0);
-      } else {
-        setTitleNumber(titleNumber + 1);
-      }
-    }, 2500);
-    return () => clearTimeout(timeoutId);
-  }, [titleNumber, titles]);
-
-  // One headline word animates in letter by letter; shared by both lines.
-  const riseWords = (text: string, offset = 0) =>
-    text.split(" ").map((word, wordIndex) => (
-      <span key={wordIndex} className="inline-block mr-[0.17em] last:mr-0 whitespace-nowrap">
-        {word.split("").map((letter, letterIndex) => (
-          <motion.span
-            key={`${wordIndex}-${letterIndex}`}
-            // Transform-only entrance (NO opacity fade): the H1 is the LCP
-            // element, and starting it at opacity:0 pushed mobile LCP to
-            // ~3.7s. Keeping opacity at 1 lets the text paint on the first
-            // frame while a subtle rise preserves the entrance feel.
-            initial={{ y: 24 }}
-            animate={{ y: 0 }}
-            transition={{
-              delay: (wordIndex + offset) * 0.04 + letterIndex * 0.012,
-              type: "spring",
-              stiffness: 150,
-              damping: 25,
-            }}
-            className="inline-block"
-          >
-            {letter}
-          </motion.span>
-        ))}
-      </span>
-    ));
+    const id = setTimeout(() => setTitleNumber((n) => (n + 1) % TITLES.length), 2500);
+    return () => clearTimeout(id);
+  }, [titleNumber]);
 
   return (
-    // The whole hero, agent card included, is sized to land inside the first
-    // screen: the headline scales with viewport HEIGHT as well as width, so a
-    // short laptop screen shrinks the type instead of pushing the card below
-    // the fold.
-    <div className="relative min-h-[100dvh] w-full flex items-center justify-center overflow-hidden bg-transparent pt-24 pb-10">
+    <section className="relative overflow-hidden pt-28 sm:pt-32">
+      {/* Animated gradient behind the headline, fading into the page colour
+          before the product video so the video sits on a calm background. */}
+      <NeatBackground className="absolute inset-x-0 top-0 h-[78%] [mask-image:linear-gradient(to_bottom,black_55%,transparent)]" />
 
-      {/* Background Floating Message/Mail/LinkedIn Icons */}
-      <FloatingMessages />
-
-      <div className="relative z-10 container mx-auto px-4 sm:px-6 lg:px-8 text-center">
-        <div className="flex items-center justify-center flex-col max-w-7xl mx-auto">
-
-          {/* The visible H1 is animated per-letter (no whitespace text nodes),
-              so its raw text content reads as one run-on string to crawlers
-              and screen readers. aria-label gives a clean, natural, keyword-
-              bearing accessible name without changing the visual. */}
-          <h1
-            aria-label="Like a marketer wrote every message to your next client, investor, recruiter, customer, or hire — smart LinkedIn and email outreach that gets replies"
-            className="font-display font-medium text-slate-900 leading-[0.98] tracking-tight w-full text-[clamp(3.5rem,min(7.4vw,14vh),9.5rem)]"
-          >
-            <span className="block [text-wrap:balance]">{riseWords("Like a marketer wrote every message")}</span>
-            <span className="block">
-              {riseWords("to your next", 6)}
-              {/* Every candidate word sits in the same grid cell, so the slot
-                  is as wide as the longest one and the line never reflows
-                  while the word rotates. */}
-              <span className="relative inline-grid align-bottom overflow-hidden pb-[0.08em] text-left">
-                {titles.map((title, index) => (
-                  <motion.span
-                    key={index}
-                    aria-hidden="true"
-                    className="[grid-area:1/1] font-semibold gradient-text pr-[0.04em]"
-                    initial={{ opacity: 0, y: "-100%" }}
-                    transition={{ type: "spring", stiffness: 50 }}
-                    animate={
-                      titleNumber === index
-                        ? { y: "0%", opacity: 1 }
-                        : { y: titleNumber > index ? "-110%" : "110%", opacity: 0 }
-                    }
-                  >
-                    {title}
-                  </motion.span>
-                ))}
-              </span>
-            </span>
-          </h1>
-
-
-          <motion.div
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.8, duration: 0.8 }}
-            className="flex flex-col sm:flex-row gap-3 mt-9 w-full justify-center max-w-md sm:max-w-none"
-          >
-            <a
-              href="https://chromewebstore.google.com/detail/qampi-%E2%80%94-lead-importer/gcmepobpaoiokgcekafhpjehmpnckodk"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-white hover:bg-slate-50 text-slate-800 px-7 py-3.5 rounded-2xl text-base font-bold border border-slate-200 transition-all duration-200 shadow-sm hover:-translate-y-0.5 active:scale-98"
-            >
-              <Download className="w-4.5 h-4.5 text-slate-400" /> Download Extension
-            </a>
-
-            <MagneticButton>
-              <div
-                className="inline-block p-px rounded-2xl bg-gradient-to-b from-blue-400/30 to-purple-400/30
-                           overflow-hidden shadow-lg hover:shadow-xl transition-shadow duration-300 w-full sm:w-auto"
-              >
-                <a
-                  href="https://app.qampi.com/register"
-                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 btn-primary px-7 py-3.5 rounded-2xl text-base font-bold shadow-lg shadow-blue-200 hover:-translate-y-0.5 active:scale-98 transition-all duration-200"
+      <div className="relative mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 text-center">
+        {/* The H1's visible text includes a rotating word, so aria-label gives
+            crawlers and screen readers one clean, keyword-bearing sentence. */}
+        <h1
+          aria-label="Like a marketer wrote every message to your next client, investor, recruiter, customer, or hire — smart LinkedIn and email outreach that gets replies"
+          className="font-display font-medium text-slate-900 leading-[0.95] tracking-tight text-[clamp(3.25rem,7vw,7rem)]"
+        >
+          <span className="block">Like a marketer wrote</span>
+          <span className="block">
+            every message to your next{" "}
+            {/* Every candidate word shares one grid cell, so the slot is as
+                wide as the longest word and the line never reflows. It clips
+                with clip-path, not overflow-hidden: an overflow-clipped inline
+                box takes its bottom edge as its baseline, which lifted the
+                word above the rest of the line. The padding/negative margin
+                pair leaves a hair of room so glyph edges aren't shaved, without
+                changing line height (none of the words have descenders). */}
+            <span className="relative inline-grid -my-[0.04em] py-[0.04em] text-left [clip-path:inset(0_-0.3em)]">
+              {TITLES.map((title, index) => (
+                <motion.span
+                  key={title}
+                  aria-hidden="true"
+                  className="[grid-area:1/1] font-semibold gradient-text pr-[0.04em]"
+                  initial={false}
+                  transition={reduceMotion ? { duration: 0 } : { type: "spring", stiffness: 60, damping: 14 }}
+                  animate={
+                    titleNumber === index
+                      ? { y: "0%", opacity: 1 }
+                      : { y: titleNumber > index ? "-110%" : "110%", opacity: 0 }
+                  }
                 >
-                  Get Started Free <MoveRight className="w-4.5 h-4.5" />
-                </a>
-              </div>
-            </MagneticButton>
-          </motion.div>
+                  {title}
+                </motion.span>
+              ))}
+            </span>
+          </span>
+        </h1>
 
-          {/* Trust strip — pre-empts the signup friction + the #1 fear (account bans) */}
-          <motion.ul
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 1, duration: 0.8 }}
-            className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 mt-5 text-sm font-medium text-slate-500"
+        <p className="mx-auto mt-6 max-w-xl text-lg leading-relaxed text-slate-600">
+          Qampi reads each prospect&apos;s profile and recent posts, then writes LinkedIn and email
+          outreach they actually answer — and runs it safely on autopilot.
+        </p>
+
+        <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row sm:gap-6">
+          <a
+            href="https://app.qampi.com/register"
+            className="btn-primary inline-flex w-full items-center justify-center gap-2 rounded-xl px-7 py-3.5 text-base font-semibold sm:w-auto"
           >
-            {["No credit card needed", "Human-like, LinkedIn-safe sending", "Cancel anytime"].map((item) => (
-              <li key={item} className="inline-flex items-center gap-2">
-                <Check className="w-4 h-4 text-primary" />
-                {item}
-              </li>
-            ))}
-          </motion.ul>
-
-          <AgentStrip />
-
+            Get Started Free <ArrowRight className="h-4 w-4" />
+          </a>
+          <a
+            href={CHROME_STORE_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-700 underline decoration-slate-300 underline-offset-4 transition-colors hover:text-primary hover:decoration-violet-300"
+          >
+            or add the Chrome extension
+          </a>
         </div>
+
+        <ul className="mt-6 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm text-slate-500">
+          {["No credit card needed", "Human-like, LinkedIn-safe sending", "Cancel anytime"].map((item) => (
+            <li key={item} className="inline-flex items-center gap-1.5">
+              <Check className="h-4 w-4 text-primary" />
+              {item}
+            </li>
+          ))}
+        </ul>
+
+        {/* The product, not an illustration of it: a real screen recording of
+            the copilot going from "what should I run?" to a campaign ready to launch
+            (cut from a longer recording; no real prospects' data in frame). */}
+        <motion.div
+          initial={{ opacity: 0, y: 32 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={reduceMotion ? { duration: 0 } : { duration: 0.8, delay: 0.2, ease: [0.22, 1, 0.36, 1] }}
+          className="relative mx-auto mt-14 max-w-5xl sm:mt-16"
+        >
+          <AppWindow
+            video={{
+              src: "/videos/hero-copilot.mp4",
+              poster: "/videos/hero-copilot-poster.jpg",
+              width: 1920,
+              height: 1080,
+            }}
+            alt="The Qampi copilot suggesting campaigns, finding leads on LinkedIn, and setting up a campaign's objective, tone and call to action before launch"
+            url="app.qampi.com"
+            priority
+          />
+        </motion.div>
       </div>
-    </div>
+    </section>
   );
 }
 

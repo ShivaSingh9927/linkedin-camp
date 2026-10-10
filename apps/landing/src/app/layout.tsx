@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
+import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
 // Mango Grotesque — condensed display grotesque, self-hosted variable font
@@ -11,6 +12,11 @@ const mangoGrotesque = localFont({
   display: "swap",
   weight: "100 900",
 });
+
+// Geist — body and UI text. next/font self-hosts it at build time, so there is
+// no runtime request to a font CDN.
+const geist = Geist({ subsets: ["latin"], variable: "--font-geist", display: "swap" });
+const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-geist-mono", display: "swap" });
 
 const SITE_URL = "https://qampi.com";
 const TITLE = "Qampi - Smart LinkedIn & Email Outreach That Gets Replies";
@@ -98,8 +104,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`scroll-smooth ${mangoGrotesque.variable}`}>
+    <html lang="en" className={`scroll-smooth ${mangoGrotesque.variable} ${geist.variable} ${geistMono.variable}`}>
       <body className="antialiased">
+        <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[100] focus:rounded-lg focus:bg-white focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:shadow-lg">
+          Skip to content
+        </a>
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}

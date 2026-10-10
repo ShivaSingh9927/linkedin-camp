@@ -2,10 +2,9 @@
 
 import { useEffect, useState, useRef } from "react";
 import { motion, useInView } from "framer-motion";
-import { X, Check, Sparkles, ArrowRight, Zap, TrendingUp, Send } from "lucide-react";
-import { GlowButton } from "./GlowButton";
+import { X, Check, Sparkles, ArrowRight, Zap, ShieldCheck, Send } from "lucide-react";
 
-const genericMessage = `Hi John,
+const genericMessage = `Hi Sarah,
 
 I noticed your profile and thought we could connect. We offer a great tool that might help your team grow.
 
@@ -14,15 +13,12 @@ Would you be open to a quick 15-minute call next week?
 Best,
 Alex`;
 
-const aiMessage = `Hey John,
+const aiMessage = `Hey Sarah, loved your post about doubling the SDR team — and your point that hiring well is the hardest part of scaling sales.
 
-Saw your post about scaling the engineering team at Acme — congrats on the Series B!
+When a team doubles, the forecast usually gets noisier before it gets better. We help sales leaders spot slipping deals about two weeks earlier.
 
-We just helped a similar SaaS founder cut their hiring cycle by 40% using automated LinkedIn outreach. Would love to share what worked for them.
+Worth a 15-minute look?
 
-No pitch, just insights. Open to a quick chat?
-
-Cheers,
 Alex`;
 
 /* ═══════════════════════════════════════════════════════════
@@ -69,78 +65,6 @@ function TypingEffect({ text, speed = 30, startDelay = 0, onComplete }: { text: 
 }
 
 /* ═══════════════════════════════════════════════════════════
-   FLOATING SPARKLE PARTICLES — Ambient floating dots
-   ═══════════════════════════════════════════════════════════ */
-function FloatingParticles() {
-  return (
-    <div className="absolute inset-0 overflow-hidden pointer-events-none">
-      {Array.from({ length: 25 }).map((_, i) => (
-        <motion.div
-          key={i}
-          className="absolute rounded-full"
-          style={{
-            width: Math.random() * 4 + 2,
-            height: Math.random() * 4 + 2,
-            left: `${Math.random() * 100}%`,
-            top: `${Math.random() * 100}%`,
-            background: i % 3 === 0 
-              ? 'rgba(34, 90, 234, 0.4)' // Primary blue
-              : i % 3 === 1 
-                ? 'rgba(168, 85, 247, 0.3)' // Purple
-                : 'rgba(59, 130, 246, 0.2)', // Light blue
-          }}
-          animate={{
-            y: [0, -40 - Math.random() * 50, 0],
-            x: [0, Math.random() * 30 - 15, 0],
-            opacity: [0, 0.8, 0],
-            scale: [0.5, 1.5, 0.5],
-          }}
-          transition={{
-            duration: 5 + Math.random() * 10,
-            repeat: Infinity,
-            ease: "easeInOut",
-            delay: Math.random() * 5,
-          }}
-        />
-      ))}
-    </div>
-  );
-}
-
-/* ═══════════════════════════════════════════════════════════
-   REPLY RATE METER — Animated circular progress
-   ═══════════════════════════════════════════════════════════ */
-function ReplyRateMeter({ rate, color, delay = 0 }: { rate: number; color: string; delay?: number }) {
-  const circumference = 2 * Math.PI * 18;
-  
-  return (
-    <motion.div 
-      className="relative w-12 h-12 flex-shrink-0"
-      initial={{ scale: 0, rotate: -90 }}
-      whileInView={{ scale: 1, rotate: 0 }}
-      viewport={{ once: true }}
-      transition={{ delay, type: "spring", stiffness: 200 }}
-    >
-      <svg className="w-12 h-12 -rotate-90" viewBox="0 0 40 40">
-        <circle cx="20" cy="20" r="18" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-slate-100" />
-        <motion.circle
-          cx="20" cy="20" r="18" fill="none" stroke={color} strokeWidth="2.5"
-          strokeLinecap="round"
-          strokeDasharray={circumference}
-          initial={{ strokeDashoffset: circumference }}
-          whileInView={{ strokeDashoffset: circumference - (rate / 100) * circumference }}
-          viewport={{ once: true }}
-          transition={{ delay: delay + 0.5, duration: 1.5, ease: "easeOut" }}
-        />
-      </svg>
-      <span className="absolute inset-0 flex items-center justify-center text-[10px] font-black" style={{ color }}>
-        {rate}%
-      </span>
-    </motion.div>
-  );
-}
-
-/* ═══════════════════════════════════════════════════════════
    MAIN COMPONENT
    ═══════════════════════════════════════════════════════════ */
 export function AIMessagePreview() {
@@ -159,69 +83,37 @@ export function AIMessagePreview() {
   return (
     <section
       ref={sectionRef}
-      className="relative pt-4 pb-20 lg:pt-6 lg:pb-32 overflow-hidden bg-white"
+      className="section relative overflow-hidden"
     >
-      {/* ── Background Gradients ── */}
-      <div className="absolute inset-0 pointer-events-none">
-        <div className="absolute top-0 right-0 w-[800px] h-[800px] bg-blue-50/60 rounded-full blur-[120px] -translate-y-1/2 translate-x-1/3" />
-        <div className="absolute bottom-0 left-0 w-[600px] h-[600px] bg-purple-50/60 rounded-full blur-[100px] translate-y-1/3 -translate-x-1/3" />
-        
-        {/* Subtle grid */}
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(34,90,234,0.04)_1px,transparent_1px)] [background-size:32px_32px]" />
-      </div>
 
-      <FloatingParticles />
-
-
-      <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 z-10">
+      <div className="relative max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 z-10">
         
         {/* ═══════════════════════════════
             HEADER
             ═══════════════════════════════ */}
         <motion.div
-          initial={{ opacity: 0, y: 40 }}
+          initial={{ opacity: 0, y: 24 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
-          transition={{ duration: 0.8, ease: "easeOut" }}
-          className="text-center mb-16"
+          transition={{ duration: 0.6, ease: "easeOut" }}
+          className="mb-14 max-w-3xl"
         >
-          <motion.div
-            className="inline-flex items-center gap-2 bg-blue-50 text-blue-600 px-5 py-2 rounded-full text-xs font-bold uppercase tracking-widest mb-6 border border-blue-100 shadow-sm"
-            initial={{ opacity: 0, scale: 0.8 }}
-            whileInView={{ opacity: 1, scale: 1 }}
-            viewport={{ once: true }}
-            transition={{ delay: 0.2 }}
-          >
-            <img src="/logo.png" alt="Qampi Logo" className="w-4 h-4 object-contain" />
-            Powered by Qampi AI
-          </motion.div>
-
-          <h2 className="font-display text-6xl sm:text-7xl lg:text-8xl font-semibold text-slate-900 leading-[1.1] max-w-7xl mx-auto">
-            The difference between{" "}
-            <span className="text-slate-300 line-through decoration-red-400/60 decoration-[3px] whitespace-nowrap">&ldquo;Hi [Name]&rdquo;</span>
+          <span className="eyebrow">Why it gets replies</span>
+          <h2 className="section-title mt-3">
+            Not <span className="text-slate-400 line-through decoration-slate-400/70 decoration-[3px]">&ldquo;Hi&nbsp;[Name]&rdquo;</span>.
             <br />
-            and
-            <br />
-            <span className="bg-gradient-to-r from-blue-600 via-indigo-500 to-purple-600 bg-clip-text text-transparent">
-              &ldquo;Hey Sarah, loved your post...&rdquo;
-            </span>
+            <span className="accent">&ldquo;Hey Sarah, loved your post…&rdquo;</span>
           </h2>
-
-          <motion.p
-            className="mt-6 text-lg text-slate-500 max-w-2xl mx-auto leading-relaxed font-medium"
-            initial={{ opacity: 0 }}
-            whileInView={{ opacity: 1 }}
-            viewport={{ once: true }}
-            transition={{ delay: 0.4 }}
-          >
-            See how Qampi transforms generic copy-paste templates into deeply personalized messages that actually get replies.
-          </motion.p>
+          <p className="section-lead mt-5">
+            Same prospect, same goal. One message reads like a template; the other reads like you
+            spent ten minutes on her profile. Qampi writes the second kind, for every lead.
+          </p>
         </motion.div>
 
         {/* ═══════════════════════════════
             COMPARISON CARDS
             ═══════════════════════════════ */}
-        <div className="relative grid lg:grid-cols-2 gap-8 lg:gap-12 max-w-7xl mx-auto items-stretch">
+        <div className="relative grid lg:grid-cols-2 gap-8 lg:gap-10 items-stretch">
 
           {/* ── Center VS Badge (desktop only) ── */}
           <motion.div
@@ -232,7 +124,7 @@ export function AIMessagePreview() {
             transition={{ delay: 0.8, type: "spring", stiffness: 300 }}
           >
             <div className="relative">
-              <div className="absolute inset-0 bg-gradient-to-br from-blue-400 to-purple-500 rounded-full blur-xl opacity-40 animate-pulse" />
+              <div className="absolute inset-0 bg-gradient-to-br from-violet-400 to-purple-500 rounded-full blur-xl opacity-40 animate-pulse" />
               <div className="relative w-16 h-16 bg-white rounded-full flex items-center justify-center text-slate-900 font-black text-xl shadow-2xl border-[6px] border-slate-50">
                 VS
               </div>
@@ -243,8 +135,8 @@ export function AIMessagePreview() {
               GENERIC MESSAGE CARD (Left)
               ═══════════════════════════════ */}
           <motion.div
-            initial={{ opacity: 0, x: -40 }}
-            whileInView={{ opacity: 1, x: 0 }}
+            initial={{ opacity: 0, y: 24 }}
+            whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ duration: 0.7, ease: "easeOut" }}
             className="relative group"
@@ -263,13 +155,6 @@ export function AIMessagePreview() {
                       <p className="text-xs text-slate-500 font-medium">What everyone else sends</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <ReplyRateMeter rate={5} color="#64748b" delay={0.3} />
-                    <div className="text-right">
-                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Reply Rate</p>
-                      <p className="text-[10px] text-slate-400 font-medium">Industry avg</p>
-                    </div>
-                  </div>
                 </div>
               </div>
 
@@ -279,11 +164,11 @@ export function AIMessagePreview() {
                   {/* Recipient header */}
                   <div className="flex items-center gap-3 mb-5 pb-4 border-b border-slate-200">
                     <div className="w-10 h-10 bg-slate-200 rounded-full flex items-center justify-center">
-                      <span className="text-xs font-bold text-slate-500">JS</span>
+                      <span className="text-xs font-bold text-slate-500">SM</span>
                     </div>
                     <div>
-                      <p className="text-sm font-bold text-slate-700">To: John Smith</p>
-                      <p className="text-[11px] text-slate-500 font-medium">VP Engineering at Acme Corp</p>
+                      <p className="text-sm font-bold text-slate-700">To: Sarah Mitchell</p>
+                      <p className="text-[11px] text-slate-500 font-medium">VP of Sales at Brightloop</p>
                     </div>
                   </div>
                   <p className="text-slate-500 text-sm leading-relaxed whitespace-pre-wrap">{genericMessage}</p>
@@ -322,24 +207,24 @@ export function AIMessagePreview() {
               AI MESSAGE CARD (Right)
               ═══════════════════════════════ */}
           <motion.div
-            initial={{ opacity: 0, x: 40 }}
-            whileInView={{ opacity: 1, x: 0 }}
+            initial={{ opacity: 0, y: 24 }}
+            whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ duration: 0.7, ease: "easeOut", delay: 0.15 }}
             className="relative"
           >
             {/* Outer glow */}
-            <div className="absolute -inset-2 bg-gradient-to-br from-blue-500/20 via-indigo-500/10 to-purple-500/20 rounded-[2rem] blur-2xl opacity-70" />
+            <div className="absolute -inset-2 bg-gradient-to-br from-violet-500/20 via-violet-500/10 to-purple-500/20 rounded-[2rem] blur-2xl opacity-70" />
             
-            <div className="relative bg-white rounded-3xl border border-blue-200 shadow-2xl overflow-hidden h-full">
+            <div className="relative bg-white rounded-3xl border border-violet-200 shadow-2xl overflow-hidden h-full">
               {/* Premium gradient overlay */}
-              <div className="absolute inset-0 bg-gradient-to-br from-blue-500/[0.03] via-transparent to-purple-500/[0.03] pointer-events-none" />
+              <div className="absolute inset-0 bg-gradient-to-br from-violet-500/[0.03] via-transparent to-purple-500/[0.03] pointer-events-none" />
 
               {/* Card Header */}
-              <div className="relative bg-gradient-to-r from-blue-50/80 via-indigo-50/50 to-purple-50/50 px-6 py-5 border-b border-blue-100/60">
+              <div className="relative bg-gradient-to-r from-violet-50/80 via-violet-50/50 to-purple-50/50 px-6 py-5 border-b border-violet-100/60">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/10 border border-blue-100">
+                    <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center shadow-lg shadow-violet-500/10 border border-violet-100">
                       <img src="/logo.png" alt="Qampi Logo" className="w-6 h-6 object-contain" />
                     </div>
                     <div>
@@ -351,14 +236,7 @@ export function AIMessagePreview() {
                           transition={{ repeat: Infinity, duration: 2 }}
                         />
                       </div>
-                      <p className="text-xs text-slate-500 font-medium">Fine-tuned to your voice</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <ReplyRateMeter rate={34} color="#2563eb" delay={0.5} />
-                    <div className="text-right">
-                      <p className="text-[10px] font-bold text-blue-600 uppercase tracking-wider">Reply Rate</p>
-                      <p className="text-[10px] text-slate-500 font-medium">6.8× better</p>
+                      <p className="text-xs text-slate-500 font-medium">Written in your voice</p>
                     </div>
                   </div>
                 </div>
@@ -366,7 +244,7 @@ export function AIMessagePreview() {
 
               {/* Message Body */}
               <div className="relative p-6 sm:p-8">
-                <div className="bg-gradient-to-br from-blue-50/50 to-indigo-50/30 rounded-2xl p-6 border border-blue-100 relative overflow-hidden">
+                <div className="bg-gradient-to-br from-violet-50/50 to-violet-50/30 rounded-2xl p-6 border border-violet-100 relative overflow-hidden">
                   {/* Shimmer effect */}
                   <motion.div
                     className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent pointer-events-none"
@@ -375,13 +253,13 @@ export function AIMessagePreview() {
                   />
                   
                   {/* Recipient header */}
-                  <div className="flex items-center gap-3 mb-5 pb-4 border-b border-blue-200/50 relative">
-                    <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center shadow-md">
+                  <div className="flex items-center gap-3 mb-5 pb-4 border-b border-violet-200/50 relative">
+                    <div className="w-10 h-10 bg-violet-600 rounded-full flex items-center justify-center shadow-md">
                       <img src="/logo.png" alt="Qampi" className="w-5 h-5 filter brightness-0 invert opacity-90" />
                     </div>
                     <div>
-                      <p className="text-sm font-bold text-slate-800">To: John Smith</p>
-                      <p className="text-[11px] text-slate-500 font-medium">VP Engineering at Acme Corp</p>
+                      <p className="text-sm font-bold text-slate-800">To: Sarah Mitchell</p>
+                      <p className="text-[11px] text-slate-500 font-medium">VP of Sales at Brightloop</p>
                     </div>
                     <div className="ml-auto">
                       <motion.div
@@ -397,17 +275,17 @@ export function AIMessagePreview() {
                   </div>
                   
                   {isVisible ? (
-                    <TypingEffect text={aiMessage} speed={25} startDelay={600} onComplete={() => setTypingDone(true)} />
+                    <TypingEffect text={aiMessage} speed={12} startDelay={600} onComplete={() => setTypingDone(true)} />
                   ) : (
-                    <div className="flex items-center gap-2 text-blue-600 text-sm font-medium">
+                    <div className="flex items-center gap-2 text-violet-600 text-sm font-medium">
                       <motion.div
                         className="flex gap-1"
                         animate={{ opacity: [0.3, 1, 0.3] }}
                         transition={{ repeat: Infinity, duration: 1.5 }}
                       >
-                        <span className="w-1.5 h-1.5 rounded-full bg-blue-600/60" />
-                        <span className="w-1.5 h-1.5 rounded-full bg-blue-600/60" />
-                        <span className="w-1.5 h-1.5 rounded-full bg-blue-600/60" />
+                        <span className="w-1.5 h-1.5 rounded-full bg-violet-600/60" />
+                        <span className="w-1.5 h-1.5 rounded-full bg-violet-600/60" />
+                        <span className="w-1.5 h-1.5 rounded-full bg-violet-600/60" />
                       </motion.div>
                       Generating...
                     </div>
@@ -422,7 +300,7 @@ export function AIMessagePreview() {
                   transition={{ delay: 1.5, duration: 0.6 }}
                   className="mt-6"
                 >
-                  <div className="bg-gradient-to-r from-blue-50/50 to-indigo-50/30 rounded-2xl p-4 border border-blue-100/50">
+                  <div className="bg-gradient-to-r from-violet-50/50 to-violet-50/30 rounded-2xl p-4 border border-violet-100/50">
                     <div className="flex items-center gap-2 mb-3">
                       <Zap className="w-4 h-4 text-amber-500" />
                       <p className="text-[11px] font-bold text-slate-700 uppercase tracking-widest">Qampi analyzed</p>
@@ -430,8 +308,8 @@ export function AIMessagePreview() {
                     <div className="flex flex-wrap gap-2">
                       {[
                         { label: "Recent post about hiring", icon: "📝" },
-                        { label: "Series B funding", icon: "💰" },
-                        { label: "SaaS case study match", icon: "🎯" },
+                        { label: "Team just doubled", icon: "📈" },
+                        { label: "Pain: noisy forecast", icon: "🎯" },
                         { label: "Casual, data-driven tone", icon: "🎨" },
                       ].map((signal, i) => (
                         <motion.span
@@ -458,7 +336,7 @@ export function AIMessagePreview() {
                   viewport={{ once: true }}
                   transition={{ delay: 1 }}
                 >
-                  <p className="text-[11px] font-bold text-blue-600 uppercase tracking-widest mb-4">Why it works</p>
+                  <p className="text-[11px] font-bold text-violet-600 uppercase tracking-widest mb-4">Why it works</p>
                   {[
                     { text: "References their actual activity", detail: "Builds instant rapport" },
                     { text: "Personal & conversational", detail: "Feels human-written" },
@@ -493,9 +371,9 @@ export function AIMessagePreview() {
           <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl p-8 sm:p-10">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8 md:gap-6 divide-y md:divide-y-0 md:divide-x divide-slate-100">
               {[
-                { icon: <TrendingUp className="w-6 h-6" />, value: "6.8×", label: "Higher reply rate", color: "text-blue-600", bg: "bg-blue-50", border: "border-blue-100" },
-                { icon: <Zap className="w-6 h-6" />, value: "< 3s", label: "Per message generation", color: "text-purple-600", bg: "bg-purple-50", border: "border-purple-100" },
-                { icon: <Sparkles className="w-6 h-6" />, value: "40%", label: "Shorter sales cycles", color: "text-emerald-600", bg: "bg-emerald-50", border: "border-emerald-100" },
+                { icon: <Sparkles className="w-6 h-6" />, value: "4", label: "Inputs read before every message", color: "text-primary", bg: "bg-violet-50", border: "border-violet-100" },
+                { icon: <Zap className="w-6 h-6" />, value: "18 / day", label: "Invite ceiling per account", color: "text-primary", bg: "bg-violet-50", border: "border-violet-100" },
+                { icon: <ShieldCheck className="w-6 h-6" />, value: "1 : 1", label: "Dedicated proxy per LinkedIn account", color: "text-primary", bg: "bg-violet-50", border: "border-violet-100" },
               ].map((metric, i) => (
                 <motion.div
                   key={metric.label}
@@ -508,8 +386,8 @@ export function AIMessagePreview() {
                   <div className={`inline-flex items-center justify-center w-12 h-12 rounded-xl mb-4 shadow-sm ${metric.bg} ${metric.border} border`}>
                     <div className={metric.color}>{metric.icon}</div>
                   </div>
-                  <div className={`text-3xl md:text-4xl font-black ${metric.color} mb-2 tracking-tight`}>{metric.value}</div>
-                  <div className="text-sm text-slate-500 font-bold">{metric.label}</div>
+                  <div className="text-3xl md:text-4xl font-semibold text-slate-900 mb-2 tracking-tight tabular-nums">{metric.value}</div>
+                  <div className="text-sm text-slate-500 font-medium">{metric.label}</div>
                 </motion.div>
               ))}
             </div>

@@ -17,26 +17,26 @@ export function Navbar() {
   }, []);
 
   const navLinks: { label: string; href: string; id: string; external?: boolean }[] = [
-    { label: "LinkedIn", href: "#linkedin", id: "nav-linkedin" },
-    { label: "Email", href: "#email", id: "nav-email" },
-    { label: "Sequences", href: "#sequences", id: "nav-sequences" },
-    { label: "CRM", href: "#crm", id: "nav-crm" },
+    { label: "How it works", href: "/#how-it-works", id: "nav-how" },
+    { label: "Features", href: "/#features", id: "nav-features" },
+    { label: "Pricing", href: "/#pricing", id: "nav-pricing" },
+    { label: "FAQ", href: "/#faq", id: "nav-faq" },
     { label: "Blog", href: "/blog", id: "nav-blog" },
     { label: "API Docs", href: "https://api.qampi.com/api/public/v1/docs", id: "nav-docs", external: true },
   ];
 
   return (
-    <nav className="fixed top-0 left-0 right-0 z-50 glass-nav border-b border-gray-100 transition-all duration-300">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between items-center h-20">
+    <nav className="fixed top-0 left-0 right-0 z-50 glass-nav border-b border-violet-100/70">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex justify-between items-center h-16">
           {/* Logo */}
-          <a href="#" className="flex items-center gap-2">
-            <img src="/logo.png" alt="Qampi Logo" className="w-10 h-10 object-contain rounded-xl" />
-            <span className="text-2xl font-bold tracking-tight text-slate-900">Qampi</span>
+          <a href="/" className="flex items-center gap-2">
+            <img src="/logo.png" alt="" className="w-9 h-9 object-contain" />
+            <span className="text-xl font-semibold tracking-tight text-slate-900">Qampi</span>
           </a>
 
           {/* Desktop Navigation Links */}
-          <div className="hidden md:flex items-center space-x-10">
+          <div className="hidden md:flex items-center gap-8">
             {navLinks.map((link) => (
               <a
                 key={link.label}
@@ -63,7 +63,7 @@ export function Navbar() {
             <a
               href="https://app.qampi.com/register"
               id="nav-cta-btn"
-              className="btn-primary px-6 py-2.5 rounded-full text-sm font-semibold inline-flex items-center justify-center"
+              className="btn-primary px-5 py-2 rounded-lg text-sm font-semibold inline-flex items-center justify-center"
             >
               Get Started Free
             </a>
@@ -111,7 +111,7 @@ export function Navbar() {
             </a>
             <a
               href="https://app.qampi.com/register"
-              className="btn-primary text-center px-6 py-3 rounded-full text-base font-semibold"
+              className="btn-primary text-center px-6 py-3 rounded-lg text-base font-semibold"
               onClick={() => setIsOpen(false)}
             >
               Get Started Free

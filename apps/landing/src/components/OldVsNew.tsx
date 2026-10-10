@@ -1,6 +1,6 @@
 'use client';
 
-import { X, Check, Zap } from "lucide-react";
+import { X, Check } from "lucide-react";
 import { motion } from "framer-motion";
 
 // Head-to-head: how typical LinkedIn-outreach tools work vs. how Qampi works.
@@ -47,27 +47,19 @@ const COLS = "grid grid-cols-1 md:grid-cols-[1.1fr_1.2fr_1.4fr]";
 
 export function OldVsNew() {
   return (
-    <section className="py-24 lg:py-32 bg-purple-50/30 relative overflow-hidden">
-      {/* Background Decor */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-gradient-to-br from-indigo-500/5 to-purple-500/5 rounded-full blur-[100px] pointer-events-none" />
-
-      <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <section className="section relative">
+      <div className="relative mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
         <motion.div
           initial={{ opacity: 0, y: 30 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
-          className="text-center mb-16"
+          className="mb-14 max-w-2xl"
         >
-          <span className="inline-flex items-center gap-2 bg-indigo-50 text-primary px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-widest mb-6 border border-indigo-100 shadow-sm">
-            <Zap className="w-4 h-4" /> Qampi vs. the rest
-          </span>
-          <h2 className="font-display text-5xl sm:text-6xl lg:text-7xl font-semibold text-slate-900 leading-[1.1]">
-            Other tools automate.{" "}
-            <span className="bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">Qampi converts.</span>
+          <span className="eyebrow">Qampi vs. the rest</span>
+          <h2 className="section-title mt-3">
+            Other tools automate. <span className="accent">Qampi converts.</span>
           </h2>
-          <p className="mt-6 text-xl text-slate-500 font-medium">
-            Same outreach — done the way that actually gets answered.
-          </p>
+          <p className="section-lead mt-5">Same outreach — done the way that actually gets answered.</p>
         </motion.div>
 
         {/* Comparison table */}
@@ -76,7 +68,7 @@ export function OldVsNew() {
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
           transition={{ duration: 0.6 }}
-          className="max-w-5xl mx-auto rounded-[2rem] border border-slate-200 bg-white shadow-xl overflow-hidden"
+          className="rounded-2xl border border-slate-200/80 bg-white overflow-hidden"
         >
           {/* Header row */}
           <div className={COLS}>
@@ -87,9 +79,9 @@ export function OldVsNew() {
               </div>
               <span className="text-base font-bold text-slate-500">Other Tools</span>
             </div>
-            <div className="p-6 flex items-center justify-center gap-2 bg-gradient-to-b from-indigo-50 to-indigo-50/40 md:border-l border-indigo-100">
+            <div className="p-6 flex items-center justify-center gap-2 bg-gradient-to-b from-violet-50 to-violet-50/40 md:border-l border-violet-100">
               <img src="/logo.png" alt="Qampi" className="w-7 h-7 object-contain" />
-              <span className="text-base font-black bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">Qampi</span>
+              <span className="text-base font-black bg-gradient-to-r from-violet-600 to-purple-600 bg-clip-text text-transparent">Qampi</span>
             </div>
           </div>
 
@@ -103,7 +95,7 @@ export function OldVsNew() {
                 <X className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
                 <span>{row.others}</span>
               </div>
-              <div className="px-6 py-5 flex items-start gap-3 text-slate-800 font-medium text-sm leading-relaxed bg-indigo-50/40 md:border-l border-indigo-100">
+              <div className="px-6 py-5 flex items-start gap-3 text-slate-800 font-medium text-sm leading-relaxed bg-violet-50/40 md:border-l border-violet-100">
                 <span className="w-5 h-5 rounded-full bg-gradient-to-r from-emerald-400 to-teal-400 flex items-center justify-center shrink-0 mt-0.5 shadow-sm shadow-emerald-500/20">
                   <Check className="w-3 h-3 text-white" />
                 </span>

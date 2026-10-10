@@ -173,7 +173,7 @@ export const useCases: UseCase[] = [
       {
         question: 'Does Qampi integrate with our CRM?',
         answer:
-          'Yes — native integrations with HubSpot, Pipedrive, and Notion sync leads, statuses, and conversation history. Zapier and Make support for 2,000+ tools is coming.',
+          'Yes — native integrations with HubSpot, Pipedrive, and Notion sync leads, statuses, and conversation history. On Pro and Business, the public API and webhooks connect Qampi to Zapier, Make, and n8n.',
       },
       {
         question: 'How does Qampi keep a whole team’s accounts safe?',

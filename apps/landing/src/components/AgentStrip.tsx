@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { motion } from "framer-motion";
 import { Check, Copy, ArrowUpRight } from "lucide-react";
 import { ClaudeIcon, OpenAIIcon, CursorIcon, McpIcon } from "./AgentIcons";
 
@@ -44,7 +43,7 @@ const AGENTS: Agent[] = [
   },
 ];
 
-export function AgentStrip() {
+export function AgentStrip({ className = "" }: { className?: string }) {
   const [active, setActive] = useState(AGENTS[0]);
   const [copied, setCopied] = useState(false);
 
@@ -60,19 +59,11 @@ export function AgentStrip() {
   };
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: 1.15, duration: 0.8 }}
-      className="mt-9 w-full max-w-[56rem] mx-auto text-left"
-    >
-      <div className="rounded-3xl border border-slate-200/80 bg-white/75 backdrop-blur-md shadow-[0_20px_50px_-20px_rgba(34,90,234,0.25)] p-2">
-        <div className="flex flex-col gap-2.5 px-2 pt-1.5 pb-2 lg:flex-row lg:items-center lg:justify-between">
+    <div className={`w-full text-left ${className}`}>
+      <div className="rounded-2xl border border-slate-200/80 bg-white p-2">
+        <div className="flex flex-col gap-2.5 px-2 pt-1.5 pb-2">
           <p className="flex flex-wrap items-center gap-x-2 gap-y-1 pl-1 text-sm font-semibold text-slate-800 lg:flex-nowrap lg:whitespace-nowrap">
-            <span className="rounded-md bg-primary px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.1em] text-white">
-              New
-            </span>
-            Run Qampi from your AI agent
+            Pick your agent
             <a
               href={REPO_URL}
               target="_blank"
@@ -83,7 +74,7 @@ export function AgentStrip() {
             </a>
           </p>
 
-          <div className="flex flex-wrap gap-1.5 lg:flex-nowrap" role="group" aria-label="Choose your agent">
+          <div className="flex flex-wrap gap-1.5" role="group" aria-label="Choose your agent">
             {AGENTS.map((agent) => {
               const selected = agent.id === active.id;
               return (
@@ -92,7 +83,7 @@ export function AgentStrip() {
                   type="button"
                   aria-pressed={selected}
                   onClick={() => { setActive(agent); setCopied(false); }}
-                  className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[13px] font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
+                  className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-3 py-1.5 text-[13px] font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
                     selected
                       ? "border-slate-900 bg-slate-900 text-white shadow-sm"
                       : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900"
@@ -108,7 +99,7 @@ export function AgentStrip() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2 rounded-2xl bg-slate-950 py-2 pl-4 pr-2">
+        <div className="flex items-center gap-2 rounded-xl bg-slate-950 py-2 pl-4 pr-2">
           <span className="select-none font-mono text-sm text-slate-500" aria-hidden="true">$</span>
           <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap font-mono text-[13px] text-slate-100 [scrollbar-width:none]">
             {active.command}
@@ -124,6 +115,6 @@ export function AgentStrip() {
           </button>
         </div>
       </div>
-    </motion.div>
+    </div>
   );
 }

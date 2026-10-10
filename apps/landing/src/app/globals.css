@@ -1,23 +1,24 @@
-@import url('https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@800,700,500&f[]=satoshi@700,500,400&display=swap');
 @import "tailwindcss";
 
 @theme {
-  --color-primary: #225aea;
-  --color-primary-light: #4c7df5;
-  --color-primary-hover: #1a48c7;
+  /* One accent: the app's violet (apps/web uses #8b5cf6 as primary). The
+     landing button shade is one step darker for contrast on white. */
+  --color-primary: #7c3aed;
+  --color-primary-light: #8b5cf6;
+  --color-primary-hover: #6d28d9;
   --color-primary-foreground: #ffffff;
   --color-secondary: #f8fafc;
   --color-background: #ffffff;
   --color-foreground: #0f172a;
   --color-muted: #f8fafc;
   --color-muted-foreground: #64748b;
-  --color-accent: #dbeafe;
+  --color-accent: #ede9fe;
   --color-accent-foreground: #1e1b4b;
   --color-border: #e2e8f0;
   --color-destructive: #ef4444;
   --color-destructive-foreground: #ffffff;
   --color-card: #ffffff;
-  --color-ring: #225aea;
+  --color-ring: #7c3aed;
   --color-input: #e2e8f0;
 
   --color-slate-50: #f8fafc;
@@ -75,11 +76,11 @@
   --color-red-400: #f87171;
   --color-red-500: #ef4444;
 
-  --font-sans: 'Satoshi', system-ui, -apple-system, sans-serif;
-  --font-cabinet: 'Cabinet Grotesk', sans-serif;
-  /* Mango Grotesque — condensed display face. next/font sets --font-mango on
-     <html> in layout.tsx; --font-display layers in safe fallbacks. */
-  --font-display: var(--font-mango), 'Cabinet Grotesk', sans-serif;
+  /* Fonts come from next/font in layout.tsx: Geist for text, Mango
+     Grotesque (condensed) for display headlines only. */
+  --font-sans: var(--font-geist), system-ui, -apple-system, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  --font-display: var(--font-mango), var(--font-geist), sans-serif;
 
   --shadow-soft: 0 4px 20px -2px rgba(0, 0, 0, 0.05), 0 2px 10px -2px rgba(0, 0, 0, 0.03);
 
@@ -116,20 +117,22 @@
   }
 
   body {
-    @apply font-sans bg-background text-foreground antialiased;
-    font-family: 'Satoshi', sans-serif;
-    color: #0f172a;
+    @apply font-sans text-foreground antialiased;
+    background-color: #fbfaff;
   }
 
   h1, h2, h3, h4, h5, h6 {
     @apply tracking-tight;
-    font-family: 'Cabinet Grotesk', sans-serif;
-    letter-spacing: -0.02em;
+    text-wrap: balance;
   }
 
-  /* Mango Grotesque is a condensed DISPLAY face — only for large headlines.
-     Applied via the `font-display` class; small headings keep Cabinet Grotesk
-     for legibility. Letter-spacing relaxed so the condensed glyphs breathe. */
+  p {
+    text-wrap: pretty;
+  }
+
+  /* Mango Grotesque is a condensed DISPLAY face — only for large headlines,
+     via the `font-display` class (or the `.section-title` helper below).
+     Letter-spacing relaxed so the condensed glyphs breathe. */
   .font-display {
     font-family: var(--font-display);
     letter-spacing: 0.01em;
@@ -138,19 +141,75 @@
   html {
     scroll-behavior: smooth;
   }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+}
+
+/* ── Section system ──────────────────────────────────────────────────────
+   Every landing section uses the same rhythm and the same header: a small
+   violet eyebrow, a Mango display title, and a muted lead paragraph. */
+@layer components {
+  .section {
+    padding-top: 6rem;
+    padding-bottom: 7rem;
+  }
+  @media (max-width: 767px) {
+    .section {
+      padding-top: 4rem;
+      padding-bottom: 4.5rem;
+    }
+  }
+  .eyebrow {
+    display: inline-block;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-primary);
+  }
+  .section-title {
+    font-family: var(--font-display);
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    line-height: 0.98;
+    color: #0f172a;
+    font-size: clamp(2.75rem, 5.5vw, 4.75rem);
+  }
+  .section-lead {
+    font-size: 1.125rem;
+    line-height: 1.7;
+    color: #475569;
+    max-width: 36rem;
+  }
+  .accent {
+    color: var(--color-primary);
+  }
 }
 
 /* Custom styles from design template */
 .btn-primary {
-  background-color: #225aea;
+  background-color: var(--color-primary);
   color: white;
-  transition: all 0.3s ease;
+  transition: background-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
 }
 
 .btn-primary:hover {
-  background-color: #1a48c7;
-  transform: translateY(-2px);
-  box-shadow: 0 10px 20px -5px rgba(34, 90, 234, 0.3);
+  background-color: var(--color-primary-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 10px 24px -8px rgba(109, 40, 217, 0.45);
+}
+
+.btn-primary:active {
+  transform: translateY(0) scale(0.98);
 }
 
 .animate-float {
@@ -162,10 +221,38 @@
   50% { transform: translateY(-20px); }
 }
 
+/* The hero's rotating word: deep violet so it reads on the animated
+   gradient behind the headline, with a slow flow of lighter violet/magenta
+   moving through it. The stops wrap (start = end), so the loop is seamless. */
 .gradient-text {
-  background: linear-gradient(135deg, #225aea 0%, #a855f7 100%);
+  background-image: linear-gradient(
+    100deg,
+    #3b0f8c 0%,
+    #6d28d9 22%,
+    #a21caf 42%,
+    #5b21b6 62%,
+    #3b0f8c 80%,
+    #6d28d9 100%
+  );
+  /* With a 200%-wide image, position -200% moves it exactly one image width
+     ((box - 2·box) × -2 = 2·box), so the repeat lines up and never jumps. */
+  background-size: 200% 100%;
+  background-repeat: repeat-x;
   -webkit-background-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
+  animation: gradient-flow 6s linear infinite;
+}
+
+@keyframes gradient-flow {
+  from { background-position: 0% 50%; }
+  to { background-position: -200% 50%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gradient-text {
+    animation: none;
+  }
 }
 
 .card-shadow {
@@ -175,9 +262,8 @@
 .glass-nav {
   /* translucent white base + a faint brand blue→purple wash, kept subtle so
      the dark nav text stays legible over it */
-  background-color: rgba(255, 255, 255, 0.88);
-  background-image: linear-gradient(90deg, rgba(34, 90, 234, 0.1) 0%, rgba(168, 85, 247, 0.1) 100%);
-  backdrop-filter: blur(8px);
+  background-color: rgba(251, 250, 255, 0.82);
+  backdrop-filter: blur(12px);
 }
 
 @keyframes slideInUp {
