@@ -70,6 +70,34 @@ export async function createCheckout(req: any, res: Response) {
     });
     if (!user) return res.status(404).json({ error: 'User not found' });
 
+    // One live subscription per user. A second checkout would leave the first
+    // Razorpay subscription charging (double billing) while the row below
+    // forgets it. A paid plan (ACTIVE / PAST_DUE / PAUSED, even if set to end
+    // at period end) blocks a new checkout; an unpaid one left over from an
+    // abandoned checkout (TRIALING = created/authenticated) is cancelled at
+    // Razorpay first, so its mandate can never charge later.
+    const existing = await prisma.subscription.findUnique({ where: { userId } }).catch(() => null);
+    if (existing?.providerSubId && existing.status !== 'CANCELED') {
+        if (existing.status !== 'TRIALING') {
+            const label = planFor(existing.tier).label;
+            const msg = existing.cancelAtPeriodEnd && existing.currentPeriodEnd
+                ? `Your ${label} plan is active until ${existing.currentPeriodEnd.toDateString()}. You can choose a new plan after it ends.`
+                : `You already have an active ${label} plan. Cancel it in Settings → Billing before choosing another.`;
+            return res.status(409).json({ error: msg, code: 'SUBSCRIPTION_EXISTS' });
+        }
+        try {
+            await cancelSubscription(existing.providerSubId, false);
+        } catch (err: any) {
+            // Already cancelled/expired at Razorpay is fine. Anything else means
+            // we can't be sure it won't charge, so don't stack another on top.
+            const detail: string = err?.response?.data?.error?.description || err?.message || '';
+            if (!/cancel|expire|complete/i.test(detail)) {
+                console.error('[BILLING] could not cancel abandoned subscription:', detail);
+                return res.status(502).json({ error: 'Could not start checkout. Please try again in a minute.' });
+            }
+        }
+    }
+
     try {
         // Ensure a Razorpay customer (reused across resubscribes / billing portal).
         let customerId = user.razorpayCustomerId || undefined;
@@ -223,6 +251,18 @@ async function applyRazorpayEvent(event: any): Promise<void> {
         const local = await prisma.subscription.findUnique({ where: { providerSubId: subId } });
         const userId: string | undefined = local?.userId || entity?.notes?.userId;
         if (!userId) { console.warn(`[BILLING] webhook: no user for subscription ${subId}`); return; }
+
+        // Only the user's CURRENT subscription may change their state. Events
+        // from an older one (e.g. the abandoned checkout we cancelled, now
+        // reporting subscription.cancelled) must not overwrite the row or
+        // revoke a tier the newer subscription is paying for.
+        if (!local) {
+            const current = await prisma.subscription.findUnique({ where: { userId } });
+            if (current?.providerSubId && current.providerSubId !== subId) {
+                console.warn(`[BILLING] webhook: ignoring ${type} for superseded subscription ${subId} (current ${current.providerSubId})`);
+                return;
+            }
+        }
 
         // Type-safe tier resolution (planFor maps unknown → FREE).
         const tier = planFor(local?.tier ?? entity?.notes?.tier).key;
