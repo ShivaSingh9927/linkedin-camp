@@ -70,6 +70,21 @@ services:
       S3_ACCESS_KEY: ${S3_ACCESS_KEY}
       S3_SECRET_KEY: ${S3_SECRET_KEY}
       S3_REGION: ${S3_REGION}
+      # Billing (Razorpay). Checkout + the webhook run in this process only.
+      # Unset = paid plans show "Coming soon" and the webhook answers 503.
+      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-}
+      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-}
+      RAZORPAY_WEBHOOK_SECRET: ${RAZORPAY_WEBHOOK_SECRET:-}
+      RAZORPAY_PLAN_CORE_MONTHLY: ${RAZORPAY_PLAN_CORE_MONTHLY:-}
+      RAZORPAY_PLAN_CORE_ANNUAL: ${RAZORPAY_PLAN_CORE_ANNUAL:-}
+      RAZORPAY_PLAN_PRO_MONTHLY: ${RAZORPAY_PLAN_PRO_MONTHLY:-}
+      RAZORPAY_PLAN_PRO_ANNUAL: ${RAZORPAY_PLAN_PRO_ANNUAL:-}
+      RAZORPAY_PLAN_BUSINESS_MONTHLY: ${RAZORPAY_PLAN_BUSINESS_MONTHLY:-}
+      RAZORPAY_PLAN_BUSINESS_ANNUAL: ${RAZORPAY_PLAN_BUSINESS_ANNUAL:-}
+      # TEMPORARY reviewer email sign-in (Razorpay review) — remove with
+      # apps/backend/src/controllers/review-login.controller.ts.
+      REVIEW_LOGIN_EMAIL: ${REVIEW_LOGIN_EMAIL:-}
+      REVIEW_LOGIN_PASSWORD_HASH: ${REVIEW_LOGIN_PASSWORD_HASH:-}
       # Sticky-per-account proxy fallback. Without these the container has no
       # PROXY env at all — every LinkedIn login + campaign run exits via the
       # Hetzner Helsinki public IP and LinkedIn instantly throws a device
