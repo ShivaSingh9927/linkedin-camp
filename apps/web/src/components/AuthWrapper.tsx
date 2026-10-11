@@ -6,7 +6,7 @@ import { LoadingScreen } from '@/components/ui';
 import api from '@/lib/api';
 import { identifyUser } from '@/lib/analytics';
 
-const AUTH_ROUTES = ['/login', '/register', '/auth/callback'];
+const AUTH_ROUTES = ['/login', '/login/email', '/register', '/auth/callback'];
 
 export function AuthWrapper({ children }: { children: React.ReactNode }) {
     const router = useRouter();

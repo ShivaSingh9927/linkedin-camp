@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { GoogleLogin } from '@react-oauth/google';
@@ -40,6 +41,14 @@ function LinkedInIcon() {
 
 export function AuthLayout({ type, title, description }: AuthLayoutProps) {
     const router = useRouter();
+
+    // TEMPORARY: reviewer email sign-in (Razorpay review) — only shown while the
+    // backend has REVIEW_LOGIN_* configured. Remove with /login/email.
+    const [emailLogin, setEmailLogin] = useState(false);
+    useEffect(() => {
+        if (type !== 'login') return;
+        api.get('/auth/review-login').then((r) => setEmailLogin(!!r.data?.enabled)).catch(() => {});
+    }, [type]);
 
     const handleGoogleSuccess = async (response: any) => {
         try {
@@ -121,6 +130,15 @@ export function AuthLayout({ type, title, description }: AuthLayoutProps) {
                     <p className="animate-element animate-delay-600 text-center text-xs text-muted-foreground leading-relaxed mt-1">
                         Switching accounts? Sign out of LinkedIn first (or use a private window) — LinkedIn signs you in with its current account.
                     </p>
+
+                    {emailLogin && (
+                        <p className="text-center text-xs text-muted-foreground">
+                            Have a test account?{' '}
+                            <Link href="/login/email" className="font-semibold text-primary hover:underline">
+                                Sign in with email
+                            </Link>
+                        </p>
+                    )}
                 </div>
 
                 <p className="animate-element animate-delay-700 text-center text-xs font-medium text-muted-foreground leading-relaxed mt-8 sm:mt-10">

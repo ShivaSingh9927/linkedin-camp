@@ -8,7 +8,7 @@ import { POSTHOG_KEY, POSTHOG_HOST, analyticsEnabled } from '@/lib/analytics';
 
 // Routes where we never want session replay running — they show LinkedIn login,
 // OTP codes, and OAuth tokens. Belt-and-suspenders on top of input masking.
-const REPLAY_BLOCKLIST = ['/login', '/register', '/auth/callback', '/onboarding'];
+const REPLAY_BLOCKLIST = ['/login', '/login/email', '/register', '/auth/callback', '/onboarding'];
 
 if (typeof window !== 'undefined' && POSTHOG_KEY && !posthog.__loaded) {
     posthog.init(POSTHOG_KEY, {

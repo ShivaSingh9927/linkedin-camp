@@ -9,7 +9,7 @@ import { AccountHealthBanner } from './AccountHealthBanner';
 
 export function SidebarWrapper({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const isAuthPage = pathname === '/login' || pathname === '/register' || pathname === '/api-reference';
+  const isAuthPage = pathname === '/login' || pathname === '/login/email' || pathname === '/register' || pathname === '/api-reference';
   const isDashboard = pathname === '/';
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 

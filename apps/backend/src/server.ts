@@ -178,6 +178,7 @@ const httpServer = app.listen(serverPort, '0.0.0.0', () => {
             // /google (email), /oauth/:provider/start, /oauth/:provider/callback
             app.use('/api/v1/auth/google', authLimiter);
             app.use('/api/v1/auth/oauth', authLimiter);
+            app.use('/api/v1/auth/review-login', authLimiter); // TEMPORARY reviewer sign-in
             app.use('/api/v1/auth', authRoutes);
             // Public + unauthenticated by design — an unsubscribe link that
             // demands a login is why people press "spam" instead.
