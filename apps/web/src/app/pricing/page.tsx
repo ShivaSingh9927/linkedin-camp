@@ -80,6 +80,18 @@ export default function PricingPage() {
     const [isYearly, setIsYearly] = useState(true);
     const [busyKey, setBusyKey] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
+    // The user's live plan, so its card reads "Current plan" instead of
+    // offering a second checkout (the backend refuses that with a 409 anyway).
+    const [currentTier, setCurrentTier] = useState<string | null>(null);
+
+    useEffect(() => {
+        api.get('/billing/subscription')
+            .then((r) => {
+                const sub = r.data?.subscription;
+                if (sub && ['ACTIVE', 'PAST_DUE', 'PAUSED'].includes(sub.status)) setCurrentTier(sub.tier);
+            })
+            .catch(() => {});
+    }, []);
 
     useEffect(() => {
         api.get('/billing/plans')
@@ -106,15 +118,43 @@ export default function PricingPage() {
                         : 'Multichannel at full scale',
                     features: featuresFor(p),
                     highlighted: p.key === 'PRO',
-                    buttonText: isFree ? 'Start for free' : p.available ? 'Start 14-day trial' : 'Coming soon',
+                    buttonText:
+                        p.key === currentTier ? 'Current plan'
+                        : isFree ? 'Start for free'
+                        : p.available ? 'Subscribe'
+                        : 'Coming soon',
                     icon: ICONS[p.key] || Rocket,
                 };
             }),
-        [plans, region]
+        [plans, region, currentTier]
     );
+
+    // Razorpay's handler fires when the charge succeeds, but the plan is only
+    // granted by our webhook — poll until it lands (normally a few seconds),
+    // then reflect the new tier everywhere the app reads it.
+    async function waitForActivation(tierKey: string, label: string) {
+        for (let i = 0; i < 20; i++) {
+            await new Promise((r) => setTimeout(r, 2000));
+            try {
+                const { data } = await api.get('/billing/subscription');
+                const sub = data?.subscription;
+                if (sub?.status === 'ACTIVE' && sub.tier === tierKey) {
+                    try {
+                        const user = JSON.parse(localStorage.getItem('user') || '{}');
+                        localStorage.setItem('user', JSON.stringify({ ...user, tier: tierKey }));
+                    } catch { /* storage unavailable — the next /users/me fixes it */ }
+                    setCurrentTier(tierKey);
+                    toast.success(`You're on ${label} now.`);
+                    return;
+                }
+            } catch { /* keep waiting */ }
+        }
+        toast('Payment received. Your plan will switch on within a few minutes — refresh this page if it hasn\'t.');
+    }
 
     async function handleSelect(p: ApiPlan) {
         if (p.key === 'FREE') { router.push('/'); return; }
+        if (p.key === currentTier) return;
         if (!p.available) { toast('This plan isn\'t available for checkout yet.'); return; }
 
         setBusyKey(p.key);
@@ -123,9 +163,10 @@ export default function PricingPage() {
             const { data } = await api.post('/billing/checkout', { tier: p.key, cycle });
             const ok = await loadRazorpay();
             if (!ok || !window.Razorpay) {
-                // Fallback: Razorpay's hosted subscription page.
-                if (data.shortUrl) { window.location.href = data.shortUrl; return; }
-                throw new Error('Checkout failed to load');
+                // No hosted fallback: Razorpay serves no hosted page for
+                // subscriptions created through the API ("Hosted page is not
+                // available"). Usually an ad/script blocker.
+                throw new Error('Couldn\'t load the payment window. Disable any ad blocker for this site and try again.');
             }
             const rzp = new window.Razorpay({
                 key: data.keyId,
@@ -135,7 +176,7 @@ export default function PricingPage() {
                 theme: { color: '#7c3aed' },
                 handler: () => {
                     toast.success('Payment received — activating your plan…');
-                    setBusyKey(null);
+                    void waitForActivation(p.key, p.label).finally(() => setBusyKey(null));
                 },
                 modal: { ondismiss: () => setBusyKey(null) },
             });
@@ -204,14 +245,14 @@ export default function PricingPage() {
                     ))}
                 </div>
             ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5 mb-5">
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5 mb-5 pt-4">
                     {tiers.map((t) => (
                         <PricingCard
                             key={t.key}
                             tier={t}
                             isYearly={isYearly}
                             busy={busyKey === t.key}
-                            ctaDisabled={t.plan.key !== 'FREE' && !t.plan.available}
+                            ctaDisabled={t.plan.key === currentTier || (t.plan.key !== 'FREE' && !t.plan.available)}
                             billedNote={t.plan.key === 'FREE' ? undefined : `${money(region, t.plan.pricing[CUR[region]].annualTotal)} billed yearly`}
                             onSelect={() => handleSelect(t.plan)}
                         />

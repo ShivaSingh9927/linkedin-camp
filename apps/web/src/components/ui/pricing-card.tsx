@@ -70,7 +70,7 @@ export function PricingCard({
                     <span className="text-sm font-bold text-slate-400">/mo</span>
                 </div>
                 {isYearly && billedNote && tier.monthlyPrice !== "Free" && (
-                    <p className="mt-1 text-[10px] font-black text-accent uppercase tracking-wider">
+                    <p className="mt-1 text-[10px] font-black text-slate-500 uppercase tracking-wider">
                         {billedNote}
                     </p>
                 )}
