@@ -88,10 +88,13 @@ export async function createCheckout(req: any, res: Response) {
         try {
             await cancelSubscription(existing.providerSubId, false);
         } catch (err: any) {
-            // Already cancelled/expired at Razorpay is fine. Anything else means
-            // we can't be sure it won't charge, so don't stack another on top.
+            // Already cancelled/expired at Razorpay is fine, and so is "not
+            // found": a subscription from the other mode (test vs live keys)
+            // isn't visible to these keys and can't charge this account.
+            // Anything else means we can't be sure it won't charge, so don't
+            // stack another subscription on top.
             const detail: string = err?.response?.data?.error?.description || err?.message || '';
-            if (!/cancel|expire|complete/i.test(detail)) {
+            if (!/cancel|expire|complete|could not be found|does not exist/i.test(detail)) {
                 console.error('[BILLING] could not cancel abandoned subscription:', detail);
                 return res.status(502).json({ error: 'Could not start checkout. Please try again in a minute.' });
             }
