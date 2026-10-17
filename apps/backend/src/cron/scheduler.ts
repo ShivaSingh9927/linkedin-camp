@@ -585,40 +585,43 @@ const isUserActive = redisPresence === 'ACTIVE' || (now - lastActivity < twoMins
   // the user to Free — and cancel it at Razorpay, which would otherwise keep
   // retrying the charge after we've told them the plan ended. Daily at 03:00.
   // Real billing lifecycle — independent of ENFORCE_TIER_QUOTAS.
-  cron.schedule('0 3 * * *', async () => {
-    try {
-      const now = new Date();
-      const expired = await prisma.subscription.findMany({
-        where: { status: 'PAST_DUE', currentPeriodEnd: { lt: now } },
-        select: { id: true, userId: true, providerSubId: true },
-      });
-      if (!expired.length) return;
-      console.log(`[Scheduler] Grace downgrade: ${expired.length} past-due subscription(s) expired.`);
-      for (const sub of expired) {
-        if (sub.providerSubId) {
-          try {
-            await cancelSubscriptionNow(sub.providerSubId);
-          } catch (err: any) {
-            // Leave it PAST_DUE so tomorrow's run tries again — never tell the
-            // user it ended while Razorpay can still charge them.
-            console.error(`[Scheduler] Grace downgrade: could not cancel ${sub.providerSubId} at Razorpay:`, err?.response?.data?.error?.description || err?.message);
-            continue;
-          }
-        }
-        await prisma.subscription.update({ where: { id: sub.id }, data: { status: 'CANCELED' } }).catch(() => {});
-        await prisma.user.update({ where: { id: sub.userId }, data: { tier: 'FREE' } }).catch(() => {});
-        const u = await prisma.user.findUnique({
-          where: { id: sub.userId }, select: { email: true, firstName: true },
-        }).catch(() => null);
-        if (u) {
-          await prisma.notification.create({
-            data: { userId: sub.userId, type: 'INFO', title: 'Your plan has ended', body: 'Your subscription lapsed after a failed payment. You\'re now on the Free plan.' },
-          }).catch(() => {});
-          await mailService.sendSubscriptionEndedEmail(u.email, u.firstName || '').catch(() => {});
+  cron.schedule('0 3 * * *', () => { void runGraceDowngrade(); });
+};
+
+// Exported so it can be run on demand (billing e2e test).
+export async function runGraceDowngrade(): Promise<void> {
+  try {
+    const now = new Date();
+    const expired = await prisma.subscription.findMany({
+      where: { status: 'PAST_DUE', currentPeriodEnd: { lt: now } },
+      select: { id: true, userId: true, providerSubId: true },
+    });
+    if (!expired.length) return;
+    console.log(`[Scheduler] Grace downgrade: ${expired.length} past-due subscription(s) expired.`);
+    for (const sub of expired) {
+      if (sub.providerSubId) {
+        try {
+          await cancelSubscriptionNow(sub.providerSubId);
+        } catch (err: any) {
+          // Leave it PAST_DUE so tomorrow's run tries again — never tell the
+          // user it ended while Razorpay can still charge them.
+          console.error(`[Scheduler] Grace downgrade: could not cancel ${sub.providerSubId} at Razorpay:`, err?.response?.data?.error?.description || err?.message);
+          continue;
         }
       }
-    } catch (error) {
-      console.error('[Scheduler] Grace downgrade check failed:', error);
+      await prisma.subscription.update({ where: { id: sub.id }, data: { status: 'CANCELED' } }).catch(() => {});
+      await prisma.user.update({ where: { id: sub.userId }, data: { tier: 'FREE' } }).catch(() => {});
+      const u = await prisma.user.findUnique({
+        where: { id: sub.userId }, select: { email: true, firstName: true },
+      }).catch(() => null);
+      if (u) {
+        await prisma.notification.create({
+          data: { userId: sub.userId, type: 'INFO', title: 'Your plan has ended', body: 'Your subscription lapsed after a failed payment. You\'re now on the Free plan.' },
+        }).catch(() => {});
+        await mailService.sendSubscriptionEndedEmail(u.email, u.firstName || '').catch(() => {});
+      }
     }
-  });
-};
+  } catch (error) {
+    console.error('[Scheduler] Grace downgrade check failed:', error);
+  }
+}

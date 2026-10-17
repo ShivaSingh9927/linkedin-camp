@@ -36,13 +36,14 @@ const client = () =>
 export interface RazorpayCustomer { id: string; }
 export interface RazorpaySubscription { id: string; short_url: string; status: string; }
 
-// Idempotent-ish: Razorpay errors if a customer with the same email exists and
-// fail_existing isn't 0; we pass fail_existing:0 so it returns the existing one.
+// Idempotent: with fail_existing "0" Razorpay returns the existing customer for
+// this email instead of failing. It must be the STRING "0" — a numeric 0 is
+// ignored and the call fails with "Customer already exists for the merchant".
 export async function createCustomer(name: string, email: string): Promise<RazorpayCustomer> {
     const { data } = await client().post('/customers', {
         name: name || email,
         email,
-        fail_existing: 0,
+        fail_existing: '0',
     });
     return { id: data.id };
 }
@@ -92,7 +93,7 @@ export function razorpayErrorDetail(err: any): string {
 }
 
 function isNotFound(err: any): boolean {
-    return /could not be found|does not exist/i.test(razorpayErrorDetail(err));
+    return err?.response?.status === 404 || /could not be found|does not exist/i.test(razorpayErrorDetail(err));
 }
 
 // total_count is the max number of billing cycles Razorpay will run. We set a
@@ -132,7 +133,7 @@ export async function cancelSubscriptionNow(subId: string): Promise<void> {
     try {
         await cancelSubscription(subId, false);
     } catch (err: any) {
-        if (!/cancel|expire|complete|could not be found|does not exist/i.test(razorpayErrorDetail(err))) throw err;
+        if (!isNotFound(err) && !/cancel|expire|complete/i.test(razorpayErrorDetail(err))) throw err;
     }
 }
 
