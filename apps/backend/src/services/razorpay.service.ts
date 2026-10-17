@@ -47,6 +47,54 @@ export async function createCustomer(name: string, email: string): Promise<Razor
     return { id: data.id };
 }
 
+// The stored customer id may come from the other mode (test vs live keys),
+// where it doesn't exist. Returns false only when Razorpay says so; any other
+// error is thrown.
+export async function customerExists(customerId: string): Promise<boolean> {
+    try {
+        await client().get(`/customers/${customerId}`);
+        return true;
+    } catch (err: any) {
+        if (isNotFound(err)) return false;
+        throw err;
+    }
+}
+
+export interface RazorpaySubscriptionState {
+    id: string;
+    status: string;
+    paid_count: number;
+    current_end: number | null;
+    customer_id: string | null;
+}
+
+// Razorpay's current view of a subscription. Webhooks can arrive out of order,
+// so this — not the event payload — is the truth about where a subscription is.
+// Null when these keys can't see it (e.g. it was created in the other mode).
+export async function fetchSubscription(subId: string): Promise<RazorpaySubscriptionState | null> {
+    try {
+        const { data } = await client().get(`/subscriptions/${subId}`);
+        return {
+            id: data.id,
+            status: data.status,
+            paid_count: Number(data.paid_count) || 0,
+            current_end: data.current_end ?? null,
+            customer_id: data.customer_id ?? null,
+        };
+    } catch (err: any) {
+        if (isNotFound(err)) return null;
+        throw err;
+    }
+}
+
+export function razorpayErrorDetail(err: any): string {
+    return err?.response?.data?.error?.description || err?.message || '';
+}
+
+function isNotFound(err: any): boolean {
+    return /could not be found|does not exist/i.test(razorpayErrorDetail(err));
+}
+
 // total_count is the max number of billing cycles Razorpay will run. We set a
 // long horizon (renewals continue until cancelled); the value just bounds it.
 const TOTAL_COUNT: Record<BillingCycle, number> = { MONTHLY: 120, ANNUAL: 10 };
@@ -76,6 +124,16 @@ export async function cancelSubscription(subId: string, atCycleEnd = true): Prom
         cancel_at_cycle_end: atCycleEnd ? 1 : 0,
     });
     return { status: data.status };
+}
+
+// Cancel immediately, treating "already over" and "not visible to these keys"
+// as done — both mean it can't charge this account. Throws on anything else.
+export async function cancelSubscriptionNow(subId: string): Promise<void> {
+    try {
+        await cancelSubscription(subId, false);
+    } catch (err: any) {
+        if (!/cancel|expire|complete|could not be found|does not exist/i.test(razorpayErrorDetail(err))) throw err;
+    }
 }
 
 // Razorpay subscription status → our normalized enum. Used at checkout (initial

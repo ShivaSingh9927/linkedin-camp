@@ -7,6 +7,7 @@ import { withdrawOldInvites } from '../workers/withdraw.worker';
 import { sessionValidator } from '../services/session-validator.service';
 import { getStepType } from '../campaign-engine/workflow-graph';
 import { mailService } from '../services/mail.service';
+import { cancelSubscriptionNow } from '../services/razorpay.service';
 import { getCampaignActivity } from '../services/campaign-activity.service';
 import { runHealthWatch } from '../services/health-watch.service';
 import { reconcileConnectionDegrees } from '../services/connection-reconcile.service';
@@ -581,18 +582,29 @@ const isUserActive = redisPresence === 'ACTIVE' || (now - lastActivity < twoMins
 
   // Grace-period downgrade (billing). A subscription whose payment failed goes
   // PAST_DUE but keeps its tier until the paid period ends; after that we move
-  // the user to Free. Daily at 03:00. Real billing lifecycle — independent of
-  // ENFORCE_TIER_QUOTAS.
+  // the user to Free — and cancel it at Razorpay, which would otherwise keep
+  // retrying the charge after we've told them the plan ended. Daily at 03:00.
+  // Real billing lifecycle — independent of ENFORCE_TIER_QUOTAS.
   cron.schedule('0 3 * * *', async () => {
     try {
       const now = new Date();
       const expired = await prisma.subscription.findMany({
         where: { status: 'PAST_DUE', currentPeriodEnd: { lt: now } },
-        select: { id: true, userId: true },
+        select: { id: true, userId: true, providerSubId: true },
       });
       if (!expired.length) return;
       console.log(`[Scheduler] Grace downgrade: ${expired.length} past-due subscription(s) expired.`);
       for (const sub of expired) {
+        if (sub.providerSubId) {
+          try {
+            await cancelSubscriptionNow(sub.providerSubId);
+          } catch (err: any) {
+            // Leave it PAST_DUE so tomorrow's run tries again — never tell the
+            // user it ended while Razorpay can still charge them.
+            console.error(`[Scheduler] Grace downgrade: could not cancel ${sub.providerSubId} at Razorpay:`, err?.response?.data?.error?.description || err?.message);
+            continue;
+          }
+        }
         await prisma.subscription.update({ where: { id: sub.id }, data: { status: 'CANCELED' } }).catch(() => {});
         await prisma.user.update({ where: { id: sub.userId }, data: { tier: 'FREE' } }).catch(() => {});
         const u = await prisma.user.findUnique({

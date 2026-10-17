@@ -77,6 +77,9 @@ export default function PricingPage() {
     const router = useRouter();
     const [plans, setPlans] = useState<ApiPlan[]>([]);
     const [region, setRegion] = useState<Region>('india');
+    // Currencies a customer can actually be charged in (backend says). Until a
+    // USD plan exists, showing $ prices would charge a US visitor in rupees.
+    const [usdCheckout, setUsdCheckout] = useState(false);
     const [isYearly, setIsYearly] = useState(true);
     const [busyKey, setBusyKey] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
@@ -95,7 +98,10 @@ export default function PricingPage() {
 
     useEffect(() => {
         api.get('/billing/plans')
-            .then((r) => setPlans(r.data?.plans || []))
+            .then((r) => {
+                setPlans(r.data?.plans || []);
+                setUsdCheckout(!!r.data?.currency?.checkout?.includes('usd'));
+            })
             .catch(() => toast.error('Could not load plans'))
             .finally(() => setLoading(false));
     }, []);
@@ -201,11 +207,11 @@ export default function PricingPage() {
                 <h1 className="text-3xl sm:text-4xl font-black text-slate-900 tracking-tight">
                     Select your <span className="text-primary">plan</span>
                 </h1>
-                <p className="text-slate-500 font-semibold text-sm mt-1.5">Scale your outreach safely — upgrade or downgrade anytime.</p>
+                <p className="text-slate-500 font-semibold text-sm mt-1.5">Scale your outreach safely — cancel anytime, keep your plan until the period ends.</p>
 
                 <div className="flex flex-col justify-center items-stretch gap-2.5 mt-4 sm:flex-row sm:flex-wrap sm:items-center">
                     {/* Region */}
-                    <div className="bg-white p-1 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-center">
+                    {usdCheckout && <div className="bg-white p-1 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-center">
                         {(['india', 'global'] as Region[]).map((r) => (
                             <button
                                 key={r}
@@ -218,7 +224,7 @@ export default function PricingPage() {
                                 {r === 'india' ? 'India · ₹' : 'Global · $'}
                             </button>
                         ))}
-                    </div>
+                    </div>}
                     {/* Billing cycle */}
                     <div className="bg-white p-1 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-center">
                         <button

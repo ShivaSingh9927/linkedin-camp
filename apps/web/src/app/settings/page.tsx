@@ -372,16 +372,20 @@ function BillingSection() {
     }, []);
     useEffect(() => { load(); }, [load]);
 
-    const paid = !!sub && sub.tier !== 'FREE';
-    const active = paid && (sub!.status === 'ACTIVE' || sub!.status === 'TRIALING');
+    // Only a plan that was actually paid for counts — not an abandoned
+    // checkout (TRIALING) or one that has ended (CANCELED).
+    const paid = !!sub && sub.tier !== 'FREE' && ['ACTIVE', 'PAST_DUE', 'PAUSED'].includes(sub.status);
+    const pastDue = paid && sub!.status === 'PAST_DUE';
     const renew = sub?.currentPeriodEnd ? new Date(sub.currentPeriodEnd).toLocaleDateString() : null;
 
     async function cancel() {
-        if (!window.confirm('Cancel your plan? You keep access until the end of the current billing period.')) return;
+        if (!window.confirm(pastDue
+            ? 'Cancel your plan? It ends now and you move to the Free plan.'
+            : 'Cancel your plan? You keep access until the end of the current billing period.')) return;
         setCanceling(true);
         try {
             await api.post('/billing/cancel');
-            toast.success('Your plan will end at the current period — access continues until then.');
+            toast.success(pastDue ? 'Your plan has been cancelled.' : 'Your plan will end at the current period — access continues until then.');
             load();
         } catch (e: any) {
             toast.error(e?.response?.data?.error || 'Could not cancel');
@@ -410,10 +414,11 @@ function BillingSection() {
                         </div>
                         <div className="min-w-0">
                             <div className="font-semibold text-[13px] text-ink-900">
-                                {paid ? `${sub!.label} · ${sub!.status.toLowerCase()}` : 'Free plan'}
+                                {paid ? `${sub!.label} · ${pastDue ? 'payment failed' : sub!.status.toLowerCase()}` : 'Free plan'}
                             </div>
                             <div className="text-[12px] text-ink-400">
-                                {sub?.cancelAtPeriodEnd && renew ? `Ends on ${renew} — won't renew.`
+                                {pastDue ? "We couldn't collect your latest payment. Razorpay will retry it — check your payment method."
+                                    : paid && sub!.cancelAtPeriodEnd && renew ? `Ends on ${renew} — won't renew.`
                                     : paid && renew ? `Renews on ${renew}.`
                                         : 'Upgrade to unlock more invites, CRM sync, and email.'}
                             </div>
@@ -421,9 +426,9 @@ function BillingSection() {
                     </div>
                     <div className="flex gap-2 shrink-0">
                         <Button variant="outline" size="sm" onClick={() => router.push('/pricing')}>
-                            {paid ? 'Change plan' : 'Upgrade'}
+                            {paid ? 'View plans' : 'Upgrade'}
                         </Button>
-                        {active && !sub!.cancelAtPeriodEnd && (
+                        {paid && !sub!.cancelAtPeriodEnd && (
                             <Button variant="outline" size="sm" onClick={cancel} disabled={canceling}>
                                 {canceling ? 'Canceling…' : 'Cancel'}
                             </Button>

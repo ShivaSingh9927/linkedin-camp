@@ -2,13 +2,17 @@ import { Request, Response } from 'express';
 import crypto from 'crypto';
 import { prisma } from '@repo/db';
 import { ACTIVE_PLANS, planFor, razorpayPlanId, type BillingCycle } from '../config/plans';
-import type { SubscriptionTier } from '@prisma/client';
+import type { SubscriptionStatus, SubscriptionTier } from '@prisma/client';
 import {
     razorpayConfigured,
     razorpayKeyId,
     createCustomer,
+    customerExists,
     createSubscription,
     cancelSubscription,
+    cancelSubscriptionNow,
+    fetchSubscription,
+    razorpayErrorDetail,
     mapSubscriptionStatus,
 } from '../services/razorpay.service';
 import { mailService } from '../services/mail.service';
@@ -35,7 +39,9 @@ export async function getPlans(_req: Request, res: Response) {
                 !!razorpayPlanId(p.key, 'MONTHLY') &&
                 !!razorpayPlanId(p.key, 'ANNUAL')),
     }));
-    res.json({ plans, currency: { primary: 'inr' }, configured });
+    // `checkout` lists the currencies a customer can actually be charged in.
+    // Razorpay plans are INR-only today, so the UI must not offer $ prices.
+    res.json({ plans, currency: { primary: 'inr', checkout: ['inr'] }, configured });
 }
 
 // POST /api/v1/billing/checkout   body: { tier, cycle }
@@ -78,32 +84,45 @@ export async function createCheckout(req: any, res: Response) {
     // Razorpay first, so its mandate can never charge later.
     const existing = await prisma.subscription.findUnique({ where: { userId } }).catch(() => null);
     if (existing?.providerSubId && existing.status !== 'CANCELED') {
-        if (existing.status !== 'TRIALING') {
+        const subExists = (status: SubscriptionStatus) => {
             const label = planFor(existing.tier).label;
             const msg = existing.cancelAtPeriodEnd && existing.currentPeriodEnd
                 ? `Your ${label} plan is active until ${existing.currentPeriodEnd.toDateString()}. You can choose a new plan after it ends.`
-                : `You already have an active ${label} plan. Cancel it in Settings → Billing before choosing another.`;
+                : status === 'TRIALING'
+                    ? `Your ${label} payment is still being confirmed. Refresh in a minute.`
+                    : `You already have an active ${label} plan. Cancel it in Settings → Billing before choosing another.`;
             return res.status(409).json({ error: msg, code: 'SUBSCRIPTION_EXISTS' });
-        }
+        };
+        if (existing.status !== 'TRIALING') return subExists(existing.status);
+
+        // Our row says unpaid, but a webhook may not have landed yet (or landed
+        // out of order) — ask Razorpay before cancelling, so a subscription the
+        // customer just paid for is never cancelled and charged again.
         try {
-            await cancelSubscription(existing.providerSubId, false);
-        } catch (err: any) {
-            // Already cancelled/expired at Razorpay is fine, and so is "not
-            // found": a subscription from the other mode (test vs live keys)
-            // isn't visible to these keys and can't charge this account.
-            // Anything else means we can't be sure it won't charge, so don't
-            // stack another subscription on top.
-            const detail: string = err?.response?.data?.error?.description || err?.message || '';
-            if (!/cancel|expire|complete|could not be found|does not exist/i.test(detail)) {
-                console.error('[BILLING] could not cancel abandoned subscription:', detail);
-                return res.status(502).json({ error: 'Could not start checkout. Please try again in a minute.' });
+            const remote = await fetchSubscription(existing.providerSubId);
+            if (remote && (remote.paid_count > 0 || !['created', 'authenticated'].includes(remote.status))) {
+                const status = mapSubscriptionStatus(remote.status);
+                if (status !== 'CANCELED') {
+                    await prisma.subscription.update({ where: { userId }, data: { status } }).catch(() => {});
+                    return subExists(status);
+                }
+            } else if (remote) {
+                await cancelSubscriptionNow(existing.providerSubId);
             }
+            // remote === null: from the other mode (test vs live keys) — not
+            // visible to these keys and can't charge this account.
+        } catch (err: any) {
+            // Can't be sure the old one won't charge, so don't stack another on top.
+            console.error('[BILLING] could not check/cancel abandoned subscription:', razorpayErrorDetail(err));
+            return res.status(502).json({ error: 'Could not start checkout. Please try again in a minute.' });
         }
     }
 
     try {
         // Ensure a Razorpay customer (reused across resubscribes / billing portal).
+        // A stored id from the other mode (test vs live) doesn't exist for these keys.
         let customerId = user.razorpayCustomerId || undefined;
+        if (customerId && !(await customerExists(customerId))) customerId = undefined;
         if (!customerId) {
             const name = [user.firstName, user.lastName].filter(Boolean).join(' ');
             const customer = await createCustomer(name, user.email);
@@ -176,8 +195,10 @@ export async function getSubscription(req: any, res: Response) {
     });
 }
 
-// POST /api/v1/billing/cancel — cancel at the end of the paid period (access
-// kept until then). The webhook's subscription.cancelled revokes the tier.
+// POST /api/v1/billing/cancel — a paid-up (ACTIVE) plan cancels at the end of
+// the paid period (access kept until then); one whose payment is failing or
+// was never completed cancels now, so Razorpay stops retrying the charge. The
+// webhook's subscription.cancelled revokes the tier.
 export async function cancelBilling(req: any, res: Response) {
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -186,10 +207,12 @@ export async function cancelBilling(req: any, res: Response) {
     if (!sub || !sub.providerSubId) return res.status(400).json({ error: 'No active subscription' });
     if (sub.status === 'CANCELED') return res.json({ ok: true, alreadyCanceled: true });
 
+    const atCycleEnd = sub.status === 'ACTIVE';
     try {
-        await cancelSubscription(sub.providerSubId, true);
+        if (atCycleEnd) await cancelSubscription(sub.providerSubId, true);
+        else await cancelSubscriptionNow(sub.providerSubId);
         await prisma.subscription.update({ where: { userId }, data: { cancelAtPeriodEnd: true } });
-        return res.json({ ok: true, cancelAtPeriodEnd: true, currentPeriodEnd: sub.currentPeriodEnd });
+        return res.json({ ok: true, cancelAtPeriodEnd: atCycleEnd, currentPeriodEnd: sub.currentPeriodEnd });
     } catch (err: any) {
         const detail = err?.response?.data?.error?.description || err?.message || 'cancel failed';
         console.error('[BILLING] cancel error:', detail);
@@ -200,8 +223,9 @@ export async function cancelBilling(req: any, res: Response) {
 // POST /api/webhooks/razorpay  (NO auth — called by Razorpay servers)
 // The ONLY writer of User.tier. Verifies the HMAC signature over the raw body,
 // dedupes via the WebhookEvent ledger, then advances the local Subscription and
-// grants/revokes the tier. Always 200s after a valid signature so Razorpay
-// doesn't retry-storm on an app-side bug — the event is recorded for replay.
+// grants/revokes the tier. If applying fails, the ledger row is removed and we
+// answer 500 so Razorpay retries (it backs off and gives up after ~24h) —
+// otherwise the retry would be deduped and the event lost for good.
 export async function razorpayWebhook(req: any, res: Response) {
     const secret = process.env.RAZORPAY_WEBHOOK_SECRET;
     if (!secret) return res.status(503).json({ error: 'webhook not configured' });
@@ -223,10 +247,12 @@ export async function razorpayWebhook(req: any, res: Response) {
 
     // Idempotency: Razorpay's event id (header), else a hash of the body.
     const eventId = (req.headers['x-razorpay-event-id'] as string) || crypto.createHash('sha256').update(raw).digest('hex');
+    let recorded = false;
     try {
         await prisma.webhookEvent.create({
             data: { provider: 'razorpay', eventId, eventType: event?.event || 'unknown', payload: event },
         });
+        recorded = true;
     } catch (e: any) {
         if (e?.code === 'P2002') return res.status(200).json({ ok: true, deduped: true });
         console.error('[BILLING] webhook ledger write failed:', e?.message);
@@ -235,7 +261,9 @@ export async function razorpayWebhook(req: any, res: Response) {
     try {
         await applyRazorpayEvent(event);
     } catch (e: any) {
-        console.error('[BILLING] webhook apply error:', e?.message);
+        console.error(`[BILLING] webhook apply error (${event?.event}, will retry):`, e?.message);
+        if (recorded) await prisma.webhookEvent.delete({ where: { eventId } }).catch(() => {});
+        return res.status(500).json({ error: 'apply failed' });
     }
     return res.status(200).json({ ok: true });
 }
@@ -248,10 +276,19 @@ async function applyRazorpayEvent(event: any): Promise<void> {
 
     if (type.startsWith('subscription.') && entity) {
         const subId: string = entity.id;
-        const mapped = mapSubscriptionStatus(entity.status);
-        const currentEnd = entity.current_end ? new Date(entity.current_end * 1000) : null;
-
         const local = await prisma.subscription.findUnique({ where: { providerSubId: subId } });
+
+        // Razorpay doesn't deliver events in order (a late subscription.authenticated
+        // can follow .activated), so take the state from Razorpay itself rather
+        // than the event. A network failure throws → the event is retried.
+        const remote = await fetchSubscription(subId);
+        let mapped = mapSubscriptionStatus(remote?.status ?? entity.status);
+        // Backstop if Razorpay couldn't be asked: never move a plan back to unpaid.
+        if (!remote && mapped === 'TRIALING' && local && local.status !== 'TRIALING') mapped = local.status;
+        const end = remote?.current_end ?? entity.current_end;
+        const currentEnd = end ? new Date(end * 1000) : null;
+        const customerId: string | undefined = remote?.customer_id || entity.customer_id || undefined;
+
         const userId: string | undefined = local?.userId || entity?.notes?.userId;
         if (!userId) { console.warn(`[BILLING] webhook: no user for subscription ${subId}`); return; }
 
@@ -269,19 +306,25 @@ async function applyRazorpayEvent(event: any): Promise<void> {
 
         // Type-safe tier resolution (planFor maps unknown → FREE).
         const tier = planFor(local?.tier ?? entity?.notes?.tier).key;
-        const cancelled = type === 'subscription.cancelled';
+        const cancelled = mapped === 'CANCELED';
 
         await prisma.subscription.upsert({
             where: { userId },
             create: {
-                userId, provider: 'razorpay', providerSubId: subId, tier,
+                userId, provider: 'razorpay', providerSubId: subId, providerCustomerId: customerId, tier,
                 status: mapped, currentPeriodEnd: currentEnd, cancelAtPeriodEnd: cancelled,
             },
             update: {
                 providerSubId: subId, status: mapped, currentPeriodEnd: currentEnd,
+                ...(customerId ? { providerCustomerId: customerId } : {}),
                 ...(cancelled ? { cancelAtPeriodEnd: true } : {}),
             },
         });
+        // Razorpay may attach the payment to a different customer than the one
+        // we passed (e.g. a stale id) — keep ours in step for the next checkout.
+        if (customerId) {
+            await prisma.user.update({ where: { id: userId }, data: { razorpayCustomerId: customerId } }).catch(() => {});
+        }
 
         // The single write of User.tier: grant on active, revoke on terminal.
         // PAST_DUE / PAUSED / TRIALING keep the current tier (grace window) —
@@ -298,7 +341,8 @@ async function applyRazorpayEvent(event: any): Promise<void> {
         // Dunning: a charge failed (pending = will retry, halted = retries
         // exhausted). Keep the tier for the grace window (until currentPeriodEnd;
         // the grace cron downgrades after that) but nudge the user to fix payment.
-        if (type === 'subscription.pending' || type === 'subscription.halted') {
+        // Skipped if a retry has already succeeded by the time we process it.
+        if ((type === 'subscription.pending' || type === 'subscription.halted') && mapped === 'PAST_DUE') {
             await notifyPaymentIssue(userId);
         }
         return;
